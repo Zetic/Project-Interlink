@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planet Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>PLANET GENERATOR</h1>
+    <div class="controls">
+      <label for="seed-input">Seed:</label>
+      <input type="text" id="seed-input" placeholder="Enter seed or leave blank for random">
+      <button id="generate-btn">Generate Planet</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="planet-section" style="display:none">
+      <h2>PLANET SUMMARY</h2>
+      <div id="planet-summary"></div>
+    </section>
+
+    <section id="regions-section" style="display:none">
+      <h2>REGIONS</h2>
+      <div id="regions-list"></div>
+    </section>
+
+    <section id="discovery-section" style="display:none">
+      <hr>
+      <div id="discovery-counter">Features Discovered: 0 / 0</div>
+      <button id="discover-btn">Discover Feature</button>
+      <div id="all-discovered" style="display:none">All features discovered.</div>
+    </section>
+  </main>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

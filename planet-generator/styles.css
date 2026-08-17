@@ -1,0 +1,241 @@
+/* Planet Generator - Utilitarian Development Tool Styles */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #0d0d0d;
+  color: #d4d4d4;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+header {
+  background: #111;
+  border-bottom: 1px solid #333;
+  padding: 16px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+header h1 {
+  font-size: 1.4rem;
+  letter-spacing: 0.15em;
+  color: #a0c8ff;
+  margin-bottom: 10px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.controls label {
+  color: #888;
+}
+
+.controls input[type="text"] {
+  background: #1a1a1a;
+  border: 1px solid #444;
+  color: #d4d4d4;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  width: 280px;
+}
+
+.controls input[type="text"]:focus {
+  outline: none;
+  border-color: #6699cc;
+}
+
+button {
+  background: #1e3a5f;
+  border: 1px solid #4a7ab5;
+  color: #a0c8ff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+button:hover:not(:disabled) {
+  background: #2a4e7c;
+}
+
+button:disabled {
+  background: #1a1a1a;
+  border-color: #333;
+  color: #555;
+  cursor: not-allowed;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+section {
+  margin-bottom: 32px;
+}
+
+h2 {
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  color: #6699cc;
+  border-bottom: 1px solid #2a2a2a;
+  padding-bottom: 6px;
+  margin-bottom: 16px;
+}
+
+/* Planet Summary */
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 6px 24px;
+}
+
+.summary-grid > div {
+  border-bottom: 1px dotted #222;
+  padding: 4px 0;
+}
+
+.summary-grid strong {
+  color: #888;
+  min-width: 160px;
+  display: inline-block;
+}
+
+/* Regions */
+
+.region {
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-left: 3px solid #2a4e7c;
+  margin-bottom: 20px;
+  padding: 14px 18px;
+}
+
+.region-name {
+  color: #a0c8ff;
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+
+.region-meta {
+  color: #777;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.region-comp {
+  color: #999;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.resource-section {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.resource-section strong {
+  color: #888;
+}
+
+.resource-section ul {
+  list-style: none;
+  margin-top: 4px;
+  padding-left: 10px;
+}
+
+.resource-section li {
+  border-left: 2px solid #2a3a2a;
+  padding: 2px 8px;
+  margin-bottom: 3px;
+}
+
+.resource-name {
+  color: #b8e0b8;
+}
+
+.resource-note {
+  color: #666;
+  font-size: 12px;
+}
+
+.resource-comp {
+  color: #555;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* Features */
+
+.features-section {
+  margin-top: 12px;
+}
+
+.feature {
+  background: #0d1a0d;
+  border: 1px solid #1e3a1e;
+  border-left: 3px solid #3a7a3a;
+  margin-top: 10px;
+  padding: 10px 14px;
+}
+
+.feature-name {
+  color: #80c880;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.feature-meta {
+  color: #666;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.undiscovered-hint {
+  color: #444;
+  font-style: italic;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+/* Discovery section */
+
+#discovery-section {
+  border-top: 1px solid #2a2a2a;
+  padding-top: 16px;
+}
+
+#discovery-counter {
+  font-size: 1rem;
+  color: #a0c8ff;
+  margin-bottom: 10px;
+  letter-spacing: 0.05em;
+}
+
+#all-discovered {
+  color: #80c880;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #2a2a2a;
+  margin-bottom: 16px;
+}
