@@ -1,6 +1,5 @@
 import {
   MASS_TOLERANCE_KG,
-  allocateNextMaterialBatchId,
   createMaterialBatch,
   roundKg,
   sumComponentMassKg,
@@ -20,13 +19,14 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-
-function nextProcessRunId(world) {
-  const ordinal = world.nextProcessRunOrdinal;
-  world.nextProcessRunOrdinal += 1;
-  return `process-run-${ordinal}`;
+function assertWorldOrdinals(world) {
+  if (!Number.isInteger(world.nextMaterialBatchOrdinal) || world.nextMaterialBatchOrdinal < 1) {
+    throw new Error('World nextMaterialBatchOrdinal must be a positive integer');
+  }
+  if (!Number.isInteger(world.nextProcessRunOrdinal) || world.nextProcessRunOrdinal < 1) {
+    throw new Error('World nextProcessRunOrdinal must be a positive integer');
+  }
 }
-
 
 function assertParameterWithinRange(parameterDefinition, value) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
@@ -62,7 +62,6 @@ function validateInputBatchForProcess(processDefinition, inputBatch) {
       `Process '${processDefinition.id}' does not support resource '${inputBatch.resourceId}'`
     );
   }
-
 }
 
 function buildOutputComponents(inputComponentsKg, fieldStrength) {
@@ -125,6 +124,7 @@ export function executeProcess(processDefinition, inputBatch, parameters = {}) {
 export function runProcessAndCommit(world, processId, inputBatchId, parameters = {}) {
   if (!world?.materialBatches) throw new Error('World materialBatches map is required');
   if (!world?.processResults) throw new Error('World processResults map is required');
+  assertWorldOrdinals(world);
 
   const processDefinition = getProcessDefinition(processId);
   if (!processDefinition) throw new Error(`Unknown process '${processId}'`);
@@ -137,26 +137,32 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
     throw new Error(`Process '${processId}' violates matter conservation`);
   }
 
-  const runId = nextProcessRunId(world);
+  // Stage every ID and output batch before mutating World State. If validation
+  // fails anywhere below, the physical input batch and world counters remain unchanged.
+  const runId = `process-run-${world.nextProcessRunOrdinal}`;
+  if (world.processResults[runId]) {
+    throw new Error(`Process result id '${runId}' already exists`);
+  }
 
-  inputBatch.status = 'consumed';
-  inputBatch.consumedByProcessRunId = runId;
+  const firstOutputOrdinal = world.nextMaterialBatchOrdinal;
+  const stagedOutputBatches = executionResult.outputPortBatches.map((output, index) => {
+    const batchId = `batch-${firstOutputOrdinal + index}`;
+    if (world.materialBatches[batchId]) {
+      throw new Error(`Material batch id '${batchId}' already exists`);
+    }
 
-  const runtimeOutputBatches = executionResult.outputPortBatches.map(output => {
-    const outputBatch = createMaterialBatch({
-      id: allocateNextMaterialBatchId(world),
+    const batch = createMaterialBatch({
+      id: batchId,
       sourceOccurrenceId: inputBatch.sourceOccurrenceId,
       resourceId: inputBatch.resourceId,
       status: 'available',
       componentsKg: output.componentsKg,
     });
 
-    world.materialBatches[outputBatch.id] = outputBatch;
-
     return {
       outputId: output.outputId,
-      batchId: outputBatch.id,
-      batch: outputBatch,
+      batchId,
+      batch,
     };
   });
 
@@ -164,7 +170,7 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
     id: runId,
     processId,
     inputBatchIds: [inputBatch.id],
-    outputBatches: runtimeOutputBatches.map(output => ({
+    outputBatches: stagedOutputBatches.map(output => ({
       outputId: output.outputId,
       batchId: output.batchId,
     })),
@@ -172,9 +178,18 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
     metrics: executionResult.metrics,
   };
 
+  // Commit only after the entire transition has been successfully validated.
+  inputBatch.status = 'consumed';
+  inputBatch.consumedByProcessRunId = runId;
+  for (const output of stagedOutputBatches) {
+    world.materialBatches[output.batchId] = output.batch;
+  }
   world.processResults[runId] = storedProcessResult;
+  world.nextMaterialBatchOrdinal += stagedOutputBatches.length;
+  world.nextProcessRunOrdinal += 1;
+
   return {
     ...storedProcessResult,
-    outputBatches: runtimeOutputBatches,
+    outputBatches: stagedOutputBatches,
   };
 }

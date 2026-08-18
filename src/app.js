@@ -314,6 +314,17 @@ function renderLatestProcessResult() {
         </div>
       `;
     }
+
+    if (!isBatchAnalyzed(knowledge, batch.id)) {
+      return `
+        <div class="batch-detail">
+          <div><strong>${escHtml(output.outputId)}</strong> &mdash; ${escHtml(output.batchId)}</div>
+          <div><strong>Total Mass:</strong> ${batch.totalMassKg.toFixed(4)} kg</div>
+          <div class="inline-note">Analyze this output batch to reveal constituent composition.</div>
+        </div>
+      `;
+    }
+
     return `
       <div class="batch-detail">
         <div><strong>${escHtml(output.outputId)}</strong> &mdash; ${escHtml(output.batchId)}</div>
@@ -408,6 +419,9 @@ function renderProcessingSection() {
   if (!uiState.selectedBatchId && availableBatches.length > 0) {
     uiState.selectedBatchId = availableBatches[0].id;
   }
+  const selectedBatchAnalyzed = uiState.selectedBatchId
+    ? isBatchAnalyzed(knowledge, uiState.selectedBatchId)
+    : false;
 
   const occurrenceOptionsHtml = processCompatibleOccurrences.length === 0
     ? '<option value="">No discovered iron-ore occurrences yet</option>'
@@ -454,7 +468,8 @@ function renderProcessingSection() {
         <select id="process-select">${processOptionsHtml}</select>
         <label for="field-strength-input">Field Strength: <span id="field-strength-value">${uiState.fieldStrength.toFixed(2)}</span></label>
         <input id="field-strength-input" type="range" min="0" max="1" step="0.05" value="${uiState.fieldStrength}">
-        <button id="run-process-btn" ${availableBatches.length === 0 ? 'disabled' : ''}>Run Process</button>
+        <button id="run-process-btn" ${availableBatches.length === 0 || !selectedBatchAnalyzed ? 'disabled' : ''}>Run Process</button>
+        <div class="inline-note">${selectedBatchAnalyzed ? 'Selected batch is analyzed and ready for processing.' : 'Analyze the selected batch before processing.'}</div>
       </div>
     </div>
   `;
@@ -637,6 +652,9 @@ function onRunProcess() {
     const processId = el('process-select')?.value;
     const batchId = el('batch-select')?.value;
     if (!batchId) throw new Error('No available sample batch selected for processing');
+    if (!isBatchAnalyzed(knowledge, batchId)) {
+      throw new Error('Analyze the selected batch before processing');
+    }
 
     const processResult = runProcessAndCommit(world, processId, batchId, { fieldStrength: uiState.fieldStrength });
 

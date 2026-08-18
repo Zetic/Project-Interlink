@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from '../src/core/world/worldState.js';
 import { createKnowledge, analyzeMaterialBatch } from '../src/core/world/knowledgeState.js';
-import { acquireSampleFromOccurrence } from '../src/core/materials/sampleAcquisition.js';
+import { acquireSampleFromOccurrence, MIN_SAMPLE_MASS_KG } from '../src/core/materials/sampleAcquisition.js';
 import { executeProcess, runProcessAndCommit } from '../src/core/processes/processExecution.js';
 import { getProcessDefinition, MAGNETIC_SEPARATION_PROCESS_ID } from '../src/core/processes/processDefinitions.js';
-import { sumComponentMassKg } from '../src/core/materials/materialBatches.js';
+import { createMaterialBatch, sumComponentMassKg } from '../src/core/materials/materialBatches.js';
 
 const MASS_TOLERANCE_KG = 1e-6;
 
@@ -57,20 +57,30 @@ test('sample acquisition from structured occurrence preserves requested mass and
   assertFiniteNonNegativeComposition(batch.componentsKg);
 });
 
-test('sample analysis updates knowledge state only and records composition', () => {
+test('sample acquisition rejects masses below the supported prototype minimum without mutating world', () => {
   const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
   const worldSnapshot = JSON.parse(JSON.stringify(world));
-  const knowledge = createKnowledge(world);
 
+  assert.throws(
+    () => acquireSampleFromOccurrence(world, occurrence.id, MIN_SAMPLE_MASS_KG / 2),
+    /must be at least/
+  );
+
+  assert.deepStrictEqual(world, worldSnapshot, 'Rejected acquisition must leave physical world state unchanged');
+});
+
+test('sample analysis updates knowledge state only and records composition', () => {
+  const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
+  const knowledge = createKnowledge(world);
   const batch = acquireSampleFromOccurrence(world, occurrence.id, 10);
+  const worldSnapshot = JSON.parse(JSON.stringify(world));
+
   const analysis = analyzeMaterialBatch(knowledge, world, batch.id);
 
   assert.strictEqual(analysis.analysisState, 'analyzed');
   assert.strictEqual(analysis.totalMassKg, batch.totalMassKg);
   assert.deepStrictEqual(analysis.componentMassesKg, batch.componentsKg);
-
-  // Only expected world mutation is sample creation (knowledge analysis must not change world truth)
-  assert.deepStrictEqual(world.resourceOccurrences, worldSnapshot.resourceOccurrences);
+  assert.deepStrictEqual(world, worldSnapshot, 'Knowledge analysis must not mutate any physical world state');
 });
 
 test('process execution is deterministic for same batch and parameters', () => {
@@ -113,6 +123,28 @@ test('magnetic separation conserves total mass and each constituent mass', () =>
 
   assertFiniteNonNegativeComposition(concentrate.componentsKg);
   assertFiniteNonNegativeComposition(tailings.componentsKg);
+});
+
+test('failed committed process is atomic and leaves physical world unchanged', () => {
+  const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
+  const tinyBatch = createMaterialBatch({
+    id: 'batch-tiny',
+    sourceOccurrenceId: occurrence.id,
+    resourceId: 'iron-ore',
+    status: 'available',
+    componentsKg: {
+      quartzAndGangue: 0.000001,
+    },
+  });
+  world.materialBatches[tinyBatch.id] = tinyBatch;
+  const worldSnapshot = JSON.parse(JSON.stringify(world));
+
+  assert.throws(
+    () => runProcessAndCommit(world, MAGNETIC_SEPARATION_PROCESS_ID, tinyBatch.id, { fieldStrength: 0 }),
+    /total mass must be greater than zero/
+  );
+
+  assert.deepStrictEqual(world, worldSnapshot, 'Failed process commit must not consume input, create outputs, or advance counters');
 });
 
 test('unsupported input material is rejected clearly', () => {

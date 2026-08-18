@@ -1,13 +1,14 @@
 import { allocateNextMaterialBatchId, createMaterialBatch } from './materialBatches.js';
 
 const DEFAULT_SAMPLE_MASS_KG = 10;
+const MIN_SAMPLE_MASS_KG = 0.1;
 
 function assertSampleMassKg(sampleMassKg) {
   if (typeof sampleMassKg !== 'number' || Number.isNaN(sampleMassKg) || !Number.isFinite(sampleMassKg)) {
     throw new Error('sampleMassKg must be a finite number');
   }
-  if (sampleMassKg <= 0) {
-    throw new Error('sampleMassKg must be greater than zero');
+  if (sampleMassKg < MIN_SAMPLE_MASS_KG) {
+    throw new Error(`sampleMassKg must be at least ${MIN_SAMPLE_MASS_KG} kg`);
   }
 }
 
@@ -66,4 +67,4 @@ export function acquireSampleFromOccurrence(world, occurrenceId, sampleMassKg = 
   return batch;
 }
 
-export { DEFAULT_SAMPLE_MASS_KG };
+export { DEFAULT_SAMPLE_MASS_KG, MIN_SAMPLE_MASS_KG };
