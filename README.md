@@ -8,20 +8,22 @@ The long-term goal is a game centered on physical, chemical, industrial, logisti
 
 ## Current State
 
-The project is currently focused on its first simulation subsystem: **procedural planet generation**.
+The project is currently focused on its first real simulation subsystem: **procedural planetary world generation**.
 
-The existing web application can:
+The original planet generator began as a standalone tech demo, but its useful code has now been promoted into the Interlink simulation foundation rather than discarded.
+
+The current web application can:
 
 - generate deterministic planets from a seed
-- generate planet mass, radius, gravity, density, composition, volatile inventory, interior structure, atmosphere, temperature, geologic activity, magnetic state, and surface state
-- derive a human-readable planet classification after the physical planet is generated
+- generate planet orbit, mass, composition, volatile inventory, interior structure, radius, gravity, density, atmosphere, temperature, geologic activity, magnetic state, and surface state
+- derive a human-readable planet classification after physical generation
 - generate regions from planetary conditions
 - give regions broad background natural resources
 - generate hidden geological/environmental features inside regions
-- generate natural-resource occurrences and compositions inside features
-- reveal generated features one at a time through a simple discovery interface
+- generate feature-level natural-resource occurrences and compositions
+- reveal already-generated features one at a time through a simple discovery interface
 
-The generator now follows a causal pipeline rather than selecting a planet archetype first:
+The planet generator follows a causal pipeline rather than selecting a planet archetype first:
 
 ```text
 Base State
@@ -49,11 +51,11 @@ Features
 Natural Resources
 ```
 
-This is still a simplified procedural model rather than research-grade planetary science. The priority is internal consistency, causal relationships, and useful simulation data.
+This remains a simplified procedural model rather than research-grade planetary science. The goal is **internal consistency, causal relationships, deterministic behavior, and useful simulation data**.
 
 ## Current Architecture
 
-The working implementation is under:
+The working application is under:
 
 ```text
 planet-generator/
@@ -66,48 +68,45 @@ It is currently a lightweight static web application using:
 - vanilla JavaScript
 - ES modules
 
-Core generation logic is intentionally kept separate from DOM rendering so it can evolve into reusable Interlink simulation logic.
+Core simulation/generation logic is kept independent from DOM rendering so it can continue evolving into reusable Interlink game logic.
 
-Current generator modules include:
-
-```text
-planet-generator/src/generator/
-├── generatePlanet.js
-├── generateRegions.js
-├── generateFeatures.js
-├── generateResources.js
-└── random.js
-```
-
-The UI is currently a development interface for inspecting generated worlds rather than the final Interlink game interface.
-
-## Foundation Work In Progress
-
-The original planet generator began as a standalone tech demo. Its useful simulation code is now being promoted into the actual Interlink foundation rather than discarded.
-
-The next architecture phase will establish:
+The foundational state architecture is now established:
 
 ```text
-World / Simulation State
+WORLD / SIMULATION STATE
+objective physical truth
         ↓
-Player Knowledge State
+PLAYER KNOWLEDGE STATE
+what the player has discovered
         ↓
-Application / UI State
+APPLICATION / UI STATE
+what the interface is currently displaying
 ```
 
-This will separate what physically exists from what the player has discovered and from what the interface is currently displaying.
+The root world state is plain serializable JavaScript and contains version metadata plus ID-indexed maps for generated entities:
 
-The project will also move toward:
+```text
+World
+├── planets
+├── regions
+├── features
+└── resourceOccurrences
+```
 
-- a serializable root world state
-- `schemaVersion` and `generatorVersion`
-- deterministic namespaced/sub-seeded random streams
-- stable IDs for generated entities
-- reusable definitions separated from generated occurrences
-- explicit resource definitions, constituent definitions, and resource occurrences
-- deterministic lazy generation in later stages
+Planets reference regions by ID, regions reference features by ID, and features reference generated resource occurrences by ID.
 
-These changes are intended to preserve the current working planet generator while creating safer foundations for future simulation systems.
+Discovery no longer lives on the physical feature itself; it is stored separately in player knowledge state. Discovering a feature therefore reveals existing world truth rather than changing the simulated world.
+
+The generator also now uses deterministic namespaced RNG streams so changes inside one subsystem are less likely to reshuffle unrelated parts of a world seed.
+
+Worlds currently carry:
+
+```text
+schemaVersion
+generatorVersion
+```
+
+so future serialized data and procedural rule changes can evolve deliberately.
 
 ## Resource Philosophy
 
@@ -124,9 +123,45 @@ Iron Ore Deposit
     └── Quartz / gangue 18%
 ```
 
-`Hematite` is a mineral constituent of that generated ore occurrence rather than necessarily being a separate fundamental resource type.
+`Iron Ore` is the raw-resource definition. The particular deposit is a generated occurrence with its own location, quantity, concentration, descriptor, and composition.
 
-The same principle applies to brines, natural gas, rocks, atmospheric gases, and other heterogeneous natural materials. This is intended to support future processing gameplay where outputs depend on actual feedstock composition.
+Minerals such as hematite are constituents of that occurrence rather than automatically becoming separate fundamental resource IDs.
+
+The same approach is intended for brines, natural gas, rocks, atmospheric gases, and other heterogeneous natural materials. Future processing gameplay should derive outputs from feedstock composition and process capability rather than fixed recipe-token conversions.
+
+## Current Development Priority
+
+The architecture foundation is now strong enough that the next priority is **automated simulation regression protection before deeper geology work**.
+
+The project currently has validation logic, but no automated test suite protecting deterministic generation and world-state invariants.
+
+The next phase should establish:
+
+- a minimal Node-based test setup
+- deterministic same-seed regression tests
+- namespaced RNG tests
+- world-reference integrity tests
+- knowledge/world separation tests
+- composition and structural-fraction invariants
+- broad multi-seed smoke tests
+- obvious feature/resource compatibility rules
+- a small GitHub Actions check so tests run automatically on pull requests
+
+This is intended to make later Copilot-driven changes safer before significantly expanding regional geology, deposit formation, and resource-generation rules.
+
+## Known Simulation Areas Still Using Prototype Logic
+
+The planet-level model is currently more causally developed than the region/feature layer.
+
+Examples of remaining simplifications include:
+
+- regional geology is still largely generated as local variation around planet properties
+- region age, relief, and elevation are still fairly abstract/random
+- feature physical state is not yet fully constrained by feature type
+- feature/resource compatibility still relies heavily on broad tag matching
+- broad regional resources and feature resource occurrences are not yet represented completely consistently
+
+These are expected next-stage simulation problems, not reasons to restart the project.
 
 ## Long-Term Direction
 
@@ -152,18 +187,20 @@ A guiding progression principle is:
 
 > **Yesterday's factory becomes today's machine.**
 
-Future gameplay may include surveying, extraction, material processing, chemistry, thermodynamics, automation, control systems, reusable blueprints, and large industrial networks. These systems are intentionally out of scope until the world/simulation foundation is stable.
+Future gameplay may include surveying, extraction, material processing, chemistry, thermodynamics, automation, control systems, reusable blueprints, and large industrial networks. These systems remain intentionally out of scope until the generated-world foundation is mature enough to support them.
 
 ## Near-Term Roadmap
 
-1. Establish separate world, knowledge, and UI state.
-2. Add schema/generator versioning and deterministic namespaced RNG streams.
-3. Formalize definitions versus generated occurrences.
-4. Preserve the current planet-generation vertical slice through that refactor.
-5. Improve causal regional geology.
-6. Improve geological feature formation and resource occurrence generation.
-7. Expand discovery into surveying and knowledge confidence.
-8. Add extraction and processing only after the generated-world foundation is mature enough to support them.
+1. Add automated simulation regression tests and executable invariants.
+2. Normalize remaining inconsistent resource-occurrence/reference behavior exposed by testing.
+3. Improve causal regional geology.
+4. Improve feature formation and feature/resource compatibility.
+5. Improve natural-resource composition and deposit generation.
+6. Expand discovery into surveying and knowledge confidence.
+7. Add extraction concepts.
+8. Add material processing and transformation.
+9. Add automation and reusable systems.
+10. Expand toward larger industrial/network gameplay.
 
 ## Running the Current Web App
 
@@ -195,4 +232,4 @@ Repository-level instructions for GitHub Copilot are stored in:
 .github/copilot-instructions.md
 ```
 
-Those instructions describe the current architecture, simulation philosophy, resource model, deterministic generation requirements, and long-term Interlink design direction.
+Those instructions describe the current architecture, simulation contracts, deterministic-generation requirements, resource model, near-term development order, and long-term Interlink philosophy.
