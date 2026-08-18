@@ -6,18 +6,6 @@
 import { createRNG, hashSeed } from './random.js';
 import { generateRegions } from './generateRegions.js';
 
-const PLANET_TYPES = [
-  { type: 'Rocky', compositionProfile: { silicates: 60, ironMetals: 25, waterVolatiles: 5, carbonCompounds: 4, sulfurCompounds: 4, other: 2 } },
-  { type: 'Iron-Rich', compositionProfile: { silicates: 35, ironMetals: 50, waterVolatiles: 4, carbonCompounds: 4, sulfurCompounds: 5, other: 2 } },
-  { type: 'Silicate-Rich', compositionProfile: { silicates: 72, ironMetals: 14, waterVolatiles: 6, carbonCompounds: 4, sulfurCompounds: 2, other: 2 } },
-  { type: 'Volcanic', compositionProfile: { silicates: 55, ironMetals: 28, waterVolatiles: 3, carbonCompounds: 3, sulfurCompounds: 9, other: 2 } },
-  { type: 'Arid', compositionProfile: { silicates: 62, ironMetals: 20, waterVolatiles: 4, carbonCompounds: 5, sulfurCompounds: 6, other: 3 } },
-  { type: 'Temperate', compositionProfile: { silicates: 58, ironMetals: 22, waterVolatiles: 10, carbonCompounds: 5, sulfurCompounds: 3, other: 2 } },
-  { type: 'Ocean-Rich', compositionProfile: { silicates: 45, ironMetals: 18, waterVolatiles: 28, carbonCompounds: 4, sulfurCompounds: 3, other: 2 } },
-  { type: 'Ice-Rich', compositionProfile: { silicates: 40, ironMetals: 16, waterVolatiles: 36, carbonCompounds: 3, sulfurCompounds: 3, other: 2 } },
-  { type: 'Carbon-Rich', compositionProfile: { silicates: 38, ironMetals: 20, waterVolatiles: 5, carbonCompounds: 28, sulfurCompounds: 6, other: 3 } },
-];
-
 const PLANET_NAMES = [
   'Aethon', 'Boras', 'Caldris', 'Draven', 'Eryndor', 'Feraxis', 'Galneth',
   'Havar', 'Ixara', 'Jorveth', 'Kryne', 'Luneth', 'Mordex', 'Navorn',
@@ -25,10 +13,17 @@ const PLANET_NAMES = [
   'Vyrath', 'Wolthen', 'Xoros', 'Yethris', 'Zorven',
 ];
 
-const ATMOSPHERE_GASES = ['N2', 'CO2', 'O2', 'Ar', 'H2O', 'CH4', 'SO2', 'He'];
+function clamp(v, min, max) {
+  return Math.min(Math.max(v, min), max);
+}
+
+function round(value, decimals = 3) {
+  return parseFloat(value.toFixed(decimals));
+}
 
 function normaliseToHundred(obj) {
   const total = Object.values(obj).reduce((a, b) => a + b, 0);
+  if (total <= 0) return {};
   const result = {};
   const keys = Object.keys(obj);
   let sum = 0;
@@ -40,134 +35,308 @@ function normaliseToHundred(obj) {
   return result;
 }
 
-function generateAtmosphere(planetType, rng, equilibriumTempK) {
-  // No atmosphere for very small/hot planets — simplified: always give some atmosphere
-  const pressureBar = parseFloat(rng.range(0.001, 3.5).toFixed(3));
+function generateBaseState(rng) {
+  const orbitalDistanceAU = round(rng.range(0.25, 2.8), 3);
+  const orbitalEccentricity = round(rng.range(0, 0.35), 3);
+  const massEarth = round(rng.range(0.08, 4.5), 3);
+  const axialTiltDegrees = round(rng.range(0, 55), 1);
+  const ageGyr = round(rng.range(0.5, 10), 2);
+  const closeOrbit = orbitalDistanceAU < 0.35;
+  const likelyTidalLock = closeOrbit && rng.random() > 0.55;
+  const rotationHours = likelyTidalLock
+    ? round(rng.range(120, 1400), 1)
+    : round(rng.range(8, 120), 1);
 
-  let compRaw = {};
-  if (equilibriumTempK < 200) {
-    compRaw = { N2: rng.range(40, 80), CO2: rng.range(5, 20), Ar: rng.range(2, 10), CH4: rng.range(1, 15), other: rng.range(1, 5) };
-  } else if (equilibriumTempK > 350) {
-    compRaw = { CO2: rng.range(50, 90), N2: rng.range(5, 30), SO2: rng.range(1, 10), Ar: rng.range(1, 5), other: rng.range(1, 3) };
+  return {
+    orbitalDistanceAU,
+    orbitalEccentricity,
+    massEarth,
+    rotationHours,
+    axialTiltDegrees,
+    ageGyr,
+  };
+}
+
+function generateBulkMatter(base, rng) {
+  const innerSystemFactor = clamp((1.5 - base.orbitalDistanceAU) / 1.5, 0, 1);
+  const outerSystemFactor = clamp((base.orbitalDistanceAU - 0.8) / 2, 0, 1);
+  const ironBias = rng.range(-6, 6);
+  const silicateBias = rng.range(-8, 8);
+
+  const silicates = 44 + silicateBias + innerSystemFactor * 18 - outerSystemFactor * 10;
+  const ironMetals = 20 + innerSystemFactor * 22 + ironBias - outerSystemFactor * 8;
+  const waterVolatiles = 6 + outerSystemFactor * 22 + (1 - innerSystemFactor) * 8 + rng.range(-3, 6);
+  const carbonCompounds = 3 + outerSystemFactor * 12 + (1 - innerSystemFactor) * 4 + rng.range(-2, 5);
+  const sulfurCompounds = 2 + innerSystemFactor * 8 + rng.range(-1.5, 2.5);
+  const other = 2 + rng.range(0, 4);
+
+  const bulkComposition = normaliseToHundred({
+    silicates: Math.max(1, silicates),
+    ironMetals: Math.max(1, ironMetals),
+    waterVolatiles: Math.max(0.5, waterVolatiles),
+    carbonCompounds: Math.max(0.5, carbonCompounds),
+    sulfurCompounds: Math.max(0.5, sulfurCompounds),
+    other: Math.max(0.5, other),
+  });
+
+  const volatileInventory = generateVolatileInventory(base, bulkComposition, rng);
+  return { bulkComposition, volatileInventory };
+}
+
+function generateVolatileInventory(base, bulkComposition, rng) {
+  const orbitalColdFactor = clamp((base.orbitalDistanceAU - 0.7) / 2.1, 0, 1);
+  const retentionMassFactor = clamp(base.massEarth / 1.5, 0.2, 2.5);
+  const volatileRetention = clamp(0.45 + retentionMassFactor * 0.25 + orbitalColdFactor * 0.4, 0.2, 1.8);
+
+  return {
+    waterIce: round(clamp((bulkComposition.waterVolatiles * volatileRetention * rng.range(0.4, 1.2)) + orbitalColdFactor * 8, 0, 50), 1),
+    co2Ice: round(clamp((bulkComposition.carbonCompounds * volatileRetention * rng.range(0.25, 0.9)) + orbitalColdFactor * 4, 0, 25), 1),
+    carbonaceousVolatiles: round(clamp((bulkComposition.carbonCompounds * rng.range(0.3, 0.9)), 0, 20), 1),
+    sulfurousVolatiles: round(clamp((bulkComposition.sulfurCompounds * rng.range(0.25, 0.8)), 0, 12), 1),
+  };
+}
+
+function generateThermalEnvironment(base, bulkMatter, rng) {
+  const albedo = clamp(
+    0.16 +
+      (bulkMatter.bulkComposition.waterVolatiles / 100) * 0.24 +
+      (bulkMatter.bulkComposition.silicates / 100) * 0.08 +
+      rng.range(-0.03, 0.03),
+    0.08,
+    0.72
+  );
+  const eccentricityHeating = 1 + base.orbitalEccentricity * 0.08;
+  const equilibriumTemperatureK = round(
+    (278 / Math.sqrt(base.orbitalDistanceAU)) * Math.pow(1 - albedo, 0.25) * eccentricityHeating,
+    1
+  );
+
+  return { albedo, equilibriumTemperatureK };
+}
+
+function generateInteriorStructure(base, bulkMatter, thermal, rng) {
+  const ironFactor = bulkMatter.bulkComposition.ironMetals / 100;
+  const volatileFactor = bulkMatter.bulkComposition.waterVolatiles / 100;
+  const massFactor = clamp(base.massEarth / 2.2, 0.1, 2.8);
+  const thermalFactor = clamp(thermal.equilibriumTemperatureK / 320, 0.3, 2.5);
+
+  const coreRaw = 0.18 + ironFactor * 0.33 + massFactor * 0.06 + rng.range(-0.025, 0.025);
+  const deepRaw = 0.42 + (1 - volatileFactor) * 0.1 + rng.range(-0.035, 0.035);
+  const envelopeRaw = 0.08 + volatileFactor * 0.26 + (1 / thermalFactor) * 0.03 + rng.range(-0.02, 0.02);
+  const total = coreRaw + deepRaw + envelopeRaw;
+
+  const coreMassFraction = round(clamp(coreRaw / total, 0.1, 0.65), 3);
+  const deepInteriorMassFraction = round(clamp(deepRaw / total, 0.15, 0.8), 3);
+  const envelopeMassFraction = round(1 - coreMassFraction - deepInteriorMassFraction, 3);
+  const correctedEnvelope = envelopeMassFraction <= 0.01 ? 0.01 : envelopeMassFraction;
+  const correctedCore = round(coreMassFraction - (correctedEnvelope - envelopeMassFraction), 3);
+
+  return {
+    coreMassFraction: correctedCore,
+    deepInteriorMassFraction,
+    envelopeMassFraction: round(correctedEnvelope, 3),
+  };
+}
+
+function derivePhysicalDimensions(base, bulkMatter, structure) {
+  const ironIndex = bulkMatter.bulkComposition.ironMetals / 100;
+  const volatileIndex = (bulkMatter.bulkComposition.waterVolatiles + bulkMatter.bulkComposition.carbonCompounds) / 100;
+  const structureIndex = structure.envelopeMassFraction - structure.coreMassFraction;
+
+  const radiusModifier = clamp(1 - ironIndex * 0.18 + volatileIndex * 0.12 + structureIndex * 0.1, 0.72, 1.35);
+  const radiusEarth = round(Math.pow(base.massEarth, 0.275) * radiusModifier, 3);
+  const gravityG = round(base.massEarth / (radiusEarth * radiusEarth), 3);
+  const escapeVelocityKmS = round(11.186 * Math.sqrt(base.massEarth / radiusEarth), 3);
+  const volumeEarth = (4 / 3) * Math.PI * Math.pow(radiusEarth, 3);
+  const meanDensity = round((base.massEarth / volumeEarth) * 5.51, 2);
+
+  return { radiusEarth, gravityG, escapeVelocityKmS, meanDensity };
+}
+
+function generateAtmosphere(base, bulkMatter, thermal, dimensions, rng) {
+  const volatileSupply = clamp(
+    (bulkMatter.volatileInventory.waterIce + bulkMatter.volatileInventory.co2Ice + bulkMatter.volatileInventory.carbonaceousVolatiles) / 65,
+    0,
+    2
+  );
+  const retentionScore = clamp(
+    (dimensions.escapeVelocityKmS / 11.186) * 0.55 +
+      (dimensions.gravityG / 1) * 0.2 +
+      (275 / Math.max(120, thermal.equilibriumTemperatureK)) * 0.25,
+    0,
+    2.5
+  );
+  const atmosphericPotential = volatileSupply * retentionScore;
+  const effectivelyAirless = atmosphericPotential < 0.28 || (thermal.equilibriumTemperatureK > 620 && retentionScore < 1.1);
+
+  if (effectivelyAirless) {
+    return {
+      pressureBar: 0,
+      composition: {},
+      retained: false,
+    };
+  }
+
+  const pressureBar = round(clamp(atmosphericPotential * rng.range(0.12, 0.95), 0.01, 8), 3);
+  let compRaw;
+
+  if (thermal.equilibriumTemperatureK < 180) {
+    compRaw = { N2: rng.range(35, 75), CO2: rng.range(8, 30), CH4: rng.range(2, 20), Ar: rng.range(1, 8), He: rng.range(0.2, 3) };
+  } else if (thermal.equilibriumTemperatureK > 390) {
+    compRaw = { CO2: rng.range(45, 88), N2: rng.range(8, 35), SO2: rng.range(1, 16), Ar: rng.range(0.5, 6), H2O: rng.range(0.2, 5) };
   } else {
-    compRaw = { N2: rng.range(50, 80), CO2: rng.range(3, 20), Ar: rng.range(1, 10), H2O: rng.range(0.5, 5), other: rng.range(0.5, 3) };
-    if (rng.random() > 0.5) compRaw.O2 = rng.range(1, 21);
+    compRaw = { N2: rng.range(45, 82), CO2: rng.range(2, 24), Ar: rng.range(0.5, 8), H2O: rng.range(0.2, 8), CH4: rng.range(0.1, 4) };
+    if (pressureBar > 0.2 && thermal.equilibriumTemperatureK > 250 && thermal.equilibriumTemperatureK < 335 && rng.random() > 0.62) {
+      compRaw.O2 = rng.range(1, 20);
+    }
   }
 
   return {
     pressureBar,
     composition: normaliseToHundred(compRaw),
+    retained: true,
   };
 }
 
-function generateVolatileInventory(rng, planetType) {
+function generateActiveState(base, structure, rng) {
+  const ageCooling = clamp(1 - (base.ageGyr - 0.5) / 11, 0.05, 1);
+  const massHeat = clamp(Math.pow(base.massEarth, 0.35), 0.25, 1.8);
+  const coreEffect = clamp((structure.coreMassFraction - 0.15) / 0.45, 0, 1.25);
+  const internalHeatScore = clamp(ageCooling * 0.42 + massHeat * 0.28 + coreEffect * 0.3 + rng.range(-0.07, 0.07), 0, 1);
+  const tidalActivity = clamp((1 / Math.max(0.2, base.orbitalDistanceAU)) * base.orbitalEccentricity * 0.32, 0, 0.45);
+  const geologicActivity = round(clamp(internalHeatScore * 0.8 + tidalActivity + rng.range(-0.12, 0.12), 0, 1), 2);
+  const internalHeat = heatLabel(internalHeatScore);
+
+  const rotationFactor = clamp(1 - (base.rotationHours / 300), 0, 1);
+  const dynamoScore = clamp(coreEffect * 0.45 + internalHeatScore * 0.32 + rotationFactor * 0.23 + rng.range(-0.08, 0.08), 0, 1);
+  const magneticState = magneticLabel(dynamoScore);
+
   return {
-    waterIce: parseFloat(rng.range(0, 40).toFixed(1)),
-    co2Ice: parseFloat(rng.range(0, 20).toFixed(1)),
-    carbonaceousVolatiles: parseFloat(rng.range(0, 10).toFixed(1)),
-    sulfurousVolatiles: parseFloat(rng.range(0, 5).toFixed(1)),
+    geologicActivity,
+    internalHeat,
+    magneticState,
   };
+}
+
+function heatLabel(score) {
+  if (score < 0.2) return 'Very Low';
+  if (score < 0.4) return 'Low';
+  if (score < 0.65) return 'Moderate';
+  if (score < 0.85) return 'High';
+  return 'Extreme';
+}
+
+function magneticLabel(score) {
+  if (score < 0.15) return 'None';
+  if (score < 0.35) return 'Weak';
+  if (score < 0.6) return 'Moderate';
+  if (score < 0.82) return 'Strong';
+  return 'Extreme';
+}
+
+function deriveExteriorState(bulkMatter, thermal, atmosphere, activeState, rng) {
+  const greenhouseGasPercent = (atmosphere.composition.CO2 || 0) + (atmosphere.composition.CH4 || 0) + (atmosphere.composition.H2O || 0) * 0.5;
+  const greenhouseAdj = atmosphere.pressureBar > 0
+    ? atmosphere.pressureBar * 9.5 * (greenhouseGasPercent / 100)
+    : 0;
+  const meanTemperatureK = round(thermal.equilibriumTemperatureK + greenhouseAdj, 1);
+  const surfaceState = chooseSurfaceState(meanTemperatureK, atmosphere, bulkMatter.volatileInventory, activeState.geologicActivity, rng);
+  const biosphereEligible = canHaveBiosphere(meanTemperatureK, bulkMatter.volatileInventory, atmosphere);
+  const biosphereChance = clamp(
+    0.35 +
+      (atmosphere.pressureBar > 0.5 ? 0.2 : 0) +
+      (bulkMatter.volatileInventory.waterIce > 8 ? 0.25 : 0) -
+      (activeState.geologicActivity > 0.9 ? 0.12 : 0),
+    0.1,
+    0.85
+  );
+  const biospherePresent = biosphereEligible && rng.random() < biosphereChance;
+
+  return { meanTemperatureK, surfaceState, biospherePresent };
+}
+
+function classifyPlanetType(planet) {
+  const waterVol = planet.bulkComposition.waterVolatiles || 0;
+  const iron = planet.bulkComposition.ironMetals || 0;
+  const silicates = planet.bulkComposition.silicates || 0;
+  const carbon = planet.bulkComposition.carbonCompounds || 0;
+
+  if (planet.atmosphere.pressureBar < 0.01 && planet.meanTemperatureK < 220 && waterVol > 20) return 'Ice-Rich';
+  if (planet.atmosphere.pressureBar > 0.2 && waterVol > 16 && planet.meanTemperatureK >= 258 && planet.meanTemperatureK <= 340) return 'Ocean-Rich';
+  if (planet.meanTemperatureK > 450 && planet.atmosphere.pressureBar > 0.15) return 'Greenhouse';
+  if (planet.geologicActivity > 0.72 && planet.internalHeat !== 'Low' && planet.internalHeat !== 'Very Low') return 'Volcanic';
+  if (planet.atmosphere.pressureBar < 0.01 && iron > 38) return 'Iron-Rich';
+  if (carbon > 20) return 'Carbon-Rich';
+  if (silicates > 64 && waterVol < 10) return 'Silicate-Rich';
+  if (planet.atmosphere.pressureBar < 0.03 || waterVol < 8) return 'Arid';
+  if (planet.meanTemperatureK >= 255 && planet.meanTemperatureK <= 330 && planet.atmosphere.pressureBar >= 0.2) return 'Temperate';
+  return 'Rocky';
 }
 
 export function generatePlanet(seedInput) {
-  const seedStr = String(seedInput ?? Math.floor(Math.random() * 1e9));
+  const seedStr = String(seedInput ?? 'default-seed');
   const numericSeed = hashSeed(seedStr);
   const rng = createRNG(numericSeed);
-
-  // Pick planet type
-  const pt = rng.pick(PLANET_TYPES);
   const name = rng.pick(PLANET_NAMES);
 
-  // Orbital
-  const orbitalDistanceAU = parseFloat(rng.range(0.3, 2.5).toFixed(3));
-  const orbitalEccentricity = parseFloat(rng.range(0, 0.35).toFixed(3));
-
-  // Mass & radius (Earth units)
-  const massEarth = parseFloat(rng.range(0.1, 4.0).toFixed(3));
-  const compositionModifier = 0.85 + (pt.compositionProfile.ironMetals / 100) * 0.3;
-  const radiusEarth = parseFloat((Math.pow(massEarth, 0.27) * compositionModifier).toFixed(3));
-
-  // Derived
-  const gravityG = parseFloat((massEarth / (radiusEarth * radiusEarth)).toFixed(3));
-  const escapeVelocityKmS = parseFloat((11.186 * Math.sqrt(massEarth / radiusEarth)).toFixed(3));
-  const volumeEarth = (4 / 3) * Math.PI * Math.pow(radiusEarth, 3);
-  const meanDensity = parseFloat((massEarth / volumeEarth * 5.51).toFixed(2)); // g/cm³ (Earth = 5.51)
-
-  // Temperature
-  const albedoMod = 1 + (pt.compositionProfile.waterVolatiles - 10) * 0.005;
-  const equilibriumTemperatureK = parseFloat(((278 / Math.sqrt(orbitalDistanceAU)) * albedoMod).toFixed(1));
-  const atmosphere = generateAtmosphere(pt.type, rng, equilibriumTemperatureK);
-  const greenhouseAdj = atmosphere.pressureBar * 15 * (((atmosphere.composition.CO2 || 0) + (atmosphere.composition.CH4 || 0)) / 100);
-  const meanTemperatureK = parseFloat((equilibriumTemperatureK + greenhouseAdj).toFixed(1));
-
-  const rotationHours = parseFloat(rng.range(8, 120).toFixed(1));
-  const axialTiltDegrees = parseFloat(rng.range(0, 45).toFixed(1));
-
-  // Interior structure
-  const coreFrac = parseFloat(rng.range(0.15, 0.40).toFixed(3));
-  const deepFrac = parseFloat(rng.range(0.30, 0.55).toFixed(3));
-  const envFrac = parseFloat((1 - coreFrac - deepFrac).toFixed(3));
-
-  // Ensure fractions sum to 1 (float correction)
-  const fracSum = coreFrac + deepFrac + envFrac;
-  const correctedCore = parseFloat((coreFrac + (1 - fracSum)).toFixed(3));
-
-  // Geologic & magnetic
-  const geologicActivity = parseFloat(rng.range(0, 1).toFixed(2));
-  const internalHeat = rng.pick(['Low', 'Moderate', 'High', 'Extreme']);
-  const magneticState = rng.pick(['None', 'Weak', 'Moderate', 'Strong', 'Extreme']);
-
-  // Surface state
-  const surfaceState = chooseSurfaceState(meanTemperatureK, atmosphere.pressureBar, pt, rng);
-
-  // Bulk composition
-  const bulkComposition = normaliseToHundred({ ...pt.compositionProfile });
-
-  // Volatile inventory
-  const volatileInventory = generateVolatileInventory(rng, pt.type);
-
-  // Biosphere
-  const biospherePresent = canHaveBiosphere(meanTemperatureK, volatileInventory, atmosphere) && rng.random() > 0.45;
+  // A. Base state
+  const base = generateBaseState(rng);
+  // B. Bulk matter
+  const bulkMatter = generateBulkMatter(base, rng);
+  // C. Thermal environment
+  const thermal = generateThermalEnvironment(base, bulkMatter, rng);
+  // D. Interior partitioning
+  const structure = generateInteriorStructure(base, bulkMatter, thermal, rng);
+  // E. Physical dimensions
+  const dimensions = derivePhysicalDimensions(base, bulkMatter, structure);
+  // F. Atmosphere
+  const atmosphere = generateAtmosphere(base, bulkMatter, thermal, dimensions, rng);
+  // G. Active state
+  const activeState = generateActiveState(base, structure, rng);
+  // H. Exterior state
+  const exterior = deriveExteriorState(bulkMatter, thermal, atmosphere, activeState, rng);
 
   // Assemble planet (without regions first for biosphere reference)
   const planet = {
     id: `planet-${numericSeed}`,
     seed: seedStr,
     name,
-    planetType: pt.type,
+    planetType: 'Rocky',
 
-    orbitalDistanceAU,
-    orbitalEccentricity,
+    orbitalDistanceAU: base.orbitalDistanceAU,
+    orbitalEccentricity: base.orbitalEccentricity,
 
-    massEarth,
-    radiusEarth,
-    meanDensity,
-    gravityG,
-    escapeVelocityKmS,
+    massEarth: base.massEarth,
+    radiusEarth: dimensions.radiusEarth,
+    meanDensity: dimensions.meanDensity,
+    gravityG: dimensions.gravityG,
+    escapeVelocityKmS: dimensions.escapeVelocityKmS,
 
-    rotationHours,
-    axialTiltDegrees,
+    rotationHours: base.rotationHours,
+    axialTiltDegrees: base.axialTiltDegrees,
 
-    bulkComposition,
-    volatileInventory,
+    bulkComposition: bulkMatter.bulkComposition,
+    volatileInventory: bulkMatter.volatileInventory,
 
-    coreMassFraction: correctedCore,
-    deepInteriorMassFraction: deepFrac,
-    envelopeMassFraction: envFrac,
+    coreMassFraction: structure.coreMassFraction,
+    deepInteriorMassFraction: structure.deepInteriorMassFraction,
+    envelopeMassFraction: structure.envelopeMassFraction,
 
-    equilibriumTemperatureK,
-    meanTemperatureK,
+    equilibriumTemperatureK: thermal.equilibriumTemperatureK,
+    meanTemperatureK: exterior.meanTemperatureK,
     atmosphere,
-    surfaceState,
+    surfaceState: exterior.surfaceState,
 
-    internalHeat,
-    geologicActivity,
-    magneticState,
+    internalHeat: activeState.internalHeat,
+    geologicActivity: activeState.geologicActivity,
+    magneticState: activeState.magneticState,
 
-    biospherePresent,
+    biospherePresent: exterior.biospherePresent,
 
     regions: [],
   };
+
+  planet.planetType = classifyPlanetType(planet);
 
   // Generate regions
   planet.regions = generateRegions(planet, rng);
@@ -178,14 +347,21 @@ export function generatePlanet(seedInput) {
   return planet;
 }
 
-function chooseSurfaceState(tempK, pressureBar, pt, rng) {
+function chooseSurfaceState(tempK, atmosphere, volatileInventory, geologicActivity, rng) {
+  const pressureBar = atmosphere?.pressureBar || 0;
+  const waterVol = volatileInventory?.waterIce || 0;
+
   if (tempK > 700) return 'Molten / Extreme Heat';
-  if (tempK < 150) return 'Frozen / Deep Cryogenic';
-  if (tempK < 273) return 'Frozen';
-  if (tempK > 373 && pressureBar < 0.1) return 'Dry / High Temperature';
-  if (pt.type === 'Ocean-Rich' || pt.type === 'Temperate') return rng.pick(['Liquid Water Present', 'Partial Ocean', 'Shallow Seas']);
-  if (pt.type === 'Ice-Rich') return 'Ice Sheets / Frozen';
-  if (pt.type === 'Volcanic') return 'Active Volcanism';
+  if (tempK < 145) return 'Frozen / Deep Cryogenic';
+  if (pressureBar < 0.01) {
+    if (tempK < 240 && waterVol > 8) return 'Airless Ice / Rock';
+    return tempK > 350 ? 'Airless Hot Rock' : 'Airless Rocky';
+  }
+  if (tempK < 255) return 'Frozen';
+  if (tempK > 373 && pressureBar < 0.2) return 'Dry / High Temperature';
+  if (waterVol > 15 && tempK >= 260 && tempK <= 350) return rng.pick(['Liquid Water Present', 'Partial Ocean', 'Shallow Seas']);
+  if (geologicActivity > 0.75 && tempK > 320) return 'Active Volcanism';
+  if (waterVol > 18 && tempK < 260) return 'Ice Sheets / Frozen';
   return rng.pick(['Rocky', 'Arid', 'Semi-Arid', 'Mixed Terrain']);
 }
 
@@ -193,7 +369,8 @@ function canHaveBiosphere(tempK, volatileInventory, atmosphere) {
   const tempOk = tempK > 250 && tempK < 360;
   const waterOk = (volatileInventory.waterIce || 0) > 5;
   const atmoOk = (atmosphere?.pressureBar || 0) > 0.1;
-  return tempOk && waterOk && atmoOk;
+  const chemistryOk = ((atmosphere?.composition?.SO2 || 0) < 15);
+  return tempOk && waterOk && atmoOk && chemistryOk;
 }
 
 // ---- Validation ----
@@ -216,7 +393,7 @@ function validatePlanet(planet) {
   checkNumeric(planet, 'planet');
 
   // Non-negative
-  const nonNeg = ['massEarth', 'radiusEarth', 'gravityG', 'escapeVelocityKmS', 'meanDensity', 'equilibriumTemperatureK'];
+  const nonNeg = ['massEarth', 'radiusEarth', 'gravityG', 'escapeVelocityKmS', 'meanDensity', 'equilibriumTemperatureK', 'meanTemperatureK'];
   for (const f of nonNeg) {
     if (planet[f] < 0) errors.push(`Negative ${f}: ${planet[f]}`);
   }
@@ -231,8 +408,14 @@ function validatePlanet(planet) {
 
   // Atmosphere composition ~100
   if (planet.atmosphere) {
-    const atmoSum = Object.values(planet.atmosphere.composition).reduce((a, b) => a + b, 0);
-    if (Math.abs(atmoSum - 100) > 1) errors.push(`Atmosphere composition sums to ${atmoSum}`);
+    const atmoComp = planet.atmosphere.composition || {};
+    const atmoSum = Object.values(atmoComp).reduce((a, b) => a + b, 0);
+    if ((planet.atmosphere.pressureBar || 0) > 0.001 && Math.abs(atmoSum - 100) > 1) {
+      errors.push(`Atmosphere composition sums to ${atmoSum}`);
+    }
+    if ((planet.atmosphere.pressureBar || 0) <= 0.001 && atmoSum > 0.01) {
+      errors.push(`Airless atmosphere should not have composition sum ${atmoSum}`);
+    }
   }
 
   // Region areas ~100
