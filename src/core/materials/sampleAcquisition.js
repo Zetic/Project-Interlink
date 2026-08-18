@@ -2,6 +2,8 @@ import { allocateNextMaterialBatchId, createMaterialBatch } from './materialBatc
 
 const DEFAULT_SAMPLE_MASS_KG = 10;
 const MIN_SAMPLE_MASS_KG = 0.1;
+// Prototype approximation for freshly acquired run-of-occurrence material.
+const DEFAULT_INITIAL_PARTICLE_SIZE_MM = 80;
 
 function assertSampleMassKg(sampleMassKg) {
   if (typeof sampleMassKg !== 'number' || Number.isNaN(sampleMassKg) || !Number.isFinite(sampleMassKg)) {
@@ -59,6 +61,12 @@ export function acquireSampleFromOccurrence(world, occurrenceId, sampleMassKg = 
     id: allocateNextMaterialBatchId(world),
     sourceOccurrenceId: occurrence.id,
     resourceId: occurrence.resourceId,
+    particleSizeMm: DEFAULT_INITIAL_PARTICLE_SIZE_MM,
+    provenance: {
+      sourceOccurrenceIds: [occurrence.id],
+      sourceBatchIds: [],
+      createdByProcessRunId: null,
+    },
     status: 'available',
     componentsKg: compositionToComponentsKg(occurrence.composition, sampleMassKg),
   });
@@ -67,4 +75,4 @@ export function acquireSampleFromOccurrence(world, occurrenceId, sampleMassKg = 
   return batch;
 }
 
-export { DEFAULT_SAMPLE_MASS_KG, MIN_SAMPLE_MASS_KG };
+export { DEFAULT_SAMPLE_MASS_KG, MIN_SAMPLE_MASS_KG, DEFAULT_INITIAL_PARTICLE_SIZE_MM };

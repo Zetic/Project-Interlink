@@ -9,6 +9,49 @@ function assertFiniteNonNegativeNumber(value, label) {
   }
 }
 
+function assertParticleSizeMm(value) {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+    throw new Error('particleSizeMm must be a finite number');
+  }
+  if (value <= 0) {
+    throw new Error('particleSizeMm must be greater than zero');
+  }
+}
+
+function normalizeStringIdArray(value, label) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
+
+  const seen = new Set();
+  const normalized = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'string') {
+      throw new Error(`${label} entries must be non-empty strings`);
+    }
+    if (seen.has(item)) continue;
+    seen.add(item);
+    normalized.push(item);
+  }
+  return normalized;
+}
+
+export function normalizeMaterialProvenance(provenance = {}) {
+  if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)) {
+    throw new Error('provenance must be an object');
+  }
+
+  const createdByProcessRunId = provenance.createdByProcessRunId ?? null;
+  if (createdByProcessRunId != null && (typeof createdByProcessRunId !== 'string' || !createdByProcessRunId)) {
+    throw new Error('provenance.createdByProcessRunId must be a non-empty string when provided');
+  }
+
+  return {
+    sourceOccurrenceIds: normalizeStringIdArray(provenance.sourceOccurrenceIds, 'provenance.sourceOccurrenceIds'),
+    sourceBatchIds: normalizeStringIdArray(provenance.sourceBatchIds, 'provenance.sourceBatchIds'),
+    createdByProcessRunId,
+  };
+}
+
 export function roundKg(value) {
   return parseFloat(value.toFixed(6));
 }
@@ -34,19 +77,25 @@ export function validateComponentsKg(componentsKg) {
 
 export function createMaterialBatch({
   id,
-  sourceOccurrenceId,
-  resourceId,
+  sourceOccurrenceId = null,
+  resourceId = null,
+  particleSizeMm,
+  provenance = {},
   status = 'available',
   componentsKg,
 }) {
   if (!id || typeof id !== 'string') throw new Error('Material batch id must be a non-empty string');
-  if (!sourceOccurrenceId || typeof sourceOccurrenceId !== 'string') {
-    throw new Error('sourceOccurrenceId must be a non-empty string');
+  if (sourceOccurrenceId != null && (typeof sourceOccurrenceId !== 'string' || !sourceOccurrenceId)) {
+    throw new Error('sourceOccurrenceId must be a non-empty string when provided');
   }
-  if (!resourceId || typeof resourceId !== 'string') throw new Error('resourceId must be a non-empty string');
+  if (resourceId != null && (typeof resourceId !== 'string' || !resourceId)) {
+    throw new Error('resourceId must be a non-empty string when provided');
+  }
   if (!['available', 'consumed'].includes(status)) throw new Error(`Unsupported batch status '${status}'`);
+  assertParticleSizeMm(particleSizeMm);
 
   validateComponentsKg(componentsKg);
+  const normalizedProvenance = normalizeMaterialProvenance(provenance);
 
   const normalizedComponentsKg = {};
   for (const [componentId, massKg] of Object.entries(componentsKg)) {
@@ -58,8 +107,10 @@ export function createMaterialBatch({
 
   return {
     id,
-    sourceOccurrenceId,
+    sourceOccurrenceId: sourceOccurrenceId ?? normalizedProvenance.sourceOccurrenceIds[0] ?? null,
     resourceId,
+    particleSizeMm: parseFloat(particleSizeMm.toFixed(3)),
+    provenance: normalizedProvenance,
     status,
     totalMassKg,
     componentsKg: normalizedComponentsKg,

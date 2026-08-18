@@ -162,9 +162,34 @@ export function validateWorld(world) {
 
   // Material batch references and physical invariants
   for (const [bid, batch] of Object.entries(world.materialBatches ?? {})) {
-    if (!world.resourceOccurrences[batch.sourceOccurrenceId]) {
+    if (batch.sourceOccurrenceId && !world.resourceOccurrences[batch.sourceOccurrenceId]) {
       errors.push(`Material batch '${bid}' references unknown source occurrence '${batch.sourceOccurrenceId}'`);
     }
+
+    if (!batch.provenance || typeof batch.provenance !== 'object') {
+      errors.push(`Material batch '${bid}' is missing provenance object`);
+    } else {
+      for (const occurrenceId of (batch.provenance.sourceOccurrenceIds ?? [])) {
+        if (!world.resourceOccurrences[occurrenceId]) {
+          errors.push(`Material batch '${bid}' provenance references unknown source occurrence '${occurrenceId}'`);
+        }
+      }
+      for (const sourceBatchId of (batch.provenance.sourceBatchIds ?? [])) {
+        if (!world.materialBatches[sourceBatchId]) {
+          errors.push(`Material batch '${bid}' provenance references unknown source batch '${sourceBatchId}'`);
+        }
+      }
+      if (batch.provenance.createdByProcessRunId && !world.processResults?.[batch.provenance.createdByProcessRunId]) {
+        errors.push(
+          `Material batch '${bid}' provenance references unknown process run '${batch.provenance.createdByProcessRunId}'`
+        );
+      }
+    }
+
+    if (typeof batch.particleSizeMm !== 'number' || Number.isNaN(batch.particleSizeMm) || !Number.isFinite(batch.particleSizeMm) || batch.particleSizeMm <= 0) {
+      errors.push(`Material batch '${bid}' has invalid particleSizeMm '${batch.particleSizeMm}'`);
+    }
+
     if (!batch.componentsKg || typeof batch.componentsKg !== 'object') {
       errors.push(`Material batch '${bid}' is missing componentsKg`);
       continue;
@@ -195,7 +220,11 @@ export function validateWorld(world) {
 
   // Process result references
   for (const [runId, result] of Object.entries(world.processResults ?? {})) {
-    for (const inputBatchId of (result.inputBatchIds ?? [])) {
+    for (const inputBinding of (result.inputBindings ?? [])) {
+      const inputBatchId = inputBinding?.batchId;
+      if (!inputBinding?.inputId || typeof inputBinding.inputId !== 'string') {
+        errors.push(`Process result '${runId}' has invalid input binding id`);
+      }
       if (!world.materialBatches[inputBatchId]) {
         errors.push(`Process result '${runId}' references unknown input batch '${inputBatchId}'`);
       }

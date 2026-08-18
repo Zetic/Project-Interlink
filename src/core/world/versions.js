@@ -7,7 +7,7 @@
  *                     way that intentionally alters outputs for the same seed.
  */
 
-// Schema v3: adds world.materialBatches and world.processResults for playable processing state
+// Schema v4: adds material provenance/particle size and explicit process input bindings
 // Generator v2: feature physical states and resources are constrained by feature type
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const GENERATOR_VERSION = 2;

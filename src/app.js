@@ -20,7 +20,7 @@ import {
 import { rngFor } from './generator/random.js';
 import { acquireSampleFromOccurrence, DEFAULT_SAMPLE_MASS_KG } from './core/materials/sampleAcquisition.js';
 import { componentsPercent } from './core/materials/materialBatches.js';
-import { listProcessDefinitions, MAGNETIC_SEPARATION_PROCESS_ID } from './core/processes/processDefinitions.js';
+import { CRUSHING_PROCESS_ID, listProcessDefinitions } from './core/processes/processDefinitions.js';
 import { runProcessAndCommit } from './core/processes/processExecution.js';
 
 // ---------- Application state ----------
@@ -35,8 +35,8 @@ const uiState = {
   totalFeatureCount: 0,
   selectedOccurrenceId: null,
   selectedBatchId: null,
-  selectedProcessId: MAGNETIC_SEPARATION_PROCESS_ID,
-  fieldStrength: 0.6,
+  selectedProcessId: CRUSHING_PROCESS_ID,
+  processParametersByProcessId: {},
   lastProcessRunId: null,
   infoMessage: '',
   errorMessage: '',
@@ -55,6 +55,18 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function getProcessDefinitionById(processId) {
+  return listProcessDefinitions().find(proc => proc.id === processId) ?? null;
+}
+
+function initializeProcessParameterDefaults() {
+  for (const processDefinition of listProcessDefinitions()) {
+    uiState.processParametersByProcessId[processDefinition.id] = Object.fromEntries(
+      (processDefinition.parameters ?? []).map(parameter => [parameter.id, parameter.defaultValue])
+    );
+  }
 }
 
 // ---------- Rendering ----------
@@ -263,8 +275,9 @@ function renderBatches() {
         <td>${escHtml(batch.id)}</td>
         <td>${escHtml(batch.status)}</td>
         <td>${batch.totalMassKg.toFixed(4)}</td>
-        <td>${escHtml(batch.sourceOccurrenceId)}</td>
-        <td>${escHtml(batch.resourceId)}</td>
+        <td>${batch.particleSizeMm.toFixed(2)}</td>
+        <td>${escHtml((batch.provenance?.sourceOccurrenceIds ?? []).join(', ') || '-')}</td>
+        <td>${escHtml(batch.resourceId ?? '-')}</td>
         <td>${analyzed}</td>
       </tr>
     `;
@@ -277,7 +290,8 @@ function renderBatches() {
           <th>Batch</th>
           <th>Status</th>
           <th>Total kg</th>
-          <th>Source Occurrence</th>
+          <th>Particle (mm)</th>
+          <th>Source Occurrences</th>
           <th>Resource</th>
           <th>Analyzed</th>
         </tr>
@@ -305,6 +319,10 @@ function renderLatestProcessResult() {
     `;
   }).join('');
 
+  const parameterRows = Object.entries(result.parameters ?? {})
+    .map(([parameterId, value]) => `<div><strong>${escHtml(parameterId)}:</strong> ${Number(value).toFixed(3)}</div>`)
+    .join('');
+
   const outputDetails = result.outputBatches.map(output => {
     const batch = world.materialBatches[output.batchId];
     if (!batch) {
@@ -328,6 +346,7 @@ function renderLatestProcessResult() {
     return `
       <div class="batch-detail">
         <div><strong>${escHtml(output.outputId)}</strong> &mdash; ${escHtml(output.batchId)}</div>
+        <div><strong>Particle Size:</strong> ${batch.particleSizeMm.toFixed(2)} mm</div>
         ${renderBatchComponentTable(batch)}
       </div>
     `;
@@ -336,8 +355,8 @@ function renderLatestProcessResult() {
   return `
     <div class="process-result">
       <div><strong>Process:</strong> ${escHtml(result.processId)}</div>
-      <div><strong>Input Batch:</strong> ${escHtml(result.inputBatchIds.join(', '))}</div>
-      <div><strong>Field Strength:</strong> ${result.parameters.fieldStrength.toFixed(2)}</div>
+      <div><strong>Input Bindings:</strong> ${escHtml((result.inputBindings ?? []).map(binding => `${binding.inputId}: ${binding.batchId}`).join(', '))}</div>
+      ${parameterRows}
       <div><strong>Mass In:</strong> ${result.metrics.massInKg.toFixed(6)} kg</div>
       <div><strong>Mass Out:</strong> ${result.metrics.massOutKg.toFixed(6)} kg</div>
       <div><strong>Balance Error:</strong> ${result.metrics.balanceErrorKg.toFixed(6)} kg</div>
@@ -369,6 +388,7 @@ function renderSelectedBatchAnalysis() {
         <div><strong>Batch:</strong> ${escHtml(batch.id)} &mdash; not analyzed yet.</div>
         <div><strong>Status:</strong> ${escHtml(batch.status)}</div>
         <div><strong>Total Mass:</strong> ${batch.totalMassKg.toFixed(4)} kg</div>
+        <div><strong>Particle Size:</strong> ${batch.particleSizeMm.toFixed(2)} mm</div>
         <div class="inline-note">Run analysis to reveal constituent composition.</div>
       </div>
     `;
@@ -385,6 +405,8 @@ function renderSelectedBatchAnalysis() {
   return `
     <div>
       <div><strong>Analyzed Batch:</strong> ${escHtml(batch.id)}</div>
+      <div><strong>Particle Size:</strong> ${batch.particleSizeMm.toFixed(2)} mm</div>
+      <div><strong>Provenance (occurrences):</strong> ${escHtml((batch.provenance?.sourceOccurrenceIds ?? []).join(', ') || '-')}</div>
       <div><strong>Analysis Order:</strong> ${analysis.analysisOrdinal}</div>
       <table class="matrix-table">
         <thead>
@@ -434,6 +456,23 @@ function renderProcessingSection() {
   const processOptionsHtml = listProcessDefinitions().map(proc => `
     <option value="${escHtml(proc.id)}" ${uiState.selectedProcessId === proc.id ? 'selected' : ''}>${escHtml(proc.name)}</option>
   `).join('');
+  const selectedProcessDefinition = getProcessDefinitionById(uiState.selectedProcessId);
+  const selectedProcessParameters = uiState.processParametersByProcessId[uiState.selectedProcessId] ?? {};
+  const processParameterControlsHtml = (selectedProcessDefinition?.parameters ?? []).map(parameter => {
+    const value = selectedProcessParameters[parameter.id] ?? parameter.defaultValue;
+    return `
+      <label for="process-param-${escHtml(parameter.id)}">${escHtml(parameter.id)}:</label>
+      <input
+        id="process-param-${escHtml(parameter.id)}"
+        data-process-param-id="${escHtml(parameter.id)}"
+        type="number"
+        min="${parameter.min}"
+        max="${parameter.max}"
+        step="0.1"
+        value="${value}"
+      >
+    `;
+  }).join('');
 
   const batchOptionsHtml = availableBatches.length === 0
     ? '<option value="">No available batches</option>'
@@ -466,8 +505,7 @@ function renderProcessingSection() {
         <h3>3) Run Process</h3>
         <label for="process-select">Process:</label>
         <select id="process-select">${processOptionsHtml}</select>
-        <label for="field-strength-input">Field Strength: <span id="field-strength-value">${uiState.fieldStrength.toFixed(2)}</span></label>
-        <input id="field-strength-input" type="range" min="0" max="1" step="0.05" value="${uiState.fieldStrength}">
+        ${processParameterControlsHtml}
         <button id="run-process-btn" ${availableBatches.length === 0 || !selectedBatchAnalyzed ? 'disabled' : ''}>Run Process</button>
         <div class="inline-note">${selectedBatchAnalyzed ? 'Selected batch is analyzed and ready for processing.' : 'Analyze the selected batch before processing.'}</div>
       </div>
@@ -497,7 +535,6 @@ function bindProcessingEventHandlers() {
   const occurrenceSelect = el('occurrence-select');
   const batchSelect = el('batch-select');
   const processSelect = el('process-select');
-  const fieldStrengthInput = el('field-strength-input');
 
   if (occurrenceSelect) {
     occurrenceSelect.addEventListener('change', () => {
@@ -521,14 +558,23 @@ function bindProcessingEventHandlers() {
       uiState.selectedProcessId = processSelect.value;
       uiState.errorMessage = '';
       uiState.infoMessage = '';
+      renderProcessingSection();
     });
   }
 
-  if (fieldStrengthInput) {
-    fieldStrengthInput.addEventListener('input', () => {
-      uiState.fieldStrength = parseFloat(fieldStrengthInput.value);
-      const valueEl = el('field-strength-value');
-      if (valueEl) valueEl.textContent = uiState.fieldStrength.toFixed(2);
+  const parameterInputs = document.querySelectorAll('[data-process-param-id]');
+  for (const input of parameterInputs) {
+    input.addEventListener('input', () => {
+      const parameterId = input.getAttribute('data-process-param-id');
+      if (!parameterId) return;
+
+      const numericValue = parseFloat(input.value);
+      if (!Number.isFinite(numericValue)) return;
+
+      if (!uiState.processParametersByProcessId[uiState.selectedProcessId]) {
+        uiState.processParametersByProcessId[uiState.selectedProcessId] = {};
+      }
+      uiState.processParametersByProcessId[uiState.selectedProcessId][parameterId] = numericValue;
     });
   }
 
@@ -559,8 +605,9 @@ function onGeneratePlanet() {
 
   uiState.selectedOccurrenceId = null;
   uiState.selectedBatchId = null;
-  uiState.selectedProcessId = MAGNETIC_SEPARATION_PROCESS_ID;
-  uiState.fieldStrength = 0.6;
+  uiState.selectedProcessId = CRUSHING_PROCESS_ID;
+  uiState.processParametersByProcessId = {};
+  initializeProcessParameterDefaults();
   uiState.lastProcessRunId = null;
   uiState.infoMessage = '';
   uiState.errorMessage = '';
@@ -656,7 +703,10 @@ function onRunProcess() {
       throw new Error('Analyze the selected batch before processing');
     }
 
-    const processResult = runProcessAndCommit(world, processId, batchId, { fieldStrength: uiState.fieldStrength });
+    const parameters = {
+      ...(uiState.processParametersByProcessId[processId] ?? {}),
+    };
+    const processResult = runProcessAndCommit(world, processId, { feed: batchId }, parameters);
 
     uiState.lastProcessRunId = processResult.id;
     uiState.selectedBatchId = processResult.outputBatches[0]?.batchId ?? null;
