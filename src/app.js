@@ -293,20 +293,34 @@ function renderLatestProcessResult() {
   const result = world.processResults[uiState.lastProcessRunId];
   if (!result) return '<em>No process run yet.</em>';
 
-  const outputRows = result.outputBatches.map(output => `
-    <tr>
-      <td>${escHtml(output.outputId)}</td>
-      <td>${escHtml(output.batchId)}</td>
-      <td>${output.batch.totalMassKg.toFixed(4)}</td>
-    </tr>
-  `).join('');
+  const outputRows = result.outputBatches.map(output => {
+    const batch = world.materialBatches[output.batchId];
+    const totalMassText = batch ? batch.totalMassKg.toFixed(4) : 'n/a';
+    return `
+      <tr>
+        <td>${escHtml(output.outputId)}</td>
+        <td>${escHtml(output.batchId)}</td>
+        <td>${totalMassText}</td>
+      </tr>
+    `;
+  }).join('');
 
-  const outputDetails = result.outputBatches.map(output => `
-    <div class="batch-detail">
-      <div><strong>${escHtml(output.outputId)}</strong> &mdash; ${escHtml(output.batchId)}</div>
-      ${renderBatchComponentTable(output.batch)}
-    </div>
-  `).join('');
+  const outputDetails = result.outputBatches.map(output => {
+    const batch = world.materialBatches[output.batchId];
+    if (!batch) {
+      return `
+        <div class="batch-detail">
+          <div><strong>${escHtml(output.outputId)}</strong> &mdash; ${escHtml(output.batchId)} (missing batch reference)</div>
+        </div>
+      `;
+    }
+    return `
+      <div class="batch-detail">
+        <div><strong>${escHtml(output.outputId)}</strong> &mdash; ${escHtml(output.batchId)}</div>
+        ${renderBatchComponentTable(batch)}
+      </div>
+    `;
+  }).join('');
 
   return `
     <div class="process-result">
@@ -342,7 +356,9 @@ function renderSelectedBatchAnalysis() {
     return `
       <div>
         <div><strong>Batch:</strong> ${escHtml(batch.id)} &mdash; not analyzed yet.</div>
-        ${renderBatchComponentTable(batch)}
+        <div><strong>Status:</strong> ${escHtml(batch.status)}</div>
+        <div><strong>Total Mass:</strong> ${batch.totalMassKg.toFixed(4)} kg</div>
+        <div class="inline-note">Run analysis to reveal constituent composition.</div>
       </div>
     `;
   }

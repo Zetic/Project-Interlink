@@ -1,4 +1,4 @@
-import { createMaterialBatch } from './materialBatches.js';
+import { allocateNextMaterialBatchId, createMaterialBatch } from './materialBatches.js';
 
 const DEFAULT_SAMPLE_MASS_KG = 10;
 
@@ -40,11 +40,6 @@ function compositionToComponentsKg(compositionPercent, sampleMassKg) {
   return componentsKg;
 }
 
-function nextBatchId(world) {
-  const ordinal = world.nextMaterialBatchOrdinal;
-  world.nextMaterialBatchOrdinal += 1;
-  return `batch-${ordinal}`;
-}
 
 export function acquireSampleFromOccurrence(world, occurrenceId, sampleMassKg = DEFAULT_SAMPLE_MASS_KG) {
   if (!world?.resourceOccurrences) throw new Error('World resource occurrences map is required');
@@ -60,7 +55,7 @@ export function acquireSampleFromOccurrence(world, occurrenceId, sampleMassKg = 
   }
 
   const batch = createMaterialBatch({
-    id: nextBatchId(world),
+    id: allocateNextMaterialBatchId(world),
     sourceOccurrenceId: occurrence.id,
     resourceId: occurrence.resourceId,
     status: 'available',

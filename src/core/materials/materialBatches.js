@@ -9,7 +9,7 @@ function assertFiniteNonNegativeNumber(value, label) {
   }
 }
 
-function roundKg(value) {
+export function roundKg(value) {
   return parseFloat(value.toFixed(6));
 }
 
@@ -82,6 +82,15 @@ export function componentsPercent(componentsKg) {
 
 export function isMaterialBatchAvailable(batch) {
   return batch?.status === 'available';
+}
+
+export function allocateNextMaterialBatchId(world) {
+  if (!world || typeof world.nextMaterialBatchOrdinal !== 'number') {
+    throw new Error('World nextMaterialBatchOrdinal counter is required');
+  }
+  const ordinal = world.nextMaterialBatchOrdinal;
+  world.nextMaterialBatchOrdinal += 1;
+  return `batch-${ordinal}`;
 }
 
 export { MASS_TOLERANCE_KG };

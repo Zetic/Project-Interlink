@@ -1,6 +1,8 @@
 import {
   MASS_TOLERANCE_KG,
+  allocateNextMaterialBatchId,
   createMaterialBatch,
+  roundKg,
   sumComponentMassKg,
   validateComponentsKg,
   isMaterialBatchAvailable,
@@ -18,9 +20,6 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function roundKg(value) {
-  return parseFloat(value.toFixed(6));
-}
 
 function nextProcessRunId(world) {
   const ordinal = world.nextProcessRunOrdinal;
@@ -28,11 +27,6 @@ function nextProcessRunId(world) {
   return `process-run-${ordinal}`;
 }
 
-function nextBatchId(world) {
-  const ordinal = world.nextMaterialBatchOrdinal;
-  world.nextMaterialBatchOrdinal += 1;
-  return `batch-${ordinal}`;
-}
 
 function assertParameterWithinRange(parameterDefinition, value) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
@@ -69,11 +63,6 @@ function validateInputBatchForProcess(processDefinition, inputBatch) {
     );
   }
 
-  for (const componentId of Object.keys(inputBatch.componentsKg)) {
-    if (!MAGNETIC_RESPONSE_BY_COMPONENT[componentId]) {
-      throw new Error(`Process '${processDefinition.id}' does not support component '${componentId}'`);
-    }
-  }
 }
 
 function buildOutputComponents(inputComponentsKg, fieldStrength) {
@@ -103,6 +92,12 @@ export function executeProcess(processDefinition, inputBatch, parameters = {}) {
 
   if (processDefinition.id !== MAGNETIC_SEPARATION_PROCESS_ID) {
     throw new Error(`Execution for process '${processDefinition.id}' is not implemented`);
+  }
+
+  for (const componentId of Object.keys(inputBatch.componentsKg)) {
+    if (!MAGNETIC_RESPONSE_BY_COMPONENT[componentId]) {
+      throw new Error(`Process '${processDefinition.id}' does not support component '${componentId}'`);
+    }
   }
 
   const { fieldStrength } = normalizedParameters;
@@ -147,9 +142,9 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
   inputBatch.status = 'consumed';
   inputBatch.consumedByProcessRunId = runId;
 
-  const outputBatches = executionResult.outputPortBatches.map(output => {
+  const runtimeOutputBatches = executionResult.outputPortBatches.map(output => {
     const outputBatch = createMaterialBatch({
-      id: nextBatchId(world),
+      id: allocateNextMaterialBatchId(world),
       sourceOccurrenceId: inputBatch.sourceOccurrenceId,
       resourceId: inputBatch.resourceId,
       status: 'available',
@@ -165,15 +160,21 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
     };
   });
 
-  const processResult = {
+  const storedProcessResult = {
     id: runId,
     processId,
     inputBatchIds: [inputBatch.id],
-    outputBatches,
+    outputBatches: runtimeOutputBatches.map(output => ({
+      outputId: output.outputId,
+      batchId: output.batchId,
+    })),
     parameters: executionResult.parameters,
     metrics: executionResult.metrics,
   };
 
-  world.processResults[runId] = processResult;
-  return processResult;
+  world.processResults[runId] = storedProcessResult;
+  return {
+    ...storedProcessResult,
+    outputBatches: runtimeOutputBatches,
+  };
 }
