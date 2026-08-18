@@ -1,6 +1,21 @@
 export const MAGNETIC_SEPARATION_PROCESS_ID = 'magnetic-separation';
+export const CRUSHING_PROCESS_ID = 'crushing';
 
 export const PROCESS_DEFINITIONS = {
+  [CRUSHING_PROCESS_ID]: {
+    id: CRUSHING_PROCESS_ID,
+    name: 'Crushing',
+    inputs: [{ id: 'feed', kind: 'material' }],
+    outputs: [{ id: 'product', kind: 'material' }],
+    parameters: [
+      {
+        id: 'targetParticleSizeMm',
+        min: 1,
+        max: 120,
+        defaultValue: 15,
+      },
+    ],
+  },
   [MAGNETIC_SEPARATION_PROCESS_ID]: {
     id: MAGNETIC_SEPARATION_PROCESS_ID,
     name: 'Magnetic Separation',
@@ -17,7 +32,8 @@ export const PROCESS_DEFINITIONS = {
         defaultValue: 0.6,
       },
     ],
-    supportedResourceIds: ['iron-ore'],
+    // Prototype approximation: feed above this size is too coarse to separate.
+    maxFeedParticleSizeMm: 25,
   },
 };
 

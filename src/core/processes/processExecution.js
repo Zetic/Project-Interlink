@@ -6,7 +6,11 @@ import {
   validateComponentsKg,
   isMaterialBatchAvailable,
 } from '../materials/materialBatches.js';
-import { getProcessDefinition, MAGNETIC_SEPARATION_PROCESS_ID } from './processDefinitions.js';
+import {
+  CRUSHING_PROCESS_ID,
+  getProcessDefinition,
+  MAGNETIC_SEPARATION_PROCESS_ID,
+} from './processDefinitions.js';
 
 const MAGNETIC_RESPONSE_BY_COMPONENT = {
   magnetite: { baseRecovery: 0.2, variableRecovery: 0.75 },
@@ -40,8 +44,21 @@ function assertParameterWithinRange(parameterDefinition, value) {
 }
 
 export function validateProcessParameters(processDefinition, parameters = {}) {
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
+    throw new Error('Process parameters must be an object keyed by parameter id');
+  }
+
+  const parameterDefinitions = processDefinition.parameters ?? [];
+  const definedParameterIds = new Set(parameterDefinitions.map(parameter => parameter.id));
+
+  for (const providedParameterId of Object.keys(parameters)) {
+    if (!definedParameterIds.has(providedParameterId)) {
+      throw new Error(`Unknown process parameter '${providedParameterId}' for process '${processDefinition.id}'`);
+    }
+  }
+
   const normalized = {};
-  for (const parameterDefinition of processDefinition.parameters ?? []) {
+  for (const parameterDefinition of parameterDefinitions) {
     const providedValue = parameters[parameterDefinition.id] ?? parameterDefinition.defaultValue;
     assertParameterWithinRange(parameterDefinition, providedValue);
     normalized[parameterDefinition.id] = providedValue;
@@ -49,18 +66,97 @@ export function validateProcessParameters(processDefinition, parameters = {}) {
   return normalized;
 }
 
-function validateInputBatchForProcess(processDefinition, inputBatch) {
-  if (!inputBatch) throw new Error('Input batch is required');
-  if (!isMaterialBatchAvailable(inputBatch)) {
-    throw new Error(`Input batch '${inputBatch?.id}' is not available for processing`);
+function validateInputBindings(processDefinition, inputBindings) {
+  if (!inputBindings || typeof inputBindings !== 'object' || Array.isArray(inputBindings)) {
+    throw new Error('inputBindings must be an object keyed by input port id');
   }
 
-  validateComponentsKg(inputBatch.componentsKg);
+  const requiredInputIds = (processDefinition.inputs ?? []).map(input => input.id);
 
-  if (processDefinition.supportedResourceIds && !processDefinition.supportedResourceIds.includes(inputBatch.resourceId)) {
-    throw new Error(
-      `Process '${processDefinition.id}' does not support resource '${inputBatch.resourceId}'`
-    );
+  for (const inputId of requiredInputIds) {
+    const batchId = inputBindings[inputId];
+    if (!batchId || typeof batchId !== 'string') {
+      throw new Error(`Missing required input binding '${inputId}'`);
+    }
+  }
+
+  for (const providedInputId of Object.keys(inputBindings)) {
+    if (!requiredInputIds.includes(providedInputId)) {
+      throw new Error(`Unknown input binding '${providedInputId}' for process '${processDefinition.id}'`);
+    }
+  }
+
+  const boundBatchIds = requiredInputIds.map(inputId => inputBindings[inputId]);
+  if (new Set(boundBatchIds).size !== boundBatchIds.length) {
+    throw new Error(`Process '${processDefinition.id}' cannot bind the same physical batch to multiple input ports`);
+  }
+}
+
+function resolveInputBatches(world, processDefinition, inputBindings) {
+  validateInputBindings(processDefinition, inputBindings);
+
+  const resolved = {};
+  for (const input of processDefinition.inputs ?? []) {
+    const batchId = inputBindings[input.id];
+    const inputBatch = world.materialBatches[batchId];
+    if (!inputBatch) {
+      throw new Error(`Unknown input batch '${batchId}' for input '${input.id}'`);
+    }
+    if (!isMaterialBatchAvailable(inputBatch)) {
+      throw new Error(`Input batch '${inputBatch.id}' is not available for processing`);
+    }
+    validateComponentsKg(inputBatch.componentsKg);
+    if (
+      typeof inputBatch.particleSizeMm !== 'number' ||
+      !Number.isFinite(inputBatch.particleSizeMm) ||
+      inputBatch.particleSizeMm <= 0
+    ) {
+      throw new Error(`Input batch '${inputBatch.id}' has invalid particle size`);
+    }
+    resolved[input.id] = inputBatch;
+  }
+
+  return resolved;
+}
+
+function validateOutputPortBatches(processDefinition, outputPortBatches) {
+  if (!Array.isArray(outputPortBatches)) {
+    throw new Error(`Process '${processDefinition.id}' executor must return outputPortBatches as an array`);
+  }
+
+  const expectedOutputIds = (processDefinition.outputs ?? []).map(output => output.id);
+  const expectedOutputIdSet = new Set(expectedOutputIds);
+  const seenOutputIds = new Set();
+
+  for (const output of outputPortBatches) {
+    if (!output || typeof output !== 'object' || Array.isArray(output)) {
+      throw new Error(`Process '${processDefinition.id}' returned an invalid output batch descriptor`);
+    }
+    if (!output.outputId || typeof output.outputId !== 'string') {
+      throw new Error(`Process '${processDefinition.id}' returned an output without a valid outputId`);
+    }
+    if (!expectedOutputIdSet.has(output.outputId)) {
+      throw new Error(`Process '${processDefinition.id}' returned unexpected output port '${output.outputId}'`);
+    }
+    if (seenOutputIds.has(output.outputId)) {
+      throw new Error(`Process '${processDefinition.id}' returned duplicate output port '${output.outputId}'`);
+    }
+    seenOutputIds.add(output.outputId);
+
+    validateComponentsKg(output.componentsKg);
+    if (
+      typeof output.particleSizeMm !== 'number' ||
+      !Number.isFinite(output.particleSizeMm) ||
+      output.particleSizeMm <= 0
+    ) {
+      throw new Error(`Process '${processDefinition.id}' output '${output.outputId}' has invalid particle size`);
+    }
+  }
+
+  for (const expectedOutputId of expectedOutputIds) {
+    if (!seenOutputIds.has(expectedOutputId)) {
+      throw new Error(`Process '${processDefinition.id}' did not produce required output port '${expectedOutputId}'`);
+    }
   }
 }
 
@@ -85,12 +181,13 @@ function buildOutputComponents(inputComponentsKg, fieldStrength) {
   };
 }
 
-export function executeProcess(processDefinition, inputBatch, parameters = {}) {
-  const normalizedParameters = validateProcessParameters(processDefinition, parameters);
-  validateInputBatchForProcess(processDefinition, inputBatch);
-
-  if (processDefinition.id !== MAGNETIC_SEPARATION_PROCESS_ID) {
-    throw new Error(`Execution for process '${processDefinition.id}' is not implemented`);
+function runMagneticSeparation(processDefinition, inputBatchesByPort, normalizedParameters) {
+  const inputBatch = inputBatchesByPort.feed;
+  const maxFeedParticleSizeMm = processDefinition.maxFeedParticleSizeMm ?? Infinity;
+  if (inputBatch.particleSizeMm > maxFeedParticleSizeMm) {
+    throw new Error(
+      `Process '${processDefinition.id}' requires feed particle size <= ${maxFeedParticleSizeMm} mm (got ${inputBatch.particleSizeMm} mm)`
+    );
   }
 
   for (const componentId of Object.keys(inputBatch.componentsKg)) {
@@ -100,28 +197,143 @@ export function executeProcess(processDefinition, inputBatch, parameters = {}) {
   }
 
   const { fieldStrength } = normalizedParameters;
-  const { concentrateComponentsKg, tailingsComponentsKg } = buildOutputComponents(inputBatch.componentsKg, fieldStrength);
-
-  const massInKg = roundKg(sumComponentMassKg(inputBatch.componentsKg));
-  const massOutKg = roundKg(sumComponentMassKg(concentrateComponentsKg) + sumComponentMassKg(tailingsComponentsKg));
+  const { concentrateComponentsKg, tailingsComponentsKg } = buildOutputComponents(
+    inputBatch.componentsKg,
+    fieldStrength
+  );
 
   return {
-    processId: processDefinition.id,
-    inputBatchIds: [inputBatch.id],
-    parameters: normalizedParameters,
     outputPortBatches: [
-      { outputId: 'concentrate', componentsKg: concentrateComponentsKg },
-      { outputId: 'tailings', componentsKg: tailingsComponentsKg },
+      {
+        outputId: 'concentrate',
+        componentsKg: concentrateComponentsKg,
+        particleSizeMm: inputBatch.particleSizeMm,
+        resourceId: null,
+      },
+      {
+        outputId: 'tailings',
+        componentsKg: tailingsComponentsKg,
+        particleSizeMm: inputBatch.particleSizeMm,
+        resourceId: null,
+      },
     ],
-    metrics: {
-      massInKg,
-      massOutKg,
-      balanceErrorKg: roundKg(massInKg - massOutKg),
-    },
   };
 }
 
-export function runProcessAndCommit(world, processId, inputBatchId, parameters = {}) {
+function runCrushing(processDefinition, inputBatchesByPort, normalizedParameters) {
+  const inputBatch = inputBatchesByPort.feed;
+  const { targetParticleSizeMm } = normalizedParameters;
+
+  if (targetParticleSizeMm >= inputBatch.particleSizeMm) {
+    throw new Error(
+      `Process '${processDefinition.id}' requires targetParticleSizeMm below current feed size (${inputBatch.particleSizeMm} mm)`
+    );
+  }
+
+  return {
+    outputPortBatches: [
+      {
+        outputId: 'product',
+        componentsKg: { ...inputBatch.componentsKg },
+        particleSizeMm: targetParticleSizeMm,
+        resourceId: null,
+      },
+    ],
+  };
+}
+
+const PROCESS_EXECUTORS = {
+  [MAGNETIC_SEPARATION_PROCESS_ID]: runMagneticSeparation,
+  [CRUSHING_PROCESS_ID]: runCrushing,
+};
+
+function aggregateComponents(batches) {
+  const aggregated = {};
+  for (const batch of batches) {
+    for (const [componentId, massKg] of Object.entries(batch.componentsKg)) {
+      aggregated[componentId] = roundKg((aggregated[componentId] ?? 0) + massKg);
+    }
+  }
+  return aggregated;
+}
+
+function validateConservation(inputBatches, outputPortBatches, processId) {
+  const inputComponents = aggregateComponents(inputBatches);
+  const outputComponents = aggregateComponents(outputPortBatches);
+
+  const allComponentIds = new Set([...Object.keys(inputComponents), ...Object.keys(outputComponents)]);
+  for (const componentId of allComponentIds) {
+    const inputMass = inputComponents[componentId] ?? 0;
+    const outputMass = outputComponents[componentId] ?? 0;
+    if (Math.abs(inputMass - outputMass) > MASS_TOLERANCE_KG) {
+      throw new Error(`Process '${processId}' violates constituent conservation for '${componentId}'`);
+    }
+  }
+
+  const massInKg = roundKg(
+    inputBatches.reduce((sum, batch) => sum + sumComponentMassKg(batch.componentsKg), 0)
+  );
+  const massOutKg = roundKg(
+    outputPortBatches.reduce((sum, batch) => sum + sumComponentMassKg(batch.componentsKg), 0)
+  );
+
+  return {
+    massInKg,
+    massOutKg,
+    balanceErrorKg: roundKg(massInKg - massOutKg),
+  };
+}
+
+export function executeProcess(processDefinition, inputBatchesByPort, parameters = {}) {
+  const normalizedParameters = validateProcessParameters(processDefinition, parameters);
+
+  const executor = PROCESS_EXECUTORS[processDefinition.id];
+  if (!executor) {
+    throw new Error(`Execution for process '${processDefinition.id}' is not implemented`);
+  }
+
+  const execution = executor(processDefinition, inputBatchesByPort, normalizedParameters);
+  validateOutputPortBatches(processDefinition, execution.outputPortBatches);
+
+  const inputBatches = (processDefinition.inputs ?? []).map(input => inputBatchesByPort[input.id]);
+  const metrics = validateConservation(inputBatches, execution.outputPortBatches, processDefinition.id);
+
+  return {
+    processId: processDefinition.id,
+    inputBindings: (processDefinition.inputs ?? []).map(input => ({
+      inputId: input.id,
+      batchId: inputBatchesByPort[input.id].id,
+    })),
+    parameters: normalizedParameters,
+    outputPortBatches: execution.outputPortBatches,
+    metrics,
+  };
+}
+
+function buildOutputProvenance(inputBatches, runId) {
+  const sourceOccurrenceIds = [];
+  const sourceBatchIds = [];
+
+  for (const batch of inputBatches) {
+    if (batch.sourceOccurrenceId && !sourceOccurrenceIds.includes(batch.sourceOccurrenceId)) {
+      sourceOccurrenceIds.push(batch.sourceOccurrenceId);
+    }
+    for (const occurrenceId of batch.provenance?.sourceOccurrenceIds ?? []) {
+      if (!sourceOccurrenceIds.includes(occurrenceId)) {
+        sourceOccurrenceIds.push(occurrenceId);
+      }
+    }
+    sourceBatchIds.push(batch.id);
+  }
+
+  return {
+    sourceOccurrenceIds,
+    sourceBatchIds,
+    createdByProcessRunId: runId,
+  };
+}
+
+export function runProcessAndCommit(world, processId, inputBindings, parameters = {}) {
   if (!world?.materialBatches) throw new Error('World materialBatches map is required');
   if (!world?.processResults) throw new Error('World processResults map is required');
   assertWorldOrdinals(world);
@@ -129,22 +341,24 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
   const processDefinition = getProcessDefinition(processId);
   if (!processDefinition) throw new Error(`Unknown process '${processId}'`);
 
-  const inputBatch = world.materialBatches[inputBatchId];
-  if (!inputBatch) throw new Error(`Unknown input batch '${inputBatchId}'`);
+  const inputBatchesByPort = resolveInputBatches(world, processDefinition, inputBindings);
+  const inputBatches = (processDefinition.inputs ?? []).map(input => inputBatchesByPort[input.id]);
 
-  const executionResult = executeProcess(processDefinition, inputBatch, parameters);
+  const executionResult = executeProcess(processDefinition, inputBatchesByPort, parameters);
   if (Math.abs(executionResult.metrics.balanceErrorKg) > MASS_TOLERANCE_KG) {
     throw new Error(`Process '${processId}' violates matter conservation`);
   }
 
   // Stage every ID and output batch before mutating World State. If validation
-  // fails anywhere below, the physical input batch and world counters remain unchanged.
+  // fails anywhere below, the physical input batches and world counters remain unchanged.
   const runId = `process-run-${world.nextProcessRunOrdinal}`;
   if (world.processResults[runId]) {
     throw new Error(`Process result id '${runId}' already exists`);
   }
 
   const firstOutputOrdinal = world.nextMaterialBatchOrdinal;
+  const outputProvenance = buildOutputProvenance(inputBatches, runId);
+
   const stagedOutputBatches = executionResult.outputPortBatches.map((output, index) => {
     const batchId = `batch-${firstOutputOrdinal + index}`;
     if (world.materialBatches[batchId]) {
@@ -153,8 +367,9 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
 
     const batch = createMaterialBatch({
       id: batchId,
-      sourceOccurrenceId: inputBatch.sourceOccurrenceId,
-      resourceId: inputBatch.resourceId,
+      resourceId: output.resourceId ?? null,
+      particleSizeMm: output.particleSizeMm,
+      provenance: outputProvenance,
       status: 'available',
       componentsKg: output.componentsKg,
     });
@@ -169,7 +384,7 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
   const storedProcessResult = {
     id: runId,
     processId,
-    inputBatchIds: [inputBatch.id],
+    inputBindings: executionResult.inputBindings,
     outputBatches: stagedOutputBatches.map(output => ({
       outputId: output.outputId,
       batchId: output.batchId,
@@ -179,11 +394,15 @@ export function runProcessAndCommit(world, processId, inputBatchId, parameters =
   };
 
   // Commit only after the entire transition has been successfully validated.
-  inputBatch.status = 'consumed';
-  inputBatch.consumedByProcessRunId = runId;
+  for (const inputBatch of inputBatches) {
+    inputBatch.status = 'consumed';
+    inputBatch.consumedByProcessRunId = runId;
+  }
+
   for (const output of stagedOutputBatches) {
     world.materialBatches[output.batchId] = output.batch;
   }
+
   world.processResults[runId] = storedProcessResult;
   world.nextMaterialBatchOrdinal += stagedOutputBatches.length;
   world.nextProcessRunOrdinal += 1;
