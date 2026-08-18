@@ -43,9 +43,9 @@ Solved systems should eventually be reusable as components inside larger systems
 
 # Current State
 
-The project is currently focused on its first real simulation subsystem: **procedural planetary world generation**.
+The project has completed its first simulation-foundation phase and is beginning its first gameplay-facing phase.
 
-The original planet generator began as a standalone tech demo, but its useful code has now been promoted into the Interlink simulation foundation and the web application itself now lives directly at the repository root.
+The original planet generator began as a standalone tech demo, but its useful code has now been promoted into the Interlink simulation foundation and the web application itself lives directly at the repository root.
 
 The current web application can:
 
@@ -57,6 +57,10 @@ The current web application can:
 - generate hidden geological/environmental features inside regions
 - generate feature-level natural-resource occurrences and compositions
 - reveal already-generated features through a simple discovery interface
+- represent both regional and feature resources as stable `ResourceOccurrence` objects in World State
+- enforce basic compatibility rules for obvious feature types such as aquifers, gas reservoirs, magma chambers, and ice bodies
+- run automated deterministic simulation tests through Node
+- run the simulation test suite automatically in GitHub Actions for pull requests and `main`
 
 The current planet generator follows a causal pipeline rather than selecting a planet archetype first:
 
@@ -87,6 +91,13 @@ Natural Resources
 ```
 
 This remains a simplified procedural model rather than research-grade planetary science. The goal is **internal consistency, causal relationships, deterministic behavior, and useful simulation data**.
+
+The current serialized world shape and generator rules are versioned. After the first regression/normalization pass:
+
+```text
+schemaVersion: 2
+generatorVersion: 2
+```
 
 ---
 
@@ -129,22 +140,25 @@ Star/system generation should be introduced incrementally when the planet model 
 
 # Current Architecture
 
-The runnable web application is now at the repository root:
+The runnable web application is at the repository root:
 
 ```text
 Project-Interlink/
 ├── index.html
 ├── styles.css
+├── package.json
 ├── src/
+├── tests/
 ├── DESIGN.md
 ├── README.md
 ├── PATCH_NOTES.md
 └── .github/
+    ├── copilot-instructions.md
+    └── workflows/
+        └── test.yml
 ```
 
-The former `planet-generator/` wrapper directory has been removed. The move changed file locations only; the application's relative CSS and ES-module imports did not require source-code changes.
-
-The app is currently a lightweight static web application using:
+The former `planet-generator/` wrapper directory has been removed. The app remains a lightweight static web application using:
 
 - HTML
 - CSS
@@ -176,22 +190,13 @@ World
 └── resourceOccurrences
 ```
 
-Planets reference regions by ID, regions reference features by ID, and features reference generated resource occurrences by ID.
+Planets reference regions by ID, regions reference features by ID, and both regions and features reference generated resource occurrences by stable ID.
 
 Discovery is stored separately in Player Knowledge State. Discovering a feature reveals existing world truth rather than changing the simulated world.
 
 Generation uses deterministic namespaced RNG streams so changes inside one subsystem are less likely to reshuffle unrelated parts of a world seed.
 
-Worlds currently carry:
-
-```text
-schemaVersion
-generatorVersion
-```
-
-so serialized data and procedural rules can evolve deliberately.
-
-As star/system entities are added in the future, this world state should evolve to represent them explicitly rather than treating the current single planet as the permanent root of the game.
+As star/system entities and player-created physical matter are added in the future, this World / Simulation State should evolve intentionally rather than moving physical truth into UI state.
 
 ---
 
@@ -210,11 +215,13 @@ Iron Ore Deposit
     └── Quartz / gangue 18%
 ```
 
-`Iron Ore` is the raw-resource definition. The particular deposit is a generated occurrence with its own location, quantity, concentration, descriptor, and composition.
+`Iron Ore` is the raw-resource definition. The particular deposit is a generated occurrence with its own location, quantity class, concentration, descriptor, and composition.
 
 Minerals such as hematite are constituents of that occurrence rather than automatically being separate fundamental resource IDs.
 
-The same approach is intended for brines, natural gas, rocks, atmospheric gases, and other heterogeneous natural materials. Future processing gameplay should derive outputs from feedstock composition and process capability rather than fixed recipe-token conversions.
+The same approach is intended for brines, natural gas, rocks, atmospheric gases, and other heterogeneous natural materials. Processing gameplay should derive outputs from feedstock composition and process capability rather than fixed recipe-token conversions.
+
+The next gameplay work extends this philosophy from generated occurrences into discrete physical material batches and transformation outputs.
 
 The broader matter model and processing philosophy are documented in [`DESIGN.md`](DESIGN.md).
 
@@ -222,53 +229,107 @@ The broader matter model and processing philosophy are documented in [`DESIGN.md
 
 # Current Development Priority
 
-The architecture foundation is now strong enough that the immediate priority is **automated simulation regression protection before larger simulation changes**.
+The immediate priority is now **the first playable material-processing vertical slice**: [Issue #8 — Prototype first playable material processing loop](https://github.com/Zetic/Project-Interlink/issues/8).
 
-The next issue is intended to establish:
-
-- a minimal Node-based test setup at repository root
-- deterministic same-seed regression tests
-- namespaced RNG tests
-- world-reference integrity tests
-- knowledge/world separation tests
-- composition and structural-fraction invariants
-- deterministic multi-seed smoke tests
-- obvious feature/resource compatibility rules
-- a small GitHub Actions check for pull requests and `main`
-
-After that foundation is protected, development should no longer be purely generation-focused.
-
-An early playable vertical slice should exercise a narrow chain such as:
+The intended prototype chain is:
 
 ```text
-Survey / discover a resource
+Survey / discover an existing resource occurrence
     ↓
-Acquire a small quantity
+Acquire a small material sample
     ↓
 Analyze its composition
     ↓
-Apply one simple parameter-driven transformation or separation
+Run one parameter-driven separation / transformation
     ↓
-Inspect products / waste / matter balance
+Inspect products + tailings / waste
     ↓
-Represent the successful operation as a reusable process concept
+Verify constituent and total matter balance
 ```
 
-This is intended to validate the main game loop early without prematurely implementing the complete factory, blueprint, automation, or progression game.
+The main architectural bridge is expected to be conceptually:
+
+```text
+ResourceOccurrence
+        ↓
+MaterialBatch
+        ↓
+ProcessDefinition + parameters
+        ↓
+ProcessResult
+        ↓
+Output MaterialBatches
+```
+
+This is the first point where generated world data becomes matter the player can actually act on.
+
+## Why transformation comes before the blueprint editor
+
+The long-term blueprint workspace is still a core interaction goal, but the project should establish what a node, port, material input, output, process parameter, and transformation **mean** before spending substantial effort on dragging, wiring, pan/zoom, snapping, and other editor interaction.
+
+For the first gameplay slice, ordinary controls are sufficient:
+
+```text
+select occurrence
+collect sample
+analyze
+choose process
+adjust parameter
+run
+inspect outputs
+```
+
+The process model should still expose explicit inputs, outputs, and parameters so a later blueprint editor can become a graphical layer over the same simulation semantics rather than requiring a process-system rewrite.
+
+The intended development sequence is:
+
+```text
+prove matter
+    ↓
+prove transformations
+    ↓
+prove process semantics
+    ↓
+then build the blueprint interaction layer
+```
+
+---
+
+# Simulation Contracts Already Established
+
+The existing automated tests now protect important foundation contracts including:
+
+- same seed + same generator version produces equivalent world data
+- RNG namespaces are deterministic and isolated
+- world references resolve correctly
+- generated IDs remain unique within tested worlds
+- physical features do not contain discovery truth
+- knowledge discovery does not mutate physical World State
+- bulk composition, atmosphere, structural fractions, and region area obey numeric invariants
+- generated physical values avoid NaN/Infinity and impossible negatives in tested paths
+- broad deterministic multi-seed generation succeeds
+- obvious Aquifer / Gas Reservoir / Magma Chamber / Ice Body contradictions are prevented
+- biological-resource gating remains tested
+- regional background resources and feature resources use stable normalized occurrences
+
+New gameplay systems should extend these executable contracts rather than replacing them with informal assumptions.
 
 ---
 
 # Known Simulation Areas Still Using Prototype Logic
 
-The planet-level model is currently more causally developed than the region/feature layer.
+The planet-level model remains more causally developed than the region/feature/resource layer.
 
 Examples of remaining simplifications include:
 
 - regional geology is still largely local variation around planet properties
 - region age, relief, and elevation are fairly abstract/random
-- feature physical state is not yet fully constrained by feature type
-- feature/resource compatibility still relies heavily on broad tag matching
-- broad regional resources and feature resource occurrences are not yet represented completely consistently
+- several feature types still use broad or partially independent physical properties
+- resource selection still relies substantially on broad tag matching outside the explicitly constrained feature types
+- structured constituent-level composition currently exists only for a subset of generated resource types
+- resource occurrence quantity is still mostly qualitative rather than precise physical reserve mass
+- no extraction/depletion model exists yet
+- no player-created `MaterialBatch` / transformation state exists yet
 - several planet inputs are still generated locally that should eventually come from star/system formation context
 
 These are expected next-stage simulation problems, not reasons to restart the project.
@@ -369,16 +430,17 @@ These inspirations belong here as context. The canonical design in `DESIGN.md` s
 
 # Near-Term Roadmap
 
-1. Add automated simulation regression tests and executable invariants.
-2. Normalize remaining occurrence/reference inconsistencies exposed by testing.
-3. Improve obvious region/feature/resource causal compatibility.
-4. **Prototype a minimal survey → acquire → analyze → transform gameplay loop.**
-5. Improve causal regional geology and resource/deposit formation in response to gameplay needs.
-6. Expand discovery into surveying and knowledge confidence.
-7. Introduce a small functional apparatus/process model for transformation.
-8. Prototype reusable and automated solved processes.
-9. Introduce star/system generation inputs when they can replace current planet-level approximations and materially affect downstream worlds.
-10. Expand extraction, processing, automation, and larger industrial/network gameplay iteratively.
+1. **Prototype the first playable survey → sample → analyze → transform material loop.**
+2. Stabilize `MaterialBatch`, process input/output, parameter, result, and matter-conservation semantics based on that prototype.
+3. Improve causal regional geology and resource/deposit properties in response to what the gameplay actually needs.
+4. Expand discovery into richer surveying and knowledge confidence.
+5. Generalize the functional apparatus/process model and introduce material-stream semantics.
+6. **Build the first interactive blueprint workspace over stable process semantics** — node dragging, ports, connections, pan/zoom, and stream inspection.
+7. Introduce star/system generation inputs when they can materially replace current planet-level approximations and create downstream variation.
+8. Add continuous processing, automation, and reusable/nested solved systems incrementally.
+9. Expand extraction, logistics, processing depth, and larger industrial/network gameplay iteratively.
+
+Star/system generation remains an important future foundation, but it should be introduced when downstream planet generation and gameplay are ready to consume its outputs rather than as an isolated astronomy project.
 
 ---
 
@@ -404,9 +466,15 @@ Then open:
 http://localhost:8000
 ```
 
+The automated simulation tests can be run from repository root with:
+
+```bash
+npm test
+```
+
 ## GitHub Pages
 
-The repository is now laid out so GitHub Pages can serve the application directly when configured with:
+The repository is laid out so GitHub Pages can serve the application directly when configured with:
 
 ```text
 Source: Deploy from a branch
@@ -414,7 +482,7 @@ Branch: main
 Folder: / (root)
 ```
 
-The published project URL should then load the root `index.html` directly rather than requiring a `/planet-generator/` path.
+The published project URL should load the root `index.html` directly.
 
 ---
 
