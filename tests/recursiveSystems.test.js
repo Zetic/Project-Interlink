@@ -8,6 +8,8 @@ import {
   blueprintAddCrusher,
   blueprintAddMagSep,
   blueprintConnect,
+  checkBlueprintConnection,
+  getNodePortDefinitions,
   setNodeEnabled,
   simulationTick,
 } from '../src/simulation/simulationEngine.js';
@@ -24,14 +26,18 @@ import { transferBoundaryMaterial } from '../src/simulation/boundaryTransfer.js'
 import {
   createWorldSimulation,
   registerSimulationSession,
-  registerSimulationWorkspace,
   registerBoundaryTransfer,
   pauseWorldSimulation,
   resumeWorldSimulation,
   worldSimulationAdvance,
   getSimulationWorkspace,
 } from '../src/simulation/worldSimulation.js';
-import { createHopper, hopperReceiveInflow, hopperStoredMassKg } from '../src/simulation/hopperNode.js';
+import {
+  createHopper,
+  createBoundaryBuffer,
+  hopperReceiveInflow,
+  hopperStoredMassKg,
+} from '../src/simulation/hopperNode.js';
 
 function testWorld() {
   return { resourceOccurrences: { occ: { id: 'occ', resourceId: 'iron-ore', composition: { hematite: 100 } } } };
@@ -130,7 +136,7 @@ test('nested boundary transfer conserves matter across Region boundaries', () =>
   assert.ok(Math.abs(hopperStoredMassKg(sourceHopper) + hopperStoredMassKg(targetHopper) - before) < 1e-8);
 });
 
-test('generated Regions expose material input/output and runtime buffers without revealing them as matter copies', () => {
+test('generated Regions expose material input/output, physical buffers, and child-facing adapters', () => {
   const world = createWorld('recursive-runtime');
   createWorldSimulation(world);
   const regionId = world.planets[world.planetId].regions[0];
@@ -139,6 +145,8 @@ test('generated Regions expose material input/output and runtime buffers without
   const workspace = getSimulationWorkspace(world, regionNode.childWorkspaceId);
   assert.equal(workspace.nodes[`${regionId}-import-hopper`].nodeType, 'hopper');
   assert.equal(workspace.nodes[`${regionId}-export-hopper`].nodeType, 'hopper');
+  assert.equal(world.systemNodes[`${regionId}-import-terminal`].ports[0].direction, 'output');
+  assert.equal(world.systemNodes[`${regionId}-export-terminal`].ports[0].direction, 'input');
 });
 
 test('generated Sites expose distinct import/export boundary owners without implicit logistics', () => {
@@ -156,6 +164,61 @@ test('generated Sites expose distinct import/export boundary owners without impl
   assert.equal(Object.keys(world.simulation.transfers ?? {}).length, 0);
   assert.equal(site.ports.find(port => port.id === 'material-input').childNodeId, input.node.id);
   assert.equal(site.ports.find(port => port.id === 'material-output').childNodeId, output.node.id);
+});
+
+test('boundary buffers expose only their child-facing port to engineering connections', () => {
+  const importBoundary = createBoundaryBuffer({ id: 'site-import', capacityKg: 10, role: 'import' });
+  const exportBoundary = createBoundaryBuffer({ id: 'site-export', capacityKg: 10, role: 'export' });
+  assert.deepEqual(getNodePortDefinitions(importBoundary).map(port => [port.id, port.direction]), [['output', 'output']]);
+  assert.deepEqual(getNodePortDefinitions(exportBoundary).map(port => [port.id, port.direction]), [['input', 'input']]);
+});
+
+test('explicit Hopper → Site Export link moves conserved material only after connection exists', () => {
+  const blueprint = createBlueprint();
+  const source = blueprintAddHopper(blueprint, 10);
+  const siteExport = createBoundaryBuffer({ id: 'site-export', capacityKg: 10, role: 'export' });
+  blueprint.nodes[siteExport.id] = siteExport;
+  hopperReceiveInflow(source, { hematite: 3, magnetite: 1 }, 15, 1);
+
+  simulationTick(blueprint, testWorld(), 0.1);
+  assert.equal(hopperStoredMassKg(siteExport), 0);
+
+  const check = checkBlueprintConnection(blueprint, source.id, source.outputPortId, siteExport.id, siteExport.inputPortId);
+  assert.equal(check.ok, true);
+  blueprintConnect(blueprint, source.id, source.outputPortId, siteExport.id, siteExport.inputPortId);
+  const before = hopperStoredMassKg(source) + hopperStoredMassKg(siteExport);
+  simulationTick(blueprint, testWorld(), 0.1);
+  assert.ok(hopperStoredMassKg(siteExport) > 0);
+  assert.ok(Math.abs(hopperStoredMassKg(source) + hopperStoredMassKg(siteExport) - before) < 1e-8);
+});
+
+test('Region Import adapter can explicitly feed a Site Import while preserving one physical owner per buffer', () => {
+  const world = createWorld('region-import-site-import');
+  createWorldSimulation(world);
+  const siteId = Object.keys(world.sites)[0];
+  const site = world.systemNodes[siteId];
+  const regionId = world.sites[siteId].regionId;
+  const regionWorkspace = getSimulationWorkspace(world, world.systemNodes[regionId].childWorkspaceId);
+  const siteWorkspace = getSimulationWorkspace(world, site.childWorkspaceId);
+  const regionImport = regionWorkspace.nodes[`${regionId}-import-hopper`];
+  const siteImport = siteWorkspace.nodes[`${siteId}-import-boundary`];
+  hopperReceiveInflow(regionImport, { hematite: 2, magnetite: 1 }, 15, 1);
+  const before = hopperStoredMassKg(regionImport) + hopperStoredMassKg(siteImport);
+
+  registerBoundaryTransfer(world, {
+    sourceCompositeId: `${regionId}-import-terminal`,
+    sourcePortId: 'material-output',
+    targetCompositeId: siteId,
+    targetPortId: 'material-input',
+    scopeId: regionId,
+    capacityKgPerSecond: 10,
+  });
+  worldSimulationAdvance(world, 0.1);
+
+  assert.ok(hopperStoredMassKg(siteImport) > 0);
+  assert.ok(hopperStoredMassKg(regionImport) < 3);
+  assert.ok(Math.abs(hopperStoredMassKg(regionImport) + hopperStoredMassKg(siteImport) - before) < 1e-8);
+  assert.equal(resolveBoundaryPort(site, 'material-input', siteWorkspace).node, siteImport);
 });
 
 test('world transfer registry rejects source fan-out and input fan-in', () => {
