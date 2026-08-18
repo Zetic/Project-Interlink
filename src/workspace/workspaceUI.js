@@ -39,7 +39,7 @@ import { hopperInspection, streamInspection, machineInspection } from './inspect
 import {
   projectBlueprintGraph,
   projectBoundaryGraph,
-  graphConnectionEndpoint,
+  renderGraphConnections,
 } from './workspaceGraph.js';
 
 const wsState = {
@@ -478,36 +478,16 @@ function renderSystemConnections(svg, definition) {
     (systemId, portId) => visibleEndpointForTransfer(systemId, portId),
   );
 
-  const active = new Set();
-  for (const connection of graph.connections) {
-    active.add(connection.id);
-    let path = wsState.systemConnectionElements.get(connection.id);
-    if (!path || !svg.contains(path)) {
-      path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('fill', 'none');
-      path.classList.add('ws-connection', 'ws-system-connection');
-      path.addEventListener('click', event => {
-        event.stopPropagation();
-        selectTransfer(connection.id);
-      });
-      svg.appendChild(path);
-      wsState.systemConnectionElements.set(connection.id, path);
-    }
-    const sourceEndpoint = graphConnectionEndpoint(connection, 'source');
-    const targetEndpoint = graphConnectionEndpoint(connection, 'target');
-    const source = systemEndpointPosition(definition, sourceEndpoint.nodeId, sourceEndpoint.portId);
-    const target = systemEndpointPosition(definition, targetEndpoint.nodeId, targetEndpoint.portId);
-    const midX = (source.x + target.x) / 2;
-    path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
-    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + (connection.transfer.lastRateKgPerSecond ?? 0) * 0.5)));
-    path.classList.toggle('ws-connection--selected', inspector.selectedTransferId === connection.id);
-  }
-  for (const [id, path] of wsState.systemConnectionElements) {
-    if (!active.has(id)) {
-      path.remove();
-      wsState.systemConnectionElements.delete(id);
-    }
-  }
+  renderGraphConnections({
+    svg,
+    graph,
+    elements: wsState.systemConnectionElements,
+    endpointPosition: endpoint => systemEndpointPosition(definition, endpoint.nodeId, endpoint.portId),
+    flow: connection => connection.transfer.lastRateKgPerSecond ?? 0,
+    selectedId: inspector.selectedTransferId,
+    onSelect: selectTransfer,
+    className: 'ws-system-connection',
+  });
 }
 
 function attachSystemPortHandlers(container) {
@@ -874,34 +854,18 @@ function renderConnections(svg) {
   svg.style.height = `${maxY}px`;
 
   const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout);
-  const activeIds = new Set();
-  for (const connection of graph.connections) {
-    activeIds.add(connection.id);
-    let path = wsState.connectionElements.get(connection.id);
-    if (!path || !svg.contains(path)) {
-      path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('fill', 'none');
-      path.setAttribute('cursor', 'pointer');
-      path.classList.add('ws-connection');
-      path.addEventListener('click', () => selectConnection(connection.id));
-      svg.appendChild(path);
-      wsState.connectionElements.set(connection.id, path);
-    }
-    const source = portCanvasPosition(connection.source.nodeId, connection.source.portId);
-    const target = portCanvasPosition(connection.target.nodeId, connection.target.portId);
-    const midX = (source.x + target.x) / 2;
-    const stream = getStreamForConnection(wsState.blueprint, connection.id);
-    const flow = stream ? totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond) : 0;
-    path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
-    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + flow * 0.5)));
-    path.classList.toggle('ws-connection--selected', inspector.selectedConnId === connection.id);
-  }
-  for (const [id, path] of wsState.connectionElements) {
-    if (!activeIds.has(id)) {
-      path.remove();
-      wsState.connectionElements.delete(id);
-    }
-  }
+  renderGraphConnections({
+    svg,
+    graph,
+    elements: wsState.connectionElements,
+    endpointPosition: endpoint => portCanvasPosition(endpoint.nodeId, endpoint.portId),
+    flow: connection => {
+      const stream = getStreamForConnection(wsState.blueprint, connection.id);
+      return stream ? totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond) : 0;
+    },
+    selectedId: inspector.selectedConnId,
+    onSelect: selectConnection,
+  });
 
   if (pendingConn.active) {
     if (!wsState.connectionPreview || !svg.contains(wsState.connectionPreview)) {

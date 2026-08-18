@@ -101,3 +101,47 @@ export function disconnectGraphConnection(graph, connectionId, adapters = {}) {
   disconnect(connection);
   return true;
 }
+
+/** Render any projected graph edge set with stable SVG element identity. */
+export function renderGraphConnections({
+  svg,
+  graph,
+  elements,
+  endpointPosition,
+  flow = () => 0,
+  selectedId = null,
+  onSelect,
+  className = '',
+} = {}) {
+  if (!svg) return;
+  const activeIds = new Set();
+  for (const connection of graph?.connections ?? []) {
+    activeIds.add(connection.id);
+    let path = elements.get(connection.id);
+    if (!path || !svg.contains(path)) {
+      path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('cursor', 'pointer');
+      path.classList.add('ws-connection');
+      if (className) path.classList.add(className);
+      path.addEventListener('click', event => {
+        event.stopPropagation();
+        onSelect?.(connection.id);
+      });
+      svg.appendChild(path);
+      elements.set(connection.id, path);
+    }
+    const source = endpointPosition(graphConnectionEndpoint(connection, 'source'));
+    const target = endpointPosition(graphConnectionEndpoint(connection, 'target'));
+    const midX = (source.x + target.x) / 2;
+    path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
+    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + flow(connection) * 0.5)));
+    path.classList.toggle('ws-connection--selected', selectedId === connection.id);
+  }
+  for (const [id, path] of elements) {
+    if (!activeIds.has(id)) {
+      path.remove();
+      elements.delete(id);
+    }
+  }
+}
