@@ -463,18 +463,25 @@ function startSystemNodeDrag(nodeId, event) {
 }
 
 function onSystemCanvasMove(event) {
-  if (!systemDragState) return;
   const definition = systemWorkspaceDefinition();
-  if (definition.id !== systemDragState.definitionId) return;
-  const layout = ensureSystemLayout(definition);
-  layout.nodePositions[systemDragState.nodeId] = {
-    x: Math.max(0, systemDragState.startX + event.clientX - systemDragState.startMouseX),
-    y: Math.max(0, systemDragState.startY + event.clientY - systemDragState.startMouseY),
-  };
-  const element = wsState.systemNodeElements.get(systemDragState.nodeId);
-  if (element) {
-    element.style.left = `${layout.nodePositions[systemDragState.nodeId].x}px`;
-    element.style.top = `${layout.nodePositions[systemDragState.nodeId].y}px`;
+  if (systemDragState) {
+    if (definition.id !== systemDragState.definitionId) return;
+    const layout = ensureSystemLayout(definition);
+    layout.nodePositions[systemDragState.nodeId] = {
+      x: Math.max(0, systemDragState.startX + event.clientX - systemDragState.startMouseX),
+      y: Math.max(0, systemDragState.startY + event.clientY - systemDragState.startMouseY),
+    };
+    const element = wsState.systemNodeElements.get(systemDragState.nodeId);
+    if (element) {
+      element.style.left = `${layout.nodePositions[systemDragState.nodeId].x}px`;
+      element.style.top = `${layout.nodePositions[systemDragState.nodeId].y}px`;
+    }
+  }
+  if (pendingGraphConnection.active) {
+    const canvas = el('ws-system-canvas');
+    const rect = canvas.getBoundingClientRect();
+    pendingGraphConnection.x = event.clientX - rect.left + (canvas.scrollLeft ?? 0);
+    pendingGraphConnection.y = event.clientY - rect.top + (canvas.scrollTop ?? 0);
   }
   renderSystemConnections(el('ws-system-svg'), definition);
 }
@@ -588,13 +595,6 @@ function renderParentWorkspace(container) {
       pendingGraphConnection.adapter = null;
       renderSystemConnections(el('ws-system-svg'), definition);
     }
-  });
-  canvas.addEventListener('mousemove', event => {
-    if (!pendingGraphConnection.active) return;
-    const rect = canvas.getBoundingClientRect();
-    pendingGraphConnection.x = event.clientX - rect.left + (canvas.scrollLeft ?? 0);
-    pendingGraphConnection.y = event.clientY - rect.top + (canvas.scrollTop ?? 0);
-    renderSystemConnections(svg, definition);
   });
   canvas.addEventListener('mouseleave', () => { systemDragState = null; });
   el('ws-prototype-survey')?.addEventListener('click', event => {
