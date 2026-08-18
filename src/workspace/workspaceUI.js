@@ -36,6 +36,14 @@ import { hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
 import { isFeatureDiscovered, discoverFeature } from '../core/world/knowledgeState.js';
 import { hopperInspection, streamInspection, machineInspection } from './inspectionViewModel.js';
+import {
+  projectBlueprintGraph,
+  projectBoundaryGraph,
+  renderGraphNodes,
+  renderGraphConnections,
+  renderGraphConnectionPreview,
+  disconnectGraphConnection,
+} from './workspaceGraph.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -65,8 +73,14 @@ const PARENT_NODE_WIDTH = 180;
 const PARENT_NODE_HEIGHT = 110;
 const PORT_RADIUS = 7;
 
-const pendingConn = { active: false, sourceNodeId: null, sourcePortId: null, x: 0, y: 0 };
-const pendingSystemConn = { active: false, sourceSystemId: null, sourcePortId: null, scopeId: null };
+const pendingGraphConnection = {
+  active: false,
+  source: null,
+  x: 0,
+  y: 0,
+  scopeId: null,
+  adapter: null,
+};
 const inspector = {
   selectedNodeId: null,
   selectedConnId: null,
@@ -275,6 +289,8 @@ function systemWorkspaceDefinition() {
       title: planet?.name ?? 'Planet',
       nodes: (planet?.regions ?? []).map(id => wsState.world.systemNodes[id]).filter(Boolean),
       scopeId: planet?.id,
+      level: 'planet',
+      planetScopeId: planet?.id,
       prototypeSurveyFeatureId: null,
     };
   }
@@ -295,6 +311,8 @@ function systemWorkspaceDefinition() {
     title: region?.name ?? 'Region',
     nodes,
     scopeId: region?.id,
+    level: 'region',
+    planetScopeId: currentPlanet()?.id,
     prototypeSurveyFeatureId: prototypeSurveyFeatureId(region),
   };
 }
@@ -328,13 +346,6 @@ function systemNodeDescription(node) {
   return node.nodeType;
 }
 
-function visibleParentPorts(node) {
-  const ports = node?.ports ?? [];
-  if (node?.boundaryRole === 'import') return ports.filter(port => port.direction === 'output');
-  if (node?.boundaryRole === 'export') return ports.filter(port => port.direction === 'input');
-  return ports;
-}
-
 function systemPortEndpoint(node, port) {
   if (wsState.currentLevel === 'region' && node.boundaryRole) {
     const regionId = wsState.selectedRegionId;
@@ -366,67 +377,6 @@ function portOffsetsForSize(port, index, count, width, height) {
 function portOffsets(port, index, count) { return portOffsetsForSize(port, index, count, NODE_WIDTH, NODE_HEIGHT); }
 function parentPortOffsets(port, index, count) { return portOffsetsForSize(port, index, count, PARENT_NODE_WIDTH, PARENT_NODE_HEIGHT); }
 
-function renderParentNode(canvas, node, position, definition) {
-  let element = wsState.systemNodeElements.get(node.id);
-  if (!element || !canvas.contains(element)) {
-    element = document.createElement('div');
-    element.addEventListener('mousedown', event => {
-      if (!event.target.closest('.ws-system-port,.ws-system-enter')) startSystemNodeDrag(node.id, event);
-    });
-    element.addEventListener('click', event => {
-      if (!event.target.closest('.ws-system-port,.ws-system-enter')) selectSystem(node.id);
-    });
-    canvas.appendChild(element);
-    wsState.systemNodeElements.set(node.id, element);
-  }
-
-  element.className = `ws-node ws-system-node ws-node--${node.nodeType}${node.boundaryRole ? ' ws-node--boundary' : ''}${inspector.selectedSystemId === node.id ? ' ws-node--selected' : ''}`;
-  Object.assign(element.style, {
-    left: `${position.x}px`,
-    top: `${position.y}px`,
-    width: `${PARENT_NODE_WIDTH}px`,
-    height: `${PARENT_NODE_HEIGHT}px`,
-  });
-  element.innerHTML = `<div class="ws-node-label"><strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span></div>`;
-
-  const canEnter = node.nodeType === 'region'
-    || (node.nodeType === 'site' && Boolean(compatibleOccurrenceForSite(wsState.world.sites[node.id])));
-  if (canEnter) {
-    const button = document.createElement('button');
-    button.className = 'ws-system-enter';
-    button.textContent = 'Enter →';
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      if (node.nodeType === 'region') navigateTo('region', { regionId: node.id });
-      else {
-        navigateTo('site', {
-          siteId: node.id,
-          occurrenceId: compatibleOccurrenceForSite(wsState.world.sites[node.id])?.id,
-        });
-      }
-    });
-    element.appendChild(button);
-  }
-
-  const ports = visibleParentPorts(node);
-  for (const direction of ['input', 'output']) {
-    const sidePorts = ports.filter(port => port.direction === direction);
-    sidePorts.forEach((port, index) => {
-      const offset = parentPortOffsets(port, index, sidePorts.length);
-      const dot = document.createElement('span');
-      dot.className = `ws-system-port ws-system-port--${direction} ws-port ws-port--${direction}`;
-      dot.style.left = `${offset.dx - PORT_RADIUS}px`;
-      dot.style.top = `${offset.dy - PORT_RADIUS}px`;
-      const endpoint = systemPortEndpoint(node, port);
-      dot.dataset.systemId = endpoint.systemId;
-      dot.dataset.portId = endpoint.portId;
-      dot.dataset.scopeId = definition.scopeId;
-      dot.title = port.label ?? port.id;
-      element.appendChild(dot);
-    });
-  }
-}
-
 function visibleEndpointForTransfer(systemId, portId) {
   const regionId = wsState.selectedRegionId;
   if (systemId === `${regionId}-import-terminal`) {
@@ -440,10 +390,15 @@ function visibleEndpointForTransfer(systemId, portId) {
 
 function systemEndpointPosition(definition, systemId, portId) {
   const visible = visibleEndpointForTransfer(systemId, portId);
-  const node = definition.nodes.find(item => item.id === visible.nodeId);
   const layout = ensureSystemLayout(definition);
   const position = layout.nodePositions[visible.nodeId] ?? { x: 0, y: 0 };
-  const ports = visibleParentPorts(node);
+  const graph = projectBoundaryGraph(
+    { ...definition, layout },
+    {},
+    (nodeId, endpointPortId) => visibleEndpointForTransfer(nodeId, endpointPortId),
+  );
+  const node = graph.nodes.find(item => item.id === visible.nodeId);
+  const ports = node?.ports ?? [];
   const port = ports.find(item => item.id === visible.portId);
   if (!port) return { x: position.x, y: position.y + PARENT_NODE_HEIGHT / 2 };
   const side = ports.filter(item => item.direction === port.direction);
@@ -465,81 +420,30 @@ function selectTransfer(transferId) {
 
 function renderSystemConnections(svg, definition) {
   if (!svg) return;
-  const ids = new Set(definition.nodes.map(node => node.id));
-  const transfers = Object.values(wsState.world?.simulation?.transfers ?? {}).filter(transfer => {
-    if (definition.scopeId === currentPlanet()?.id) {
-      return ids.has(transfer.sourceCompositeId) && ids.has(transfer.targetCompositeId);
-    }
-    return transfer.scopeId === definition.scopeId;
+  const graph = projectBoundaryGraph(
+    { ...definition, layout: ensureSystemLayout(definition) },
+    wsState.world?.simulation?.transfers ?? {},
+    (systemId, portId) => visibleEndpointForTransfer(systemId, portId),
+    { selectedNodeId: inspector.selectedSystemId },
+  );
+
+  renderGraphConnections({
+    svg,
+    graph,
+    elements: wsState.systemConnectionElements,
+    endpointPosition: endpoint => systemEndpointPosition(definition, endpoint.nodeId, endpoint.portId),
+    flow: connection => connection.transfer.lastRateKgPerSecond ?? 0,
+    selectedId: inspector.selectedTransferId,
+    onSelect: selectTransfer,
+    className: 'ws-system-connection',
   });
-
-  const active = new Set();
-  for (const transfer of transfers) {
-    active.add(transfer.id);
-    let path = wsState.systemConnectionElements.get(transfer.id);
-    if (!path || !svg.contains(path)) {
-      path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('fill', 'none');
-      path.classList.add('ws-connection', 'ws-system-connection');
-      path.addEventListener('click', event => {
-        event.stopPropagation();
-        selectTransfer(transfer.id);
-      });
-      svg.appendChild(path);
-      wsState.systemConnectionElements.set(transfer.id, path);
-    }
-    const source = systemEndpointPosition(definition, transfer.sourceCompositeId, transfer.sourcePortId);
-    const target = systemEndpointPosition(definition, transfer.targetCompositeId, transfer.targetPortId);
-    const midX = (source.x + target.x) / 2;
-    path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
-    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + (transfer.lastRateKgPerSecond ?? 0) * 0.5)));
-    path.classList.toggle('ws-connection--selected', inspector.selectedTransferId === transfer.id);
-  }
-  for (const [id, path] of wsState.systemConnectionElements) {
-    if (!active.has(id)) {
-      path.remove();
-      wsState.systemConnectionElements.delete(id);
-    }
-  }
-}
-
-function attachSystemPortHandlers(container) {
-  container.querySelectorAll('.ws-system-port--output').forEach(port => {
-    port.addEventListener('mousedown', event => {
-      event.stopPropagation();
-      pendingSystemConn.active = true;
-      pendingSystemConn.sourceSystemId = port.dataset.systemId;
-      pendingSystemConn.sourcePortId = port.dataset.portId;
-      pendingSystemConn.scopeId = port.dataset.scopeId;
-      inspector.message = 'Choose a compatible input port.';
-      inspector.selectedTransferId = null;
-      updateCompositeInspector(true);
-    });
-  });
-
-  container.querySelectorAll('.ws-system-port--input').forEach(port => {
-    port.addEventListener('mouseup', event => {
-      if (!pendingSystemConn.active) return;
-      event.stopPropagation();
-      try {
-        const transfer = registerBoundaryTransfer(wsState.world, {
-          sourceCompositeId: pendingSystemConn.sourceSystemId,
-          sourcePortId: pendingSystemConn.sourcePortId,
-          targetCompositeId: port.dataset.systemId,
-          targetPortId: port.dataset.portId,
-          capacityKgPerSecond: 10,
-          priority: pendingSystemConn.scopeId === wsState.world.planetId ? 1 : 0,
-          scopeId: pendingSystemConn.scopeId,
-        });
-        inspector.selectedTransferId = transfer.id;
-        inspector.selectedSystemId = null;
-        inspector.message = 'Transfer connected.';
-      } catch (error) {
-        inspector.message = error.message;
-      }
-      pendingSystemConn.active = false;
-      renderWorkspace();
-    });
+  wsState.connectionPreview = renderGraphConnectionPreview({
+    svg,
+    active: pendingGraphConnection.active && pendingGraphConnection.adapter === 'boundary-transfer',
+    preview: wsState.connectionPreview,
+    source: pendingGraphConnection.source,
+    target: { x: pendingGraphConnection.x, y: pendingGraphConnection.y },
+    endpointPosition: endpoint => systemEndpointPosition(definition, endpoint.nodeId, endpoint.portId),
   });
 }
 
@@ -559,18 +463,25 @@ function startSystemNodeDrag(nodeId, event) {
 }
 
 function onSystemCanvasMove(event) {
-  if (!systemDragState) return;
   const definition = systemWorkspaceDefinition();
-  if (definition.id !== systemDragState.definitionId) return;
-  const layout = ensureSystemLayout(definition);
-  layout.nodePositions[systemDragState.nodeId] = {
-    x: Math.max(0, systemDragState.startX + event.clientX - systemDragState.startMouseX),
-    y: Math.max(0, systemDragState.startY + event.clientY - systemDragState.startMouseY),
-  };
-  const element = wsState.systemNodeElements.get(systemDragState.nodeId);
-  if (element) {
-    element.style.left = `${layout.nodePositions[systemDragState.nodeId].x}px`;
-    element.style.top = `${layout.nodePositions[systemDragState.nodeId].y}px`;
+  if (systemDragState) {
+    if (definition.id !== systemDragState.definitionId) return;
+    const layout = ensureSystemLayout(definition);
+    layout.nodePositions[systemDragState.nodeId] = {
+      x: Math.max(0, systemDragState.startX + event.clientX - systemDragState.startMouseX),
+      y: Math.max(0, systemDragState.startY + event.clientY - systemDragState.startMouseY),
+    };
+    const element = wsState.systemNodeElements.get(systemDragState.nodeId);
+    if (element) {
+      element.style.left = `${layout.nodePositions[systemDragState.nodeId].x}px`;
+      element.style.top = `${layout.nodePositions[systemDragState.nodeId].y}px`;
+    }
+  }
+  if (pendingGraphConnection.active) {
+    const canvas = el('ws-system-canvas');
+    const rect = canvas.getBoundingClientRect();
+    pendingGraphConnection.x = event.clientX - rect.left + (canvas.scrollLeft ?? 0);
+    pendingGraphConnection.y = event.clientY - rect.top + (canvas.scrollTop ?? 0);
   }
   renderSystemConnections(el('ws-system-svg'), definition);
 }
@@ -589,20 +500,101 @@ function renderParentWorkspace(container) {
   const canvas = el('ws-system-canvas');
   const svg = el('ws-system-svg');
   const layout = ensureSystemLayout(definition);
-  const active = new Set(definition.nodes.map(node => node.id));
-  for (const node of definition.nodes) renderParentNode(canvas, node, layout.nodePositions[node.id], definition);
-  for (const [id, element] of wsState.systemNodeElements) {
-    if (!active.has(id)) {
-      element.remove();
-      wsState.systemNodeElements.delete(id);
-    }
-  }
-
-  attachSystemPortHandlers(container);
+  const graph = projectBoundaryGraph(
+    { ...definition, layout },
+    wsState.world?.simulation?.transfers ?? {},
+    (systemId, portId) => visibleEndpointForTransfer(systemId, portId),
+    { selectedNodeId: inspector.selectedSystemId },
+  );
+  renderGraphNodes({
+    canvas,
+    graph,
+    elements: wsState.systemNodeElements,
+    width: PARENT_NODE_WIDTH,
+    height: PARENT_NODE_HEIGHT,
+    className: 'ws-system-node',
+    nodeClass: node => `ws-node--${node.type}${node.source.boundaryRole ? ' ws-node--boundary' : ''}`,
+    portClass: (_node, _port, direction) => `ws-system-port ws-system-port--${direction}`,
+    nodeContent: (element, graphNode, isNew) => {
+      const node = graphNode.source;
+      const label = isNew ? document.createElement('div') : element.querySelector('.ws-node-label');
+      if (isNew) {
+        label.className = 'ws-node-label';
+        element.appendChild(label);
+      }
+      label.innerHTML = `<strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span>`;
+      const canEnter = node.nodeType === 'region'
+        || (node.nodeType === 'site' && Boolean(compatibleOccurrenceForSite(wsState.world.sites[node.id])));
+      const existingEnter = element.querySelector('.ws-system-enter');
+      if (canEnter && !existingEnter) {
+        const button = document.createElement('button');
+        button.className = 'ws-system-enter ws-enter';
+        button.textContent = 'Enter →';
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          if (node.nodeType === 'region') navigateTo('region', { regionId: node.id });
+          else navigateTo('site', {
+            siteId: node.id,
+            occurrenceId: compatibleOccurrenceForSite(wsState.world.sites[node.id])?.id,
+          });
+        });
+        element.appendChild(button);
+      } else if (!canEnter) {
+        existingEnter?.remove();
+      }
+    },
+    onNodePointerDown: (node, event) => startSystemNodeDrag(node.id, event),
+    onNodeSelect: selectSystem,
+    onPortStart: (node, portId, event) => {
+      const port = node.ports.find(item => item.id === portId);
+      if (port?.direction !== 'output') return;
+      const endpoint = systemPortEndpoint(node.source, port);
+      pendingGraphConnection.active = true;
+      pendingGraphConnection.source = { nodeId: endpoint.systemId, portId: endpoint.portId };
+      pendingGraphConnection.scopeId = definition.scopeId;
+      pendingGraphConnection.adapter = 'boundary-transfer';
+      const rect = canvas.getBoundingClientRect();
+      pendingGraphConnection.x = event.clientX - rect.left + (canvas.scrollLeft ?? 0);
+      pendingGraphConnection.y = event.clientY - rect.top + (canvas.scrollTop ?? 0);
+      inspector.message = 'Choose a compatible input port.';
+      inspector.selectedTransferId = null;
+      updateCompositeInspector(true);
+      event.stopPropagation();
+    },
+    onPortFinish: (node, portId, event) => {
+      const port = node.ports.find(item => item.id === portId);
+      if (!pendingGraphConnection.active || port?.direction !== 'input') return;
+      const endpoint = systemPortEndpoint(node.source, port);
+      try {
+        const transfer = registerBoundaryTransfer(wsState.world, {
+          sourceCompositeId: pendingGraphConnection.source.nodeId,
+          sourcePortId: pendingGraphConnection.source.portId,
+          targetCompositeId: endpoint.systemId,
+          targetPortId: endpoint.portId,
+          capacityKgPerSecond: 10,
+          priority: pendingGraphConnection.scopeId === wsState.world.planetId ? 1 : 0,
+          scopeId: pendingGraphConnection.scopeId,
+        });
+        inspector.selectedTransferId = transfer.id;
+        inspector.selectedSystemId = null;
+        inspector.message = 'Transfer connected.';
+      } catch (error) {
+        inspector.message = error.message;
+      }
+      pendingGraphConnection.active = false;
+      pendingGraphConnection.adapter = null;
+      event.stopPropagation();
+      renderWorkspace();
+    },
+  });
   canvas.addEventListener('mousemove', onSystemCanvasMove);
   canvas.addEventListener('mouseup', () => {
     systemDragState = null;
-    if (pendingSystemConn.active) pendingSystemConn.active = false;
+    if (pendingGraphConnection.active) {
+      pendingGraphConnection.active = false;
+      pendingGraphConnection.adapter = null;
+      renderSystemConnections(el('ws-system-svg'), definition);
+    }
   });
   canvas.addEventListener('mouseleave', () => { systemDragState = null; });
   el('ws-prototype-survey')?.addEventListener('click', event => {
@@ -669,7 +661,7 @@ function formatTransferInspector(transfer) {
     <div class="ws-ins-row"><b>Capacity:</b> ${transfer.capacityKgPerSecond.toFixed(2)} kg/s</div>
     <div class="ws-ins-row"><b>Actual rate:</b> <span data-live="transfer-rate">${transfer.lastRateKgPerSecond.toFixed(2)}</span> kg/s</div>
     <div class="ws-ins-row"><b>Last moved:</b> <span data-live="transfer-moved">${transfer.lastMovedKg.toFixed(3)}</span> kg/tick</div>
-    <div class="ws-ins-action"><button class="ws-btn-remove-transfer" data-transfer-id="${escHtml(transfer.id)}">Disconnect</button></div>`;
+    <div class="ws-ins-action"><button class="ws-btn-disconnect" data-conn-id="${escHtml(transfer.id)}">Disconnect</button></div>`;
 }
 
 function formatCompositeInspector(node) {
@@ -723,9 +715,17 @@ function updateCompositeInspector(force = false) {
     const content = transfer ? formatTransferInspector(transfer) : formatCompositeInspector(node);
     body.innerHTML = `${inspector.message ? `<div class="ws-ins-note">${escHtml(inspector.message)}</div>` : ''}${content}`;
     inspector.renderKey = key;
-    body.querySelectorAll('.ws-btn-remove-transfer').forEach(button => {
+    body.querySelectorAll('.ws-btn-disconnect').forEach(button => {
       button.addEventListener('click', () => {
-        removeBoundaryTransfer(wsState.world, button.dataset.transferId);
+        const definition = systemWorkspaceDefinition();
+        const graph = projectBoundaryGraph(
+          { ...definition, layout: ensureSystemLayout(definition) },
+          wsState.world?.simulation?.transfers ?? {},
+          (systemId, portId) => visibleEndpointForTransfer(systemId, portId),
+        );
+        disconnectGraphConnection(graph, button.dataset.connId, {
+          'boundary-transfer': connection => removeBoundaryTransfer(wsState.world, connection.id),
+        });
         inspector.selectedTransferId = null;
         inspector.renderKey = null;
         renderWorkspace();
@@ -784,65 +784,6 @@ function nodeLabel(node) {
   return node.nodeType;
 }
 
-function renderNode(canvas, node, position) {
-  let nodeElement = wsState.nodeElements.get(node.id);
-  if (!nodeElement || !canvas.contains(nodeElement)) {
-    nodeElement = document.createElement('div');
-    nodeElement.innerHTML = `${node.nodeType === 'hopper' ? '<div class="ws-hopper-fill"></div>' : ''}<div class="ws-node-label"></div>`;
-    const ports = getNodePortDefinitions(node);
-    for (const direction of ['input', 'output']) {
-      const sidePorts = ports.filter(port => port.direction === direction);
-      sidePorts.forEach((port, index) => {
-        const offset = portOffsets(port, index, sidePorts.length);
-        const dot = document.createElement('div');
-        dot.className = `ws-port ws-port--${direction}`;
-        dot.title = port.label ?? port.id;
-        dot.style.left = `${offset.dx - PORT_RADIUS}px`;
-        dot.style.top = `${offset.dy - PORT_RADIUS}px`;
-        dot.dataset.nodeId = node.id;
-        dot.dataset.portId = port.id;
-        if (direction === 'output') {
-          dot.addEventListener('mousedown', event => {
-            event.stopPropagation();
-            startPendingConnection(node.id, port.id, event);
-          });
-        } else {
-          dot.addEventListener('mouseup', event => {
-            if (pendingConn.active) {
-              event.stopPropagation();
-              finishConnection(node.id, port.id);
-            }
-          });
-        }
-        nodeElement.appendChild(dot);
-      });
-    }
-    nodeElement.addEventListener('mousedown', event => {
-      if (!event.target.classList.contains('ws-port')) startNodeDrag(node.id, event);
-    });
-    nodeElement.addEventListener('click', event => {
-      if (!event.target.classList.contains('ws-port')) selectNode(node.id);
-    });
-    wsState.nodeElements.set(node.id, nodeElement);
-    canvas.appendChild(nodeElement);
-  }
-
-  nodeElement.className = `ws-node ws-node--${node.nodeType}${node.boundaryRole ? ' ws-node--boundary' : ''}`;
-  nodeElement.classList.toggle('ws-node--selected', inspector.selectedNodeId === node.id);
-  Object.assign(nodeElement.style, {
-    left: `${position.x}px`,
-    top: `${position.y}px`,
-    width: `${NODE_WIDTH}px`,
-    height: `${NODE_HEIGHT}px`,
-  });
-  const label = nodeElement.querySelector('.ws-node-label');
-  if (label) label.innerHTML = nodeLabel(node).split('\n').map(line => `<span>${escHtml(line)}</span>`).join('');
-  const fill = nodeElement.querySelector('.ws-hopper-fill');
-  if (fill && node.nodeType === 'hopper') {
-    fill.style.height = `${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%`;
-  }
-}
-
 function portCanvasPosition(nodeId, portId) {
   const node = wsState.blueprint.nodes[nodeId];
   const position = wsState.blueprintLayout.nodePositions[nodeId] ?? { x: 0, y: 0 };
@@ -866,66 +807,80 @@ function renderConnections(svg) {
   svg.style.width = `${maxX}px`;
   svg.style.height = `${maxY}px`;
 
-  const activeIds = new Set();
-  for (const connection of Object.values(wsState.blueprint.connections)) {
-    activeIds.add(connection.id);
-    let path = wsState.connectionElements.get(connection.id);
-    if (!path || !svg.contains(path)) {
-      path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('fill', 'none');
-      path.setAttribute('cursor', 'pointer');
-      path.classList.add('ws-connection');
-      path.addEventListener('click', () => selectConnection(connection.id));
-      svg.appendChild(path);
-      wsState.connectionElements.set(connection.id, path);
-    }
-    const source = portCanvasPosition(connection.sourceNodeId, connection.sourcePortId);
-    const target = portCanvasPosition(connection.targetNodeId, connection.targetPortId);
-    const midX = (source.x + target.x) / 2;
-    const stream = getStreamForConnection(wsState.blueprint, connection.id);
-    const flow = stream ? totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond) : 0;
-    path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
-    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + flow * 0.5)));
-    path.classList.toggle('ws-connection--selected', inspector.selectedConnId === connection.id);
-  }
-  for (const [id, path] of wsState.connectionElements) {
-    if (!activeIds.has(id)) {
-      path.remove();
-      wsState.connectionElements.delete(id);
-    }
-  }
+  const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout, {
+    selectedNodeId: inspector.selectedNodeId,
+  });
+  renderGraphConnections({
+    svg,
+    graph,
+    elements: wsState.connectionElements,
+    endpointPosition: endpoint => portCanvasPosition(endpoint.nodeId, endpoint.portId),
+    flow: connection => {
+      const stream = getStreamForConnection(wsState.blueprint, connection.id);
+      return stream ? totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond) : 0;
+    },
+    selectedId: inspector.selectedConnId,
+    onSelect: selectConnection,
+  });
 
-  if (pendingConn.active) {
-    if (!wsState.connectionPreview || !svg.contains(wsState.connectionPreview)) {
-      wsState.connectionPreview = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      wsState.connectionPreview.classList.add('ws-connection-preview');
-      svg.appendChild(wsState.connectionPreview);
-    }
-    const source = portCanvasPosition(pendingConn.sourceNodeId, pendingConn.sourcePortId);
-    wsState.connectionPreview.setAttribute('x1', source.x);
-    wsState.connectionPreview.setAttribute('y1', source.y);
-    wsState.connectionPreview.setAttribute('x2', pendingConn.x);
-    wsState.connectionPreview.setAttribute('y2', pendingConn.y);
-  } else if (wsState.connectionPreview) {
-    wsState.connectionPreview.remove();
-    wsState.connectionPreview = null;
-  }
+  wsState.connectionPreview = renderGraphConnectionPreview({
+    svg,
+    active: pendingGraphConnection.active && pendingGraphConnection.adapter === 'blueprint',
+    preview: wsState.connectionPreview,
+    source: pendingGraphConnection.source,
+    target: { x: pendingGraphConnection.x, y: pendingGraphConnection.y },
+    endpointPosition: endpoint => portCanvasPosition(endpoint.nodeId, endpoint.portId),
+  });
 }
 
 function renderEngineeringNodes() {
   const canvas = el('ws-eng-canvas');
   const svg = el('ws-eng-svg');
   if (!canvas || !svg || !wsState.blueprint) return;
-  const nodeIds = new Set(Object.keys(wsState.blueprint.nodes));
-  for (const [id, element] of wsState.nodeElements) {
-    if (!nodeIds.has(id)) {
-      element.remove();
-      wsState.nodeElements.delete(id);
-    }
-  }
-  for (const node of Object.values(wsState.blueprint.nodes)) {
-    renderNode(canvas, node, wsState.blueprintLayout.nodePositions[node.id] ?? { x: 0, y: 0 });
-  }
+  const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout, {
+    selectedNodeId: inspector.selectedNodeId,
+  });
+  renderGraphNodes({
+    canvas,
+    graph,
+    elements: wsState.nodeElements,
+    width: NODE_WIDTH,
+    height: NODE_HEIGHT,
+    nodeClass: node => `ws-node--${node.type}${node.source.boundaryRole ? ' ws-node--boundary' : ''}`,
+    nodeContent: (element, graphNode, isNew) => {
+      const node = graphNode.source;
+      if (node.nodeType === 'hopper' && isNew) {
+        const fill = document.createElement('div');
+        fill.className = 'ws-hopper-fill';
+        fill.style.height = `${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%`;
+        element.appendChild(fill);
+      }
+      const label = isNew ? document.createElement('div') : element.querySelector('.ws-node-label');
+      if (isNew) {
+        label.className = 'ws-node-label';
+        element.appendChild(label);
+      }
+      label.innerHTML = nodeLabel(node).split('\n')
+        .map(line => `<span>${escHtml(line)}</span>`).join('');
+      const fill = element.querySelector('.ws-hopper-fill');
+      if (fill && node.nodeType === 'hopper') {
+        fill.style.height = `${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%`;
+      }
+    },
+    onNodePointerDown: (node, event) => startNodeDrag(node.id, event),
+    onNodeSelect: selectNode,
+    onPortStart: (node, portId, event) => {
+      const port = node.ports.find(item => item.id === portId);
+      if (port?.direction === 'output') startPendingConnection(node.id, portId, event);
+    },
+    onPortFinish: (node, portId, event) => {
+      const port = node.ports.find(item => item.id === portId);
+      if (port?.direction === 'input' && pendingGraphConnection.active) {
+        event.stopPropagation();
+        finishConnection(node.id, portId);
+      }
+    },
+  });
   renderConnections(svg);
   updateInspector();
   updateSimStatus();
@@ -968,10 +923,10 @@ function startNodeDrag(nodeId, event) {
 function startPendingConnection(nodeId, portId, event) {
   const canvas = el('ws-eng-canvas');
   const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
-  Object.assign(pendingConn, {
+  Object.assign(pendingGraphConnection, {
     active: true,
-    sourceNodeId: nodeId,
-    sourcePortId: portId,
+    source: { nodeId, portId },
+    adapter: 'blueprint',
     x: event.clientX - rect.left + (canvas?.scrollLeft ?? 0),
     y: event.clientY - rect.top + (canvas?.scrollTop ?? 0),
   });
@@ -979,22 +934,23 @@ function startPendingConnection(nodeId, portId, event) {
 }
 
 function finishConnection(targetNodeId, targetPortId) {
-  if (!pendingConn.active) return;
+  if (!pendingGraphConnection.active) return;
   const check = checkBlueprintConnection(
     wsState.blueprint,
-    pendingConn.sourceNodeId,
-    pendingConn.sourcePortId,
+    pendingGraphConnection.source.nodeId,
+    pendingGraphConnection.source.portId,
     targetNodeId,
     targetPortId
   );
-  pendingConn.active = false;
+  pendingGraphConnection.active = false;
+  pendingGraphConnection.adapter = null;
   if (!check.ok) {
     inspector.message = check.reason;
   } else {
     const connection = blueprintConnect(
       wsState.blueprint,
-      pendingConn.sourceNodeId,
-      pendingConn.sourcePortId,
+      pendingGraphConnection.source.nodeId,
+      pendingGraphConnection.source.portId,
       targetNodeId,
       targetPortId
     );
@@ -1018,19 +974,20 @@ function onCanvasMouseMove(event) {
     );
     renderEngineeringNodes();
   }
-  if (pendingConn.active) {
+  if (pendingGraphConnection.active) {
     const canvas = el('ws-eng-canvas');
     const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
-    pendingConn.x = event.clientX - rect.left + (canvas?.scrollLeft ?? 0);
-    pendingConn.y = event.clientY - rect.top + (canvas?.scrollTop ?? 0);
+    pendingGraphConnection.x = event.clientX - rect.left + (canvas?.scrollLeft ?? 0);
+    pendingGraphConnection.y = event.clientY - rect.top + (canvas?.scrollTop ?? 0);
     renderConnections(el('ws-eng-svg'));
   }
 }
 
 function onCanvasMouseUp() {
   dragState = null;
-  if (pendingConn.active) {
-    pendingConn.active = false;
+  if (pendingGraphConnection.active) {
+    pendingGraphConnection.active = false;
+    pendingGraphConnection.adapter = null;
     renderConnections(el('ws-eng-svg'));
   }
 }
@@ -1174,12 +1131,18 @@ function onInspectorClick(event) {
   const button = event.target.closest('.ws-btn-disconnect');
   if (!button) return;
   if (button.dataset.connId) {
-    blueprintDisconnect(wsState.blueprint, button.dataset.connId);
+    const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout);
+    disconnectGraphConnection(graph, button.dataset.connId, {
+      blueprint: connection => blueprintDisconnect(wsState.blueprint, connection.id),
+    });
     inspector.selectedConnId = null;
   } else if (button.dataset.nodeId) {
+    const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout);
     for (const connection of [...Object.values(wsState.blueprint.connections)]) {
       if (connection.sourceNodeId === button.dataset.nodeId || connection.targetNodeId === button.dataset.nodeId) {
-        blueprintDisconnect(wsState.blueprint, connection.id);
+        disconnectGraphConnection(graph, connection.id, {
+          blueprint: item => blueprintDisconnect(wsState.blueprint, item.id),
+        });
       }
     }
   }
