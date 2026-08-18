@@ -101,12 +101,10 @@ export function createWorld(seed) {
         nodeType: 'site',
         systemType: 'site',
         childWorkspaceId: `${siteId}-workspace`,
-        ports: [createSystemPort({
-          id: 'ore-output',
-          direction: 'output',
-          kind: 'material',
-          label: 'ore out',
-        })],
+        ports: [
+          createSystemPort({ id: 'material-input', direction: 'input', kind: 'material', label: 'material in' }),
+          createSystemPort({ id: 'material-output', direction: 'output', kind: 'material', label: 'material out' }),
+        ],
         inspectableState: { regionId: region.id, occurrenceIds },
       });
       world.sites[siteId] = {
@@ -128,14 +126,10 @@ export function createWorld(seed) {
       nodeType: 'region',
       systemType: 'region',
       childWorkspaceId: `${region.id}-workspace`,
-      ports: [createSystemPort({
-        id: 'ore-output',
-        direction: 'output',
-        kind: 'material',
-        label: 'ore out',
-        childNodeId: siteIds[0] ?? null,
-        childPortId: siteIds.length > 0 ? 'ore-output' : null,
-      })],
+      ports: [
+        createSystemPort({ id: 'material-input', direction: 'input', kind: 'material', label: 'material in' }),
+        createSystemPort({ id: 'material-output', direction: 'output', kind: 'material', label: 'material out' }),
+      ],
       inspectableState: { regionId: region.id, siteIds },
     });
     world.systemNodes[region.id] = regionNode;

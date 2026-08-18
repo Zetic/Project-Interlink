@@ -1,8 +1,8 @@
 /** World-owned fixed-step simulation clock and recursive boundary transfers. */
 import { simulationTick, SIMULATION_STEP_S } from './simulationEngine.js';
-import { createHopper } from './hopperNode.js';
+import { createBoundaryBuffer } from './hopperNode.js';
 import { transferBoundaryMaterial, validateBoundaryTransfer } from './boundaryTransfer.js';
-import { createCompositeNode, createSystemPort } from './systemNode.js';
+import { createCompositeNode, createSystemPort, getSystemNodePort } from './systemNode.js';
 
 export const DEFAULT_BOUNDARY_TRANSFER_RATE_KG_PER_SECOND = 10;
 export const DEFAULT_REGIONAL_BUFFER_CAPACITY_KG = 1000;
@@ -29,6 +29,7 @@ function normalizeRecursiveContracts(world) {
     ]);
     site.boundaryPorts = node.ports;
   }
+
   for (const [regionId, region] of Object.entries(world.regions ?? {})) {
     const node = world.systemNodes?.[regionId]; if (!node) continue;
     const importHopperId = `${regionId}-import-hopper`, exportHopperId = `${regionId}-export-hopper`;
@@ -46,18 +47,56 @@ function normalizeRecursiveContracts(world) {
   }
 }
 
+function ensureSiteRuntimeWorkspace(world, siteId) {
+  const simulation = ensureSimulationShape(world);
+  const siteNode = world.systemNodes?.[siteId];
+  if (!siteNode?.childWorkspaceId) return null;
+  let workspace = simulation.workspaces[siteNode.childWorkspaceId];
+  if (!workspace) {
+    workspace = { id: siteNode.childWorkspaceId, nodes: {} };
+    simulation.workspaces[siteNode.childWorkspaceId] = workspace;
+  }
+  const importId = `${siteId}-import-boundary`;
+  const exportId = `${siteId}-export-boundary`;
+  workspace.nodes[importId] ??= createBoundaryBuffer({
+    id: importId,
+    capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG,
+    role: 'import',
+  });
+  workspace.nodes[exportId] ??= createBoundaryBuffer({
+    id: exportId,
+    capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG,
+    role: 'export',
+  });
+  const input = getSystemNodePort(siteNode, 'material-input');
+  const output = getSystemNodePort(siteNode, 'material-output');
+  input.childNodeId = importId;
+  input.childPortId = 'input';
+  output.childNodeId = exportId;
+  output.childPortId = 'output';
+  world.sites[siteId].boundaryPorts = siteNode.ports;
+  return workspace;
+}
+
 function ensureRegionRuntimeWorkspace(world, regionId) {
   const simulation = ensureSimulationShape(world), regionNode = world.systemNodes?.[regionId]; if (!regionNode?.childWorkspaceId) return null;
   let workspace = simulation.workspaces[regionNode.childWorkspaceId]; if (!workspace) { workspace = { id: regionNode.childWorkspaceId, nodes: {} }; simulation.workspaces[regionNode.childWorkspaceId] = workspace; }
   const exportHopperId = `${regionId}-export-hopper`, importHopperId = `${regionId}-import-hopper`;
-  workspace.nodes[exportHopperId] ??= createHopper({ id: exportHopperId, capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG });
-  workspace.nodes[importHopperId] ??= createHopper({ id: importHopperId, capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG });
+  workspace.nodes[exportHopperId] ??= createBoundaryBuffer({ id: exportHopperId, capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG, role: 'export' });
+  workspace.nodes[importHopperId] ??= createBoundaryBuffer({ id: importHopperId, capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG, role: 'import' });
   for (const siteId of world.regions?.[regionId]?.siteIds ?? []) if (world.systemNodes?.[siteId]) workspace.nodes[siteId] = world.systemNodes[siteId];
   const terminalId = `${regionId}-export-terminal`; if (world.systemNodes?.[terminalId]) workspace.nodes[terminalId] = world.systemNodes[terminalId];
   return workspace;
 }
 
-export function createWorldSimulation(world) { if (!world || typeof world !== 'object') throw new Error('World simulation requires a world object'); normalizeRecursiveContracts(world); const simulation = ensureSimulationShape(world); for (const regionId of Object.keys(world.regions ?? {})) ensureRegionRuntimeWorkspace(world, regionId); return simulation; }
+export function createWorldSimulation(world) {
+  if (!world || typeof world !== 'object') throw new Error('World simulation requires a world object');
+  const simulation = ensureSimulationShape(world);
+  for (const siteId of Object.keys(world.sites ?? {})) ensureSiteRuntimeWorkspace(world, siteId);
+  normalizeRecursiveContracts(world);
+  for (const regionId of Object.keys(world.regions ?? {})) ensureRegionRuntimeWorkspace(world, regionId);
+  return simulation;
+}
 export function registerSimulationWorkspace(world, workspaceId, workspace) { if (typeof workspaceId !== 'string' || !workspaceId) throw new Error('workspaceId must be a non-empty string'); if (!workspace?.nodes) throw new Error('Simulation workspace must expose a nodes map'); const simulation = createWorldSimulation(world); simulation.workspaces[workspaceId] = workspace; return workspace; }
 export function registerSimulationSession(world, sessionId, blueprint, workspaceId = null) { if (typeof sessionId !== 'string' || !sessionId) throw new Error('Simulation sessionId must be a non-empty string'); const simulation = createWorldSimulation(world); simulation.sessions[sessionId] = blueprint; if (workspaceId) registerSimulationWorkspace(world, workspaceId, blueprint); return blueprint; }
 export function getSimulationWorkspace(world, workspaceId) { return createWorldSimulation(world).workspaces[workspaceId] ?? null; }
