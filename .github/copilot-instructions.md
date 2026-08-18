@@ -1,33 +1,53 @@
 # Project Interlink — Copilot Agent Instructions
 
-## Project Direction
+## Documentation Roles
+
+Use the repository documents for different purposes:
+
+- `DESIGN.md` — canonical long-term game design and intended gameplay direction
+- `README.md` — current project state, roadmap, setup, and inspiration context
+- `.github/copilot-instructions.md` — implementation guardrails and development priorities for coding agents
+- `PATCH_NOTES.md` — historical commit-by-commit development record
+
+When implementing new systems, remain compatible with `DESIGN.md`, but **do not implement every future concept merely because it appears there**. Follow the current issue and near-term development order.
+
+---
+
+# Project Direction
 
 Project Interlink is a systems-driven simulation and management game being developed as a web application.
 
 > **Everything is a system, and every system can become a component of a larger system.**
 
-The long-term game should emphasize interconnected physical, chemical, industrial, logistical, and control systems rather than conventional character-action gameplay. The eventual interface should feel closer to an interactive engineering workspace, process diagram, network, and simulation dashboard than a traditional rendered world.
+The long-term game should emphasize interconnected physical, chemical, industrial, logistical, and control systems. The interface should increasingly resemble an engineering workspace made from networks, process diagrams, material/energy streams, instrumentation, controllers, dashboards, and reusable nested systems.
 
-The repository is still early. **Do not attempt to build the whole game at once.** Extend the current simulation foundation incrementally and preserve working behavior unless an issue explicitly changes it.
+The repository is still early. Extend the current foundation incrementally and preserve working behavior unless an issue explicitly changes it.
+
+World generation is a means of creating meaningful physical starting conditions for gameplay; **do not allow development to become generation-only**.
 
 ---
 
 # Current Project State
 
-The original `planet-generator/` tech demo has now been promoted into the first real Interlink simulation subsystem.
+The original `planet-generator/` tech demo has been promoted into the first real Interlink simulation subsystem.
 
 Current working behavior includes:
 
-1. Deterministic seeded planet generation.
-2. Causal planet-generation passes rather than archetype-first generation.
-3. Generated planet mass, orbit, composition, volatiles, thermal environment, interior structure, physical dimensions, atmosphere, internal activity, surface state, and derived classification.
-4. Region generation from planetary conditions.
-5. Background natural resources belonging to regions.
-6. Hidden geological/environmental features inside regions.
-7. Generated natural-resource occurrences and compositions associated with features.
-8. A discovery UI that reveals already-existing features.
+1. deterministic seeded planet generation
+2. causal planet-generation passes rather than archetype-first generation
+3. generated orbit, mass, composition, volatiles, thermal environment, interior structure, dimensions, atmosphere, internal activity, surface state, and derived classification
+4. regions generated from planet conditions
+5. regional background natural resources
+6. hidden geological/environmental features
+7. feature-level resource occurrences and compositions
+8. discovery UI that reveals already-existing features
+9. serializable World State with stable ID references
+10. separate Player Knowledge State
+11. separate UI/presentation state
+12. namespaced/sub-seeded deterministic RNG streams
+13. schema/generator version metadata
 
-The foundational state architecture is now established:
+The foundational state architecture is established:
 
 ```text
 WORLD / SIMULATION STATE
@@ -40,43 +60,41 @@ APPLICATION / UI STATE
 selection, display, filters, temporary controls
 ```
 
-The current root world state contains version metadata and flat ID-indexed maps for generated entities. Physical discovery state is no longer stored on features. Procedural generation uses deterministic namespaced/sub-seeded RNG streams.
-
-**Do not redo this foundation without a concrete need.** The next development priority is automated simulation regression protection, then deeper causal regional geology and feature/resource formation.
+**Do not redo this foundation without a concrete need.**
 
 ---
 
-# Immediate Development Priority: Simulation Contracts and Tests
+# Current Immediate Priority: Simulation Contracts and Tests
 
-Before making large changes to geology, resources, or gameplay, establish executable regression tests for the simulation.
+Before making large changes to geology or gameplay, establish executable regression protection for the current simulation.
 
-Prefer the built-in Node.js test runner (`node:test`) unless there is a clear need for a third-party test framework. Keep runtime dependencies at zero or near zero.
+Prefer the built-in Node.js test runner (`node:test`) unless a third-party framework is clearly justified. Keep application runtime dependencies at zero or near zero.
 
-Tests should protect these contracts:
+Tests should protect:
 
 ## Determinism
 
 - same root seed + same generator version produces identical world data
 - same seed + same RNG namespace produces the same sequence
-- unrelated RNG namespaces are independent
+- unrelated RNG namespaces remain independent
 - simulation/generation modules do not use scattered `Math.random()` calls
 
-## World integrity
+## World Integrity
 
-- all planet → region references resolve
-- all region → feature references resolve
-- all feature/resource-occurrence references resolve
+- planet → region references resolve
+- region → feature references resolve
+- feature → resource-occurrence references resolve
 - parent/back-reference IDs agree
-- generated IDs are unique and stable for a generated world
-- no physical feature contains player discovery state
+- generated IDs are unique within the world
+- physical features do not contain player discovery truth
 
-## Knowledge integrity
+## Knowledge Integrity
 
-- all knowledge records reference real world entities
-- discovering a feature mutates knowledge only
-- discovery does not alter feature/resource truth
+- knowledge records reference real world entities
+- discovering a feature changes knowledge only
+- discovery does not mutate physical world/resource state
 
-## Numeric invariants
+## Numeric Invariants
 
 Where applicable:
 
@@ -84,118 +102,202 @@ Where applicable:
 - core + deep interior + envelope fractions sum to approximately 1
 - region area percentages sum to approximately 100%
 - atmospheric composition sums to approximately 100% when atmosphere exists
-- no NaN or Infinity
+- no NaN or Infinity values
 - physical quantities that cannot be negative are not negative
 
-## Domain compatibility
+## Domain Compatibility
 
-Obvious impossible combinations should be prevented and tested.
+Prevent and test obvious contradictions such as:
 
-Examples:
+- aquifers with arbitrary gas/plastic states or incompatible resources
+- gas reservoirs without gas-compatible state/resources
+- magma chambers without magma/high-temperature compatibility
+- ice bodies without solid/frozen volatile compatibility
+- biological resources without suitable biological conditions
 
-- aquifers should be fluid-compatible rather than arbitrary solid/gas/plastic features
-- gas reservoirs should be gaseous and contain gas-compatible resources
-- magma chambers should be magma/high-temperature compatible
-- ice bodies should be solid/frozen volatile-compatible
-- biological resources must require appropriate biological conditions
+Do not turn this testing work into the complete geology simulator.
 
-Do not turn this testing phase into a complete geology simulator. Establish only clear contracts that future generation work can safely build on.
+## Broad Seed Testing and CI
 
-## Broad seed testing
+Run deterministic multi-seed smoke/property-style tests over hundreds of worlds and add a small GitHub Actions workflow that runs tests for pull requests and `main`.
 
-Include a deterministic smoke/property-style test over many seeds (hundreds are sufficient initially) that verifies all validators and key invariants pass.
+---
 
-The suite should be fast enough to run on every pull request.
+# Development Must Validate the Gameplay Loop Early
 
-## CI
+After the regression-test foundation is in place, continue improving world generation **and** begin small gameplay vertical slices.
 
-Once a minimal test command exists, add a small GitHub Actions workflow that runs the tests on pull requests and pushes to the main development branch.
+The long-term loop defined in `DESIGN.md` is:
 
-Do not add a heavy build pipeline just for the current static application.
+```text
+Acquire
+→ Analyze
+→ Experiment
+→ Engineer
+→ Blueprint
+→ Automate
+→ Scale
+→ Optimize
+```
+
+Do not wait until star, system, planet, region, geology, and resource generation are all “finished” before prototyping gameplay.
+
+Early gameplay work should be intentionally narrow. A suitable first playable chain may be conceptually:
+
+```text
+Survey / discover an existing resource occurrence
+    ↓
+Acquire a small quantity
+    ↓
+Inspect / analyze composition
+    ↓
+Apply one simple parameter-driven transformation or separation
+    ↓
+Produce an output stream and verify matter balance
+    ↓
+Represent that successful operation as a reusable process/apparatus concept
+```
+
+This is not permission to build the entire factory/blueprint/technology game immediately. The purpose is to prove that generated world data creates interesting player decisions and that future processing systems can consume the data model cleanly.
+
+When adding world-generation detail, ask:
+
+> **What decision, constraint, or opportunity does this create for the player?**
+
+When adding gameplay, ask:
+
+> **What physical world state does this act on?**
+
+---
+
+# World Generation Must Eventually Begin Above the Planet
+
+The current planet generator is the first implemented slice, **not the permanent top of the causal world model**.
+
+The intended long-term chain is:
+
+```text
+Star
+    ↓
+System / Formation Environment
+    ↓
+Protoplanetary Material + Orbital Architecture
+    ↓
+Planet
+    ↓
+Region
+    ↓
+Features + Resource Occurrences
+    ↓
+Survey / Extraction / Processing / Industry
+```
+
+## Current Rule
+
+Do **not** implement a full star/system simulator simply because it is described here. Current planet-local assumptions are acceptable scaffolding while downstream systems are being established.
+
+## Future Architectural Requirement
+
+Do not entrench Sun-like or independently rolled planet assumptions so deeply that upstream star/system generation cannot later replace them.
+
+Planet generation should gradually be able to consume explicit upstream context such as:
+
+```js
+planetFormationContext = {
+  star: {
+    mass,
+    age,
+    luminosity,
+    effectiveTemperature,
+    metallicity,
+    abundanceRatios,
+    activity,
+  },
+  system: {
+    formationComposition,
+    volatileAvailability,
+    orbitalArchitecture,
+    formationRegion,
+    migrationOrHistoryModifiers,
+  },
+  orbit: {
+    semiMajorAxis,
+    eccentricity,
+  },
+};
+```
+
+The exact schema is not fixed yet.
+
+Useful future upstream causes include:
+
+- stellar mass, age, luminosity, temperature, metallicity, activity
+- composition/element ratios that materially influence formed bodies
+- protoplanetary material and volatile distribution
+- formation temperature/condensation context
+- orbital architecture
+- migration/accretion/impact abstractions only where downstream consequences justify them
+
+The design target is **causally plausible and gameplay-useful**, not research-grade astrophysics.
+
+A future star/system generation issue should replace current local assumptions incrementally, with tests showing which planet properties are now sourced upstream.
 
 ---
 
 # Required Architectural Direction
 
-## 1. Keep Three State Layers Separate
+## Keep Three State Layers Separate
 
 ### World State
 
 Contains objective simulated reality:
 
-- planets
+- stars/systems/planets when those exist
 - regions
 - features
 - resource occurrences
 - material compositions
 - physical quantities
-- future facilities/processes/material streams
+- future facilities, processes, material streams, and infrastructure
 
-A feature exists independently of whether it has been discovered.
+A physical object exists independently of player knowledge.
 
 ### Knowledge State
 
-Contains what the player knows about world objects.
+Contains what the player knows or estimates about world objects.
 
-Current discovery may remain binary, but the architecture should support future states such as:
+A future discovery path may include:
 
 ```text
 Unknown
-  ↓
-Anomaly Detected
-  ↓
-Identified
-  ↓
-Composition Estimated
-  ↓
-Quantity Estimated
-  ↓
-Characterized
+→ Anomaly Detected
+→ Identified
+→ Composition Estimated
+→ Quantity Estimated
+→ Characterized
 ```
 
-Discovery must reveal existing world truth rather than generate or modify it.
+Discovery reveals existing world truth; it must not create favorable resources because the player searched for them.
 
 ### UI State
 
-Contains presentation-only state such as:
+Contains presentation-only state such as selected entity, expanded panels, filters, active views, graph viewport, and temporary control values.
 
-- selected entity
-- expanded panels
-- filters
-- active view
-- graph viewport
-- temporary form values
-
-UI state must never become simulation truth.
+UI state must not become simulation truth.
 
 ---
 
-## 2. Root World State
+## Root World State
 
-The planet object must not become the permanent root container for the game.
+Keep the world plain and serializable. The current shape contains version metadata and ID-indexed maps.
 
-The current direction is conceptually:
+Do not let the current single planet become the permanent conceptual root of the game. When star/system entities are added, evolve the root schema intentionally rather than nesting everything into the planet object.
 
-```js
-world = {
-  schemaVersion,
-  generatorVersion,
-  seed,
-  planetId,
-  planets: {},
-  regions: {},
-  features: {},
-  resourceOccurrences: {},
-};
-```
-
-Keep this plain and serializable. Stable ID references are preferred over deeply nested mutable object graphs for permanent world state.
-
-Do not add multi-planet gameplay merely because the container can support it.
+Stable ID references are preferred over deeply nested mutable object graphs for permanent state.
 
 ---
 
-## 3. Definitions vs Occurrences
+## Definitions vs Occurrences
 
 Reusable definitions and generated physical occurrences are different concepts.
 
@@ -212,73 +314,57 @@ versus:
 ResourceOccurrence
 location: feature-17
 resourceId: iron-ore
-hematite: 61%
-magnetite: 14%
-goethite: 7%
-gangue: 18%
+composition: ...
 quantity: ...
 ```
 
-Likewise, mineral/chemical constituents should eventually be distinct from raw-resource definitions.
+Likewise distinguish future mineral/chemical constituent definitions from raw-feedstock definitions.
 
 Prefer plain data definitions over unnecessary classes.
 
-**Long-term consistency rule:** all extractable natural material instances, including broad regional resources, should eventually have stable occurrence identity rather than mixing embedded anonymous objects with normalized occurrence objects.
+All extractable natural material instances, including broad regional resources, should eventually have stable occurrence identity rather than mixing anonymous embedded resource objects with normalized occurrences.
 
 ---
 
-## 4. Deterministic Namespaced RNG
+## Deterministic Namespaced RNG
 
 All simulation randomness should flow through seeded deterministic generators.
 
-Use independent namespaces/substreams such as:
+Use independent namespaces/substreams. As star/system generation is added, extend the hierarchy rather than returning to one global sequential stream.
+
+Conceptually:
 
 ```text
-planet:base
-planet:bulk
-planet:thermal
-planet:interior
-planet:atmosphere
-region:<id>
-region:<id>:resources
-region:<id>:features
-feature:<id>
-feature:<id>:resources
-```
-
-A useful API already exists conceptually as:
-
-```js
-rngFor(seed, namespace)
+star:...
+system:...
+planet:...
+region:<id>:...
+feature:<id>:...
 ```
 
 Goals:
 
 - reproducible debugging
 - stable shareable seeds
-- reduced cross-system reshuffling after unrelated generator changes
-- support for deterministic lazy generation later
+- reduced cross-system reshuffling
+- deterministic lazy generation later
 
-Do not use `Math.random()` inside simulation/generation modules. UI-only random seed creation is acceptable.
+UI-only random root-seed creation is acceptable; simulation logic should not use uncontrolled randomness.
 
 ---
 
-## 5. Versioning
+## Versioning
 
 Generated worlds carry:
 
-```js
+```text
 schemaVersion
 generatorVersion
 ```
 
-`schemaVersion` describes serialized data shape.
+Increment and document these deliberately when serialized shape or deterministic generation rules materially change.
 
-`generatorVersion` describes procedural rules that determine seeded output.
-
-When a generation change intentionally changes results for the same seed, consider whether `generatorVersion` should be incremented.
-
-Do not build a migration system until persistence requires one.
+Do not build a full migration system before persistence requires one.
 
 ---
 
@@ -298,14 +384,7 @@ PLAYER KNOWLEDGE
 UI / VISUALIZATION
 ```
 
-Dependencies should not flow backward without a clear reason.
-
-In particular:
-
-- generation must not depend on DOM state
-- world truth must not depend on discovery
-- observing something must not change physical generation
-- UI visibility/selection must not affect world truth
+Generation must not depend on DOM state. World truth must not depend on discovery. Observing something must not change physical generation.
 
 ---
 
@@ -313,7 +392,7 @@ In particular:
 
 ## Generate Causes, Not Independent Random Results
 
-Prefer:
+Current downstream chain:
 
 ```text
 Planet conditions
@@ -325,14 +404,9 @@ Feature formation
 Natural-resource occurrence
 ```
 
+Future upstream chain extends above it through star/system formation.
+
 Randomness should create variation **inside physical/geological constraints**.
-
-Examples:
-
-- water-rich worlds should more readily produce wet regions, aquifers, ice, or water resources
-- geological activity should influence volcanic, fault, hydrothermal, magma, and mineralization features
-- local composition/geological environment should influence deposit occurrence
-- biological resources require an appropriate biosphere/history
 
 When adding a generated property, ask:
 
@@ -342,42 +416,23 @@ When adding an output, ask:
 
 > What upstream conditions caused this?
 
-Avoid adding simulation values that are only disconnected flavor.
+Avoid disconnected flavor values unless they directly improve player interpretation.
 
 ---
 
 ## Regions and Features Are Both Resource Sources
 
-A region represents widespread/background reservoirs such as:
+Regions represent widespread/background reservoirs such as crustal rock, regolith, atmosphere, water, ice, sand, or biomass.
 
-- crustal rock
-- regolith
-- sand
-- water
-- ice
-- atmosphere
-- widespread biomass
+Features represent localized structure, concentration, unusual conditions, or access such as deposits, aquifers, reservoirs, faults, caves, craters, hydrothermal systems, vents, magma chambers, salt basins, or outcrops.
 
-A feature represents localized structure, concentration, special conditions, or access such as:
-
-- ore deposit
-- aquifer
-- gas reservoir
-- fault
-- cave
-- crater
-- hydrothermal system
-- volcanic vent
-- magma chamber
-- salt basin
-
-Features should not be required to represent material that naturally occurs across a broad region.
+Features are not required to represent materials that naturally occur throughout a broad region.
 
 ---
 
 ## Raw Resources Are Natural Feedstocks
 
-Do not confuse mineral species with naturally extracted feedstocks.
+Do not confuse a mineral species with a naturally extracted feedstock.
 
 Prefer:
 
@@ -385,13 +440,11 @@ Prefer:
 Feature: Iron Ore Deposit
 Raw resource: Iron Ore
 Composition:
-  Hematite 64%
-  Magnetite 14%
-  Goethite 5%
-  Quartz/gangue 17%
+  Hematite
+  Magnetite
+  Goethite
+  Gangue
 ```
-
-rather than making each mineralogical variant a different fundamental raw-resource ID.
 
 A resource definition identifies the feedstock class. A generated occurrence carries subtype, composition, concentration, quantity, and location.
 
@@ -399,23 +452,17 @@ A resource definition identifies the feedstock class. A generated occurrence car
 
 ## Preserve Matter Composition
 
-Whenever practical, natural resources should carry meaningful composition data rather than behaving as arbitrary tokens.
+Whenever practical, natural resources should carry meaningful composition rather than behaving as arbitrary tokens.
 
-Examples:
+Future processing should derive outputs from feedstock composition and process capability rather than fixed conversions such as `1 Iron Ore = 1 Iron`.
 
-- ores contain mineral constituents
-- brines contain dissolved species
-- natural gas contains a gas mixture
-- atmosphere contains gas fractions
-- rocks contain mineral mixtures
-
-Future processing should derive outputs from feedstock composition and process capability rather than hard-coded conversions such as `1 Iron Ore = 1 Iron`.
+Preserve matter information at the coarsest level that still creates meaningful decisions.
 
 ---
 
-# Current Planet / Region / Feature Direction
+# Planet / Region / Feature Direction
 
-The current physical hierarchy is:
+The currently implemented physical hierarchy is:
 
 ```text
 Planet
@@ -425,117 +472,76 @@ Planet
             └─ Natural-resource occurrences
 ```
 
-Do not add geological hierarchy (province → formation → deposit → ore body, etc.) until it gives a concrete simulation or gameplay benefit.
+The long-term hierarchy adds star/system causes above Planet. Do not add deeper geological hierarchy such as province → formation → deposit → ore body until it provides concrete simulation or gameplay benefit.
 
 ## Planet
 
-The planet generator is already causal enough to serve as the upstream model. Preserve its broad pass order:
-
-```text
-Base state
-→ bulk matter / volatiles
-→ thermal environment
-→ interior structure
-→ physical dimensions
-→ atmosphere
-→ internal activity
-→ exterior state
-→ derived classification
-→ regions
-```
-
-The target is physically constrained and causally plausible, not research-grade planetary science.
+Preserve the current causal pass philosophy. Over time, replace internally invented upstream causes with star/system formation inputs where appropriate.
 
 ## Regions
 
-Regions should increasingly derive coherent local geology/environment from planet conditions. Current regional random perturbations are acceptable scaffolding, but future work should strengthen causal geology rather than simply adding more random labels.
-
-Useful regional concepts include:
-
-- area
-- latitude
-- elevation
-- relief
-- local composition
-- heat
-- moisture / volatile availability
-- geologic activity
-- surface cover
-- meaningful geological age/history
-- heterogeneity
+Strengthen coherent local geology/environment from planetary conditions rather than adding more independent labels.
 
 ## Features
 
-Feature type, physical state, temperature/pressure, and possible resources must become increasingly compatible with the conditions that form that feature.
+Feature type, state, temperature/pressure, and possible resources must become increasingly compatible with formation conditions.
 
-Do not allow broad tag matching to become a substitute for geological causality as the system matures.
+Do not allow broad tag matching to become the permanent substitute for geological causality.
 
 ---
 
 # Lazy Generation Direction
 
-As detail grows, do not generate millions of objects at startup.
+As detail grows:
 
-Preferred future strategy:
+1. establish deterministic star/system/world seeds and major state
+2. establish planetary/regional material budgets and geological potential
+3. resolve major structures when appropriate
+4. resolve finer details when surveyed or needed
+5. persist discovered/extracted/modified/constructed/named state
+6. reconstruct untouched detail deterministically from seed, namespace, and generator version
 
-1. Generate world seed and planet state.
-2. Generate regional state and broad geological/material potential.
-3. Resolve major features when appropriate.
-4. Resolve smaller deposits/structures when surveyed or inspected.
-5. Persist anything discovered, extracted, modified, or named.
-6. Reconstruct untouched detail deterministically from seed, namespace, and generator version.
-
-Lazy generation must resolve pre-existing deterministic reality, not create resources because the player looked for them.
+Lazy generation must resolve pre-existing reality rather than creating resources because the player looked for them.
 
 ---
 
-# Long-Term Interlink Gameplay Philosophy
-
-These are architectural constraints, not immediate implementation tasks.
+# Long-Term Gameplay Constraints
 
 ## Systems Become Components
 
 ```text
 Primitive Function
-    ↓
-Apparatus
-    ↓
-Process
-    ↓
-Production Line
-    ↓
-Facility
-    ↓
-Industrial Network
-    ↓
-Planetary System
+→ Apparatus
+→ Process
+→ Production Line
+→ Facility
+→ Industrial Network
+→ Planetary System
 ```
 
-A working system should eventually be reusable as a component of a larger system.
+A solved system should eventually be reusable as a component of a larger system.
 
 > **Yesterday's factory becomes today's machine.**
 
 ## Blueprint / Network-Oriented Interaction
 
-Long-term interaction should emphasize:
+Long-term interaction should emphasize nodes, ports, streams, process diagrams, nested reusable systems, instrumentation, graphs, sensors/controllers, alerts, and composition readouts.
 
-- nodes and ports
-- material and energy streams
-- process diagrams
-- nested reusable systems
-- graphs and dashboards
-- sensors/controllers
-- alerts and composition readouts
+Do not assume a conventional 3D or character-controlled world is required.
 
-Do not assume a conventional 3D or character-controlled game world is required.
+## Functional Apparatus
+
+As gameplay is prototyped, favor apparatus composed from meaningful functions such as volume, inputs/outputs, heating/cooling, atmosphere/pressure control, agitation, separation, sensing, and control rather than only predefined magical machine blocks.
+
+Do not over-simulate bolts or construction minutiae that do not create useful decisions.
 
 ## Capability-Based Progression
 
-Progression should emerge from capabilities such as temperature, pressure, purity, vacuum, electrical capability, material compatibility, chemical resistance, throughput, and control precision rather than arbitrary tech-level locks where possible.
+Progression should emerge from capabilities such as temperature, pressure, purity, vacuum, material compatibility, chemical resistance, electrical capability, throughput, measurement accuracy, and control precision.
 
 ## Simulate Decisions, Aggregate Busywork
 
-Simulate detail when changing it creates meaningful player decisions. Aggregate detail that mainly creates repetitive setup work.
+Simulate detail when changing it creates meaningful tradeoffs, debugging, or planning. Aggregate detail that mainly creates repetitive setup work.
 
 ---
 
@@ -544,15 +550,15 @@ Simulate detail when changing it creates meaningful player decisions. Aggregate 
 For now:
 
 - keep the project web-based
-- prefer browser-native JavaScript while it remains sufficient
+- prefer browser-native JavaScript while sufficient
 - preserve ES modules
 - keep runtime dependencies minimal
 - keep simulation code DOM-independent
-- do not migrate to React/Vue/etc. merely for modernization
+- do not migrate frameworks merely for modernization
 - do not introduce a backend/database until persistence or server simulation requires one
 - avoid ECS, dependency injection, message buses, or enterprise architecture without a concrete need
 
-The current static app should remain easy to run through a local HTTP server.
+The current app should remain easy to run through a local HTTP server.
 
 ---
 
@@ -561,22 +567,24 @@ The current static app should remain easy to run through a local HTTP server.
 When modifying this repository:
 
 1. Inspect the existing implementation first.
-2. Preserve behavior unless the issue explicitly changes it.
-3. Keep generation deterministic, small, and composable.
-4. Prefer plain serializable data structures.
-5. Preserve World / Knowledge / UI separation.
-6. Keep definitions separate from occurrences.
-7. Route simulation randomness through namespaced seeded RNGs.
-8. Keep IDs stable where practical.
-9. Maintain `schemaVersion` and `generatorVersion` deliberately.
-10. Add or update automated tests when changing simulation contracts.
-11. Add validation for important invariants.
-12. Avoid circular dependencies.
-13. Keep rendering/formatting out of simulation logic.
-14. Document non-obvious physical approximations.
-15. Prefer data-driven compatibility rules as complexity grows.
-16. Do not add speculative systems unrelated to the current issue.
+2. Read relevant sections of `DESIGN.md` for new gameplay/world systems.
+3. Preserve behavior unless the issue explicitly changes it.
+4. Keep generation deterministic, small, and composable.
+5. Prefer plain serializable data structures.
+6. Preserve World / Knowledge / UI separation.
+7. Keep definitions separate from occurrences.
+8. Route simulation randomness through namespaced seeded RNGs.
+9. Keep IDs stable where practical.
+10. Maintain `schemaVersion` and `generatorVersion` deliberately.
+11. Add/update automated tests when changing simulation contracts.
+12. Keep rendering/formatting out of simulation logic.
+13. Document non-obvious physical approximations.
+14. Prefer data-driven compatibility rules as complexity grows.
+15. Avoid speculative systems unrelated to the current issue.
+16. Do not entrench planet-local assumptions that block future star/system inputs.
 17. When realism conflicts with scope, preserve causal plausibility and meaningful decisions rather than maximal detail.
+18. When adding generation complexity, identify the future gameplay consequence.
+19. When adding gameplay, preserve matter/energy/state relationships needed by the simulation.
 
 ---
 
@@ -585,14 +593,14 @@ When modifying this repository:
 Unless an issue explicitly changes priority:
 
 1. **Add automated simulation regression tests and executable invariants.**
-2. Normalize any remaining inconsistent occurrence/reference models exposed by those tests.
-3. Improve causal regional geology.
-4. Improve feature formation and feature/resource compatibility.
-5. Improve natural-resource composition and deposit generation.
+2. Normalize remaining occurrence/reference inconsistencies exposed by tests.
+3. Improve obvious region/feature/resource causal compatibility.
+4. **Prototype a minimal playable survey → acquire → analyze → transform loop using the existing world model.**
+5. Improve causal regional geology and resource/deposit formation in response to what the gameplay prototype needs.
 6. Expand discovery into surveying/knowledge confidence.
-7. Add extraction concepts.
-8. Add processing/material transformation.
-9. Add automation and reusable systems.
-10. Add larger industrial/network gameplay.
+7. Introduce a small functional apparatus/process model for material transformation.
+8. Prototype reusable/automated solved processes.
+9. Add star/system generation inputs when they can materially replace current planet-level approximations and create downstream variation.
+10. Expand extraction, processing, automation, and larger industrial/network gameplay iteratively.
 
-Do not jump into factories, blueprints, research, or late-game systems while generated-world causality is still being established.
+Star/system generation is an important future foundation, but it should be introduced when downstream planet generation and gameplay are ready to consume its outputs—not as an isolated astronomy project.
