@@ -180,7 +180,7 @@ export function renderGraphNodes({
     }
     element.classList.toggle(
       'ws-node--selected',
-      node.selected === true || element.classList.contains('ws-node--selected'),
+      node.selected === true,
     );
   }
 

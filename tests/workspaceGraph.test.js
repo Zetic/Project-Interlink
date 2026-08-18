@@ -31,15 +31,16 @@ test('shared graph projects local connections with the original endpoints', () =
     portId: source.outputPortId,
   });
 
-  test('graph projections carry selected node state for the shared renderer', () => {
-    const blueprint = createBlueprint();
-    const node = blueprintAddHopper(blueprint);
-    assert.equal(projectBlueprintGraph(blueprint, { nodePositions: {} }, {
-      selectedNodeId: node.id,
-    }).nodes.find(item => item.id === node.id).selected, true);
-  });
   assert.equal(graph.connections[0].id, connection.id);
   assert.equal(graph.connections[0].adapter, 'blueprint');
+});
+
+test('graph projections carry selected node state for the shared renderer', () => {
+  const blueprint = createBlueprint();
+  const node = blueprintAddHopper(blueprint);
+  assert.equal(projectBlueprintGraph(blueprint, { nodePositions: {} }, {
+    selectedNodeId: node.id,
+  }).nodes.find(item => item.id === node.id).selected, true);
 });
 
 test('shared graph projects Region and Planet transfers into visible edges', () => {
@@ -187,40 +188,6 @@ test('shared SVG renderer creates and reuses one stable path per projected edge'
     remove() { children.splice(children.indexOf(this), 1); },
   });
 
-  test('shared preview renderer creates and updates one cursor-following line', () => {
-    const children = [];
-    const line = {
-      attrs: {},
-      classList: { add() {} },
-      setAttribute(name, value) { this.attrs[name] = value; },
-      remove() { children.splice(children.indexOf(this), 1); },
-    };
-    const svg = {
-      contains: element => children.includes(element),
-      appendChild: element => children.push(element),
-    };
-    const previousDocument = globalThis.document;
-    globalThis.document = {
-      createElementNS: () => line,
-    };
-    try {
-      const options = {
-        svg,
-        active: true,
-        source: { nodeId: 'a', portId: 'out' },
-        target: { x: 80, y: 90 },
-        endpointPosition: () => ({ x: 10, y: 20 }),
-      };
-      const preview = renderGraphConnectionPreview(options);
-      assert.equal(preview, line);
-      assert.deepEqual(line.attrs, { x1: 10, y1: 20, x2: 80, y2: 90 });
-      assert.equal(renderGraphConnectionPreview({ ...options, preview }), line);
-      renderGraphConnectionPreview({ svg, active: false, preview });
-      assert.equal(children.length, 0);
-    } finally {
-      globalThis.document = previousDocument;
-    }
-  });
   const graph = {
     connections: [{
       id: 'edge-1',
@@ -240,4 +207,37 @@ test('shared SVG renderer creates and reuses one stable path per projected edge'
   renderGraphConnections(options);
   assert.equal(elements.get('edge-1'), path);
   assert.equal(children.length, 1);
+});
+
+test('shared preview renderer creates and updates one cursor-following line', () => {
+  const children = [];
+  const line = {
+    attrs: {},
+    classList: { add() {} },
+    setAttribute(name, value) { this.attrs[name] = value; },
+    remove() { children.splice(children.indexOf(this), 1); },
+  };
+  const svg = {
+    contains: element => children.includes(element),
+    appendChild: element => children.push(element),
+  };
+  const previousDocument = globalThis.document;
+  globalThis.document = { createElementNS: () => line };
+  try {
+    const options = {
+      svg,
+      active: true,
+      source: { nodeId: 'a', portId: 'out' },
+      target: { x: 80, y: 90 },
+      endpointPosition: () => ({ x: 10, y: 20 }),
+    };
+    const preview = renderGraphConnectionPreview(options);
+    assert.equal(preview, line);
+    assert.deepEqual(line.attrs, { x1: 10, y1: 20, x2: 80, y2: 90 });
+    assert.equal(renderGraphConnectionPreview({ ...options, preview }), line);
+    renderGraphConnectionPreview({ svg, active: false, preview });
+    assert.equal(children.length, 0);
+  } finally {
+    globalThis.document = previousDocument;
+  }
 });
