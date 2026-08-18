@@ -61,9 +61,19 @@ export function createBlueprint() {
   };
 }
 
-export function blueprintAddExtractor(blueprint, occurrenceId, rateKgPerSecond = DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND) {
+export function blueprintAddExtractor(
+  blueprint,
+  occurrenceId,
+  rateKgPerSecond = DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND,
+  { enabled = false } = {}
+) {
   const id = nextNodeId();
-  const node = createExtractor({ id, occurrenceId, prototypeRateKgPerSecond: rateKgPerSecond });
+  const node = createExtractor({
+    id,
+    occurrenceId,
+    prototypeRateKgPerSecond: rateKgPerSecond,
+    enabled,
+  });
   blueprint.nodes[id] = node;
   return node;
 }
@@ -78,21 +88,27 @@ export function blueprintAddHopper(blueprint, capacityKg = DEFAULT_HOPPER_CAPACI
 export function blueprintAddCrusher(blueprint, {
   throughputKgPerSecond = DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
   targetParticleSizeMm = DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
+  enabled = false,
 } = {}) {
   if (typeof throughputKgPerSecond !== 'number' || !Number.isFinite(throughputKgPerSecond) || throughputKgPerSecond <= 0) {
     throw new Error('Crusher throughputKgPerSecond must be a finite positive number');
   }
+  if (typeof enabled !== 'boolean') throw new Error('Crusher enabled must be boolean');
 
   const id = nextNodeId();
   const node = {
     id,
     nodeType: 'crusher',
+    systemType: 'crusher',
+    kind: 'primitive',
     processId: CRUSHING_PROCESS_ID,
     throughputKgPerSecond,
     targetParticleSizeMm,
     inputPortId: 'feed',
     outputPortId: 'product',
     lastError: null,
+    enabled,
+    operatingState: enabled ? 'idle' : 'off',
   };
   blueprint.nodes[id] = node;
   return node;
@@ -101,16 +117,20 @@ export function blueprintAddCrusher(blueprint, {
 export function blueprintAddMagSep(blueprint, {
   fieldStrength = DEFAULT_MAG_SEP_FIELD_STRENGTH,
   throughputKgPerSecond = DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S,
+  enabled = false,
 } = {}) {
   if (typeof throughputKgPerSecond !== 'number' || !Number.isFinite(throughputKgPerSecond) || throughputKgPerSecond <= 0) {
     throw new Error('Magnetic Separator throughputKgPerSecond must be a finite positive number');
   }
+  if (typeof enabled !== 'boolean') throw new Error('Magnetic Separator enabled must be boolean');
 
   const processDefinition = getProcessDefinition(MAGNETIC_SEPARATION_PROCESS_ID);
   const id = nextNodeId();
   const node = {
     id,
     nodeType: 'magSep',
+    systemType: 'magnetic-separator',
+    kind: 'primitive',
     processId: MAGNETIC_SEPARATION_PROCESS_ID,
     fieldStrength,
     throughputKgPerSecond,
@@ -119,6 +139,8 @@ export function blueprintAddMagSep(blueprint, {
     tailingsPortId: 'tailings',
     maxFeedParticleSizeMm: processDefinition?.maxFeedParticleSizeMm ?? 25,
     lastError: null,
+    enabled,
+    operatingState: enabled ? 'idle' : 'off',
   };
   blueprint.nodes[id] = node;
   return node;
@@ -293,12 +315,27 @@ function capacityScaleForOutput(freeCapacityKg, componentRates, dt) {
 }
 
 function simulateExtractorNode(blueprint, world, node, dt) {
+  if (!node.enabled) {
+    node.operatingState = 'off';
+    return 0;
+  }
+
   const occurrence = world?.resourceOccurrences?.[node.occurrenceId];
   const outputConnection = findOutboundConnection(blueprint, node.id, node.outputPortId);
-  if (!occurrence || !outputConnection) return 0;
+  if (!outputConnection) {
+    node.operatingState = 'blocked';
+    return 0;
+  }
+  if (!occurrence) {
+    node.operatingState = 'idle';
+    return 0;
+  }
 
   const targetHopper = blueprint.nodes[outputConnection.targetNodeId];
-  if (!targetHopper || targetHopper.nodeType !== 'hopper') return 0;
+  if (!targetHopper || targetHopper.nodeType !== 'hopper') {
+    node.operatingState = 'blocked';
+    return 0;
+  }
 
   const baseOutput = extractorOutputRates(node, occurrence, 1);
   const baseTotalRate = totalMassFlowKgPerSecond(baseOutput.componentMassFlowKgPerSecond);
@@ -307,35 +344,55 @@ function simulateExtractorNode(blueprint, world, node, dt) {
   const throttle = requestedKg > 0 ? Math.max(0, Math.min(1, freeKg / requestedKg)) : 0;
   const plannedRates = scaleFlowRates(baseOutput.componentMassFlowKgPerSecond, throttle);
   const plannedKg = totalMassFlowKgPerSecond(plannedRates) * dt;
-  if (plannedKg <= TRANSFER_TOLERANCE_KG) return 0;
+  if (plannedKg <= TRANSFER_TOLERANCE_KG) {
+    node.operatingState = 'blocked';
+    return 0;
+  }
 
   const acceptedKg = hopperReceiveInflow(targetHopper, plannedRates, baseOutput.particleSizeMm, dt);
   const acceptanceFactor = plannedKg > 0 ? Math.max(0, Math.min(1, acceptedKg / plannedKg)) : 0;
   const actualRates = scaleFlowRates(plannedRates, acceptanceFactor);
   updateConnectionStream(blueprint, outputConnection, actualRates, baseOutput.particleSizeMm);
+  node.operatingState = acceptedKg > TRANSFER_TOLERANCE_KG ? 'running' : 'blocked';
   return acceptedKg;
 }
 
 function simulateCrusherNode(blueprint, node, dt) {
+  if (!node.enabled) {
+    node.operatingState = 'off';
+    return;
+  }
+
   const inputConnection = findInboundConnection(blueprint, node.id, node.inputPortId);
   const outputConnection = findOutboundConnection(blueprint, node.id, node.outputPortId);
-  if (!inputConnection || !outputConnection) {
-    node.lastError = 'Crusher requires connected feed and product ports';
+  if (!inputConnection) {
+    node.lastError = null;
+    node.operatingState = 'idle';
     return;
   }
 
   const inputHopper = blueprint.nodes[inputConnection.sourceNodeId];
+  if (inputHopper?.nodeType === 'hopper' && hopperStoredMassKg(inputHopper) <= HOPPER_TOLERANCE_KG) {
+    node.lastError = null;
+    node.operatingState = 'idle';
+    return;
+  }
+  if (!outputConnection) {
+    node.lastError = 'Crusher requires connected feed and product ports';
+    node.operatingState = 'blocked';
+    return;
+  }
   const outputHopper = blueprint.nodes[outputConnection.targetNodeId];
-  if (inputHopper?.nodeType !== 'hopper' || outputHopper?.nodeType !== 'hopper') return;
+  if (inputHopper?.nodeType !== 'hopper' || outputHopper?.nodeType !== 'hopper') {
+    node.operatingState = 'blocked';
+    return;
+  }
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
   const freeOutputKg = hopperFreeCapacityKg(outputHopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG) {
-    node.lastError = null;
-    return;
-  }
   if (freeOutputKg <= HOPPER_TOLERANCE_KG) {
     node.lastError = 'Product storage is full';
+    node.operatingState = 'blocked';
     return;
   }
 
@@ -344,7 +401,10 @@ function simulateCrusherNode(blueprint, node, dt) {
     storedMassKg / dt,
     freeOutputKg / dt
   );
-  if (feasibleRate <= 0) return;
+  if (feasibleRate <= 0) {
+    node.operatingState = 'blocked';
+    return;
+  }
 
   const particleSizeMm = inputHopper.particleSizeMm;
   const candidateRates = proportionalRatesFromHopper(inputHopper, feasibleRate);
@@ -356,13 +416,17 @@ function simulateCrusherNode(blueprint, node, dt) {
     );
   } catch (error) {
     node.lastError = error.message;
+    node.operatingState = 'blocked';
     return;
   }
 
   const stagedInput = cloneHopperPhysicalState(inputHopper);
   const stagedOutput = cloneHopperPhysicalState(outputHopper);
   const withdrawal = hopperWithdraw(stagedInput, candidateRates, dt);
-  if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) return;
+  if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) {
+    node.operatingState = 'idle';
+    return;
+  }
 
   const actualFeed = {
     componentMassFlowKgPerSecond: withdrawal.actualRates,
@@ -388,31 +452,47 @@ function simulateCrusherNode(blueprint, node, dt) {
     result.productRates.particleSizeMm
   );
   node.lastError = null;
+  node.operatingState = 'running';
 }
 
 function simulateMagSepNode(blueprint, node, dt) {
+  if (!node.enabled) {
+    node.operatingState = 'off';
+    return;
+  }
+
   const inputConnection = findInboundConnection(blueprint, node.id, node.inputPortId);
   const concentrateConnection = findOutboundConnection(blueprint, node.id, node.concentratePortId);
   const tailingsConnection = findOutboundConnection(blueprint, node.id, node.tailingsPortId);
-  if (!inputConnection || !concentrateConnection || !tailingsConnection) {
-    node.lastError = 'Magnetic Separator requires feed, concentrate, and tailings connections';
+  if (!inputConnection) {
+    node.lastError = null;
+    node.operatingState = 'idle';
     return;
   }
 
   const inputHopper = blueprint.nodes[inputConnection.sourceNodeId];
+  if (inputHopper?.nodeType === 'hopper' && hopperStoredMassKg(inputHopper) <= HOPPER_TOLERANCE_KG) {
+    node.lastError = null;
+    node.operatingState = 'idle';
+    return;
+  }
+  if (!concentrateConnection || !tailingsConnection) {
+    node.lastError = 'Magnetic Separator requires feed, concentrate, and tailings connections';
+    node.operatingState = 'blocked';
+    return;
+  }
   const concentrateHopper = blueprint.nodes[concentrateConnection.targetNodeId];
   const tailingsHopper = blueprint.nodes[tailingsConnection.targetNodeId];
   if (
     inputHopper?.nodeType !== 'hopper' ||
     concentrateHopper?.nodeType !== 'hopper' ||
     tailingsHopper?.nodeType !== 'hopper'
-  ) return;
-
-  const storedMassKg = hopperStoredMassKg(inputHopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG) {
-    node.lastError = null;
+  ) {
+    node.operatingState = 'blocked';
     return;
   }
+
+  const storedMassKg = hopperStoredMassKg(inputHopper);
 
   const particleSizeMm = inputHopper.particleSizeMm;
   const candidateRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt);
@@ -426,6 +506,7 @@ function simulateMagSepNode(blueprint, node, dt) {
     );
   } catch (error) {
     node.lastError = error.message;
+    node.operatingState = 'blocked';
     return;
   }
 
@@ -442,6 +523,7 @@ function simulateMagSepNode(blueprint, node, dt) {
   const capacityScale = Math.min(concentrateScale, tailingsScale);
   if (capacityScale <= TRANSFER_TOLERANCE_KG) {
     node.lastError = 'One or more output hoppers are full';
+    node.operatingState = 'blocked';
     return;
   }
 
@@ -453,7 +535,10 @@ function simulateMagSepNode(blueprint, node, dt) {
   const stagedConcentrate = cloneHopperPhysicalState(concentrateHopper);
   const stagedTailings = cloneHopperPhysicalState(tailingsHopper);
   const withdrawal = hopperWithdraw(stagedInput, candidateFeedRates, dt);
-  if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) return;
+  if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) {
+    node.operatingState = 'idle';
+    return;
+  }
 
   const result = applyContinuousMagneticSeparation(
     { componentMassFlowKgPerSecond: withdrawal.actualRates, particleSizeMm },
@@ -496,6 +581,7 @@ function simulateMagSepNode(blueprint, node, dt) {
     result.tailingsRates.particleSizeMm
   );
   node.lastError = null;
+  node.operatingState = 'running';
 }
 
 export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
@@ -535,6 +621,27 @@ export function simulationAdvance(blueprint, world, elapsedSeconds, dt = SIMULAT
   const ticks = Math.floor((elapsedSeconds + 1e-12) / dt);
   for (let i = 0; i < ticks; i++) simulationTick(blueprint, world, dt);
   return ticks;
+}
+
+export function setNodeEnabled(blueprint, nodeId, enabled) {
+  const node = blueprint?.nodes?.[nodeId];
+  if (!node) throw new Error(`Unknown node '${nodeId}'`);
+  if (!['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
+    throw new Error(`Node '${nodeId}' is not active machinery`);
+  }
+  if (typeof enabled !== 'boolean') throw new Error('enabled must be boolean');
+  node.enabled = enabled;
+  if (!enabled) node.operatingState = 'off';
+  else if (node.operatingState === 'off') node.operatingState = 'idle';
+  return node;
+}
+
+export function getNodeOperatingState(node) {
+  if (!node) return null;
+  if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
+    return node.enabled ? (node.operatingState ?? 'idle') : 'off';
+  }
+  return null;
 }
 
 export function createBlueprintLayout() {

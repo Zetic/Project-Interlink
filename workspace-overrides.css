@@ -1,16 +1,32 @@
-/* Review-fix layer for the first player workspace. Kept separate so the
-   original prototype/debug stylesheet remains easy to compare and remove. */
+/* Player workspace review/foundation styles. */
 .ws-node--extractor { background: #1e3a2f; }
 .ws-node--hopper { background: #1e2a3a; }
 .ws-node--crusher { background: #3a2a1e; }
 .ws-node--magSep { background: #2a1e3a; }
-
 .ws-connection { stroke: #5599cc; }
 .ws-connection--selected { stroke: #ffcc44; }
-.ws-connection-preview { stroke: #88ccff; }
+.ws-connection-preview { stroke: #88ccff; stroke-width: 1.5; stroke-dasharray: 5 4; }
 
-#ws-player-seed {
-  display: block;
-  width: min(420px, 100%);
-  margin: 6px 0 10px;
+.ws-world-controls { display: inline-flex; align-items: center; gap: 8px; margin-right: 14px; }
+.ws-world-controls button { padding: 3px 8px; font-size: 11px; }
+.ws-world-controls span { color: #888; font-size: 11px; }
+.ws-system-selected { outline: 1px solid #ffcc44; }
+.ws-btn-enable, .ws-btn-remove-transfer { padding: 2px 8px; font-size: 11px; }
+
+.ws-parent-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
+.ws-system-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.ws-system-card { position: relative; border: 1px solid #38424b; background: #181c20; padding: 12px; min-height: 110px; cursor: pointer; }
+.ws-system-card:hover { border-color: #526573; }
+.ws-system-ports { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; }
+.ws-system-port { display: inline-block; color: #88b8cc; font-size: 11px; padding: 4px 6px; border: 1px solid #38505f; border-radius: 3px; user-select: none; }
+.ws-system-port--output { cursor: crosshair; }
+.ws-system-port--input { cursor: copy; }
+.ws-composite-inspector { border: 1px solid #303840; background: #14181c; padding: 10px; min-height: 180px; position: sticky; top: 8px; }
+.ws-site-boundary-label { color: #88b8cc; font-size: 11px; }
+
+#ws-player-seed { display: block; width: min(420px, 100%); margin: 6px 0 10px; }
+
+@media (max-width: 900px) {
+  .ws-parent-layout { grid-template-columns: 1fr; }
+  .ws-composite-inspector { position: static; }
 }

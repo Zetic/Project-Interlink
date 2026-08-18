@@ -23,6 +23,7 @@
 import { SCHEMA_VERSION, GENERATOR_VERSION } from './versions.js';
 import { generatePlanet } from '../../generator/generatePlanet.js';
 import { getProcessDefinition } from '../processes/processDefinitions.js';
+import { createCompositeNode, createSystemPort } from '../../simulation/systemNode.js';
 
 /**
  * Generate and return a new world state from the given seed string.
@@ -51,6 +52,13 @@ export function createWorld(seed) {
     processResults: {},
     nextMaterialBatchOrdinal: 1,
     nextProcessRunOrdinal: 1,
+    simulation: {
+      running: true,
+      elapsedSeconds: 0,
+      sessions: {},
+    },
+    sites: {},
+    systemNodes: {},
   };
 
   // Lift regions out of the planet array into the flat map
@@ -82,10 +90,61 @@ export function createWorld(seed) {
     }
 
     // Store a flat region (without nested features/occurrence arrays; reference by IDs)
+    const siteIds = [];
+    for (const featureId of featureIds) {
+      const feature = world.features[featureId];
+      if (!feature || feature.resourceOccurrences.length === 0) continue;
+      const siteId = `site-${feature.id}`;
+      const occurrenceIds = [...feature.resourceOccurrences];
+      const siteNode = createCompositeNode({
+        id: siteId,
+        nodeType: 'site',
+        systemType: 'site',
+        childWorkspaceId: `${siteId}-workspace`,
+        ports: [createSystemPort({
+          id: 'ore-output',
+          direction: 'output',
+          kind: 'material',
+          label: 'ore out',
+        })],
+        inspectableState: { regionId: region.id, occurrenceIds },
+      });
+      world.sites[siteId] = {
+        id: siteId,
+        nodeType: 'site',
+        systemType: 'site',
+        regionId: region.id,
+        featureId,
+        resourceOccurrenceIds: occurrenceIds,
+        childWorkspaceId: siteNode.childWorkspaceId,
+        boundaryPorts: siteNode.ports,
+      };
+      world.systemNodes[siteId] = siteNode;
+      siteIds.push(siteId);
+    }
+
+    const regionNode = createCompositeNode({
+      id: region.id,
+      nodeType: 'region',
+      systemType: 'region',
+      childWorkspaceId: `${region.id}-workspace`,
+      ports: [createSystemPort({
+        id: 'ore-output',
+        direction: 'output',
+        kind: 'material',
+        label: 'ore out',
+        childNodeId: siteIds[0] ?? null,
+        childPortId: siteIds.length > 0 ? 'ore-output' : null,
+      })],
+      inspectableState: { regionId: region.id, siteIds },
+    });
+    world.systemNodes[region.id] = regionNode;
     world.regions[region.id] = {
       ...region,
       features: featureIds,
       backgroundResourceOccurrences: bgOccurrenceIds,
+      siteIds,
+      boundaryPorts: regionNode.ports,
     };
     regionIds.push(region.id);
   }
@@ -95,6 +154,14 @@ export function createWorld(seed) {
     ...planet,
     regions: regionIds,
   };
+  world.systemNodes[planet.id] = createCompositeNode({
+    id: planet.id,
+    nodeType: 'planet',
+    systemType: 'planet',
+    childWorkspaceId: `${planet.id}-workspace`,
+    ports: [],
+    inspectableState: { regionIds },
+  });
 
   validateWorld(world);
   return world;
@@ -167,6 +234,22 @@ export function validateWorld(world) {
         if ('discovered' in f) {
           errors.push(`Feature '${fid}' contains 'discovered' — move to knowledgeState`);
         }
+      }
+    }
+    for (const siteId of (region.siteIds ?? [])) {
+      const site = world.sites?.[siteId];
+      if (!site) {
+        errors.push(`Region '${rid}' references unknown site '${siteId}'`);
+      } else if (site.regionId !== rid) {
+        errors.push(`Site '${siteId}' regionId '${site.regionId}' does not match parent region '${rid}'`);
+      }
+    }
+  }
+
+  for (const [siteId, site] of Object.entries(world.sites ?? {})) {
+    for (const occurrenceId of site.resourceOccurrenceIds ?? []) {
+      if (!world.resourceOccurrences[occurrenceId]) {
+        errors.push(`Site '${siteId}' references unknown occurrence '${occurrenceId}'`);
       }
     }
   }
