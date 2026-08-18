@@ -443,7 +443,7 @@ function renderNode(canvas, node, pos, world) {
   const leftPorts  = ports.filter(p => p.side === 'left');
   const rightPorts = ports.filter(p => p.side === 'right');
 
-  [...leftPorts, ...rightPorts].forEach((portDef, globalIdx) => {
+  [...leftPorts, ...rightPorts].forEach((portDef) => {
     const sideArr = portDef.side === 'left' ? leftPorts : rightPorts;
     const sideIdx = sideArr.indexOf(portDef);
     const offsets = portOffsets(portDef, sideIdx, sideArr.length);

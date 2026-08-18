@@ -47,6 +47,9 @@ export const DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S = 4;
 /** Default crusher target particle size (mm). */
 export const DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM = 15;
 
+/** Default magnetic separator throughput (kg/s). */
+export const DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S = 4;
+
 /** Default magnetic separator field strength. */
 export const DEFAULT_MAG_SEP_FIELD_STRENGTH = 0.6;
 
@@ -366,7 +369,7 @@ export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
       // Build feed rates from hopper composition
       const feedComponents = {};
       const maxThroughputRateKgPerS = node.processDef?.throughputCapacityKgPerSecond
-        ?? DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S;
+        ?? DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S;
 
       for (const [cid, kg] of Object.entries(feedHopper.storedComponentsKg)) {
         feedComponents[cid] = (kg / storedMass) * maxThroughputRateKgPerS;

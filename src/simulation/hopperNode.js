@@ -169,8 +169,6 @@ export function hopperWithdraw(hopper, requestedRatesKgPerSecond, dt) {
   let actualTotalKg = 0;
 
   for (const [cid, rateKgPerS] of Object.entries(requestedRatesKgPerSecond)) {
-    // Proportional withdrawal based on stored composition
-    const storedFraction = (hopper.storedComponentsKg[cid] ?? 0) / storedMassKg;
     const requestedCidKg = rateKgPerS * dt * factor;
     // Cannot withdraw more than actually stored for this component
     const actualCidKg = Math.min(requestedCidKg, hopper.storedComponentsKg[cid] ?? 0);
