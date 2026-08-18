@@ -29,24 +29,27 @@ World generation is a means of creating meaningful physical starting conditions 
 
 # Current Repository Layout
 
-The former standalone `planet-generator/` tech-demo wrapper has been removed. The runnable web application now lives directly at repository root:
+The runnable web application lives directly at repository root:
 
 ```text
 Project-Interlink/
 ├── index.html
 ├── styles.css
+├── package.json
 ├── src/
 │   ├── app.js
 │   ├── core/
 │   ├── data/
 │   └── generator/
+├── tests/
 ├── DESIGN.md
 ├── README.md
 ├── PATCH_NOTES.md
 └── .github/
+    ├── copilot-instructions.md
+    └── workflows/
+        └── test.yml
 ```
-
-This move changed locations only; the existing runtime code continues using relative CSS and ES-module imports.
 
 **Do not recreate a `planet-generator/` wrapper directory.** New application source, tests, and project-level tooling should assume the repository root unless a future issue deliberately changes the layout.
 
@@ -56,7 +59,7 @@ The root layout is intentionally compatible with GitHub Pages configured from `m
 
 # Current Project State
 
-The original planet-generation tech demo has been promoted into the first real Interlink simulation subsystem.
+The original planet-generation tech demo has been promoted into the first real Interlink simulation foundation.
 
 Current working behavior includes:
 
@@ -73,6 +76,18 @@ Current working behavior includes:
 11. separate UI/presentation state
 12. namespaced/sub-seeded deterministic RNG streams
 13. schema/generator version metadata
+14. regional and feature resources normalized into stable `world.resourceOccurrences`
+15. basic physical/resource compatibility guardrails for obvious feature types
+16. automated `node:test` regression coverage
+17. deterministic broad multi-seed smoke testing
+18. GitHub Actions CI for pull requests and `main`
+
+Current generated-world versions are:
+
+```text
+schemaVersion: 2
+generatorVersion: 2
+```
 
 The foundational state architecture is established:
 
@@ -91,19 +106,231 @@ selection, display, filters, temporary controls
 
 ---
 
-# Current Immediate Priority: Simulation Contracts and Tests
+# Current Immediate Priority: First Playable Matter-Processing Slice
 
-Before making large changes to geology or gameplay, establish executable regression protection for the current simulation.
+The current implementation target is:
 
-Prefer the built-in Node.js test runner (`node:test`) unless a third-party framework is clearly justified. Keep application runtime dependencies at zero or near zero.
+> **Issue #8 — Prototype first playable material processing loop**
 
-Project-level test tooling should now live at repository root. A minimal root `package.json` should provide the test command unless an issue explicitly chooses another layout.
+The next playable chain is intentionally narrow:
 
-Tests should protect:
+```text
+Survey / discover an existing resource occurrence
+    ↓
+Acquire a small sample
+    ↓
+Analyze its composition
+    ↓
+Run one parameter-driven separation / transformation
+    ↓
+Inspect output batches and matter balance
+```
+
+The architectural bridge should be conceptually:
+
+```text
+ResourceOccurrence
+        ↓
+MaterialBatch
+        ↓
+ProcessDefinition + parameters
+        ↓
+ProcessResult
+        ↓
+Output MaterialBatches
+```
+
+This issue should prove that generated world matter can enter gameplay without prematurely building the complete factory game.
+
+---
+
+# Transformations Come Before the Full Blueprint Interaction Layer
+
+The eventual blueprint/network workspace remains a core interaction goal, but **do not build the draggable blueprint canvas before the underlying process semantics are proven**.
+
+The project first needs stable meanings for:
+
+- physical material batches
+- process inputs
+- process outputs
+- process parameters
+- transformation results
+- matter conservation
+- runtime process applicability/validation
+
+For the current gameplay slice, normal HTML controls are sufficient:
+
+```text
+select occurrence
+collect sample
+analyze
+select process
+adjust parameter
+run
+inspect outputs
+```
+
+A later blueprint editor should become a graphical way to construct and inspect the same underlying process model.
+
+The development rule is:
+
+```text
+prove matter
+    ↓
+prove transformations
+    ↓
+prove process semantics
+    ↓
+then build the blueprint interaction layer
+```
+
+Do not create a parallel “editor-only” process representation that later has to be reconciled with simulation state.
+
+---
+
+# Material and Transformation Architecture for the Current Slice
+
+## MaterialBatch Is Physical State
+
+A discrete acquired sample should be represented as plain serializable physical state, conceptually similar to:
+
+```js
+{
+  id: 'batch-...',
+  sourceOccurrenceId: '...',
+  status: 'available',
+  componentsKg: {
+    hematite: 4.8,
+    magnetite: 2.1,
+    goethite: 0.9,
+    quartzAndGangue: 2.2,
+  }
+}
+```
+
+Exact naming is flexible.
+
+Requirements:
+
+- physical batches must **not** live only in UI state
+- batch identity should be stable while the batch exists
+- component quantities should be the physical source of truth
+- percentages shown to the player should be derived from those quantities
+- no negative, NaN, or Infinity component quantities
+- do not add speculative future properties unless the current process requires them
+
+If material batches are added to serialized World / Simulation State, bump `schemaVersion` deliberately.
+
+## Sampling Is Not Full Extraction Yet
+
+The first acquisition step is a sampling bridge into gameplay.
+
+Do not invent precise reserve tonnage from the current qualitative quantity classes merely to support depletion.
+
+Sampling must:
+
+- use an already-existing `ResourceOccurrence`
+- derive the sample from its generated composition
+- never create a favorable occurrence because the player asked for one
+- create actual material state that cannot later be duplicated by repeatedly processing the same batch
+
+A future issue can add extraction rate, reserve mass, depletion, replenishment, access cost, and logistics once the world model supports those concepts honestly.
+
+## ProcessDefinition Is a Reusable Definition
+
+Process definitions are not runtime material objects.
+
+A conceptual shape may include:
+
+```js
+{
+  id: 'magnetic-separation',
+  inputs: [{ id: 'feed', kind: 'material' }],
+  outputs: [
+    { id: 'concentrate', kind: 'material' },
+    { id: 'tailings', kind: 'material' }
+  ],
+  parameters: [
+    { id: 'fieldStrength', min: 0, max: 1 }
+  ]
+}
+```
+
+The exact schema is not fixed.
+
+However:
+
+- inputs and outputs should be explicit enough to become future blueprint ports
+- parameters should be explicit enough to become future apparatus/controller settings
+- definitions belong in data/simulation layers, not DOM code
+- do not add arbitrary node-layout or wire-position data to the process definition
+
+## Process Execution Must Be DOM-Independent
+
+Transformation logic must be testable directly from Node.
+
+Prefer a separation such as:
+
+```text
+process definition + input batch + parameters
+        ↓
+pure/controlled transformation logic
+        ↓
+ProcessResult
+```
+
+UI event handlers should call process functions; they should not contain the process math.
+
+## Matter Conservation Is a Required Contract
+
+For every modeled constituent:
+
+```text
+input component mass
+≈
+sum of that component across all outputs
+```
+
+And globally:
+
+```text
+input total mass
+≈
+output total mass
+```
+
+Use sensible floating-point tolerances.
+
+Do not represent unexplained process inefficiency by deleting matter. A future process that emits gas, residue, sludge, dust, or another waste stream should eventually expose that matter explicitly.
+
+For the first slice, prefer a closed separation with simple explicit outputs.
+
+## Prevent Duplication
+
+A committed process run must not leave the original physical input available as though nothing happened.
+
+A simple status transition such as:
+
+```text
+input batch: available → consumed
+output batches: created as available
+```
+
+or an equivalent immutable state transition is sufficient for the prototype.
+
+This does not require a full inventory/logistics system.
+
+---
+
+# Existing Simulation Contracts Must Remain Protected
+
+The regression-test foundation is complete and should now be extended rather than rebuilt.
+
+Existing tests protect contracts such as:
 
 ## Determinism
 
-- same root seed + same generator version produces identical world data
+- same root seed + same generator version produces equivalent world data
 - same seed + same RNG namespace produces the same sequence
 - unrelated RNG namespaces remain independent
 - simulation/generation modules do not use scattered `Math.random()` calls
@@ -112,9 +339,9 @@ Tests should protect:
 
 - planet → region references resolve
 - region → feature references resolve
-- feature → resource-occurrence references resolve
+- feature/region → resource-occurrence references resolve
 - parent/back-reference IDs agree
-- generated IDs are unique within the world
+- generated IDs are unique within tested worlds
 - physical features do not contain player discovery truth
 
 ## Knowledge Integrity
@@ -136,27 +363,24 @@ Where applicable:
 
 ## Domain Compatibility
 
-Prevent and test obvious contradictions such as:
+Existing guardrails prevent obvious contradictions for key feature types such as Aquifer, Gas Reservoir, Magma Chamber, and Ice Body, and keep biological resources gated by biological conditions.
 
-- aquifers with arbitrary gas/plastic states or incompatible resources
-- gas reservoirs without gas-compatible state/resources
-- magma chambers without magma/high-temperature compatibility
-- ice bodies without solid/frozen volatile compatibility
-- biological resources without suitable biological conditions
+## CI
 
-Do not turn this testing work into the complete geology simulator.
+`npm test` runs from repository root, and `.github/workflows/test.yml` runs the test suite for pull requests and pushes to `main`.
 
-## Broad Seed Testing and CI
+New gameplay work must add tests for its own physical contracts, especially:
 
-Run deterministic multi-seed smoke/property-style tests over hundreds of worlds and add a small GitHub Actions workflow that runs tests for pull requests and `main`.
-
-Because the app and project tooling now live at repository root, CI should run the root test command rather than `cd` into the removed `planet-generator/` directory.
+- sample mass/component consistency
+- deterministic process results
+- constituent-level conservation
+- total-mass conservation
+- process applicability and parameter validation
+- prevention of consumed-batch reuse through the normal committed-state path
 
 ---
 
 # Development Must Validate the Gameplay Loop Early
-
-After the regression-test foundation is in place, continue improving world generation **and** begin small gameplay vertical slices.
 
 The long-term loop defined in `DESIGN.md` is:
 
@@ -173,24 +397,6 @@ Acquire
 
 Do not wait until star, system, planet, region, geology, and resource generation are all “finished” before prototyping gameplay.
 
-Early gameplay work should be intentionally narrow. A suitable first playable chain may be conceptually:
-
-```text
-Survey / discover an existing resource occurrence
-    ↓
-Acquire a small quantity
-    ↓
-Inspect / analyze composition
-    ↓
-Apply one simple parameter-driven transformation or separation
-    ↓
-Produce an output stream and verify matter balance
-    ↓
-Represent that successful operation as a reusable process/apparatus concept
-```
-
-This is not permission to build the entire factory/blueprint/technology game immediately. The purpose is to prove that generated world data creates interesting player decisions and that future processing systems can consume the data model cleanly.
-
 When adding world-generation detail, ask:
 
 > **What decision, constraint, or opportunity does this create for the player?**
@@ -198,6 +404,8 @@ When adding world-generation detail, ask:
 When adding gameplay, ask:
 
 > **What physical world state does this act on?**
+
+The current processing slice should be used to discover what future geology/resource properties are actually needed rather than expanding generation detail speculatively.
 
 ---
 
@@ -225,7 +433,7 @@ Survey / Extraction / Processing / Industry
 
 ## Current Rule
 
-Do **not** implement a full star/system simulator simply because it is described here. Current planet-local assumptions are acceptable scaffolding while downstream systems are being established.
+Do **not** implement a full star/system simulator merely because it is a future requirement. Current planet-local assumptions are acceptable scaffolding while downstream gameplay semantics are being established.
 
 ## Future Architectural Requirement
 
@@ -279,7 +487,7 @@ A future star/system generation issue should replace current local assumptions i
 
 ## Keep Three State Layers Separate
 
-### World State
+### World / Simulation State
 
 Contains objective simulated reality:
 
@@ -287,15 +495,16 @@ Contains objective simulated reality:
 - regions
 - features
 - resource occurrences
+- material batches
 - material compositions
 - physical quantities
 - future facilities, processes, material streams, and infrastructure
 
-A physical object exists independently of player knowledge.
+A physical object exists independently of player knowledge or UI visibility.
 
 ### Knowledge State
 
-Contains what the player knows or estimates about world objects.
+Contains what the player knows or estimates about world objects and future player-created matter.
 
 A future discovery path may include:
 
@@ -308,58 +517,68 @@ Unknown
 → Characterized
 ```
 
-Discovery reveals existing world truth; it must not create favorable resources because the player searched for them.
+Discovery or analysis reveals existing physical truth; it must not create favorable resources because the player searched or measured.
 
 ### UI State
 
-Contains presentation-only state such as selected entity, expanded panels, filters, active views, graph viewport, and temporary control values.
+Contains presentation-only state such as selected entity, expanded panels, filters, active views, graph viewport, temporary control values, and future blueprint node positions where those positions are merely diagram layout.
 
-UI state must not become simulation truth.
+UI state must not become physical simulation truth.
 
 ---
 
 ## Root World State
 
-Keep the world plain and serializable. The current shape contains version metadata and ID-indexed maps.
+Keep the world plain and serializable.
 
 Do not let the current single planet become the permanent conceptual root of the game. When star/system entities are added, evolve the root schema intentionally rather than nesting everything into the planet object.
 
 Stable ID references are preferred over deeply nested mutable object graphs for permanent state.
 
+Player-created physical material may eventually require new indexed maps such as `materialBatches`; add them intentionally rather than hiding physical state inside `app.js` locals.
+
 ---
 
-## Definitions vs Occurrences
+## Definitions vs Occurrences vs Runtime Matter
 
-Reusable definitions and generated physical occurrences are different concepts.
-
-Example:
+Keep these concepts distinct:
 
 ```text
 ResourceDefinition
 Iron Ore
 ```
 
-versus:
-
 ```text
 ResourceOccurrence
-location: feature-17
-resourceId: iron-ore
-composition: ...
-quantity: ...
+where naturally occurring Iron Ore exists
 ```
 
-Likewise distinguish future mineral/chemical constituent definitions from raw-feedstock definitions.
+```text
+MaterialBatch
+a physical quantity acquired from an occurrence or produced by a process
+```
+
+Likewise:
+
+```text
+ProcessDefinition
+reusable process rules / ports / parameters
+```
+
+is different from:
+
+```text
+ProcessResult / future ProcessInstance
+a particular execution or operating system
+```
 
 Prefer plain data definitions over unnecessary classes.
-
-All extractable natural material instances, including broad regional resources, should eventually have stable occurrence identity rather than mixing anonymous embedded resource objects with normalized occurrences.
 
 ---
 
 ## Deterministic Namespaced RNG
 
-All simulation randomness should flow through seeded deterministic generators.
+All simulation randomness should flow through seeded deterministic generators when randomness is actually required.
 
 Use independent namespaces/substreams. As star/system generation is added, extend the hierarchy rather than returning to one global sequential stream.
 
@@ -380,6 +599,8 @@ Goals:
 - reduced cross-system reshuffling
 - deterministic lazy generation later
 
+A physical transformation with fully specified inputs/parameters should generally be deterministic unless stochastic behavior creates a concrete gameplay need.
+
 UI-only random root-seed creation is acceptable; simulation logic should not use uncontrolled randomness.
 
 ---
@@ -395,6 +616,8 @@ generatorVersion
 
 Increment and document these deliberately when serialized shape or deterministic generation rules materially change.
 
+Adding a new runtime physical-state collection may require a schema bump; changing only UI layout does not.
+
 Do not build a full migration system before persistence requires one.
 
 ---
@@ -406,16 +629,16 @@ Prefer:
 ```text
 DATA DEFINITIONS
       ↓
-SIMULATION / GENERATION
+SIMULATION / GENERATION / PROCESS LOGIC
       ↓
-WORLD STATE
+WORLD / PHYSICAL STATE
       ↓
 PLAYER KNOWLEDGE
       ↓
 UI / VISUALIZATION
 ```
 
-Generation must not depend on DOM state. World truth must not depend on discovery. Observing something must not change physical generation.
+Generation must not depend on DOM state. World truth must not depend on discovery. Process physics must not depend on rendering. Observing something must not change physical generation.
 
 ---
 
@@ -423,7 +646,7 @@ Generation must not depend on DOM state. World truth must not depend on discover
 
 ## Generate Causes, Not Independent Random Results
 
-Current downstream chain:
+Current downstream generation chain:
 
 ```text
 Planet conditions
@@ -459,6 +682,8 @@ Features represent localized structure, concentration, unusual conditions, or ac
 
 Features are not required to represent materials that naturally occur throughout a broad region.
 
+Both regional and feature resource instances now use stable `ResourceOccurrence` identity in World State.
+
 ---
 
 ## Raw Resources Are Natural Feedstocks
@@ -477,17 +702,21 @@ Composition:
   Gangue
 ```
 
-A resource definition identifies the feedstock class. A generated occurrence carries subtype, composition, concentration, quantity, and location.
+A resource definition identifies the feedstock class. A generated occurrence carries subtype, composition, concentration, quantity information, and location.
+
+A material batch acquired from that occurrence should carry the actual constituent quantities being acted on by gameplay.
 
 ---
 
 ## Preserve Matter Composition
 
-Whenever practical, natural resources should carry meaningful composition rather than behaving as arbitrary tokens.
+Whenever practical, natural resources and player-created material should carry meaningful composition rather than behaving as arbitrary tokens.
 
-Future processing should derive outputs from feedstock composition and process capability rather than fixed conversions such as `1 Iron Ore = 1 Iron`.
+Processing should derive outputs from feedstock composition and process capability rather than fixed conversions such as `1 Iron Ore = 1 Iron`.
 
 Preserve matter information at the coarsest level that still creates meaningful decisions.
+
+Do not discard composition merely because a UI or blueprint node would be easier to implement with generic item counts.
 
 ---
 
@@ -498,12 +727,14 @@ The currently implemented physical hierarchy is:
 ```text
 Planet
   └─ Region
-       ├─ Background natural resources
+       ├─ Background resource occurrences
        └─ Feature
-            └─ Natural-resource occurrences
+            └─ Resource occurrences
 ```
 
-The long-term hierarchy adds star/system causes above Planet. Do not add deeper geological hierarchy such as province → formation → deposit → ore body until it provides concrete simulation or gameplay benefit.
+The long-term hierarchy adds star/system causes above Planet and player-created material/process systems downstream.
+
+Do not add deeper geological hierarchy such as province → formation → deposit → ore body until it provides concrete simulation or gameplay benefit.
 
 ## Planet
 
@@ -517,7 +748,11 @@ Strengthen coherent local geology/environment from planetary conditions rather t
 
 Feature type, state, temperature/pressure, and possible resources must become increasingly compatible with formation conditions.
 
-Do not allow broad tag matching to become the permanent substitute for geological causality.
+Current obvious compatibility guardrails are only a first pass. Do not allow broad tag matching to become the permanent substitute for geological causality.
+
+## Resource Detail
+
+Structured constituent-level composition currently exists only for some resource types. Expand composition/property detail when gameplay demonstrates a need rather than filling the entire catalog speculatively.
 
 ---
 
@@ -560,6 +795,8 @@ Long-term interaction should emphasize nodes, ports, streams, process diagrams, 
 
 Do not assume a conventional 3D or character-controlled world is required.
 
+The future blueprint editor is primarily an **interaction/visual-composition layer over simulation semantics**. Diagram positions should not be confused with physical positions unless a future subsystem explicitly models physical layout.
+
 ## Functional Apparatus
 
 As gameplay is prototyped, favor apparatus composed from meaningful functions such as volume, inputs/outputs, heating/cooling, atmosphere/pressure control, agitation, separation, sensing, and control rather than only predefined magical machine blocks.
@@ -586,12 +823,14 @@ For now:
 - prefer browser-native JavaScript while sufficient
 - preserve ES modules and relative imports that work on GitHub Pages project paths
 - keep runtime dependencies minimal
-- keep simulation code DOM-independent
+- keep simulation/process code DOM-independent
 - do not migrate frameworks merely for modernization
 - do not introduce a backend/database until persistence or server simulation requires one
 - avoid ECS, dependency injection, message buses, or enterprise architecture without a concrete need
 
 The current app should remain easy to run from repository root through a local HTTP server and should remain deployable through GitHub Pages from `main` → `/ (root)`.
+
+A future smooth blueprint editor can be implemented in the browser; framework migration is not required merely to support dragging, connections, pan/zoom, or SVG/Canvas rendering.
 
 ---
 
@@ -605,20 +844,25 @@ When modifying this repository:
 4. Keep generation deterministic, small, and composable.
 5. Prefer plain serializable data structures.
 6. Preserve World / Knowledge / UI separation.
-7. Keep definitions separate from occurrences.
-8. Route simulation randomness through namespaced seeded RNGs.
+7. Keep definitions, natural occurrences, runtime material batches, and process executions conceptually distinct.
+8. Route simulation randomness through namespaced seeded RNGs when randomness is required.
 9. Keep IDs stable where practical.
 10. Maintain `schemaVersion` and `generatorVersion` deliberately.
 11. Add/update automated tests when changing simulation contracts.
-12. Keep rendering/formatting out of simulation logic.
+12. Keep rendering/formatting out of simulation and transformation logic.
 13. Document non-obvious physical approximations.
-14. Prefer data-driven compatibility rules as complexity grows.
+14. Prefer data-driven compatibility/response rules as complexity grows.
 15. Avoid speculative systems unrelated to the current issue.
 16. Do not entrench planet-local assumptions that block future star/system inputs.
 17. When realism conflicts with scope, preserve causal plausibility and meaningful decisions rather than maximal detail.
-18. When adding generation complexity, identify the future gameplay consequence.
+18. When adding generation complexity, identify the gameplay consequence.
 19. When adding gameplay, preserve matter/energy/state relationships needed by the simulation.
-20. Keep paths and tooling consistent with the root application layout; do not assume the removed `planet-generator/` directory exists.
+20. Keep paths and tooling consistent with the root application layout.
+21. Do not put physical material truth into UI-only state.
+22. Do not put transformation math inside DOM event handlers.
+23. Conserve modeled matter explicitly; do not hide losses by deleting mass.
+24. Design current process inputs/outputs/parameters so they can become future blueprint ports/settings without requiring a separate editor-only process model.
+25. Do not build the full draggable blueprint editor during Issue #8.
 
 ---
 
@@ -626,15 +870,14 @@ When modifying this repository:
 
 Unless an issue explicitly changes priority:
 
-1. **Add automated simulation regression tests and executable invariants.**
-2. Normalize remaining occurrence/reference inconsistencies exposed by tests.
-3. Improve obvious region/feature/resource causal compatibility.
-4. **Prototype a minimal playable survey → acquire → analyze → transform loop using the existing world model.**
-5. Improve causal regional geology and resource/deposit formation in response to what the gameplay prototype needs.
-6. Expand discovery into surveying/knowledge confidence.
-7. Introduce a small functional apparatus/process model for material transformation.
-8. Prototype reusable/automated solved processes.
-9. Add star/system generation inputs when they can materially replace current planet-level approximations and create downstream variation.
-10. Expand extraction, processing, automation, and larger industrial/network gameplay iteratively.
+1. **Prototype the first playable survey → sample → analyze → transform material loop.**
+2. Stabilize `MaterialBatch`, process input/output, parameter, result, and conservation semantics based on that prototype.
+3. Improve causal regional geology and resource/deposit properties in response to what the gameplay actually needs.
+4. Expand discovery into richer surveying and knowledge confidence.
+5. Generalize the functional apparatus/process model and material-stream semantics.
+6. **Build the first interactive blueprint workspace over stable process semantics** — node dragging, ports, connections, pan/zoom, and stream inspection.
+7. Add star/system generation inputs when they can materially replace current planet-level approximations and create downstream variation.
+8. Add continuous processing, automation, and reusable/nested solved systems incrementally.
+9. Expand extraction, logistics, processing depth, and larger industrial/network gameplay iteratively.
 
 Star/system generation is an important future foundation, but it should be introduced when downstream planet generation and gameplay are ready to consume its outputs—not as an isolated astronomy project.
