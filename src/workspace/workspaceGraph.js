@@ -11,7 +11,7 @@ function graphPorts(node, ports = getNodePortDefinitions(node)) {
   }));
 }
 
-function graphNode(node, position = { x: 0, y: 0 }, ports) {
+function graphNode(node, position = { x: 0, y: 0 }, ports, selected = false) {
   return {
     id: node.id,
     label: node.displayName ?? node.systemType ?? node.nodeType ?? node.id,
@@ -19,6 +19,7 @@ function graphNode(node, position = { x: 0, y: 0 }, ports) {
     position: { x: position.x, y: position.y },
     ports: graphPorts(node, ports),
     source: node,
+    selected,
     composite: node.kind === 'composite' || node.nodeType === 'site' || node.nodeType === 'region',
   };
 }
@@ -42,12 +43,14 @@ function graphConnection(connection, adapter) {
 }
 
 /** Project a local engineering blueprint without changing its simulation objects. */
-export function projectBlueprintGraph(blueprint, layout = { nodePositions: {} }) {
+export function projectBlueprintGraph(blueprint, layout = { nodePositions: {} }, options = {}) {
   if (!blueprint) return { nodes: [], connections: [] };
   return {
     nodes: Object.values(blueprint.nodes ?? {}).map(node => graphNode(
       node,
       layout.nodePositions?.[node.id] ?? { x: 0, y: 0 },
+      undefined,
+      options.selectedNodeId === node.id,
     )),
     connections: Object.values(blueprint.connections ?? {}).map(connection =>
       graphConnection(connection, 'blueprint')),
@@ -59,11 +62,12 @@ export function projectBlueprintGraph(blueprint, layout = { nodePositions: {} })
  * material streams. Endpoint resolution is deliberately supplied by the
  * workspace renderer because visible composite endpoints vary by hierarchy.
  */
-export function projectBoundaryGraph(definition, transfers = {}, endpointResolver = null) {
+export function projectBoundaryGraph(definition, transfers = {}, endpointResolver = null, options = {}) {
   const nodes = (definition?.nodes ?? []).map(node => graphNode(
     node,
     definition.layout?.nodePositions?.[node.id] ?? { x: 0, y: 0 },
     visibleBoundaryPorts(node),
+    options.selectedNodeId === node.id,
   ));
   const nodeIds = new Set(nodes.map(node => node.id));
   const connections = Object.values(transfers).filter(transfer => {
@@ -174,14 +178,48 @@ export function renderGraphNodes({
         });
       }
     }
-    element.classList.toggle('ws-node--selected', node.selected === true);
+    element.classList.toggle(
+      'ws-node--selected',
+      node.selected === true || element.classList.contains('ws-node--selected'),
+    );
   }
+
   for (const [id, element] of elements) {
     if (!activeIds.has(id)) {
       element.remove();
       elements.delete(id);
     }
   }
+
+}
+
+/** Render the common cursor-following edge preview for any workspace adapter. */
+export function renderGraphConnectionPreview({
+  svg,
+  active = false,
+  preview = null,
+  source,
+  target,
+  endpointPosition,
+} = {}) {
+  if (!svg) return null;
+  if (!active || !source || !target || typeof endpointPosition !== 'function') {
+    preview?.remove();
+    return null;
+  }
+  let line = preview;
+  if (!line || !svg.contains(line)) {
+    if (typeof document === 'undefined') throw new Error('Graph preview rendering requires a document');
+    line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.classList.add('ws-connection-preview');
+    svg.appendChild(line);
+  }
+  const start = endpointPosition(source);
+  line.setAttribute('x1', start.x);
+  line.setAttribute('y1', start.y);
+  line.setAttribute('x2', target.x);
+  line.setAttribute('y2', target.y);
+  return line;
 }
 
 export function graphConnectionEndpoint(connection, side = 'source') {
