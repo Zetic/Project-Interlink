@@ -43,7 +43,7 @@ Solved systems should eventually be reusable as components inside larger systems
 
 # Current State
 
-The project has completed its first simulation-foundation phase and is beginning its first gameplay-facing phase.
+The project has completed its first simulation-foundation phase and its first gameplay-facing material-processing vertical slice.
 
 The original planet generator began as a standalone tech demo, but its useful code has now been promoted into the Interlink simulation foundation and the web application itself lives directly at the repository root.
 
@@ -59,8 +59,15 @@ The current web application can:
 - reveal already-generated features through a simple discovery interface
 - represent both regional and feature resources as stable `ResourceOccurrence` objects in World State
 - enforce basic compatibility rules for obvious feature types such as aquifers, gas reservoirs, magma chambers, and ice bodies
-- run automated deterministic simulation tests through Node
-- run the simulation test suite automatically in GitHub Actions for pull requests and `main`
+- acquire a physical sample from an already-generated structured resource occurrence
+- represent acquired and processed matter as physical `MaterialBatch` objects in World State
+- analyze batch composition through Player Knowledge State without mutating physical truth
+- execute a parameter-driven magnetic-separation process outside the DOM/UI layer
+- conserve modeled constituents and total mass through process outputs
+- consume committed input batches and create new physical output batches without duplicating matter
+- commit process state atomically so failed runs do not partially mutate the world
+- run automated deterministic simulation and material-processing tests through Node
+- run the test suite automatically in GitHub Actions for pull requests and `main`
 
 The current planet generator follows a causal pipeline rather than selecting a planet archetype first:
 
@@ -92,12 +99,14 @@ Natural Resources
 
 This remains a simplified procedural model rather than research-grade planetary science. The goal is **internal consistency, causal relationships, deterministic behavior, and useful simulation data**.
 
-The current serialized world shape and generator rules are versioned. After the first regression/normalization pass:
+The current serialized world shape and generator rules are versioned:
 
 ```text
 schemaVersion: 3
 generatorVersion: 2
 ```
+
+Schema v3 introduced physical material batches and stored process results. Generator v2 remains the current procedural-generation version because the material-processing slice did not change deterministic world-generation rules.
 
 ---
 
@@ -165,7 +174,7 @@ The former `planet-generator/` wrapper directory has been removed. The app remai
 - vanilla JavaScript
 - ES modules
 
-Core simulation/generation logic is intentionally independent from DOM rendering so it can evolve into reusable Interlink game logic.
+Core simulation/generation/process logic is intentionally independent from DOM rendering so it can evolve into reusable Interlink game logic.
 
 The foundational state architecture is established:
 
@@ -174,29 +183,31 @@ WORLD / SIMULATION STATE
 objective physical truth
         ↓
 PLAYER KNOWLEDGE STATE
-what the player has discovered
+what the player has discovered or measured
         ↓
 APPLICATION / UI STATE
 what the interface is currently displaying
 ```
 
-The root world state is plain serializable JavaScript and contains version metadata plus ID-indexed maps for generated entities:
+The root world state is plain serializable JavaScript and contains version metadata plus ID-indexed maps for generated and runtime physical entities:
 
 ```text
 World
 ├── planets
 ├── regions
 ├── features
-└── resourceOccurrences
+├── resourceOccurrences
+├── materialBatches
+└── processResults
 ```
 
-Planets reference regions by ID, regions reference features by ID, and both regions and features reference generated resource occurrences by stable ID.
+Planets reference regions by ID, regions reference features by ID, and both regions and features reference generated resource occurrences by stable ID. Runtime batches and process results likewise use stable IDs rather than being stored only in UI state.
 
-Discovery is stored separately in Player Knowledge State. Discovering a feature reveals existing world truth rather than changing the simulated world.
+Discovery and sample analysis are stored separately in Player Knowledge State. Observing or analyzing something reveals existing world truth rather than changing the simulated matter.
 
 Generation uses deterministic namespaced RNG streams so changes inside one subsystem are less likely to reshuffle unrelated parts of a world seed.
 
-As star/system entities and player-created physical matter are added in the future, this World / Simulation State should evolve intentionally rather than moving physical truth into UI state.
+As star/system entities and more advanced player-created physical systems are added in the future, this World / Simulation State should evolve intentionally rather than moving physical truth into UI state.
 
 ---
 
@@ -219,9 +230,11 @@ Iron Ore Deposit
 
 Minerals such as hematite are constituents of that occurrence rather than automatically being separate fundamental resource IDs.
 
-The same approach is intended for brines, natural gas, rocks, atmospheric gases, and other heterogeneous natural materials. Processing gameplay should derive outputs from feedstock composition and process capability rather than fixed recipe-token conversions.
+The first gameplay-processing slice now proves that an occurrence can become a physical batch, be analyzed, and be separated into new batches while preserving modeled matter.
 
-The next gameplay work extends this philosophy from generated occurrences into discrete physical material batches and transformation outputs.
+The next material-model step is to separate **provenance** from **current material state**. A processed material should be able to remember where its matter came from without pretending that its current identity is permanently the same as one natural `resourceId` or one `sourceOccurrenceId`. This becomes important for crushed material, concentrates, mixtures, solutions, alloys, synthetic products, and eventually recycled matter.
+
+The same approach is intended for brines, natural gas, rocks, atmospheric gases, and other heterogeneous natural materials. Processing gameplay should derive outputs from feedstock composition and process capability rather than fixed recipe-token conversions.
 
 The broader matter model and processing philosophy are documented in [`DESIGN.md`](DESIGN.md).
 
@@ -229,75 +242,82 @@ The broader matter model and processing philosophy are documented in [`DESIGN.md
 
 # Current Development Priority
 
-The immediate priority is now **the first playable material-processing vertical slice**: [Issue #8 — Prototype first playable material processing loop](https://github.com/Zetic/Project-Interlink/issues/8).
+The immediate priority is now to **generalize the material/process contracts and prove the first multi-stage processing chain**.
 
-The intended prototype chain is:
+The target prototype is deliberately small:
 
 ```text
-Survey / discover an existing resource occurrence
-    ↓
-Acquire a small material sample
-    ↓
-Analyze its composition
-    ↓
-Run one parameter-driven separation / transformation
-    ↓
-Inspect products + tailings / waste
-    ↓
-Verify constituent and total matter balance
+Generated Iron Ore Occurrence
+        ↓
+Acquire Sample
+        ↓
+Analyze
+        ↓
+Crushing
+        ↓
+Crushed Material Batch
+        ↓
+Magnetic Separation
+        ↓
+Concentrate + Tailings
 ```
 
-The main architectural bridge is expected to be conceptually:
+This next step should prove several things before the graphical blueprint workspace is built:
+
+1. A `MaterialBatch` can carry a minimal physical property in addition to composition, using particle size as the first example.
+2. Processed matter can preserve provenance without being permanently identified as one original natural-resource occurrence.
+3. Process execution can support more than one process without growing a chain of process-ID special cases inside generic commit/state-transition code.
+4. Process inputs and outputs can use explicit port semantics that later map directly to blueprint connections.
+5. The output of one process can become the input of another while preserving physical state and conservation contracts.
+6. Conservation can be verified across an entire process chain, not only within a single operation.
+
+A suitable first added process is **Crushing**: one material input, one material output, unchanged constituent masses, and a changed particle-size property. Magnetic separation can then require or respond to sufficiently fine feed, making the process order physically meaningful rather than merely cosmetic.
+
+The exact material-property and provenance schemas are not locked yet. They should remain plain, serializable, minimal, and driven by what this two-stage chain actually needs.
+
+## Why the blueprint editor still comes after this step
+
+The browser is fully capable of a smooth node/connection editor, but the editor should visualize simulation semantics that have already been exercised by more than one process.
+
+After the two-stage chain works, the first blueprint workspace can represent real nodes and ports such as:
 
 ```text
-ResourceOccurrence
-        ↓
-MaterialBatch
-        ↓
-ProcessDefinition + parameters
-        ↓
-ProcessResult
-        ↓
-Output MaterialBatches
+┌───────────┐
+│ Crusher   │
+│       out ○──────────────┐
+└───────────┘              │
+                           ▼
+                    ○ feed
+              ┌─────────────────┐
+              │ Magnetic        │
+              │ Separator       │
+              │                 │
+              │ concentrate ○───┼──►
+              │ tailings    ○───┼──►
+              └─────────────────┘
 ```
 
-This is the first point where generated world data becomes matter the player can actually act on.
-
-## Why transformation comes before the blueprint editor
-
-The long-term blueprint workspace is still a core interaction goal, but the project should establish what a node, port, material input, output, process parameter, and transformation **mean** before spending substantial effort on dragging, wiring, pan/zoom, snapping, and other editor interaction.
-
-For the first gameplay slice, ordinary controls are sufficient:
+The intended sequence is now:
 
 ```text
-select occurrence
-collect sample
-analyze
-choose process
-adjust parameter
-run
-inspect outputs
-```
-
-The process model should still expose explicit inputs, outputs, and parameters so a later blueprint editor can become a graphical layer over the same simulation semantics rather than requiring a process-system rewrite.
-
-The intended development sequence is:
-
-```text
-prove matter
+✓ prove matter
     ↓
-prove transformations
+✓ prove one transformation
     ↓
-prove process semantics
+GENERALIZE PROCESS SEMANTICS
++ PROVE MULTI-STAGE CHAIN
     ↓
-then build the blueprint interaction layer
+BUILD FIRST BLUEPRINT WORKSPACE
+    ↓
+use gameplay needs to drive deeper geology,
+surveying, apparatus, streams, and automation
 ```
 
 ---
 
 # Simulation Contracts Already Established
 
-The existing automated tests now protect important foundation contracts including:
+The existing automated tests protect important foundation contracts including:
 
 - same seed + same generator version produces equivalent world data
 - RNG namespaces are deterministic and isolated
@@ -305,12 +325,18 @@ The existing automated tests now protect important foundation contracts includin
 - generated IDs remain unique within tested worlds
 - physical features do not contain discovery truth
 - knowledge discovery does not mutate physical World State
+- sample analysis does not mutate physical World State
 - bulk composition, atmosphere, structural fractions, and region area obey numeric invariants
 - generated physical values avoid NaN/Infinity and impossible negatives in tested paths
 - broad deterministic multi-seed generation succeeds
 - obvious Aquifer / Gas Reservoir / Magma Chamber / Ice Body contradictions are prevented
 - biological-resource gating remains tested
 - regional background resources and feature resources use stable normalized occurrences
+- sample component masses correspond to generated occurrence composition
+- process execution is deterministic for fixed inputs and parameters
+- each modeled constituent and total mass are conserved through magnetic separation
+- committed input batches cannot be reused to duplicate matter
+- failed process commits leave physical World State unchanged
 
 New gameplay systems should extend these executable contracts rather than replacing them with informal assumptions.
 
@@ -318,7 +344,7 @@ New gameplay systems should extend these executable contracts rather than replac
 
 # Known Simulation Areas Still Using Prototype Logic
 
-The planet-level model remains more causally developed than the region/feature/resource layer.
+The planet-level model remains more causally developed than the region/feature/resource layer, and the new gameplay-processing layer is intentionally narrow.
 
 Examples of remaining simplifications include:
 
@@ -329,7 +355,12 @@ Examples of remaining simplifications include:
 - structured constituent-level composition currently exists only for a subset of generated resource types
 - resource occurrence quantity is still mostly qualitative rather than precise physical reserve mass
 - no extraction/depletion model exists yet
-- no player-created `MaterialBatch` / transformation state exists yet
+- `MaterialBatch` still carries prototype assumptions tying processed matter closely to one original resource/occurrence
+- material batches do not yet have a general physical-properties model
+- only magnetic separation is implemented as a process
+- generic process execution still contains magnetic-separation-specific branching/response data
+- no multi-stage process chain has yet been established as a tested gameplay contract
+- no continuous material-stream or throughput model exists yet
 - several planet inputs are still generated locally that should eventually come from star/system formation context
 
 These are expected next-stage simulation problems, not reasons to restart the project.
@@ -430,15 +461,15 @@ These inspirations belong here as context. The canonical design in `DESIGN.md` s
 
 # Near-Term Roadmap
 
-1. **Prototype the first playable survey → sample → analyze → transform material loop.**
-2. Stabilize `MaterialBatch`, process input/output, parameter, result, and matter-conservation semantics based on that prototype.
-3. Improve causal regional geology and resource/deposit properties in response to what the gameplay actually needs.
-4. Expand discovery into richer surveying and knowledge confidence.
-5. Generalize the functional apparatus/process model and introduce material-stream semantics.
-6. **Build the first interactive blueprint workspace over stable process semantics** — node dragging, ports, connections, pan/zoom, and stream inspection.
+1. **Generalize material/process semantics and prove a Crusher → Magnetic Separator chain.**
+2. **Build the first interactive blueprint workspace over those proven semantics** — node dragging, explicit ports, connections, pan/zoom, compatible-port feedback, and stream/batch inspection.
+3. Use the first process-chain/blueprint gameplay to identify the specific geology, resource-property, and surveying information the player actually needs.
+4. Improve causal regional geology/resource/deposit properties and expand discovery into richer surveying/knowledge confidence in response to those needs.
+5. Generalize the functional apparatus model and introduce material-stream/throughput semantics.
+6. Add continuous processing, manual operating conditions, and then automation/control incrementally.
 7. Introduce star/system generation inputs when they can materially replace current planet-level approximations and create downstream variation.
-8. Add continuous processing, automation, and reusable/nested solved systems incrementally.
-9. Expand extraction, logistics, processing depth, and larger industrial/network gameplay iteratively.
+8. Add reusable/nested solved systems and progressively collapse mature factories into higher-level components.
+9. Expand extraction, depletion, logistics, processing depth, and larger industrial/network gameplay iteratively.
 
 Star/system generation remains an important future foundation, but it should be introduced when downstream planet generation and gameplay are ready to consume its outputs rather than as an isolated astronomy project.
 
