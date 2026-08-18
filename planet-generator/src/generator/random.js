@@ -3,6 +3,23 @@
  * Returns a factory that creates RNG instances from a numeric seed.
  */
 
+/**
+ * Derive a deterministic namespaced RNG from a root seed string and a
+ * namespace path string.  Changing one namespace does not affect others.
+ *
+ * Usage:
+ *   rngFor('my-seed', 'planet:base')
+ *   rngFor('my-seed', `region:${regionId}:geology`)
+ *   rngFor('my-seed', `feature:${featureId}:resources`)
+ *
+ * @param {string} rootSeed  - The root world seed (string).
+ * @param {string} namespace - Unique path identifying this generation domain.
+ * @returns RNG instance (same API as createRNG).
+ */
+export function rngFor(rootSeed, namespace) {
+  return createRNG(hashSeed(String(rootSeed) + '\x00' + namespace));
+}
+
 export function createRNG(seed) {
   let s = seed >>> 0;
   if (s === 0) s = 1;

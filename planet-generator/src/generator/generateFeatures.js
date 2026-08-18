@@ -1,9 +1,12 @@
 /**
  * Feature generation for planet regions.
+ * Physical features do not own player-discovery state; that lives in
+ * knowledgeState.  Each feature's resource instances are stored as
+ * resourceOccurrences (separate from the catalog ResourceDefinitions).
  */
 
 import { resourcesByTags, makeFeatureResource } from './generateResources.js';
-import { createRNG } from './random.js';
+import { rngFor } from './random.js';
 
 const FEATURE_TYPES = [
   'Mineral Deposit',
@@ -150,48 +153,54 @@ function featureResourceTags(featureType, region, planetComposition) {
   return tags;
 }
 
-let featureCounter = 0;
-
-export function generateFeatures(region, planet, rng) {
-  const count = rng.int(2, 4);
+export function generateFeatures(region, planet, rootSeed) {
+  // Each feature gets its own namespaced RNG derived from the root seed so
+  // adding/removing features in one region does not reshuffle other regions.
+  const countRng = rngFor(rootSeed, `region:${region.id}:featureCount`);
+  const count = countRng.int(2, 4);
   const pool = weightedFeatureTypes(region, planet.biospherePresent);
   const features = [];
 
   for (let i = 0; i < count; i++) {
-    featureCounter++;
-    const featureType = rng.pick(pool);
-    const name = generateFeatureName(rng);
-    const depthM = parseFloat(rng.range(10, 4000).toFixed(0));
-    const geometry = rng.pick(['Tabular', 'Lenticular', 'Nodular', 'Vein', 'Massive', 'Layered', 'Irregular', 'Pipe-like']);
-    const accessibility = rng.pick(['Easy', 'Moderate', 'Difficult', 'Extreme']);
-    const physicalState = rng.pick(['Solid', 'Liquid', 'Mixed', 'Gaseous', 'Plastic']);
-    const tempOffset = rng.range(-20, 80);
+    const featureId = `feature-${region.id}-${i}`;
+    const featureRng = rngFor(rootSeed, `feature:${featureId}`);
+
+    const featureType = featureRng.pick(pool);
+    const name = generateFeatureName(featureRng);
+    const depthM = parseFloat(featureRng.range(10, 4000).toFixed(0));
+    const geometry = featureRng.pick(['Tabular', 'Lenticular', 'Nodular', 'Vein', 'Massive', 'Layered', 'Irregular', 'Pipe-like']);
+    const accessibility = featureRng.pick(['Easy', 'Moderate', 'Difficult', 'Extreme']);
+    const physicalState = featureRng.pick(['Solid', 'Liquid', 'Mixed', 'Gaseous', 'Plastic']);
+    const tempOffset = featureRng.range(-20, 80);
     const temperatureK = parseFloat((planet.meanTemperatureK + tempOffset).toFixed(1));
-    const pressureBar = parseFloat(rng.range(0.1, 50).toFixed(2));
-    const qv = rng.random();
+    const pressureBar = parseFloat(featureRng.range(0.1, 50).toFixed(2));
+    const qv = featureRng.random();
     const qClass = ['Tiny', 'Small', 'Moderate', 'Large', 'Massive'][Math.min(Math.floor(qv * 5), 4)];
 
-    // Pick resources
+    // Resource occurrences — separate namespaced RNG per feature
+    const resourceRng = rngFor(rootSeed, `feature:${featureId}:resources`);
     const tags = featureResourceTags(featureType, region, planet.bulkComposition);
     let candidateResources = resourcesByTags(tags, 'feature');
 
-    // Filter biological resources if no biosphere
     if (!planet.biospherePresent) {
       candidateResources = candidateResources.filter(r => !r.tags.includes('biological'));
     }
 
-    // Deduplicate and pick 1-3
-    const numResources = rng.int(1, Math.min(3, candidateResources.length || 1));
+    const numResources = resourceRng.int(1, Math.min(3, candidateResources.length || 1));
     const shuffled = [...candidateResources];
-    rng.shuffle(shuffled);
+    resourceRng.shuffle(shuffled);
     const picked = shuffled.slice(0, numResources);
-    const featureResources = picked.map(r => makeFeatureResource(r, rng));
+    // Each occurrence gets a stable ID so worldState can index it
+    const resourceOccurrences = picked.map((r, ri) =>
+      makeFeatureResource(r, resourceRng, `${featureId}-occ-${ri}`)
+    );
 
+    // Physical feature — no 'discovered' flag; that belongs in knowledgeState
     features.push({
-      id: `feature-${region.id}-${i}`,
+      id: featureId,
+      regionId: region.id,
       name,
       type: featureType,
-      discovered: false,
       depthM,
       geometry,
       accessibility,
@@ -199,13 +208,10 @@ export function generateFeatures(region, planet, rng) {
       temperatureK,
       pressureBar,
       quantityClass: qClass,
-      resources: featureResources,
+      resourceOccurrences,
     });
   }
 
   return features;
 }
 
-export function resetFeatureCounter() {
-  featureCounter = 0;
-}

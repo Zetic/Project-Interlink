@@ -1,9 +1,12 @@
 /**
  * Region generation for a planet.
+ * Uses namespaced RNG streams so that changes to planet-level generation
+ * do not reshuffle region content for the same seed.
  */
 
 import { resourcesByTags, makeRegionResource } from './generateResources.js';
 import { generateFeatures } from './generateFeatures.js';
+import { rngFor } from './random.js';
 
 const REGION_PREFIXES = ['Veyra', 'Kharon', 'Namar', 'Eos', 'Talus', 'Irneth', 'Solen', 'Duras', 'Aethon', 'Mareth', 'Calyx', 'Vorn'];
 const REGION_SUFFIXES = ['Highlands', 'Basin', 'Expanse', 'Shelf', 'Plain', 'Reach', 'Badlands', 'Rift', 'Plateau', 'Flats', 'Peaks', 'Delta', 'Wastes'];
@@ -48,7 +51,10 @@ function regionResourceTags(region, planet) {
   return tags;
 }
 
-export function generateRegions(planet, rng) {
+export function generateRegions(planet, rng, rootSeed) {
+  // rng here is still used for the top-level count/latitude/area layout so
+  // it stays tied to the planet-level stream.  Per-region detail uses
+  // namespaced sub-streams for stability.
   const count = rng.int(4, 8);
   const regions = [];
   const usedNames = new Set();
@@ -65,33 +71,37 @@ export function generateRegions(planet, rng) {
   const totalRaw = rawAreas.reduce((a, b) => a + b, 0);
 
   for (let i = 0; i < count; i++) {
+    const regionId = `region-${i}`;
+    // Namespaced RNG for this region's internal details
+    const regionRng = rngFor(rootSeed, `region:${regionId}`);
+
     const latitude = parseFloat(latitudes[i].toFixed(1));
     const areaPercent = parseFloat(((rawAreas[i] / totalRaw) * 100).toFixed(1));
 
     // Regional conditions vary around planet baseline
     const heatBase = clamp(planet.meanTemperatureK / 400, 0, 1);
     const polarFactor = Math.abs(latitude) / 90;
-    const heat = clamp(heatBase - polarFactor * 0.4 + rng.range(-0.1, 0.1), 0, 1);
+    const heat = clamp(heatBase - polarFactor * 0.4 + regionRng.range(-0.1, 0.1), 0, 1);
 
     const moisture = clamp(
       (planet.volatileInventory?.waterIce || 0) / 30 +
-      rng.range(-0.2, 0.4),
+      regionRng.range(-0.2, 0.4),
       0, 1
     );
 
-    const geologicActivity = clamp(planet.geologicActivity + rng.range(-0.2, 0.2), 0, 1);
-    const relief = clamp(rng.range(0.1, 1.0), 0, 1);
-    const elevationKm = parseFloat(rng.range(-3, 8).toFixed(2));
+    const geologicActivity = clamp(planet.geologicActivity + regionRng.range(-0.2, 0.2), 0, 1);
+    const relief = clamp(regionRng.range(0.1, 1.0), 0, 1);
+    const elevationKm = parseFloat(regionRng.range(-3, 8).toFixed(2));
 
-    const age = rng.pick(['Ancient', 'Old', 'Mature', 'Recent', 'Young', 'Active']);
-    const surfaceCover = chooseSurfaceCover(heat, moisture, geologicActivity, planet.biospherePresent, rng);
+    const age = regionRng.pick(['Ancient', 'Old', 'Mature', 'Recent', 'Young', 'Active']);
+    const surfaceCover = chooseSurfaceCover(heat, moisture, geologicActivity, planet.biospherePresent, regionRng);
 
     // Local composition: planet composition ± perturbation
-    const localComposition = perturbComposition(planet.bulkComposition, rng);
+    const localComposition = perturbComposition(planet.bulkComposition, regionRng);
 
     const region = {
-      id: `region-${i}`,
-      name: regionName(rng, usedNames),
+      id: regionId,
+      name: regionName(regionRng, usedNames),
       areaPercent,
       latitude,
       elevationKm,
@@ -106,7 +116,8 @@ export function generateRegions(planet, rng) {
       features: [],
     };
 
-    // Background resources
+    // Background resources (namespaced)
+    const bgRng = rngFor(rootSeed, `region:${regionId}:resources`);
     const tags = regionResourceTags(region, planet);
     let candidates = resourcesByTags(tags, 'region');
     if (!planet.biospherePresent) {
@@ -115,16 +126,16 @@ export function generateRegions(planet, rng) {
     // Add atmospheric gas if atmosphere exists
     const atmoResource = candidates.find(r => r.id === 'atmospheric-gas');
     const others = candidates.filter(r => r.id !== 'atmospheric-gas');
-    rng.shuffle(others);
-    const numBg = rng.int(2, 5);
+    bgRng.shuffle(others);
+    const numBg = bgRng.int(2, 5);
     const selected = others.slice(0, numBg);
     if (atmoResource && planet.atmosphere?.pressureBar > 0) {
       selected.unshift(atmoResource);
     }
-    region.backgroundResources = selected.map(r => makeRegionResource(r, rng));
+    region.backgroundResources = selected.map(r => makeRegionResource(r, bgRng));
 
-    // Features
-    region.features = generateFeatures(region, planet, rng);
+    // Features — pass rootSeed so each feature can derive its own namespace
+    region.features = generateFeatures(region, planet, rootSeed);
 
     regions.push(region);
   }

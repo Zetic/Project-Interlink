@@ -2,13 +2,28 @@
  * UI layer for the Planet Generator tech demo.
  * Handles user interactions and DOM rendering.
  * Generator logic is kept entirely separate.
+ *
+ * State layers:
+ *   world     — serialisable simulation truth (createWorld)
+ *   knowledge — player discovery state (createKnowledge / discoverFeature)
+ *   uiState   — presentation-only (selected, counters) — never simulation truth
  */
 
-import { generatePlanet } from './generator/generatePlanet.js';
-import { createRNG, hashSeed } from './generator/random.js';
+import { createWorld } from './core/world/worldState.js';
+import { createKnowledge, discoverFeature, isFeatureDiscovered } from './core/world/knowledgeState.js';
+import { rngFor, hashSeed } from './generator/random.js';
 
-let currentPlanet = null;
+// ---------- Application state ----------
+
+let world = null;
+let knowledge = null;
 let discoveryRng = null;
+
+// UI-only state: nothing here is simulation truth
+const uiState = {
+  discoveredCount: 0,
+  totalFeatureCount: 0,
+};
 
 // ---------- DOM helpers ----------
 
@@ -60,11 +75,14 @@ function renderResourcesTable(resources, mode) {
         line += `<br><span class="resource-comp">${escHtml(compStr)}</span>`;
       }
       return `<li>${line}</li>`;
-    }
-  }).join('');
+    }  }).join('');
 }
 
 function renderFeature(feature) {
+  // Resolve resource occurrence IDs to objects from world state
+  const occurrences = feature.resourceOccurrences.map(
+    id => (typeof id === 'string' ? world.resourceOccurrences[id] : id)
+  ).filter(Boolean);
   return `
     <div class="feature discovered">
       <div class="feature-name">${escHtml(feature.name)}</div>
@@ -77,15 +95,17 @@ function renderFeature(feature) {
       </div>
       <div class="resource-section">
         <strong>Resources:</strong>
-        <ul>${renderResourcesTable(feature.resources, 'feature')}</ul>
+        <ul>${renderResourcesTable(occurrences, 'feature')}</ul>
       </div>
     </div>
   `;
 }
 
 function renderRegion(region) {
-  const discoveredFeatures = region.features.filter(f => f.discovered);
-  const undiscovered = region.features.filter(f => !f.discovered).length;
+  // Resolve feature objects from world state
+  const featureObjects = region.features.map(fid => world.features[fid]);
+  const discoveredFeatures = featureObjects.filter(f => isFeatureDiscovered(knowledge, f.id));
+  const undiscovered = featureObjects.filter(f => !isFeatureDiscovered(knowledge, f.id)).length;
 
   const featureHtml = discoveredFeatures.length > 0
     ? discoveredFeatures.map(renderFeature).join('')
@@ -126,6 +146,7 @@ function renderPlanet(planet) {
       <div><strong>Name</strong> ${escHtml(planet.name)}</div>
       <div><strong>Type</strong> ${escHtml(planet.planetType)}</div>
       <div><strong>Seed</strong> ${escHtml(planet.seed)}</div>
+      <div><strong>Schema / Generator</strong> v${world.schemaVersion} / v${world.generatorVersion}</div>
       <div><strong>Mass</strong> ${planet.massEarth} M&oplus;</div>
       <div><strong>Radius</strong> ${planet.radiusEarth} R&oplus;</div>
       <div><strong>Density</strong> ${planet.meanDensity} g/cm&sup3;</div>
@@ -147,13 +168,16 @@ function renderPlanet(planet) {
     </div>
   `;
 
-  el('regions-list').innerHTML = planet.regions.map(renderRegion).join('');
+  // Resolve region objects from world state
+  const regionObjects = planet.regions.map(rid => world.regions[rid]);
+  el('regions-list').innerHTML = regionObjects.map(renderRegion).join('');
 }
 
 function updateDiscoveryCounter() {
-  const allFeatures = currentPlanet.regions.flatMap(r => r.features);
-  const discovered = allFeatures.filter(f => f.discovered).length;
-  const total = allFeatures.length;
+  const total = Object.keys(world.features).length;
+  const discovered = Object.keys(world.features).filter(id => isFeatureDiscovered(knowledge, id)).length;
+  uiState.discoveredCount = discovered;
+  uiState.totalFeatureCount = total;
   el('discovery-counter').textContent = `Features Discovered: ${discovered} / ${total}`;
   const btn = el('discover-btn');
   if (discovered >= total) {
@@ -172,14 +196,16 @@ function onGeneratePlanet() {
   const seed = seedInput || String(Math.floor(Math.random() * 1e9));
   el('seed-input').value = seed;
 
-  currentPlanet = generatePlanet(seed);
-  console.log('[Planet Generator] Generated planet:', currentPlanet);
+  // Build world state (simulation truth) and knowledge state (player state) separately
+  world = createWorld(seed);
+  knowledge = createKnowledge(world);
+  console.log('[Interlink] World state:', world);
 
-  // Reset discovery RNG using same seed + offset
-  const numericSeed = hashSeed(seed + '-discovery');
-  discoveryRng = createRNG(numericSeed);
+  // Discovery RNG is UI-layer state — namespaced to avoid collision with generation
+  discoveryRng = rngFor(seed + '-ui', 'discovery');
 
-  renderPlanet(currentPlanet);
+  const planet = world.planets[world.planetId];
+  renderPlanet(planet);
   updateDiscoveryCounter();
 
   el('planet-section').style.display = 'block';
@@ -188,23 +214,27 @@ function onGeneratePlanet() {
 }
 
 function onDiscoverFeature() {
-  if (!currentPlanet) return;
+  if (!world || !knowledge) return;
 
-  const undiscovered = currentPlanet.regions
-    .flatMap(r => r.features.map(f => ({ region: r, feature: f })))
-    .filter(({ feature }) => !feature.discovered);
+  // Collect undiscovered feature IDs
+  const undiscoveredIds = Object.keys(world.features).filter(id => !isFeatureDiscovered(knowledge, id));
+  if (undiscoveredIds.length === 0) return;
 
-  if (undiscovered.length === 0) return;
+  const idx = discoveryRng.int(0, undiscoveredIds.length - 1);
+  const featureId = undiscoveredIds[idx];
 
-  const idx = discoveryRng.int(0, undiscovered.length - 1);
-  const { region, feature } = undiscovered[idx];
-  feature.discovered = true;
+  // Reveal discovery in knowledge state only — world state is untouched
+  discoverFeature(knowledge, featureId);
 
-  // Update the features section for this region
-  const featuresEl = document.getElementById(`features-${region.id}`);
+  // Re-render only the affected region's features section
+  const feature = world.features[featureId];
+  const regionId = feature.regionId;
+  const region = world.regions[regionId];
+  const featuresEl = document.getElementById(`features-${regionId}`);
   if (featuresEl) {
-    const discoveredFeatures = region.features.filter(f => f.discovered);
-    const undiscoveredCount = region.features.filter(f => !f.discovered).length;
+    const featureObjects = region.features.map(fid => world.features[fid]);
+    const discoveredFeatures = featureObjects.filter(f => isFeatureDiscovered(knowledge, f.id));
+    const undiscoveredCount = featureObjects.filter(f => !isFeatureDiscovered(knowledge, f.id)).length;
     featuresEl.innerHTML =
       discoveredFeatures.map(renderFeature).join('') +
       (undiscoveredCount > 0 ? `<div class="undiscovered-hint">${undiscoveredCount} undiscovered feature(s)</div>` : '');
