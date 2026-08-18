@@ -17,7 +17,8 @@ import {
   checkBlueprintConnection,
   getNodePortDefinitions,
   getStreamForConnection,
-  simulationTick,
+  setNodeEnabled,
+  getNodeOperatingState,
   createBlueprintLayout,
   layoutMoveNode,
   SIMULATION_STEP_S,
@@ -26,6 +27,14 @@ import {
   DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
   DEFAULT_MAG_SEP_FIELD_STRENGTH,
 } from '../simulation/simulationEngine.js';
+import {
+  createWorldSimulation,
+  registerSimulationSession,
+  pauseWorldSimulation,
+  resumeWorldSimulation,
+  worldSimulationTick,
+} from '../simulation/worldSimulation.js';
+import { setBoundaryMapping } from '../simulation/systemNode.js';
 import { hopperStoredMassKg, hopperFreeCapacityKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
 import { isFeatureDiscovered, discoverFeature } from '../core/world/knowledgeState.js';
@@ -33,6 +42,7 @@ import { isFeatureDiscovered, discoverFeature } from '../core/world/knowledgeSta
 const wsState = {
   currentLevel: 'planet',
   selectedRegionId: null,
+  selectedSiteId: null,
   selectedOccurrenceId: null,
   world: null,
   knowledge: null,
@@ -45,6 +55,7 @@ const wsState = {
   simLastTime: null,
   simAccumulatedS: 0,
   simRafId: null,
+  nodeElements: new Map(),
 };
 
 const NODE_WIDTH = 160;
@@ -105,21 +116,28 @@ function renderBreadcrumbs() {
     crumbs.push({ label: region.name, level: 'region', clickable: wsState.currentLevel === 'engineering' });
   }
   if (wsState.currentLevel === 'engineering') {
-    crumbs.push({ label: 'Engineering', level: 'engineering', clickable: false });
+    const site = wsState.world?.sites?.[wsState.selectedSiteId];
+    crumbs.push({ label: site?.id ?? 'Site', level: 'engineering', clickable: false });
   }
 
-  container.innerHTML = crumbs.map(crumb => (
+  container.innerHTML = `
+    <span class="ws-world-controls">
+      <button id="ws-world-toggle">${wsState.world?.simulation?.running ? '⏸ Pause World' : '▶ Resume World'}</button>
+      <span id="ws-world-clock">${(wsState.world?.simulation?.elapsedSeconds ?? 0).toFixed(1)} s</span>
+    </span>
+    ${crumbs.map(crumb => (
     crumb.clickable
       ? `<button class="ws-breadcrumb" data-level="${crumb.level}">${escHtml(crumb.label)}</button>`
       : `<span class="ws-breadcrumb ws-breadcrumb--active">${escHtml(crumb.label)}</span>`
-  )).join('<span class="ws-breadcrumb-sep">›</span>');
+  )).join('<span class="ws-breadcrumb-sep">›</span>')}`;
 
   container.querySelectorAll('.ws-breadcrumb[data-level]').forEach(button => {
     button.addEventListener('click', () => navigateTo(button.dataset.level));
   });
+  el('ws-world-toggle')?.addEventListener('click', onToggleWorldSimulation);
 }
 
-function createEngineeringSession(occurrenceId) {
+function createEngineeringSession(occurrenceId, siteId = null) {
   const blueprint = createBlueprint();
   const blueprintLayout = createBlueprintLayout();
 
@@ -149,30 +167,56 @@ function createEngineeringSession(occurrenceId) {
   blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
   blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
 
-  return { blueprint, blueprintLayout };
+  const resolvedSiteId = siteId ?? `site-occurrence-${occurrenceId}`;
+  const site = wsState.world?.sites?.[resolvedSiteId];
+  if (site) {
+    const boundary = wsState.world.systemNodes?.[resolvedSiteId];
+    if (boundary) setBoundaryMapping(boundary, 'ore-output', concentrateHopper.id, concentrateHopper.outputPortId);
+  }
+
+  return {
+    id: resolvedSiteId,
+    siteId: resolvedSiteId,
+    occurrenceId,
+    blueprint,
+    blueprintLayout,
+    boundaryNode: wsState.world?.systemNodes?.[resolvedSiteId] ?? null,
+  };
 }
 
-function activateEngineeringSession(occurrenceId) {
-  let session = wsState.engineeringSessions[occurrenceId];
+function activateEngineeringSession(occurrenceId, siteId = null) {
+  const sessionId = siteId ?? `site-occurrence-${occurrenceId}`;
+  let session = wsState.engineeringSessions[sessionId];
   if (!session) {
-    session = createEngineeringSession(occurrenceId);
-    wsState.engineeringSessions[occurrenceId] = session;
+    session = createEngineeringSession(occurrenceId, siteId);
+    wsState.engineeringSessions[sessionId] = session;
+    registerSimulationSession(wsState.world, sessionId, session.blueprint);
   }
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
+  wsState.selectedSiteId = session.siteId;
 }
 
 export function navigateTo(level, opts = {}) {
-  stopSimulation();
-
   if (level === 'region' && opts.regionId) {
     wsState.selectedRegionId = opts.regionId;
+  }
+  if (level === 'site' && opts.siteId) {
+    const site = wsState.world?.sites?.[opts.siteId];
+    if (!site) return;
+    wsState.selectedSiteId = opts.siteId;
+    wsState.selectedRegionId = site.regionId;
+    const occurrenceId = site.resourceOccurrenceIds?.[0];
+    if (!occurrenceId) return;
+    wsState.selectedOccurrenceId = occurrenceId;
+    activateEngineeringSession(occurrenceId, opts.siteId);
+    level = 'engineering';
   }
   if (level === 'engineering') {
     const occurrenceId = opts.occurrenceId ?? wsState.selectedOccurrenceId;
     if (!occurrenceId) return;
     wsState.selectedOccurrenceId = occurrenceId;
-    activateEngineeringSession(occurrenceId);
+    activateEngineeringSession(occurrenceId, opts.siteId ?? wsState.selectedSiteId);
   }
 
   wsState.currentLevel = level;
@@ -221,14 +265,22 @@ function renderPlanetWorkspace(container) {
     const card = document.createElement('div');
     card.className = 'ws-region-card';
     card.tabIndex = 0;
+    const regionNode = wsState.world.systemNodes?.[regionId];
     card.innerHTML = `
       <div class="ws-region-card-name">${escHtml(region.name)}</div>
       <div class="ws-region-card-meta">${escHtml(region.surfaceCover)} · ${region.areaPercent}% area</div>
       <div class="ws-region-card-features">Features: ${discoveredCount} / ${featureIds.length} known</div>
-      <div class="ws-region-card-enter">Enter →</div>
+      <div class="ws-region-card-features">Sites: ${(region.siteIds ?? []).length} · Ports: ${(regionNode?.ports ?? []).length}</div>
+      <button class="ws-region-card-enter">Enter →</button>
     `;
     const enter = () => navigateTo('region', { regionId });
-    card.addEventListener('click', enter);
+    card.querySelector('button')?.addEventListener('click', event => {
+      event.stopPropagation();
+      enter();
+    });
+    card.addEventListener('click', () => {
+      card.classList.toggle('ws-system-selected');
+    });
     card.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') enter();
     });
@@ -268,13 +320,17 @@ function renderRegionWorkspace(container) {
     }
 
     if (occurrence) hasKnownCompatibleSite = true;
+    const siteId = `site-${feature.id}`;
+    const site = wsState.world.sites?.[siteId];
     sitesHtml += `
-      <div class="ws-site-card ${occurrence ? 'ws-site-enterable' : ''}">
+      <div class="ws-site-card ${occurrence ? 'ws-site-enterable' : ''}" data-site-id="${escHtml(siteId)}">
         <div class="ws-site-name">${escHtml(feature.name)}</div>
         <div class="ws-site-type">${escHtml(feature.type)} · ${escHtml(feature.quantityClass)}</div>
+        ${site ? `<div class="ws-site-inspect">Site ${escHtml(site.id)} · Region ${escHtml(site.regionId)} · ${site.resourceOccurrenceIds.length} occurrence(s)</div>` : ''}
         ${occurrence ? `<span class="ws-badge ws-badge--ore">${escHtml(occurrence.name)} · ${escHtml(occurrence.quantityClass)}</span>` : ''}
+        ${site ? '<div class="ws-site-port">Material output: ore out ○</div>' : ''}
         ${occurrence
-          ? `<button class="ws-site-enter-btn" data-occurrence-id="${escHtml(occurrence.id)}">Enter Engineering →</button>`
+          ? `<button class="ws-site-enter-btn" data-site-id="${escHtml(siteId)}" data-occurrence-id="${escHtml(occurrence.id)}">Enter Site →</button>`
           : '<span class="ws-site-no-entry">No compatible resource for this prototype chain</span>'}
       </div>
     `;
@@ -300,13 +356,23 @@ function renderRegionWorkspace(container) {
       <div class="ws-region-heading">${escHtml(region.name)}</div>
       <div class="ws-region-desc">${escHtml(region.surfaceCover)} · ${region.areaPercent}% area · Heat: ${region.heat} · Moisture: ${region.moisture}</div>
       <div class="ws-region-bgres"><strong>Background resources:</strong> ${backgroundSummary}</div>
+      <div class="ws-region-boundary"><strong>Region export:</strong> ore out ○ · explicit child-flow boundary</div>
     </div>
+    <div class="ws-transfer-placeholder">Regional Export / Transfer — placeholder capacity; moves owned material explicitly.</div>
     ${prototypeSurvey}
     <div class="ws-sites-grid">${sitesHtml || '<p class="ws-empty">No features in this region.</p>'}</div>
   `;
 
   container.querySelectorAll('.ws-site-enter-btn').forEach(button => {
-    button.addEventListener('click', () => navigateTo('engineering', { occurrenceId: button.dataset.occurrenceId }));
+    button.addEventListener('click', () => navigateTo('site', {
+      siteId: button.dataset.siteId,
+      occurrenceId: button.dataset.occurrenceId,
+    }));
+  });
+  container.querySelectorAll('.ws-site-card[data-site-id]').forEach(card => {
+    card.addEventListener('click', event => {
+      if (!event.target.closest('.ws-site-enter-btn')) card.classList.toggle('ws-system-selected');
+    });
   });
 
   el('ws-prototype-survey')?.addEventListener('click', event => {
@@ -322,16 +388,16 @@ function nodeLabel(node) {
   switch (node.nodeType) {
     case 'extractor': {
       const occurrence = wsState.world?.resourceOccurrences?.[node.occurrenceId];
-      return `Extractor\n${occurrence?.name ?? node.occurrenceId}\n${node.prototypeRateKgPerSecond} kg/s`;
+      return `Extractor [${getNodeOperatingState(node)}]\n${occurrence?.name ?? node.occurrenceId}\n${node.prototypeRateKgPerSecond} kg/s`;
     }
     case 'hopper': {
       const mass = hopperStoredMassKg(node);
       return `Hopper\n${mass.toFixed(1)} / ${node.capacityKg} kg\n${(mass / node.capacityKg * 100).toFixed(0)}%`;
     }
     case 'crusher':
-      return `Crusher\n→ ${node.targetParticleSizeMm} mm\n${node.throughputKgPerSecond} kg/s`;
+      return `Crusher [${getNodeOperatingState(node)}]\n→ ${node.targetParticleSizeMm} mm\n${node.throughputKgPerSecond} kg/s`;
     case 'magSep':
-      return `Mag. Sep.\nB=${node.fieldStrength}\n${node.throughputKgPerSecond} kg/s`;
+      return `Mag. Sep. [${getNodeOperatingState(node)}]\nB=${node.fieldStrength}\n${node.throughputKgPerSecond} kg/s`;
     default:
       return node.nodeType;
   }
@@ -346,60 +412,65 @@ function portOffsets(port, index, count) {
 }
 
 function renderNode(canvas, node, position) {
-  const nodeElement = document.createElement('div');
+  let nodeElement = wsState.nodeElements.get(node.id);
+  if (!nodeElement || !canvas.contains(nodeElement)) {
+    nodeElement = document.createElement('div');
+    nodeElement.innerHTML = `
+      ${node.nodeType === 'hopper' ? '<div class="ws-hopper-fill"></div>' : ''}
+      <div class="ws-node-label"></div>
+    `;
+    const ports = getNodePortDefinitions(node);
+    for (const direction of ['input', 'output']) {
+      const sidePorts = ports.filter(port => port.direction === direction);
+      sidePorts.forEach((port, index) => {
+        const offset = portOffsets(port, index, sidePorts.length);
+        const dot = document.createElement('div');
+        dot.className = `ws-port ws-port--${direction}`;
+        dot.title = port.label ?? port.id;
+        dot.style.left = `${offset.dx - PORT_RADIUS}px`;
+        dot.style.top = `${offset.dy - PORT_RADIUS}px`;
+        dot.dataset.nodeId = node.id;
+        dot.dataset.portId = port.id;
+        dot.dataset.portKind = direction;
+        if (direction === 'output') {
+          dot.addEventListener('mousedown', event => {
+            event.stopPropagation();
+            startPendingConnection(node.id, port.id, event);
+          });
+        } else {
+          dot.addEventListener('mouseup', event => {
+            if (!pendingConn.active) return;
+            event.stopPropagation();
+            finishConnection(node.id, port.id);
+          });
+        }
+        nodeElement.appendChild(dot);
+      });
+    }
+    nodeElement.addEventListener('mousedown', event => {
+      if (!event.target.classList.contains('ws-port')) startNodeDrag(node.id, event);
+    });
+    nodeElement.addEventListener('click', event => {
+      if (!event.target.classList.contains('ws-port')) selectNode(node.id);
+    });
+    wsState.nodeElements.set(node.id, nodeElement);
+    canvas.appendChild(nodeElement);
+  }
+
   nodeElement.className = `ws-node ws-node--${node.nodeType}`;
-  if (inspector.selectedNodeId === node.id) nodeElement.classList.add('ws-node--selected');
+  nodeElement.classList.toggle('ws-node--selected', inspector.selectedNodeId === node.id);
   nodeElement.style.left = `${position.x}px`;
   nodeElement.style.top = `${position.y}px`;
   nodeElement.style.width = `${NODE_WIDTH}px`;
   nodeElement.style.height = `${NODE_HEIGHT}px`;
-
-  const fillBar = node.nodeType === 'hopper'
-    ? `<div class="ws-hopper-fill" style="height:${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%"></div>`
-    : '';
-  nodeElement.innerHTML = `
-    ${fillBar}
-    <div class="ws-node-label">${nodeLabel(node).split('\n').map(line => `<span>${escHtml(line)}</span>`).join('')}</div>
-  `;
-
-  const ports = getNodePortDefinitions(node);
-  for (const direction of ['input', 'output']) {
-    const sidePorts = ports.filter(port => port.direction === direction);
-    sidePorts.forEach((port, index) => {
-      const offset = portOffsets(port, index, sidePorts.length);
-      const dot = document.createElement('div');
-      dot.className = `ws-port ws-port--${direction}`;
-      dot.title = port.label ?? port.id;
-      dot.style.left = `${offset.dx - PORT_RADIUS}px`;
-      dot.style.top = `${offset.dy - PORT_RADIUS}px`;
-      dot.dataset.nodeId = node.id;
-      dot.dataset.portId = port.id;
-      dot.dataset.portKind = direction;
-
-      if (direction === 'output') {
-        dot.addEventListener('mousedown', event => {
-          event.stopPropagation();
-          startPendingConnection(node.id, port.id, event);
-        });
-      } else {
-        dot.addEventListener('mouseup', event => {
-          if (!pendingConn.active) return;
-          event.stopPropagation();
-          finishConnection(node.id, port.id);
-        });
-      }
-      nodeElement.appendChild(dot);
-    });
+  const label = nodeElement.querySelector('.ws-node-label');
+  if (label) {
+    label.innerHTML = nodeLabel(node).split('\n').map(line => `<span>${escHtml(line)}</span>`).join('');
   }
-
-  nodeElement.addEventListener('mousedown', event => {
-    if (!event.target.classList.contains('ws-port')) startNodeDrag(node.id, event);
-  });
-  nodeElement.addEventListener('click', event => {
-    if (!event.target.classList.contains('ws-port')) selectNode(node.id);
-  });
-
-  canvas.appendChild(nodeElement);
+  const fill = nodeElement.querySelector('.ws-hopper-fill');
+  if (fill && node.nodeType === 'hopper') {
+    fill.style.height = `${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%`;
+  }
 }
 
 function portCanvasPosition(nodeId, portId) {
@@ -463,7 +534,13 @@ function renderEngineeringNodes() {
   const svg = el('ws-eng-svg');
   if (!canvas || !svg || !wsState.blueprint) return;
 
-  canvas.innerHTML = '';
+  const nodeIds = new Set(Object.keys(wsState.blueprint.nodes));
+  for (const [nodeId, element] of wsState.nodeElements) {
+    if (!nodeIds.has(nodeId)) {
+      element.remove();
+      wsState.nodeElements.delete(nodeId);
+    }
+  }
   for (const node of Object.values(wsState.blueprint.nodes)) {
     renderNode(canvas, node, wsState.blueprintLayout.nodePositions[node.id] ?? { x: 0, y: 0 });
   }
@@ -477,13 +554,14 @@ function renderEngineeringWorkspace(container) {
     container.innerHTML = '<p class="ws-empty">No resource occurrence selected.</p>';
     return;
   }
-  activateEngineeringSession(wsState.selectedOccurrenceId);
+  activateEngineeringSession(wsState.selectedOccurrenceId, wsState.selectedSiteId);
   const occurrence = wsState.world.resourceOccurrences[wsState.selectedOccurrenceId];
+  const site = wsState.world.sites?.[wsState.selectedSiteId];
 
   container.innerHTML = `
     <div class="ws-eng-toolbar">
-      <span class="ws-eng-title">Engineering — ${escHtml(occurrence?.name ?? wsState.selectedOccurrenceId)}</span>
-      <button id="ws-sim-toggle">${wsState.simRunning ? '⏸ Pause' : '▶ Run Simulation'}</button>
+      <span class="ws-eng-title">Site — ${escHtml(site?.id ?? occurrence?.name ?? wsState.selectedOccurrenceId)}</span>
+      <span class="ws-site-boundary-label">Boundary: ore out ○</span>
       <button id="ws-sim-reset">↺ Reset Site</button>
       <span id="ws-sim-status" class="ws-sim-status"></span>
     </div>
@@ -499,7 +577,6 @@ function renderEngineeringWorkspace(container) {
     </div>
   `;
 
-  el('ws-sim-toggle')?.addEventListener('click', onToggleSimulation);
   el('ws-sim-reset')?.addEventListener('click', onResetEngineering);
   renderEngineeringNodes();
 
@@ -607,6 +684,11 @@ function formatNodeInspector(node) {
   let html = `<div class="ws-ins-type">${escHtml(node.nodeType.toUpperCase())}</div>`;
   html += `<div class="ws-ins-row"><b>ID:</b> ${escHtml(node.id)}</div>`;
 
+  if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
+    html += `<div class="ws-ins-row"><b>State:</b> ${escHtml(getNodeOperatingState(node) ?? 'off')}</div>`;
+    html += `<div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${node.enabled ? 'On' : 'Off'}</button></div>`;
+  }
+
   if (node.nodeType === 'extractor') {
     const occurrence = wsState.world?.resourceOccurrences?.[node.occurrenceId];
     html += `<div class="ws-ins-row"><b>Occurrence:</b> ${escHtml(occurrence?.name ?? node.occurrenceId)}</div>`;
@@ -672,6 +754,14 @@ function updateInspector() {
 }
 
 function onInspectorClick(event) {
+  const enableButton = event.target.closest('.ws-btn-enable');
+  if (enableButton && wsState.blueprint) {
+    const node = wsState.blueprint.nodes[enableButton.dataset.nodeId];
+    if (node) setNodeEnabled(wsState.blueprint, node.id, !node.enabled);
+    inspector.message = '';
+    renderEngineeringNodes();
+    return;
+  }
   const button = event.target.closest('.ws-btn-disconnect');
   if (!button || !wsState.blueprint) return;
 
@@ -695,25 +785,31 @@ function onToggleSimulation() {
   else startSimulation();
 }
 
+function onToggleWorldSimulation() {
+  if (wsState.world?.simulation?.running) stopSimulation();
+  else startSimulation();
+  renderBreadcrumbs();
+}
+
 function startSimulation() {
-  if (wsState.simRunning || !wsState.blueprint) return;
+  if (wsState.simRunning || !wsState.world) return;
+  resumeWorldSimulation(wsState.world);
   wsState.simRunning = true;
   wsState.simLastTime = performance.now();
   wsState.simAccumulatedS = 0;
   wsState.simRafId = requestAnimationFrame(simLoop);
-  const button = el('ws-sim-toggle');
-  if (button) button.textContent = '⏸ Pause';
+  renderBreadcrumbs();
   updateSimStatus();
 }
 
 function stopSimulation() {
   wsState.simRunning = false;
+  if (wsState.world) pauseWorldSimulation(wsState.world);
   if (wsState.simRafId != null) {
     cancelAnimationFrame(wsState.simRafId);
     wsState.simRafId = null;
   }
-  const button = el('ws-sim-toggle');
-  if (button) button.textContent = '▶ Run Simulation';
+  renderBreadcrumbs();
 }
 
 function simLoop(now) {
@@ -723,11 +819,12 @@ function simLoop(now) {
   wsState.simAccumulatedS += elapsed;
 
   while (wsState.simAccumulatedS >= SIMULATION_STEP_S) {
-    simulationTick(wsState.blueprint, wsState.world, SIMULATION_STEP_S);
+    worldSimulationTick(wsState.world, SIMULATION_STEP_S);
     wsState.simAccumulatedS -= SIMULATION_STEP_S;
   }
 
-  renderEngineeringNodes();
+  if (wsState.currentLevel === 'engineering') renderEngineeringNodes();
+  else renderBreadcrumbs();
   wsState.simRafId = requestAnimationFrame(simLoop);
 }
 
@@ -742,17 +839,20 @@ function updateSimStatus() {
 }
 
 function onResetEngineering() {
-  stopSimulation();
+  const wasRunning = wsState.world?.simulation?.running ?? false;
   const occurrenceId = wsState.selectedOccurrenceId;
   if (!occurrenceId) return;
-  const session = createEngineeringSession(occurrenceId);
-  wsState.engineeringSessions[occurrenceId] = session;
+  const sessionId = wsState.selectedSiteId ?? `site-occurrence-${occurrenceId}`;
+  const session = createEngineeringSession(occurrenceId, wsState.selectedSiteId);
+  wsState.engineeringSessions[sessionId] = session;
+  registerSimulationSession(wsState.world, sessionId, session.blueprint);
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.message = '';
   renderEngineeringWorkspace(el('ws-main'));
+  if (wasRunning && !wsState.simRunning) startSimulation();
 }
 
 export function renderWorkspace() {
@@ -768,17 +868,21 @@ export function renderWorkspace() {
 export function initWorkspace(world, knowledge) {
   stopSimulation();
   wsState.world = world;
+  createWorldSimulation(world);
   wsState.knowledge = knowledge;
   wsState.currentLevel = 'planet';
   wsState.selectedRegionId = null;
+  wsState.selectedSiteId = null;
   wsState.selectedOccurrenceId = null;
   wsState.blueprint = null;
   wsState.blueprintLayout = null;
   wsState.engineeringSessions = {};
+  wsState.nodeElements.clear();
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.message = '';
   renderWorkspace();
+  startSimulation();
 }
 
 export function updateWorkspaceKnowledge(knowledge) {
@@ -789,10 +893,5 @@ export function updateWorkspaceKnowledge(knowledge) {
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
     renderWorkspace();
-    el('mode-toggle-btn')?.addEventListener('click', () => {
-      setTimeout(() => {
-        if (el('player-view')?.style.display === 'none') stopSimulation();
-      }, 0);
-    });
   });
 }

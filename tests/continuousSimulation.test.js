@@ -29,6 +29,7 @@ import {
   getStreamForConnection,
   simulationTick,
   simulationAdvance,
+  setNodeEnabled,
   createBlueprintLayout,
   layoutMoveNode,
   SIMULATION_STEP_S,
@@ -90,6 +91,7 @@ function buildFullChain(world, occ, capacities = {}) {
   blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
   blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
   blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
+  for (const node of [extractor, crusher, magSep]) setNodeEnabled(blueprint, node.id, true);
 
   return { blueprint, extractor, hopperA, crusher, hopperB, magSep, concentrateHopper, tailingsHopper };
 }
@@ -230,6 +232,7 @@ test('crusher: disconnected product output does not consume input matter', () =>
   const crusher = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
   hopperReceiveInflow(feed, { hematite: 1, magnetite: 1 }, 80, 1);
   blueprintConnect(blueprint, feed.id, feed.outputPortId, crusher.id, crusher.inputPortId);
+  setNodeEnabled(blueprint, crusher.id, true);
   const before = hopperStoredMassKg(feed);
   simulationTick(blueprint, world, 0.1);
   assert.ok(Math.abs(hopperStoredMassKg(feed) - before) < MASS_TOL);
@@ -246,6 +249,7 @@ test('crusher: partially full output backpressures feed instead of deleting prod
   hopperReceiveInflow(output, { hematite: 9.95 }, 15, 1);
   blueprintConnect(blueprint, feed.id, feed.outputPortId, crusher.id, crusher.inputPortId);
   blueprintConnect(blueprint, crusher.id, crusher.outputPortId, output.id, output.inputPortId);
+  setNodeEnabled(blueprint, crusher.id, true);
 
   const beforeFeed = hopperStoredMassKg(feed);
   const beforeOutput = hopperStoredMassKg(output);
@@ -266,6 +270,7 @@ test('crusher: nearly empty input cannot create a full-tick output', () => {
   hopperReceiveInflow(feed, { hematite: 0.1 }, 80, 1);
   blueprintConnect(blueprint, feed.id, feed.outputPortId, crusher.id, crusher.inputPortId);
   blueprintConnect(blueprint, crusher.id, crusher.outputPortId, output.id, output.inputPortId);
+  setNodeEnabled(blueprint, crusher.id, true);
 
   simulationTick(blueprint, world, 0.1);
   assert.ok(hopperStoredMassKg(feed) < MASS_TOL);
@@ -285,6 +290,7 @@ test('magnetic separator: full required output backpressures without consuming f
   blueprintConnect(blueprint, feed.id, feed.outputPortId, magSep.id, magSep.inputPortId);
   blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrate.id, concentrate.inputPortId);
   blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailings.id, tailings.inputPortId);
+  setNodeEnabled(blueprint, magSep.id, true);
 
   const beforeFeed = hopperStoredMassKg(feed);
   const beforeTailings = hopperStoredMassKg(tailings);
@@ -303,6 +309,7 @@ test('magnetic separator: disconnected required output does not consume feed', (
   hopperReceiveInflow(feed, { hematite: 5, magnetite: 2, goethite: 1, quartzAndGangue: 2 }, 15, 1);
   blueprintConnect(blueprint, feed.id, feed.outputPortId, magSep.id, magSep.inputPortId);
   blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrate.id, concentrate.inputPortId);
+  setNodeEnabled(blueprint, magSep.id, true);
   const before = hopperStoredMassKg(feed);
   simulationTick(blueprint, world, 0.1);
   assert.ok(Math.abs(hopperStoredMassKg(feed) - before) < MASS_TOL);
@@ -339,6 +346,7 @@ test('chain: extractor respects full storage and stats track actual rather than 
   const extractor = blueprintAddExtractor(blueprint, occ.id, 5);
   const hopper = blueprintAddHopper(blueprint, 10);
   blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopper.id, hopper.inputPortId);
+  setNodeEnabled(blueprint, extractor.id, true);
   simulationAdvance(blueprint, world, 20, SIMULATION_STEP_S);
   assert.ok(Math.abs(hopperStoredMassKg(hopper) - 10) < MASS_TOL);
   assert.ok(Math.abs(blueprint.simulationStats.extractedKg - 10) < MASS_TOL);

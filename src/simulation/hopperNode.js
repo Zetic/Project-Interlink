@@ -65,6 +65,8 @@ export function createHopper({ id, capacityKg, initialComponentsKg = {}, initial
     inputPortId: 'input',
     outputPortId: 'output',
     nodeType: 'hopper',
+    systemType: 'hopper',
+    kind: 'primitive',
   };
 }
 

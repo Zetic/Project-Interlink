@@ -79,8 +79,10 @@ Current implemented behavior includes:
 - transactional process/backpressure behavior for continuous machinery
 - one-to-one material port connections until an explicit splitter is implemented
 - connection compatibility checks tied to actual solver semantics
-- a first Player View with Planet → Region → Engineering navigation
-- per-resource-site engineering sessions with draggable process/storage nodes
+- recursive Planet → Region → Site system-node navigation with typed boundary ports
+- world-owned fixed-step simulation with global Pause/Resume controls
+- per-machine enabled/off/idle/running/blocked operating state
+- per-site engineering sessions with draggable process/storage nodes
 - live stream and node inspection
 - retained Debug View for generation/discovery/batch-process testing
 - deterministic `node:test` regression coverage and GitHub Actions CI
@@ -110,7 +112,9 @@ schemaVersion: 4
 generatorVersion: 2
 ```
 
-The current continuous engineering runtime is still prototype/session state rather than a finalized serialized world/facility model.
+The continuous engineering runtime remains a prototype physical session, but its
+sessions are registered with the world-level clock so navigation does not stop
+automated systems.
 
 ---
 
@@ -489,18 +493,9 @@ The Debug View should not dictate final player interaction semantics.
 
 # Current Known Gaps
 
-After the first continuous workspace milestone, important remaining gaps include:
+After the recursive workspace milestone, important remaining gaps include:
 
-- world simulation currently starts/stops as an Engineering-workspace UI action rather than existing as a world-level clock
-- navigating away currently stops the active engineering simulation
-- active machines do not yet have explicit `enabled` state or operating-state semantics
-- newly created prototype machinery is effectively ready to run rather than defaulting off
-- the Engineering render loop rebuilds interactive nodes while running, which can interfere with Inspector/node interaction
-- Regions are currently cards/navigation targets rather than composite system nodes with ports
-- Sites are currently feature/resource-entry cards rather than composite system nodes
-- site engineering sessions are keyed directly to resource occurrences
-- no reusable generic composite-system / boundary-port contract exists yet
-- there is no site-to-region or region-to-region logistics flow
+- parent-level logistics remains an explicit transfer placeholder rather than realistic transport
 - feature interaction/inspection remains limited
 - survey bootstrap remains manual
 - resource reserve/depletion remains approximate/unimplemented
@@ -511,11 +506,12 @@ These are expected next-stage architecture tasks, not reasons to discard the exi
 
 ---
 
-# Next Development Priority
+# Development Priority
 
-The next milestone is:
+The recursive simulation milestone is implemented as a prototype vertical
+slice. The next milestone should build on it:
 
-> **Unify the player-facing hierarchy into recursive system nodes, move simulation time to a continuous world-level clock, add per-machine enable/operating state, and make live inspection fully interactive while running.**
+> **Extend the shared boundary contract into real surveying and logistics.**
 
 The prototype should demonstrate at least this recursive flow:
 

@@ -9,6 +9,48 @@
 .ws-connection--selected { stroke: #ffcc44; }
 .ws-connection-preview { stroke: #88ccff; }
 
+.ws-world-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 14px;
+}
+
+.ws-world-controls button {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.ws-world-controls span {
+  color: #888;
+  font-size: 11px;
+}
+
+.ws-system-selected {
+  outline: 1px solid #ffcc44;
+}
+
+.ws-site-port, .ws-region-boundary, .ws-transfer-placeholder, .ws-site-boundary-label {
+  color: #88b8cc;
+  font-size: 11px;
+}
+
+.ws-site-inspect {
+  color: #777;
+  font-size: 11px;
+}
+
+.ws-transfer-placeholder {
+  border: 1px dashed #38505f;
+  margin: 10px 0;
+  padding: 8px;
+}
+
+.ws-btn-enable {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
 #ws-player-seed {
   display: block;
   width: min(420px, 100%);

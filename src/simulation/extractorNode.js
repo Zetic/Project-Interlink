@@ -13,6 +13,8 @@
  *   occurrenceId: string,         // references world.resourceOccurrences[id]
  *   // Prototype extraction rate — not geological truth
  *   prototypeRateKgPerSecond: number,
+ *   enabled: boolean,            // machine command state
+ *   operatingState: string,      // off | idle | running | blocked,
  *   outputPortId: 'output',
  *   nodeType: 'extractor',
  * }
@@ -30,19 +32,29 @@ export const DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND = 5;
  * @param {number} [params.prototypeRateKgPerSecond]
  * @returns {object} extractor
  */
-export function createExtractor({ id, occurrenceId, prototypeRateKgPerSecond = DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND }) {
+export function createExtractor({
+  id,
+  occurrenceId,
+  prototypeRateKgPerSecond = DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND,
+  enabled = false,
+} = {}) {
   if (!id || typeof id !== 'string') throw new Error('Extractor id must be a non-empty string');
   if (!occurrenceId || typeof occurrenceId !== 'string') throw new Error('Extractor occurrenceId must be a non-empty string');
   if (typeof prototypeRateKgPerSecond !== 'number' || !Number.isFinite(prototypeRateKgPerSecond) || prototypeRateKgPerSecond <= 0) {
     throw new Error('Extractor prototypeRateKgPerSecond must be a finite positive number');
   }
+  if (typeof enabled !== 'boolean') throw new Error('Extractor enabled must be boolean');
 
   return {
     id,
     occurrenceId,
     prototypeRateKgPerSecond,
+    enabled,
+    operatingState: enabled ? 'idle' : 'off',
     outputPortId: 'output',
     nodeType: 'extractor',
+    systemType: 'extractor',
+    kind: 'primitive',
   };
 }
 
