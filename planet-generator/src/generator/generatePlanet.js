@@ -14,7 +14,6 @@ const PLANET_NAMES = [
 ];
 
 const AGE_COOLING_SPAN_GYR = 11;
-let unseededCounter = 0;
 
 function clamp(v, min, max) {
   return Math.min(Math.max(v, min), max);
@@ -128,16 +127,25 @@ function generateInteriorStructure(base, bulkMatter, thermal, rng) {
   const envelopeRaw = 0.08 + volatileFactor * 0.26 + (1 / thermalFactor) * 0.03 + rng.range(-0.02, 0.02);
   const total = coreRaw + deepRaw + envelopeRaw;
 
-  const coreMassFraction = round(clamp(coreRaw / total, 0.1, 0.65), 3);
-  const deepInteriorMassFraction = round(clamp(deepRaw / total, 0.15, 0.8), 3);
-  const envelopeMassFraction = round(1 - coreMassFraction - deepInteriorMassFraction, 3);
-  const correctedEnvelope = envelopeMassFraction <= 0.01 ? 0.01 : envelopeMassFraction;
-  const correctedCore = round(coreMassFraction - (correctedEnvelope - envelopeMassFraction), 3);
+  let coreMassFraction = clamp(coreRaw / total, 0.1, 0.65);
+  let deepInteriorMassFraction = clamp(deepRaw / total, 0.15, 0.8);
+  let envelopeMassFraction = 1 - coreMassFraction - deepInteriorMassFraction;
+
+  if (envelopeMassFraction < 0.01) {
+    const deficit = 0.01 - envelopeMassFraction;
+    envelopeMassFraction = 0.01;
+    deepInteriorMassFraction = clamp(deepInteriorMassFraction - deficit, 0.15, 0.8);
+    coreMassFraction = 1 - deepInteriorMassFraction - envelopeMassFraction;
+  }
+
+  deepInteriorMassFraction = round(deepInteriorMassFraction, 3);
+  envelopeMassFraction = round(envelopeMassFraction, 3);
+  coreMassFraction = round(1 - deepInteriorMassFraction - envelopeMassFraction, 3);
 
   return {
-    coreMassFraction: correctedCore,
+    coreMassFraction,
     deepInteriorMassFraction,
-    envelopeMassFraction: round(correctedEnvelope, 3),
+    envelopeMassFraction,
   };
 }
 
@@ -269,17 +277,17 @@ function classifyPlanetType(planet) {
   if (pressureBar < 0.01 && planet.meanTemperatureK < 220 && waterVol > 20) return 'Ice-Rich';
   if (pressureBar > 0.2 && waterVol > 16 && planet.meanTemperatureK >= 258 && planet.meanTemperatureK <= 340) return 'Ocean-Rich';
   if (planet.meanTemperatureK > 450 && pressureBar > 0.15) return 'Greenhouse';
+  if (iron > 32) return 'Iron-Rich';
   if (planet.geologicActivity > 0.72) return 'Volcanic';
-  if (pressureBar < 0.01 && iron > 38) return 'Iron-Rich';
   if (carbon > 20) return 'Carbon-Rich';
-  if (silicates > 64 && waterVol < 10) return 'Silicate-Rich';
+  if (silicates > 52 && waterVol < 14) return 'Silicate-Rich';
   if (pressureBar < 0.03 || waterVol < 8) return 'Arid';
   if (planet.meanTemperatureK >= 255 && planet.meanTemperatureK <= 330 && pressureBar >= 0.2) return 'Temperate';
   return 'Rocky';
 }
 
 export function generatePlanet(seedInput) {
-  const seedStr = String(seedInput ?? `auto-seed-${unseededCounter++}`);
+  const seedStr = String(seedInput ?? 'default-seed');
   const numericSeed = hashSeed(seedStr);
   const rng = createRNG(numericSeed);
   const name = rng.pick(PLANET_NAMES);
@@ -306,8 +314,6 @@ export function generatePlanet(seedInput) {
     id: `planet-${numericSeed}`,
     seed: seedStr,
     name,
-    planetType: null,
-
     orbitalDistanceAU: base.orbitalDistanceAU,
     orbitalEccentricity: base.orbitalEccentricity,
 
