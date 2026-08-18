@@ -61,7 +61,9 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
   const nodeIds = new Set(nodes.map(node => node.id));
   const connections = Object.values(transfers).filter(transfer => {
     if (definition?.level === 'planet') {
-      return nodeIds.has(transfer.sourceCompositeId) && nodeIds.has(transfer.targetCompositeId);
+      return transfer.scopeId === definition.planetScopeId
+        && nodeIds.has(transfer.sourceCompositeId)
+        && nodeIds.has(transfer.targetCompositeId);
     }
     return transfer.scopeId === definition?.scopeId;
   }).map(transfer => {
@@ -110,7 +112,7 @@ export function disconnectGraphConnection(graph, connectionId, adapters = {}) {
 export function renderGraphConnections({
   svg,
   graph,
-  elements,
+  elements = new Map(),
   endpointPosition,
   flow = () => 0,
   selectedId = null,
