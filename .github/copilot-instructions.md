@@ -5,7 +5,7 @@
 Use the repository documents for different purposes:
 
 - `DESIGN.md` — canonical long-term game design and intended gameplay direction
-- `README.md` — current project state, roadmap, setup, and inspiration context
+- `README.md` — current project state, roadmap, setup, deployment, and inspiration context
 - `.github/copilot-instructions.md` — implementation guardrails and development priorities for coding agents
 - `PATCH_NOTES.md` — historical commit-by-commit development record
 
@@ -27,9 +27,36 @@ World generation is a means of creating meaningful physical starting conditions 
 
 ---
 
+# Current Repository Layout
+
+The former standalone `planet-generator/` tech-demo wrapper has been removed. The runnable web application now lives directly at repository root:
+
+```text
+Project-Interlink/
+├── index.html
+├── styles.css
+├── src/
+│   ├── app.js
+│   ├── core/
+│   ├── data/
+│   └── generator/
+├── DESIGN.md
+├── README.md
+├── PATCH_NOTES.md
+└── .github/
+```
+
+This move changed locations only; the existing runtime code continues using relative CSS and ES-module imports.
+
+**Do not recreate a `planet-generator/` wrapper directory.** New application source, tests, and project-level tooling should assume the repository root unless a future issue deliberately changes the layout.
+
+The root layout is intentionally compatible with GitHub Pages configured from `main` → `/ (root)`.
+
+---
+
 # Current Project State
 
-The original `planet-generator/` tech demo has been promoted into the first real Interlink simulation subsystem.
+The original planet-generation tech demo has been promoted into the first real Interlink simulation subsystem.
 
 Current working behavior includes:
 
@@ -69,6 +96,8 @@ selection, display, filters, temporary controls
 Before making large changes to geology or gameplay, establish executable regression protection for the current simulation.
 
 Prefer the built-in Node.js test runner (`node:test`) unless a third-party framework is clearly justified. Keep application runtime dependencies at zero or near zero.
+
+Project-level test tooling should now live at repository root. A minimal root `package.json` should provide the test command unless an issue explicitly chooses another layout.
 
 Tests should protect:
 
@@ -120,6 +149,8 @@ Do not turn this testing work into the complete geology simulator.
 ## Broad Seed Testing and CI
 
 Run deterministic multi-seed smoke/property-style tests over hundreds of worlds and add a small GitHub Actions workflow that runs tests for pull requests and `main`.
+
+Because the app and project tooling now live at repository root, CI should run the root test command rather than `cd` into the removed `planet-generator/` directory.
 
 ---
 
@@ -550,15 +581,17 @@ Simulate detail when changing it creates meaningful tradeoffs, debugging, or pla
 For now:
 
 - keep the project web-based
+- keep the runnable application at repository root unless a deliberate future deployment/build change requires otherwise
+- keep `index.html` suitable as the root static entry point
 - prefer browser-native JavaScript while sufficient
-- preserve ES modules
+- preserve ES modules and relative imports that work on GitHub Pages project paths
 - keep runtime dependencies minimal
 - keep simulation code DOM-independent
 - do not migrate frameworks merely for modernization
 - do not introduce a backend/database until persistence or server simulation requires one
 - avoid ECS, dependency injection, message buses, or enterprise architecture without a concrete need
 
-The current app should remain easy to run through a local HTTP server.
+The current app should remain easy to run from repository root through a local HTTP server and should remain deployable through GitHub Pages from `main` → `/ (root)`.
 
 ---
 
@@ -585,6 +618,7 @@ When modifying this repository:
 17. When realism conflicts with scope, preserve causal plausibility and meaningful decisions rather than maximal detail.
 18. When adding generation complexity, identify the future gameplay consequence.
 19. When adding gameplay, preserve matter/energy/state relationships needed by the simulation.
+20. Keep paths and tooling consistent with the root application layout; do not assume the removed `planet-generator/` directory exists.
 
 ---
 
