@@ -39,7 +39,27 @@ function assertFiniteNonNegativeComposition(componentsKg) {
   }
 }
 
-test('sample acquisition from structured occurrence sets provenance and initial particle size', () => {
+function runTwoStageChain({ sampleMassKg = 10, targetParticleSizeMm = 12, fieldStrength = 0.6 } = {}) {
+  const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
+  const sample = acquireSampleFromOccurrence(world, occurrence.id, sampleMassKg);
+  const crushResult = runProcessAndCommit(
+    world,
+    CRUSHING_PROCESS_ID,
+    { feed: sample.id },
+    { targetParticleSizeMm }
+  );
+  const crushedBatchId = crushResult.outputBatches[0].batchId;
+  const separationResult = runProcessAndCommit(
+    world,
+    MAGNETIC_SEPARATION_PROCESS_ID,
+    { feed: crushedBatchId },
+    { fieldStrength }
+  );
+
+  return { world, occurrence, sample, crushResult, crushedBatchId, separationResult };
+}
+
+test('sample acquisition from structured occurrence preserves composition and sets provenance/particle size', () => {
   const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
   const sampleMassKg = 10;
 
@@ -57,8 +77,23 @@ test('sample acquisition from structured occurrence sets provenance and initial 
   assert.ok(world.materialBatches[batch.id], 'Sample batch should be stored in world physical state');
 
   const componentSumKg = sumComponentMassKg(batch.componentsKg);
-  assert.ok(Math.abs(componentSumKg - sampleMassKg) <= MASS_TOLERANCE_KG, `Component sum ${componentSumKg} should equal sample mass ${sampleMassKg}`);
-  assert.ok(Math.abs(batch.totalMassKg - sampleMassKg) <= MASS_TOLERANCE_KG, `totalMassKg ${batch.totalMassKg} should equal sample mass ${sampleMassKg}`);
+  assert.ok(
+    Math.abs(componentSumKg - sampleMassKg) <= MASS_TOLERANCE_KG,
+    `Component sum ${componentSumKg} should equal sample mass ${sampleMassKg}`
+  );
+  assert.ok(
+    Math.abs(batch.totalMassKg - sampleMassKg) <= MASS_TOLERANCE_KG,
+    `totalMassKg ${batch.totalMassKg} should equal sample mass ${sampleMassKg}`
+  );
+
+  const compositionTotal = Object.values(occurrence.composition).reduce((sum, value) => sum + value, 0);
+  for (const [componentId, percent] of Object.entries(occurrence.composition)) {
+    const expectedKg = sampleMassKg * (percent / compositionTotal);
+    assert.ok(
+      Math.abs(batch.componentsKg[componentId] - expectedKg) <= 1e-4,
+      `Component '${componentId}' should match the generated occurrence composition`
+    );
+  }
 
   assertFiniteNonNegativeComposition(batch.componentsKg);
 });
@@ -105,7 +140,12 @@ test('crushing conserves mass and constituents while reducing particle size', ()
   const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
   const batch = acquireSampleFromOccurrence(world, occurrence.id, 10);
 
-  const result = runProcessAndCommit(world, CRUSHING_PROCESS_ID, { feed: batch.id }, { targetParticleSizeMm: 15 });
+  const result = runProcessAndCommit(
+    world,
+    CRUSHING_PROCESS_ID,
+    { feed: batch.id },
+    { targetParticleSizeMm: 15 }
+  );
 
   assert.strictEqual(world.materialBatches[batch.id].status, 'consumed', 'Input batch should be consumed after committed run');
   assert.strictEqual(result.outputBatches.length, 1, 'Expected one crushed output batch');
@@ -121,7 +161,10 @@ test('crushing conserves mass and constituents while reducing particle size', ()
     );
   }
 
-  assert.ok(Math.abs(batch.totalMassKg - crushed.totalMassKg) <= MASS_TOLERANCE_KG, 'Total mass should be conserved in crushing');
+  assert.ok(
+    Math.abs(batch.totalMassKg - crushed.totalMassKg) <= MASS_TOLERANCE_KG,
+    'Total mass should be conserved in crushing'
+  );
   assert.deepStrictEqual(crushed.provenance.sourceOccurrenceIds, [occurrence.id]);
   assert.deepStrictEqual(crushed.provenance.sourceBatchIds, [batch.id]);
   assert.strictEqual(crushed.provenance.createdByProcessRunId, result.id);
@@ -133,14 +176,19 @@ test('invalid crushing target fails clearly and committed state remains atomic',
   const worldSnapshot = JSON.parse(JSON.stringify(world));
 
   assert.throws(
-    () => runProcessAndCommit(world, CRUSHING_PROCESS_ID, { feed: batch.id }, { targetParticleSizeMm: batch.particleSizeMm }),
+    () => runProcessAndCommit(
+      world,
+      CRUSHING_PROCESS_ID,
+      { feed: batch.id },
+      { targetParticleSizeMm: batch.particleSizeMm }
+    ),
     /requires targetParticleSizeMm below current feed size/
   );
 
   assert.deepStrictEqual(world, worldSnapshot, 'Failed crushing commit must not consume input, create outputs, or advance counters');
 });
 
-test('generic process dispatch rejects missing/unknown input bindings and unknown process', () => {
+test('generic process dispatch rejects missing/unknown input bindings, unexpected parameters, and unknown process', () => {
   const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
   const batch = acquireSampleFromOccurrence(world, occurrence.id, 10);
 
@@ -150,8 +198,23 @@ test('generic process dispatch rejects missing/unknown input bindings and unknow
   );
 
   assert.throws(
-    () => runProcessAndCommit(world, CRUSHING_PROCESS_ID, { feed: batch.id, extra: batch.id }, { targetParticleSizeMm: 10 }),
+    () => runProcessAndCommit(
+      world,
+      CRUSHING_PROCESS_ID,
+      { feed: batch.id, extra: batch.id },
+      { targetParticleSizeMm: 10 }
+    ),
     /Unknown input binding 'extra'/
+  );
+
+  assert.throws(
+    () => runProcessAndCommit(
+      world,
+      CRUSHING_PROCESS_ID,
+      { feed: batch.id },
+      { targetParticleSizeMm: 10, typoParameter: 1 }
+    ),
+    /Unknown process parameter 'typoParameter'/
   );
 
   assert.throws(
@@ -160,19 +223,70 @@ test('generic process dispatch rejects missing/unknown input bindings and unknow
   );
 });
 
+test('generic process contracts reject duplicate physical input bindings and output-port mismatches', () => {
+  const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
+  const batch = acquireSampleFromOccurrence(world, occurrence.id, 10);
+  const crushingDefinition = getProcessDefinition(CRUSHING_PROCESS_ID);
+
+  const originalInputs = crushingDefinition.inputs;
+  crushingDefinition.inputs = [
+    { id: 'feed', kind: 'material' },
+    { id: 'secondFeed', kind: 'material' },
+  ];
+  try {
+    assert.throws(
+      () => runProcessAndCommit(
+        world,
+        CRUSHING_PROCESS_ID,
+        { feed: batch.id, secondFeed: batch.id },
+        { targetParticleSizeMm: 10 }
+      ),
+      /cannot bind the same physical batch to multiple input ports/
+    );
+  } finally {
+    crushingDefinition.inputs = originalInputs;
+  }
+
+  const originalOutputs = crushingDefinition.outputs;
+  crushingDefinition.outputs = [{ id: 'renamed-product', kind: 'material' }];
+  try {
+    assert.throws(
+      () => executeProcess(crushingDefinition, { feed: batch }, { targetParticleSizeMm: 10 }),
+      /unexpected output port 'product'/
+    );
+  } finally {
+    crushingDefinition.outputs = originalOutputs;
+  }
+});
+
 test('magnetic separation rejects coarse feed and accepts crushed feed', () => {
   const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
   const batch = acquireSampleFromOccurrence(world, occurrence.id, 10);
 
   assert.throws(
-    () => runProcessAndCommit(world, MAGNETIC_SEPARATION_PROCESS_ID, { feed: batch.id }, { fieldStrength: 0.5 }),
+    () => runProcessAndCommit(
+      world,
+      MAGNETIC_SEPARATION_PROCESS_ID,
+      { feed: batch.id },
+      { fieldStrength: 0.5 }
+    ),
     /requires feed particle size <=/
   );
 
-  const crushResult = runProcessAndCommit(world, CRUSHING_PROCESS_ID, { feed: batch.id }, { targetParticleSizeMm: 15 });
+  const crushResult = runProcessAndCommit(
+    world,
+    CRUSHING_PROCESS_ID,
+    { feed: batch.id },
+    { targetParticleSizeMm: 15 }
+  );
   const crushedBatchId = crushResult.outputBatches[0].batchId;
 
-  const result = runProcessAndCommit(world, MAGNETIC_SEPARATION_PROCESS_ID, { feed: crushedBatchId }, { fieldStrength: 0.5 });
+  const result = runProcessAndCommit(
+    world,
+    MAGNETIC_SEPARATION_PROCESS_ID,
+    { feed: crushedBatchId },
+    { fieldStrength: 0.5 }
+  );
 
   const concentrate = result.outputBatches.find(output => output.outputId === 'concentrate')?.batch;
   const tailings = result.outputBatches.find(output => output.outputId === 'tailings')?.batch;
@@ -194,18 +308,7 @@ test('magnetic separation rejects coarse feed and accepts crushed feed', () => {
 });
 
 test('full crushing -> magnetic chain conserves original sample matter and prevents consumed-batch reuse', () => {
-  const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
-  const sample = acquireSampleFromOccurrence(world, occurrence.id, 10);
-
-  const crushResult = runProcessAndCommit(world, CRUSHING_PROCESS_ID, { feed: sample.id }, { targetParticleSizeMm: 12 });
-  const crushedBatchId = crushResult.outputBatches[0].batchId;
-
-  const separationResult = runProcessAndCommit(
-    world,
-    MAGNETIC_SEPARATION_PROCESS_ID,
-    { feed: crushedBatchId },
-    { fieldStrength: 0.6 }
-  );
+  const { world, sample, crushedBatchId, separationResult } = runTwoStageChain();
 
   const concentrate = separationResult.outputBatches.find(output => output.outputId === 'concentrate')?.batch;
   const tailings = separationResult.outputBatches.find(output => output.outputId === 'tailings')?.batch;
@@ -220,22 +323,68 @@ test('full crushing -> magnetic chain conserves original sample matter and preve
   }
 
   const finalTotalKg = concentrate.totalMassKg + tailings.totalMassKg;
-  assert.ok(Math.abs(sample.totalMassKg - finalTotalKg) <= MASS_TOLERANCE_KG, 'Total mass must be conserved across complete chain');
+  assert.ok(
+    Math.abs(sample.totalMassKg - finalTotalKg) <= MASS_TOLERANCE_KG,
+    'Total mass must be conserved across complete chain'
+  );
 
   assert.throws(
-    () => runProcessAndCommit(world, MAGNETIC_SEPARATION_PROCESS_ID, { feed: crushedBatchId }, { fieldStrength: 0.7 }),
+    () => runProcessAndCommit(
+      world,
+      MAGNETIC_SEPARATION_PROCESS_ID,
+      { feed: crushedBatchId },
+      { fieldStrength: 0.7 }
+    ),
     /not available for processing/
   );
 });
 
+test('full crushing -> magnetic chain is deterministic for identical world/input/parameters', () => {
+  const a = runTwoStageChain({ sampleMassKg: 10, targetParticleSizeMm: 12, fieldStrength: 0.6 });
+  const b = runTwoStageChain({ sampleMassKg: 10, targetParticleSizeMm: 12, fieldStrength: 0.6 });
+
+  assert.deepStrictEqual(a.world.materialBatches, b.world.materialBatches, 'Chained material state should be deterministic');
+  assert.deepStrictEqual(a.world.processResults, b.world.processResults, 'Chained process results should be deterministic');
+});
+
 test('provenance references resolve via validateWorld after chained processing', () => {
-  const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
-  const sample = acquireSampleFromOccurrence(world, occurrence.id, 10);
-  const crushResult = runProcessAndCommit(world, CRUSHING_PROCESS_ID, { feed: sample.id }, { targetParticleSizeMm: 10 });
-  runProcessAndCommit(world, MAGNETIC_SEPARATION_PROCESS_ID, { feed: crushResult.outputBatches[0].batchId }, { fieldStrength: 0.55 });
+  const { world } = runTwoStageChain({ targetParticleSizeMm: 10, fieldStrength: 0.55 });
 
   const errors = validateWorld(world);
   assert.deepStrictEqual(errors, [], `validateWorld returned errors: ${JSON.stringify(errors)}`);
+});
+
+test('validateWorld reports malformed schema-v4 provenance/bindings without throwing', () => {
+  const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
+  const sample = acquireSampleFromOccurrence(world, occurrence.id, 10);
+
+  sample.provenance.sourceOccurrenceIds = 'not-an-array';
+  world.processResults['process-run-malformed'] = {
+    id: 'process-run-malformed',
+    processId: CRUSHING_PROCESS_ID,
+    inputBindings: { feed: sample.id },
+    outputBatches: null,
+    parameters: { targetParticleSizeMm: 10 },
+    metrics: { massInKg: 10, massOutKg: 10, balanceErrorKg: 0 },
+  };
+
+  let errors;
+  assert.doesNotThrow(() => {
+    errors = validateWorld(world);
+  }, 'validateWorld should report malformed serialized structures rather than throwing');
+
+  assert.ok(
+    errors.some(error => error.includes('provenance.sourceOccurrenceIds') && error.includes('must be an array')),
+    'Malformed provenance array should be reported'
+  );
+  assert.ok(
+    errors.some(error => error.includes("process-run-malformed") && error.includes('inputBindings must be an array')),
+    'Malformed inputBindings should be reported'
+  );
+  assert.ok(
+    errors.some(error => error.includes("process-run-malformed") && error.includes('outputBatches must be an array')),
+    'Malformed outputBatches should be reported'
+  );
 });
 
 test('invalid process parameters and unsupported components are rejected clearly', () => {
@@ -243,7 +392,12 @@ test('invalid process parameters and unsupported components are rejected clearly
   const batch = acquireSampleFromOccurrence(world, occurrence.id, 10);
 
   assert.throws(
-    () => runProcessAndCommit(world, MAGNETIC_SEPARATION_PROCESS_ID, { feed: batch.id }, { fieldStrength: 1.5 }),
+    () => runProcessAndCommit(
+      world,
+      MAGNETIC_SEPARATION_PROCESS_ID,
+      { feed: batch.id },
+      { fieldStrength: 1.5 }
+    ),
     /must be within \[0, 1\]/
   );
 
@@ -286,7 +440,12 @@ test('failed committed process with invalid output batch remains atomic', () => 
   const worldSnapshot = JSON.parse(JSON.stringify(world));
 
   assert.throws(
-    () => runProcessAndCommit(world, MAGNETIC_SEPARATION_PROCESS_ID, { feed: tinyBatch.id }, { fieldStrength: 0 }),
+    () => runProcessAndCommit(
+      world,
+      MAGNETIC_SEPARATION_PROCESS_ID,
+      { feed: tinyBatch.id },
+      { fieldStrength: 0 }
+    ),
     /total mass must be greater than zero/
   );
 
