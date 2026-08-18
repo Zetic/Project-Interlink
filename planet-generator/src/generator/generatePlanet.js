@@ -13,6 +13,9 @@ const PLANET_NAMES = [
   'Vyrath', 'Wolthen', 'Xoros', 'Yethris', 'Zorven',
 ];
 
+const AGE_COOLING_SPAN_GYR = 11;
+let unseededCounter = 0;
+
 function clamp(v, min, max) {
   return Math.min(Math.max(v, min), max);
 }
@@ -199,7 +202,8 @@ function generateAtmosphere(base, bulkMatter, thermal, dimensions, rng) {
 }
 
 function generateActiveState(base, structure, rng) {
-  const ageCooling = clamp(1 - (base.ageGyr - 0.5) / 11, 0.05, 1);
+  // Simplified cooling horizon: young worlds retain more radiogenic/primordial heat.
+  const ageCooling = clamp(1 - (base.ageGyr - 0.5) / AGE_COOLING_SPAN_GYR, 0.05, 1);
   const massHeat = clamp(Math.pow(base.massEarth, 0.35), 0.25, 1.8);
   const coreEffect = clamp((structure.coreMassFraction - 0.15) / 0.45, 0, 1.25);
   const internalHeatScore = clamp(ageCooling * 0.42 + massHeat * 0.28 + coreEffect * 0.3 + rng.range(-0.07, 0.07), 0, 1);
@@ -260,21 +264,22 @@ function classifyPlanetType(planet) {
   const iron = planet.bulkComposition.ironMetals || 0;
   const silicates = planet.bulkComposition.silicates || 0;
   const carbon = planet.bulkComposition.carbonCompounds || 0;
+  const pressureBar = planet.atmosphere?.pressureBar ?? 0;
 
-  if (planet.atmosphere.pressureBar < 0.01 && planet.meanTemperatureK < 220 && waterVol > 20) return 'Ice-Rich';
-  if (planet.atmosphere.pressureBar > 0.2 && waterVol > 16 && planet.meanTemperatureK >= 258 && planet.meanTemperatureK <= 340) return 'Ocean-Rich';
-  if (planet.meanTemperatureK > 450 && planet.atmosphere.pressureBar > 0.15) return 'Greenhouse';
-  if (planet.geologicActivity > 0.72 && planet.internalHeat !== 'Low' && planet.internalHeat !== 'Very Low') return 'Volcanic';
-  if (planet.atmosphere.pressureBar < 0.01 && iron > 38) return 'Iron-Rich';
+  if (pressureBar < 0.01 && planet.meanTemperatureK < 220 && waterVol > 20) return 'Ice-Rich';
+  if (pressureBar > 0.2 && waterVol > 16 && planet.meanTemperatureK >= 258 && planet.meanTemperatureK <= 340) return 'Ocean-Rich';
+  if (planet.meanTemperatureK > 450 && pressureBar > 0.15) return 'Greenhouse';
+  if (planet.geologicActivity > 0.72) return 'Volcanic';
+  if (pressureBar < 0.01 && iron > 38) return 'Iron-Rich';
   if (carbon > 20) return 'Carbon-Rich';
   if (silicates > 64 && waterVol < 10) return 'Silicate-Rich';
-  if (planet.atmosphere.pressureBar < 0.03 || waterVol < 8) return 'Arid';
-  if (planet.meanTemperatureK >= 255 && planet.meanTemperatureK <= 330 && planet.atmosphere.pressureBar >= 0.2) return 'Temperate';
+  if (pressureBar < 0.03 || waterVol < 8) return 'Arid';
+  if (planet.meanTemperatureK >= 255 && planet.meanTemperatureK <= 330 && pressureBar >= 0.2) return 'Temperate';
   return 'Rocky';
 }
 
 export function generatePlanet(seedInput) {
-  const seedStr = String(seedInput ?? 'default-seed');
+  const seedStr = String(seedInput ?? `auto-seed-${unseededCounter++}`);
   const numericSeed = hashSeed(seedStr);
   const rng = createRNG(numericSeed);
   const name = rng.pick(PLANET_NAMES);
@@ -301,7 +306,7 @@ export function generatePlanet(seedInput) {
     id: `planet-${numericSeed}`,
     seed: seedStr,
     name,
-    planetType: 'Rocky',
+    planetType: null,
 
     orbitalDistanceAU: base.orbitalDistanceAU,
     orbitalEccentricity: base.orbitalEccentricity,
