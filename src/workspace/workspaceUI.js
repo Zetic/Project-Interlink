@@ -36,6 +36,11 @@ import { hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
 import { isFeatureDiscovered, discoverFeature } from '../core/world/knowledgeState.js';
 import { hopperInspection, streamInspection, machineInspection } from './inspectionViewModel.js';
+import {
+  projectBlueprintGraph,
+  projectBoundaryGraph,
+  graphConnectionEndpoint,
+} from './workspaceGraph.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -275,6 +280,7 @@ function systemWorkspaceDefinition() {
       title: planet?.name ?? 'Planet',
       nodes: (planet?.regions ?? []).map(id => wsState.world.systemNodes[id]).filter(Boolean),
       scopeId: planet?.id,
+      planetScopeId: planet?.id,
       prototypeSurveyFeatureId: null,
     };
   }
@@ -295,6 +301,7 @@ function systemWorkspaceDefinition() {
     title: region?.name ?? 'Region',
     nodes,
     scopeId: region?.id,
+    planetScopeId: currentPlanet()?.id,
     prototypeSurveyFeatureId: prototypeSurveyFeatureId(region),
   };
 }
@@ -465,35 +472,35 @@ function selectTransfer(transferId) {
 
 function renderSystemConnections(svg, definition) {
   if (!svg) return;
-  const ids = new Set(definition.nodes.map(node => node.id));
-  const transfers = Object.values(wsState.world?.simulation?.transfers ?? {}).filter(transfer => {
-    if (definition.scopeId === currentPlanet()?.id) {
-      return ids.has(transfer.sourceCompositeId) && ids.has(transfer.targetCompositeId);
-    }
-    return transfer.scopeId === definition.scopeId;
-  });
+  const graph = projectBoundaryGraph(
+    { ...definition, layout: ensureSystemLayout(definition) },
+    wsState.world?.simulation?.transfers ?? {},
+    (systemId, portId) => visibleEndpointForTransfer(systemId, portId),
+  );
 
   const active = new Set();
-  for (const transfer of transfers) {
-    active.add(transfer.id);
-    let path = wsState.systemConnectionElements.get(transfer.id);
+  for (const connection of graph.connections) {
+    active.add(connection.id);
+    let path = wsState.systemConnectionElements.get(connection.id);
     if (!path || !svg.contains(path)) {
       path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('fill', 'none');
       path.classList.add('ws-connection', 'ws-system-connection');
       path.addEventListener('click', event => {
         event.stopPropagation();
-        selectTransfer(transfer.id);
+        selectTransfer(connection.id);
       });
       svg.appendChild(path);
-      wsState.systemConnectionElements.set(transfer.id, path);
+      wsState.systemConnectionElements.set(connection.id, path);
     }
-    const source = systemEndpointPosition(definition, transfer.sourceCompositeId, transfer.sourcePortId);
-    const target = systemEndpointPosition(definition, transfer.targetCompositeId, transfer.targetPortId);
+    const sourceEndpoint = graphConnectionEndpoint(connection, 'source');
+    const targetEndpoint = graphConnectionEndpoint(connection, 'target');
+    const source = systemEndpointPosition(definition, sourceEndpoint.nodeId, sourceEndpoint.portId);
+    const target = systemEndpointPosition(definition, targetEndpoint.nodeId, targetEndpoint.portId);
     const midX = (source.x + target.x) / 2;
     path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
-    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + (transfer.lastRateKgPerSecond ?? 0) * 0.5)));
-    path.classList.toggle('ws-connection--selected', inspector.selectedTransferId === transfer.id);
+    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + (connection.transfer.lastRateKgPerSecond ?? 0) * 0.5)));
+    path.classList.toggle('ws-connection--selected', inspector.selectedTransferId === connection.id);
   }
   for (const [id, path] of wsState.systemConnectionElements) {
     if (!active.has(id)) {
@@ -866,8 +873,9 @@ function renderConnections(svg) {
   svg.style.width = `${maxX}px`;
   svg.style.height = `${maxY}px`;
 
+  const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout);
   const activeIds = new Set();
-  for (const connection of Object.values(wsState.blueprint.connections)) {
+  for (const connection of graph.connections) {
     activeIds.add(connection.id);
     let path = wsState.connectionElements.get(connection.id);
     if (!path || !svg.contains(path)) {
@@ -879,8 +887,8 @@ function renderConnections(svg) {
       svg.appendChild(path);
       wsState.connectionElements.set(connection.id, path);
     }
-    const source = portCanvasPosition(connection.sourceNodeId, connection.sourcePortId);
-    const target = portCanvasPosition(connection.targetNodeId, connection.targetPortId);
+    const source = portCanvasPosition(connection.source.nodeId, connection.source.portId);
+    const target = portCanvasPosition(connection.target.nodeId, connection.target.portId);
     const midX = (source.x + target.x) / 2;
     const stream = getStreamForConnection(wsState.blueprint, connection.id);
     const flow = stream ? totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond) : 0;
