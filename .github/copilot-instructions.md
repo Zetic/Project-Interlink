@@ -85,12 +85,15 @@ Do not recreate the removed `planet-generator/` wrapper directory.
 - derived `off / idle / running / blocked` operating state
 - persistent Site engineering sessions while navigating
 - recursive Site/Region system metadata and typed boundary ports
+- explicit Site Import / Site Export and Region Import / Region Export physical boundary buffers
 - nested boundary resolution and conserved transfer primitives
-- stable engineering node and connection DOM during continuous simulation
+- draggable Site, Region, and Planet node workspaces
+- detailed Hopper/stream/machine/boundary/transfer inspection
+- stable live node and connection DOM
 - Debug View retained for prototype/debug workflows
 - deterministic automated tests / GitHub Actions
 
-Do not regress these contracts while correcting the recursive workspace UX.
+The current remaining architectural defect is that Site engineering and Region/Planet parent workspaces still use separate player-facing graph/connection implementations. Do not add more hierarchy-specific graph code on top of that duplication.
 
 ---
 
@@ -225,13 +228,13 @@ Until an explicit splitter exists, one material output port must not fan out to 
 
 ---
 
-# Uniform Recursive Workspace — Hard UI Contract
+# Uniform Workspace Graph — Hard UI Contract
 
-The player-facing hierarchy must use a **uniform draggable node-workspace model at every implemented scale**.
+The player-facing hierarchy must use **one shared node/port/connection architecture at every implemented scale**.
 
-Do not interpret “system node” as a static CSS card with buttons.
+Do not interpret “uniform” as merely making separate Site, Region, and Planet renderers look similar.
 
-From the player's perspective, primitive apparatus and composite systems share this interaction language:
+From the player's perspective, primitive apparatus, boundary buffers, and composite systems share this interaction language:
 
 ```text
 select
@@ -249,25 +252,74 @@ Primitive: Extractor, Hopper, Crusher, Magnetic Separator, Boundary Buffer
 Composite: Site, Region, Planet, Facility later
 ```
 
-## Reusable workspace presentation
+## Shared graph abstraction
 
-Prefer the smallest reusable canvas/graph presentation abstraction that can support:
+Implement/generalize the smallest common graph layer capable of projecting all current workspace entities into common UI concepts such as:
 
-- stable node DOM elements
-- stable connection DOM/SVG elements
-- workspace-specific layout state
-- dragging
-- selection
-- typed port interaction
-- connection creation/removal
-- live Inspector updates
-- enter/drill-down action for composite nodes
+```text
+GraphNode
+├── id
+├── label/type
+├── position
+├── typed ports
+├── selected/inspectable state
+└── optional child workspace
 
-The Site engineering workspace already proves much of this interaction. Reuse/generalize its patterns rather than maintaining unrelated “engineering canvas” and “parent card grid” interaction systems.
+GraphConnection
+├── source node + port
+├── target node + port
+├── live state/flow summary
+├── selected/inspectable state
+└── disconnect action
+```
 
-Planet and Region workspaces should therefore become actual draggable graph canvases.
+Names may differ, but the responsibilities must be shared.
 
-Do not make parent-level node positions physical simulation coordinates.
+Use one common path for:
+
+- stable node DOM creation/update
+- stable edge DOM/SVG creation/update
+- layout positioning
+- node dragging
+- port drag/connect interaction
+- graph-edge drawing
+- edge selection
+- Inspector selection
+- disconnect behavior
+- composite enter/drill-down
+
+Do **not** maintain independent implementations equivalent to `renderNode()/renderConnections()` for Site and `renderParentNode()/renderSystemConnections()` for Region/Planet once Issue #18 is complete.
+
+## Simulation adapters are allowed and expected
+
+A uniform graph UI does **not** require one universal simulation solver.
+
+For example:
+
+```text
+GraphConnection
+      ↓ adapter
+local Site connection → blueprint connection + MaterialStream
+Region/Planet connection → BoundaryTransfer
+```
+
+Local process physics and hierarchy-transfer physics may remain distinct behind adapters.
+
+The graph layer should depend on the common connection contract it needs to render and interact, not on hierarchy-specific storage details.
+
+## Visibility invariant
+
+A critical invariant is:
+
+> **If a connection exists in simulation/application graph state and belongs to the current workspace, a corresponding visible graph edge must exist.**
+
+The reverse should also hold for normal player-created edges: a visible persistent edge must correspond to a real underlying connection, not a decorative line.
+
+Do not allow a state where validation reports a source as already connected while the workspace shows no corresponding edge.
+
+## Layout semantics
+
+Workspace node positions are UI/application state. Do not make Region/Planet layout coordinates physical simulation coordinates unless a future issue explicitly introduces that concept.
 
 ---
 
@@ -377,8 +429,6 @@ Destination Region Import Buffer
 
 If a connection does not exist, material remains in its current physical buffer. When that buffer fills, normal backpressure should propagate.
 
-The current automatic hidden Site → Regional Export behavior is a prototype defect and should be removed in the next corrective pass.
-
 ---
 
 # Parent Composite Nodes Are Views of Their Child Boundaries
@@ -414,7 +464,7 @@ Do not architect Sites as source-only systems.
 
 Features may eventually expose input/output interfaces where physically meaningful, for example injection wells, storage caverns, reservoirs, waste sinks, or backfill areas.
 
-The current corrective issue does not need to implement all Feature port families, but Site Import must exist so future receiving behavior is natural.
+Site Import must remain available so future receiving behavior is natural.
 
 ---
 
@@ -495,7 +545,7 @@ For Magnetic Separator specifically, show distinct live summaries for:
 ```text
 feed
 concentrate
- tailings
+tailings
 ```
 
 The underlying simulation already has the corresponding stream state; do not duplicate physics to obtain Inspector values.
@@ -510,87 +560,77 @@ Where practical, extract a DOM-independent inspection/view-model helper so detai
 
 ---
 
-# Current Immediate Priority
+# Current Immediate Priority — Issue #18
 
-The next corrective pass should finish the recursive interaction contract introduced by the merged Site/Region/Planet milestone.
+The active corrective priority is:
 
-Target:
+> **Unify Site, Region, and Planet under one node/connection workspace architecture.**
+
+The current app already has draggable node views at all three scales. The issue is that Site and parent-level workspaces still use different renderer/connection interaction stacks, which can allow simulation connections and visible graph edges to disagree.
+
+Target architecture:
 
 ```text
-PLANET WORKSPACE — draggable graph
+SHARED WORKSPACE GRAPH
 
-[Region A] ○ ───────────→ ○ [Region B]
-    ↓ enter
-
-REGION A WORKSPACE — draggable graph
-
-[Region Import] ○ ──→ ○ [Site / Facility]
-[Mining Site] ○ ─────→ ○ [Region Export]
-      ↓ enter
-
-SITE WORKSPACE — draggable graph
-
-[Site Import] ○ ──→ local systems
-Resource → Extractor → Hopper → Crusher → Magnetic Separator
-                                      ├─→ Concentrate Hopper → [Site Export]
-                                      └─→ Tailings Hopper
+GraphNode / GraphPort / GraphConnection
+        ↓
+shared renderer + interaction + Inspector selection
+        ↓
+connection adapter
+   ├── local blueprint connection / MaterialStream
+   └── recursive BoundaryTransfer
 ```
 
-This corrective pass should focus on interaction/model fidelity, not new simulation domains.
+This pass should focus on graph architecture and behavioral consistency, not new simulation domains.
 
 ---
 
-# Requirements for the Corrective Pass
+# Requirements for Issue #18
 
-## 1. Replace parent card grids with node canvases
+## 1. One node renderer/interaction path
 
-Planet and Region workspaces must use draggable nodes, explicit ports, connection paths, selection, Inspector, and persistent layout state.
+Primitive machines, Hoppers, boundary buffers, Sites, and Regions should project into one shared node UI abstraction.
 
-Do not leave Sites/Regions as static rectangular cards in a CSS grid.
+Do not preserve separate hierarchy-specific node interaction implementations merely because their underlying simulation objects differ.
 
-## 2. Add explicit Site Import / Export boundary-buffer nodes
+## 2. One connection renderer/interaction path
 
-Every initialized Site engineering workspace should visibly contain both boundary nodes.
+Local Site connections and Region/Planet transfers should project into one shared edge abstraction.
 
-They should participate in normal material connection semantics and physically own material while buffered.
+Every edge should support the same basic player behavior:
 
-Do not map Site output directly to the concentrate Hopper.
+- visible line/path
+- live state display where available
+- selection
+- inspection
+- disconnect
 
-## 3. Keep Region Import / Export explicit and draggable
+## 3. One drag-to-connect interaction path
 
-Region boundary nodes should live on the same Region canvas as Site/composite nodes.
+Use the same conceptual source-port → target-port gesture and common compatibility/error presentation at every hierarchy level.
 
-The Planet-level Region input/output ports must resolve to these physical buffers.
+Simulation-specific validation may be delegated to adapters.
 
-## 4. Remove automatic Site → Region export
+## 4. Preserve simulation-specific execution behind adapters
 
-Do not create hidden cross-boundary transfers on Site creation/activation/reset.
+Do not rewrite Magnetic Separator/Crusher/local continuous physics as `BoundaryTransfer` merely to make rendering common.
 
-No material should leave Site Export until the player connects it in Region view.
+Do not rewrite hierarchy transfer as local process streams merely to make rendering common.
 
-## 5. Restore detailed inspection
+Unify the UI graph contract, not the physical solvers.
 
-Restore the information lost during the stable-live-render refactor and expand machine summaries using existing stream state.
+## 5. Preserve recursive ownership
 
-## 6. Preserve current physics and world clock
+Parent-facing Site/Region ports must continue to expose the same child boundary buffers without duplicating matter.
 
-Do not fork Crusher/Magnetic Separator physics.
+## 6. Preserve explicit logistics
 
-Preserve:
+No hierarchy-crossing material movement may become implicit as part of the refactor.
 
-- constituent conservation
-- particle-size rules
-- output-capacity backpressure
-- one-to-one material port rule pending splitter
-- no per-tick batch allocation
-- deterministic fixed timestep
-- world-owned continuous simulation
-- per-machine enabled state
-- persistent Site sessions
+## 7. Preserve stable live interaction
 
-## 7. Keep parent/child ownership explicit
-
-A parent-facing composite port exposes its child's boundary buffer; it is not a second physical inventory.
+Do not regress to frame-by-frame destructive node/edge/Inspector rebuilds.
 
 ## 8. Keep Debug View
 
@@ -598,60 +638,44 @@ Do not remove the Debug View or its manual validation controls.
 
 ---
 
-# Required Regression Coverage for the Corrective Pass
+# Required Regression Coverage for Issue #18
 
-Add fast deterministic tests for at least:
+Add fast deterministic coverage for the common graph projection/adapter layer where practical.
 
-### No implicit logistics
+At minimum prove:
 
-- creating/entering/resetting a Site creates no Site → Region transfer automatically
-- with Magnetic Separator running and no Site Export connection, concentrate accumulates in the concentrate Hopper
-- material does not move into Site Export until an explicit child-workspace connection exists
-- material does not move from Site Export into Region-level storage until an explicit Region connection exists
+### Edge visibility / identity
 
-### Boundary ownership
+- every local connection projected into the current Site workspace produces one graph edge
+- every Region-level `BoundaryTransfer` in the current Region workspace produces one graph edge
+- every Planet-level `BoundaryTransfer` in the current Planet workspace produces one graph edge
+- graph edges resolve to the same source/target ports used by the underlying connection
+- no existing connection can be omitted merely because its endpoint uses a boundary adapter composite
 
-- Site Import and Site Export are distinct physical storage owners
-- Site parent input resolves to Site Import
-- Site parent output resolves to Site Export
-- Region parent input resolves to Region Import
-- Region parent output resolves to Region Export
-- parent inspection/display does not duplicate constituent mass
-- full boundary buffers backpressure upstream flow rather than deleting matter
+### Interaction consistency
 
-### Import symmetry
+- selecting an edge can resolve the underlying local connection or boundary transfer through the common graph abstraction
+- disconnecting through the common graph action removes the correct underlying connection
+- moving nodes changes layout state only
 
-- explicit material transfer into a Site parent input appears in the same Site Import buffer when the Site is entered
-- child systems can draw from Site Import through an explicit local connection
+### Ownership / physics regression
 
-### Draggable recursive layout
-
-- Planet Region-node positions are application/UI state
-- Region Site/boundary-node positions are application/UI state
-- moving parent-level nodes does not mutate world matter or process state
-- layout persists while navigating away/back during the current session
-
-### Detailed inspection model
-
-Prefer testing a DOM-independent inspection model/helper for:
-
-- Hopper constituent masses + particle size
-- boundary-buffer constituent masses + particle size
-- MaterialStream constituent rates + particle size
-- Crusher configured and actual flow summaries
-- Magnetic Separator feed/concentrate/tailings summaries
-- blocking/error reason when present
+- parent/child boundary mapping still resolves to one physical buffer
+- explicit connection requirements remain intact
+- constituent conservation and backpressure remain intact
+- local Magnetic Separator/Crusher physics remain unchanged
 
 ### Existing regression
 
-All existing generation, batch, continuous-flow, world-clock, machine-state, and recursive-boundary tests remain green.
+All existing generation, batch, continuous-flow, world-clock, machine-state, boundary-buffer, Inspector, and recursive-transfer tests remain green.
 
 ---
 
-# Explicitly Out of Scope for This Corrective Pass
+# Explicitly Out of Scope for Issue #18
 
-Do not add unless strictly required to prove the contracts above:
+Do not add unless strictly required to prove the shared graph contract:
 
+- right-click/context menus beyond minimal hooks needed for future use
 - realistic rail/truck/conveyor pathfinding
 - logistics scheduling/economics
 - splitter/merger gameplay
@@ -673,7 +697,7 @@ Do not add unless strictly required to prove the contracts above:
 - Web Worker/Wasm optimization
 - polished final art
 
-The goal is to make the already-implemented recursive system architecture behave visibly and consistently before adding more domains.
+The goal is to make the existing node language structurally uniform before adding more interaction features.
 
 ---
 
@@ -683,7 +707,7 @@ The current Discover/prototype survey actions are scaffolding.
 
 Future surveying should become an automated system that updates Knowledge State over time.
 
-Do not expand surveying substantially in the corrective recursive-workspace pass unless needed to access a test Site.
+Do not expand surveying substantially in the shared-graph pass unless needed to access a test Site.
 
 ---
 
@@ -722,7 +746,7 @@ When a parent/child design choice is ambiguous, favor the option that preserves:
 1. physical conservation
 2. one clear physical owner
 3. explicit interfaces
-4. the same player interaction language at every scale
+4. one shared player-facing graph language at every scale
 5. automation
 6. future composition/nesting
 
