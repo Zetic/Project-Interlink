@@ -340,7 +340,7 @@ function renderParentNode(canvas, node, position, definition) {
   element.className = `ws-node ws-system-node ws-node--${node.nodeType}${node.boundaryRole ? ' ws-node--boundary' : ''}${inspector.selectedSystemId === node.id ? ' ws-node--selected' : ''}`;
   Object.assign(element.style, { left: `${position.x}px`, top: `${position.y}px`, width: `${NODE_WIDTH + 20}px`, height: `${NODE_HEIGHT + 10}px` });
   element.innerHTML = `<div class="ws-node-label"><strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span></div>`;
-  if (node.kind === 'composite' && node.nodeType !== 'transfer-terminal') {
+  if (['site', 'region'].includes(node.nodeType)) {
     const button = document.createElement('button');
     button.className = 'ws-system-enter';
     button.textContent = 'Enter →';
@@ -444,8 +444,6 @@ function renderParentWorkspace(container) {
   const definition = systemWorkspaceDefinition();
   if (!definition.nodes.length) { container.innerHTML = '<p class="ws-empty">No systems are currently visible.</p>'; return; }
   ensureSystemLayout(definition);
-  wsState.systemNodeElements.clear();
-  wsState.systemConnectionElements.clear();
   const header = wsState.currentLevel === 'planet'
     ? `<div class="ws-planet-header"><div class="ws-planet-name">${escHtml(definition.title)}</div><div class="ws-planet-meta">Draggable planetary system graph</div></div>`
     : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Draggable region system graph · explicit import/export boundaries</div></div>`;

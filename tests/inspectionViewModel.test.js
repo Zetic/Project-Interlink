@@ -58,6 +58,7 @@ test('crusher inspection reports configured and actual feed/product flow', () =>
 
   const details = machineInspection(blueprint, crusher);
   assert.equal(details.configuredThroughputKgPerSecond, 4);
+  assert.equal(details.operatingState, 'running');
   assert.equal(details.actualFeedKgPerSecond, 4);
   assert.equal(details.actualProductKgPerSecond, 4);
   assert.equal(details.targetParticleSizeMm, 10);

@@ -1,5 +1,6 @@
 import { hopperFreeCapacityKg, hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
+import { getNodeOperatingState } from '../simulation/simulationEngine.js';
 
 function componentRows(components, total) {
   return Object.entries(components ?? {})
@@ -59,7 +60,7 @@ export function machineInspection(blueprint, node) {
     kind: node?.nodeType ?? 'machine',
     id: node?.id ?? null,
     enabled: node?.enabled ?? false,
-    operatingState: node?.operatingState ?? 'off',
+    operatingState: getNodeOperatingState(node) ?? 'off',
     configuredThroughputKgPerSecond,
     actualFeedKgPerSecond: inputInspection?.totalFlowKgPerSecond ?? 0,
     actualProductKgPerSecond: outputByPort[node?.outputPortId]?.totalFlowKgPerSecond ?? 0,
