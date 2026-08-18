@@ -32,6 +32,7 @@ export const DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S = 4;
 export const DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM = 15;
 export const DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S = 4;
 export const DEFAULT_MAG_SEP_FIELD_STRENGTH = 0.6;
+export const DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S = 10;
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
 
@@ -146,6 +147,12 @@ export function blueprintAddMagSep(blueprint, {
   return node;
 }
 
+/**
+ * Ports exposed to the child engineering workspace.
+ * Boundary buffers retain both physical ports internally so a parent boundary
+ * can map to the opposite side, but the player only sees the side facing the
+ * current child workspace: Import -> output, Export -> input.
+ */
 export function getNodePortDefinitions(node) {
   if (!node) return [];
 
@@ -153,6 +160,12 @@ export function getNodePortDefinitions(node) {
     return [{ id: node.outputPortId, direction: 'output', kind: 'material', label: 'out' }];
   }
   if (node.nodeType === 'hopper') {
+    if (node.boundaryRole === 'import') {
+      return [{ id: node.outputPortId, direction: 'output', kind: 'material', label: 'out' }];
+    }
+    if (node.boundaryRole === 'export') {
+      return [{ id: node.inputPortId, direction: 'input', kind: 'material', label: 'in' }];
+    }
     return [
       { id: node.inputPortId, direction: 'input', kind: 'material', label: 'in' },
       { id: node.outputPortId, direction: 'output', kind: 'material', label: 'out' },
@@ -177,7 +190,14 @@ export function getNodePortDefinitions(node) {
   ];
 }
 
+function isExplicitBoundaryStorageTransition(sourceNode, targetNode) {
+  return sourceNode?.nodeType === 'hopper'
+    && targetNode?.nodeType === 'hopper'
+    && (sourceNode.boundaryRole === 'import' || targetNode.boundaryRole === 'export');
+}
+
 function supportedNodeTransition(sourceNode, targetNode) {
+  if (isExplicitBoundaryStorageTransition(sourceNode, targetNode)) return true;
   const key = `${sourceNode.nodeType}->${targetNode.nodeType}`;
   return new Set([
     'extractor->hopper',
@@ -484,16 +504,15 @@ function simulateMagSepNode(blueprint, node, dt) {
   const concentrateHopper = blueprint.nodes[concentrateConnection.targetNodeId];
   const tailingsHopper = blueprint.nodes[tailingsConnection.targetNodeId];
   if (
-    inputHopper?.nodeType !== 'hopper' ||
-    concentrateHopper?.nodeType !== 'hopper' ||
-    tailingsHopper?.nodeType !== 'hopper'
+    inputHopper?.nodeType !== 'hopper'
+    || concentrateHopper?.nodeType !== 'hopper'
+    || tailingsHopper?.nodeType !== 'hopper'
   ) {
     node.operatingState = 'blocked';
     return;
   }
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
-
   const particleSizeMm = inputHopper.particleSizeMm;
   const candidateRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt);
   let candidateFeedRates = proportionalRatesFromHopper(inputHopper, candidateRate);
@@ -527,9 +546,7 @@ function simulateMagSepNode(blueprint, node, dt) {
     return;
   }
 
-  if (capacityScale < 1) {
-    candidateFeedRates = scaleFlowRates(candidateFeedRates, capacityScale);
-  }
+  if (capacityScale < 1) candidateFeedRates = scaleFlowRates(candidateFeedRates, capacityScale);
 
   const stagedInput = cloneHopperPhysicalState(inputHopper);
   const stagedConcentrate = cloneHopperPhysicalState(concentrateHopper);
@@ -584,6 +601,38 @@ function simulateMagSepNode(blueprint, node, dt) {
   node.operatingState = 'running';
 }
 
+function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
+  for (const connection of Object.values(blueprint.connections)) {
+    const source = blueprint.nodes[connection.sourceNodeId];
+    const target = blueprint.nodes[connection.targetNodeId];
+    if (!isExplicitBoundaryStorageTransition(source, target)) continue;
+
+    const availableKg = hopperStoredMassKg(source);
+    const freeKg = hopperFreeCapacityKg(target);
+    if (availableKg <= HOPPER_TOLERANCE_KG || freeKg <= HOPPER_TOLERANCE_KG) continue;
+
+    const rate = Math.min(
+      DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S,
+      availableKg / dt,
+      freeKg / dt
+    );
+    if (rate <= TRANSFER_TOLERANCE_KG) continue;
+
+    const rates = proportionalRatesFromHopper(source, rate);
+    const particleSizeMm = source.particleSizeMm;
+    const stagedSource = cloneHopperPhysicalState(source);
+    const stagedTarget = cloneHopperPhysicalState(target);
+    const withdrawal = hopperWithdraw(stagedSource, rates, dt);
+    if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) continue;
+
+    const acceptedKg = hopperReceiveInflow(stagedTarget, withdrawal.actualRates, particleSizeMm, dt);
+    assertTransferAccepted(withdrawal.actualTotalKg, acceptedKg, 'Boundary storage link');
+    commitHopperPhysicalState(source, stagedSource);
+    commitHopperPhysicalState(target, stagedTarget);
+    updateConnectionStream(blueprint, connection, withdrawal.actualRates, particleSizeMm);
+  }
+}
+
 export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
   if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
     throw new Error('Simulation dt must be a finite positive number');
@@ -593,9 +642,7 @@ export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
   let extractedThisTickKg = 0;
 
   for (const node of Object.values(blueprint.nodes)) {
-    if (node.nodeType === 'extractor') {
-      extractedThisTickKg += simulateExtractorNode(blueprint, world, node, dt);
-    }
+    if (node.nodeType === 'extractor') extractedThisTickKg += simulateExtractorNode(blueprint, world, node, dt);
   }
   for (const node of Object.values(blueprint.nodes)) {
     if (node.nodeType === 'crusher') simulateCrusherNode(blueprint, node, dt);
@@ -603,6 +650,7 @@ export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
   for (const node of Object.values(blueprint.nodes)) {
     if (node.nodeType === 'magSep') simulateMagSepNode(blueprint, node, dt);
   }
+  simulateExplicitBoundaryStorageLinks(blueprint, dt);
 
   blueprint.simulationStats.elapsedSeconds += dt;
   blueprint.simulationStats.extractedKg += extractedThisTickKg;

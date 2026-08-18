@@ -44,6 +44,28 @@ export function createHopper({ id, capacityKg, initialComponentsKg = {}, initial
   };
 }
 
+export function createBoundaryBuffer({
+  id,
+  capacityKg,
+  role,
+  initialComponentsKg = {},
+  initialParticleSizeMm = null,
+} = {}) {
+  if (role !== 'import' && role !== 'export') {
+    throw new Error('Boundary buffer role must be import or export');
+  }
+  const hopper = createHopper({
+    id,
+    capacityKg,
+    initialComponentsKg,
+    initialParticleSizeMm,
+  });
+  hopper.systemType = 'boundary-buffer';
+  hopper.boundaryRole = role;
+  hopper.displayName = role === 'import' ? 'Import Boundary' : 'Export Boundary';
+  return hopper;
+}
+
 export function hopperStoredMassKg(hopper) {
   return Object.values(hopper.storedComponentsKg).reduce((sum, kg) => sum + kg, 0);
 }

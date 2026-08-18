@@ -14,6 +14,21 @@
 .ws-btn-enable, .ws-btn-remove-transfer { padding: 2px 8px; font-size: 11px; }
 
 .ws-parent-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
+.ws-system-canvas-wrap { position: relative; min-height: 560px; overflow: auto; background: #0a0f16; border: 1px solid #1e2e3e; }
+.ws-system-canvas { position: relative; min-width: 1120px; min-height: 560px; z-index: 2; }
+.ws-system-svg { position: absolute; inset: 0; min-width: 1120px; min-height: 560px; z-index: 3; pointer-events: none; }
+.ws-system-svg .ws-system-connection { pointer-events: stroke; cursor: pointer; }
+.ws-system-node { z-index: 2; background: #151d27; }
+.ws-system-node .ws-node-label { gap: 2px; }
+.ws-system-node .ws-node-label strong { color: #c8e0f0; }
+.ws-system-node .ws-system-enter { position: absolute; bottom: 5px; right: 5px; z-index: 6; padding: 2px 6px; font-size: 10px; }
+.ws-node--boundary { background: #172b2c; border-color: #3b8982; }
+.ws-node--boundary .ws-node-label strong { color: #91d6cb; }
+.ws-system-node .ws-system-port { z-index: 7; }
+.ws-system-node .ws-port--input { left: -7px; }
+.ws-system-node .ws-port--output { right: -7px; left: auto !important; }
+.ws-system-node .ws-system-port--input { cursor: copy; }
+.ws-system-node .ws-system-port--output { cursor: crosshair; }
 .ws-system-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 .ws-system-card { position: relative; border: 1px solid #38424b; background: #181c20; padding: 12px; min-height: 110px; cursor: pointer; }
 .ws-system-card:hover { border-color: #526573; }
@@ -23,10 +38,15 @@
 .ws-system-port--input { cursor: copy; }
 .ws-composite-inspector { border: 1px solid #303840; background: #14181c; padding: 10px; min-height: 180px; position: sticky; top: 8px; }
 .ws-site-boundary-label { color: #88b8cc; font-size: 11px; }
+.ws-prototype-survey { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; padding: 8px 10px; border: 1px dashed #496070; background: #101821; font-size: 11px; color: #aebdca; }
+.ws-prototype-survey strong { color: #8fc3df; }
+.ws-prototype-survey span { flex: 1; }
+.ws-prototype-survey button { white-space: nowrap; }
 
 #ws-player-seed { display: block; width: min(420px, 100%); margin: 6px 0 10px; }
 
 @media (max-width: 900px) {
   .ws-parent-layout { grid-template-columns: 1fr; }
   .ws-composite-inspector { position: static; }
+  .ws-prototype-survey { align-items: flex-start; flex-direction: column; }
 }
