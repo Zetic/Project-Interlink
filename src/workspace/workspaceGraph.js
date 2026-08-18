@@ -210,7 +210,7 @@ export function renderGraphConnectionPreview({
   let line = preview;
   if (!line || !svg.contains(line)) {
     if (typeof document === 'undefined') {
-      throw new Error('renderGraphConnectionPreview: document is not available; ensure a DOM environment is present before activating a preview');
+      throw new Error('renderGraphConnectionPreview: document is not available');
     }
     line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.classList.add('ws-connection-preview');
