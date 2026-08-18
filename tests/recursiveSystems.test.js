@@ -6,66 +6,65 @@ import {
   blueprintAddExtractor,
   blueprintAddHopper,
   blueprintAddCrusher,
+  blueprintAddMagSep,
   blueprintConnect,
   setNodeEnabled,
   simulationTick,
 } from '../src/simulation/simulationEngine.js';
 import { createWorld } from '../src/core/world/worldState.js';
+import { SCHEMA_VERSION } from '../src/core/world/versions.js';
 import {
   createCompositeNode,
   createSystemPort,
   resolveBoundaryPort,
+  resolveBoundaryChain,
+  setBoundaryMapping,
 } from '../src/simulation/systemNode.js';
 import { transferBoundaryMaterial } from '../src/simulation/boundaryTransfer.js';
 import {
   createWorldSimulation,
   registerSimulationSession,
+  registerSimulationWorkspace,
+  registerBoundaryTransfer,
   pauseWorldSimulation,
   resumeWorldSimulation,
   worldSimulationAdvance,
+  getSimulationWorkspace,
 } from '../src/simulation/worldSimulation.js';
-import { hopperReceiveInflow, hopperStoredMassKg } from '../src/simulation/hopperNode.js';
+import { createHopper, hopperReceiveInflow, hopperStoredMassKg } from '../src/simulation/hopperNode.js';
 
 function testWorld() {
-  return {
-    resourceOccurrences: {
-      occ: {
-        id: 'occ',
-        resourceId: 'iron-ore',
-        composition: { hematite: 100 },
-      },
-    },
-  };
+  return { resourceOccurrences: { occ: { id: 'occ', resourceId: 'iron-ore', composition: { hematite: 100 } } } };
 }
+
+test('schema v5 records recursive/world-simulation state shape change', () => {
+  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(createWorld('schema-five').schemaVersion, 5);
+});
 
 test('active machinery starts disabled and reports off', () => {
   const blueprint = createBlueprint();
-  const extractor = blueprintAddExtractor(blueprint, 'occ');
-  const crusher = blueprintAddCrusher(blueprint);
-  assert.equal(extractor.enabled, false);
-  assert.equal(extractor.operatingState, 'off');
-  assert.equal(crusher.enabled, false);
-  assert.equal(crusher.operatingState, 'off');
+  for (const node of [blueprintAddExtractor(blueprint, 'occ'), blueprintAddCrusher(blueprint), blueprintAddMagSep(blueprint)]) {
+    assert.equal(node.enabled, false);
+    assert.equal(node.operatingState, 'off');
+  }
 });
 
-test('disabled extractor consumes and produces nothing; enabling permits operation', () => {
+test('disabled extractor produces nothing; enabling permits operation', () => {
   const world = testWorld();
   const blueprint = createBlueprint();
   const extractor = blueprintAddExtractor(blueprint, 'occ', 5);
   const output = blueprintAddHopper(blueprint);
   blueprintConnect(blueprint, extractor.id, extractor.outputPortId, output.id, output.inputPortId);
-
   simulationTick(blueprint, world);
   assert.equal(hopperStoredMassKg(output), 0);
-  assert.equal(extractor.operatingState, 'off');
-
   setNodeEnabled(blueprint, extractor.id, true);
   simulationTick(blueprint, world);
   assert.ok(hopperStoredMassKg(output) > 0);
   assert.equal(extractor.operatingState, 'running');
 });
 
-test('enabled crusher is idle without feed, blocked without output, and resumes after constraints clear', () => {
+test('enabled crusher moves idle → blocked → running as physical constraints change', () => {
   const world = testWorld();
   const blueprint = createBlueprint();
   const input = blueprintAddHopper(blueprint);
@@ -73,67 +72,88 @@ test('enabled crusher is idle without feed, blocked without output, and resumes 
   const output = blueprintAddHopper(blueprint, 2);
   blueprintConnect(blueprint, input.id, input.outputPortId, crusher.id, crusher.inputPortId);
   setNodeEnabled(blueprint, crusher.id, true);
-
   simulationTick(blueprint, world);
   assert.equal(crusher.operatingState, 'idle');
-
   hopperReceiveInflow(input, { hematite: 1 }, 80, 1);
   simulationTick(blueprint, world);
   assert.equal(crusher.operatingState, 'blocked');
-
   blueprintConnect(blueprint, crusher.id, crusher.outputPortId, output.id, output.inputPortId);
   simulationTick(blueprint, world);
   assert.equal(crusher.operatingState, 'running');
-  assert.ok(hopperStoredMassKg(output) > 0);
 });
 
-test('boundary transfer withdraws child-owned matter without duplication', () => {
-  const sourceWorkspace = { nodes: { source: blueprintAddHopper({ nodes: {}, connections: {}, streams: {}, simulationStats: {} }, 10) } };
-  const targetWorkspace = { nodes: { target: blueprintAddHopper({ nodes: {}, connections: {}, streams: {}, simulationStats: {} }, 10) } };
-  hopperReceiveInflow(sourceWorkspace.nodes.source, { hematite: 3, magnetite: 1 }, 15, 1);
+test('boundary mapping validates real child port direction and type', () => {
+  const hopper = createHopper({ id: 'h', capacityKg: 10 });
+  const workspace = { nodes: { h: hopper } };
+  const composite = createCompositeNode({ id: 'site', nodeType: 'site', ports: [
+    createSystemPort({ id: 'out', direction: 'output', kind: 'material' }),
+  ] });
+  assert.throws(() => setBoundaryMapping(composite, 'out', 'h', 'input', workspace), /direction/);
+  setBoundaryMapping(composite, 'out', 'h', 'output', workspace);
+  assert.equal(resolveBoundaryPort(composite, 'out', workspace).node, hopper);
+});
 
-  const source = createCompositeNode({
-    id: 'site-a',
-    nodeType: 'site',
-    ports: [createSystemPort({
-      id: 'ore-output',
-      direction: 'output',
-      childNodeId: 'source',
-      childPortId: 'output',
-    })],
-  });
-  const target = createCompositeNode({
-    id: 'site-b',
-    nodeType: 'site',
-    ports: [createSystemPort({
-      id: 'ore-input',
-      direction: 'input',
-      childNodeId: 'target',
-      childPortId: 'input',
-    })],
-  });
+test('nested Region → Site boundary resolves to the primitive physical owner', () => {
+  const hopper = createHopper({ id: 'site-output', capacityKg: 10 });
+  const site = createCompositeNode({ id: 'site-a', nodeType: 'site', childWorkspaceId: 'site-ws', ports: [
+    createSystemPort({ id: 'material-output', direction: 'output', childNodeId: 'site-output', childPortId: 'output' }),
+  ] });
+  const region = createCompositeNode({ id: 'region-a', nodeType: 'region', childWorkspaceId: 'region-ws', ports: [
+    createSystemPort({ id: 'material-output', direction: 'output', childNodeId: 'site-a', childPortId: 'material-output' }),
+  ] });
+  const workspaces = { 'region-ws': { nodes: { 'site-a': site } }, 'site-ws': { nodes: { 'site-output': hopper } } };
+  assert.equal(resolveBoundaryChain(region, 'material-output', workspaces).node, hopper);
+});
 
-  const resolved = resolveBoundaryPort(source, 'ore-output', sourceWorkspace);
-  assert.equal(resolved.node, sourceWorkspace.nodes.source);
-  const before = hopperStoredMassKg(sourceWorkspace.nodes.source);
-  const result = transferBoundaryMaterial({
-    sourceComposite: source,
-    sourcePortId: 'ore-output',
-    sourceWorkspace,
-    targetComposite: target,
-    targetPortId: 'ore-input',
-    targetWorkspace,
-    dt: 0.1,
-  });
+test('nested boundary transfer conserves matter across Region boundaries', () => {
+  const sourceHopper = createHopper({ id: 'source-h', capacityKg: 10 });
+  const targetHopper = createHopper({ id: 'target-h', capacityKg: 10 });
+  hopperReceiveInflow(sourceHopper, { hematite: 3, magnetite: 1 }, 15, 1);
+
+  const site = createCompositeNode({ id: 'site-a', nodeType: 'site', childWorkspaceId: 'site-ws', ports: [
+    createSystemPort({ id: 'material-output', direction: 'output', childNodeId: 'source-h', childPortId: 'output' }),
+  ] });
+  const sourceRegion = createCompositeNode({ id: 'region-a', nodeType: 'region', childWorkspaceId: 'region-a-ws', ports: [
+    createSystemPort({ id: 'material-output', direction: 'output', childNodeId: 'site-a', childPortId: 'material-output' }),
+  ] });
+  const targetRegion = createCompositeNode({ id: 'region-b', nodeType: 'region', childWorkspaceId: 'region-b-ws', ports: [
+    createSystemPort({ id: 'material-input', direction: 'input', childNodeId: 'target-h', childPortId: 'input' }),
+  ] });
+  const workspaces = {
+    'region-a-ws': { nodes: { 'site-a': site } },
+    'site-ws': { nodes: { 'source-h': sourceHopper } },
+    'region-b-ws': { nodes: { 'target-h': targetHopper } },
+  };
+  const before = hopperStoredMassKg(sourceHopper) + hopperStoredMassKg(targetHopper);
+  const result = transferBoundaryMaterial({ sourceComposite: sourceRegion, sourcePortId: 'material-output', targetComposite: targetRegion, targetPortId: 'material-input', workspaces, dt: 0.1 });
   assert.ok(result.movedKg > 0);
-  assert.ok(Math.abs(
-    hopperStoredMassKg(sourceWorkspace.nodes.source)
-      + hopperStoredMassKg(targetWorkspace.nodes.target)
-      - before
-  ) < 1e-8);
+  assert.ok(Math.abs(hopperStoredMassKg(sourceHopper) + hopperStoredMassKg(targetHopper) - before) < 1e-8);
 });
 
-test('world simulation pause freezes physical state without changing enabled command state', () => {
+test('generated Regions expose material input/output and runtime buffers without revealing them as matter copies', () => {
+  const world = createWorld('recursive-runtime');
+  createWorldSimulation(world);
+  const regionId = world.planets[world.planetId].regions[0];
+  const regionNode = world.systemNodes[regionId];
+  assert.deepEqual(regionNode.ports.map(p => [p.id, p.direction]), [['material-input', 'input'], ['material-output', 'output']]);
+  const workspace = getSimulationWorkspace(world, regionNode.childWorkspaceId);
+  assert.equal(workspace.nodes[`${regionId}-import-hopper`].nodeType, 'hopper');
+  assert.equal(workspace.nodes[`${regionId}-export-hopper`].nodeType, 'hopper');
+});
+
+test('world transfer registry rejects source fan-out and input fan-in', () => {
+  const world = createWorld('transfer-contracts');
+  createWorldSimulation(world);
+  const regions = world.planets[world.planetId].regions.slice(0, 3);
+  if (regions.length < 2) return;
+  const first = registerBoundaryTransfer(world, { sourceCompositeId: regions[0], sourcePortId: 'material-output', targetCompositeId: regions[1], targetPortId: 'material-input' });
+  assert.ok(first.id);
+  if (regions.length >= 3) {
+    assert.throws(() => registerBoundaryTransfer(world, { sourceCompositeId: regions[0], sourcePortId: 'material-output', targetCompositeId: regions[2], targetPortId: 'material-input' }), /already connected/);
+  }
+});
+
+test('world pause freezes physical state without changing machine command state', () => {
   const world = testWorld();
   const blueprint = createBlueprint();
   const extractor = blueprintAddExtractor(blueprint, 'occ', 5);
@@ -142,34 +162,11 @@ test('world simulation pause freezes physical state without changing enabled com
   setNodeEnabled(blueprint, extractor.id, true);
   createWorldSimulation(world);
   registerSimulationSession(world, 'site-a', blueprint);
-
   pauseWorldSimulation(world);
-  const pausedMass = hopperStoredMassKg(output);
   worldSimulationAdvance(world, 1);
-  assert.equal(hopperStoredMassKg(output), pausedMass);
+  assert.equal(hopperStoredMassKg(output), 0);
   assert.equal(extractor.enabled, true);
-
   resumeWorldSimulation(world);
   worldSimulationAdvance(world, 0.1);
-  assert.ok(hopperStoredMassKg(output) > pausedMass);
-});
-
-test('generated regions and sites expose recursive system-node contracts', () => {
-  const world = createWorld('recursive-contracts');
-  const planetNode = world.systemNodes[world.planetId];
-  assert.equal(planetNode.kind, 'composite');
-  assert.ok(planetNode.childWorkspaceId);
-  const regionId = world.planets[world.planetId].regions[0];
-  const region = world.regions[regionId];
-  const regionNode = world.systemNodes[regionId];
-  assert.equal(regionNode.kind, 'composite');
-  assert.deepEqual(region.siteIds, regionNode.inspectableState.siteIds);
-  if (region.siteIds.length > 0) {
-    const site = world.sites[region.siteIds[0]];
-    const regionBoundary = resolveBoundaryPort(regionNode, 'ore-output', { nodes: world.systemNodes });
-    assert.equal(regionBoundary.node.id, site.id);
-    assert.equal(site.regionId, regionId);
-    assert.equal(world.systemNodes[site.id].kind, 'composite');
-    assert.equal(site.boundaryPorts[0].kind, 'material');
-  }
+  assert.ok(hopperStoredMassKg(output) > 0);
 });

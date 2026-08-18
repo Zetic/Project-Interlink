@@ -1,8 +1,6 @@
 /**
- * Small common contract for player-facing primitive and composite systems.
- *
- * A boundary port describes an existing child endpoint. It does not own
- * material, so resolving a boundary never creates a second physical copy.
+ * Common contract for player-facing primitive and composite systems.
+ * Boundary ports alias real child endpoints; they never own or duplicate matter.
  */
 
 function assertId(value, label) {
@@ -44,10 +42,10 @@ export function createSystemNode({
   if (!Array.isArray(ports)) throw new Error(`System node '${id}' ports must be an array`);
 
   const normalizedPorts = ports.map(port => createSystemPort(port));
-  const portIds = new Set();
+  const ids = new Set();
   for (const port of normalizedPorts) {
-    if (portIds.has(port.id)) throw new Error(`System node '${id}' has duplicate port '${port.id}'`);
-    portIds.add(port.id);
+    if (ids.has(port.id)) throw new Error(`System node '${id}' has duplicate port '${port.id}'`);
+    ids.add(port.id);
   }
 
   return {
@@ -69,51 +67,81 @@ export function getSystemNodePort(node, portId) {
   return node?.ports?.find(port => port.id === portId) ?? null;
 }
 
-/**
- * Resolve a composite boundary to the physical child endpoint it represents.
- * The returned node/port references are intentionally aliases to child state,
- * not copied stream or storage state.
- */
+function assertMappedPortCompatibility(boundary, childNode, childPort, context) {
+  if (!childNode) throw new Error(`${context} references an unknown child node`);
+  if (!childPort) throw new Error(`${context} references an unknown child port`);
+  if (childPort.direction !== boundary.direction) {
+    throw new Error(`${context} direction '${boundary.direction}' does not match child port direction '${childPort.direction}'`);
+  }
+  if (childPort.kind !== boundary.kind) {
+    throw new Error(`${context} kind '${boundary.kind}' does not match child port kind '${childPort.kind}'`);
+  }
+}
+
+/** Resolve one composite boundary level to its real child endpoint. */
 export function resolveBoundaryPort(composite, portId, childWorkspace) {
   if (!composite || composite.kind !== 'composite') {
     throw new Error('Boundary resolution requires a composite system node');
   }
   const boundary = getSystemNodePort(composite, portId);
   if (!boundary) throw new Error(`Unknown boundary port '${portId}'`);
-  if (!childWorkspace?.nodes || !boundary.childNodeId || !boundary.childPortId) {
+  if (!boundary.childNodeId || !boundary.childPortId || !childWorkspace?.nodes) {
     return { boundaryPort: boundary, node: null, port: null };
   }
+
   const node = childWorkspace.nodes[boundary.childNodeId] ?? null;
-  const port = node?.ports?.find(candidate => candidate.id === boundary.childPortId)
-    ?? (node && { id: boundary.childPortId });
+  const port = getSystemNodePort(node, boundary.childPortId);
+  assertMappedPortCompatibility(boundary, node, port, `Boundary '${composite.id}:${portId}'`);
   return { boundaryPort: boundary, node, port };
 }
 
-export function setBoundaryMapping(composite, portId, childNodeId, childPortId) {
-  const port = getSystemNodePort(composite, portId);
-  if (!port) throw new Error(`Unknown boundary port '${portId}'`);
+export function setBoundaryMapping(composite, portId, childNodeId, childPortId, childWorkspace = null) {
+  const boundary = getSystemNodePort(composite, portId);
+  if (!boundary) throw new Error(`Unknown boundary port '${portId}'`);
   assertId(childNodeId, 'Boundary childNodeId');
   assertId(childPortId, 'Boundary childPortId');
-  port.childNodeId = childNodeId;
-  port.childPortId = childPortId;
-  return port;
+
+  if (childWorkspace?.nodes) {
+    const node = childWorkspace.nodes[childNodeId] ?? null;
+    const port = getSystemNodePort(node, childPortId);
+    assertMappedPortCompatibility(boundary, node, port, `Boundary '${composite.id}:${portId}'`);
+  }
+
+  boundary.childNodeId = childNodeId;
+  boundary.childPortId = childPortId;
+  return boundary;
 }
 
+/** Resolve through any number of composite boundaries to a primitive endpoint. */
 export function resolveBoundaryChain(composite, portId, workspaces = {}) {
   let currentNode = composite;
   let currentPortId = portId;
-  let workspace = workspaces[currentNode.childWorkspaceId] ?? workspaces;
   const visited = new Set();
 
   for (;;) {
     const visitKey = `${currentNode.id}:${currentPortId}`;
     if (visited.has(visitKey)) throw new Error(`Boundary mapping cycle detected at '${visitKey}'`);
     visited.add(visitKey);
+
+    const workspace = workspaces[currentNode.childWorkspaceId];
+    if (!workspace) {
+      return { boundaryPort: getSystemNodePort(currentNode, currentPortId), node: null, port: null };
+    }
+
     const resolved = resolveBoundaryPort(currentNode, currentPortId, workspace);
     if (!resolved.node || resolved.node.kind !== 'composite') return resolved;
-    if (!resolved.port?.id) throw new Error(`Boundary '${visitKey}' does not resolve to a child port`);
     currentNode = resolved.node;
-    currentPortId = resolved.port?.id;
-    workspace = workspaces[currentNode.childWorkspaceId] ?? workspaces;
+    currentPortId = resolved.port.id;
   }
+}
+
+export function assertSystemConnectionCompatible(sourceNode, sourcePortId, targetNode, targetPortId) {
+  const source = getSystemNodePort(sourceNode, sourcePortId);
+  const target = getSystemNodePort(targetNode, targetPortId);
+  if (!source) throw new Error(`Unknown source port '${sourcePortId}'`);
+  if (!target) throw new Error(`Unknown target port '${targetPortId}'`);
+  if (source.direction !== 'output') throw new Error(`Source port '${sourcePortId}' must be an output`);
+  if (target.direction !== 'input') throw new Error(`Target port '${targetPortId}' must be an input`);
+  if (source.kind !== target.kind) throw new Error(`Port kinds '${source.kind}' and '${target.kind}' are incompatible`);
+  return { source, target };
 }
