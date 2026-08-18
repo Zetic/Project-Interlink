@@ -56,6 +56,14 @@ export function machineInspection(blueprint, node) {
   ]));
   const inputInspection = connectionInspection(blueprint, input);
   const configuredThroughputKgPerSecond = node?.throughputKgPerSecond ?? node?.prototypeRateKgPerSecond ?? 0;
+
+  let actualProductKgPerSecond = outputByPort[node?.outputPortId]?.totalFlowKgPerSecond ?? 0;
+  if (node?.nodeType === 'magSep') {
+    actualProductKgPerSecond =
+      (outputByPort[node.concentratePortId]?.totalFlowKgPerSecond ?? 0)
+      + (outputByPort[node.tailingsPortId]?.totalFlowKgPerSecond ?? 0);
+  }
+
   const result = {
     kind: node?.nodeType ?? 'machine',
     id: node?.id ?? null,
@@ -63,11 +71,12 @@ export function machineInspection(blueprint, node) {
     operatingState: getNodeOperatingState(node) ?? 'off',
     configuredThroughputKgPerSecond,
     actualFeedKgPerSecond: inputInspection?.totalFlowKgPerSecond ?? 0,
-    actualProductKgPerSecond: outputByPort[node?.outputPortId]?.totalFlowKgPerSecond ?? 0,
+    actualProductKgPerSecond,
     lastError: node?.lastError ?? null,
     input: inputInspection,
     outputs: outputByPort,
   };
+
   if (node?.nodeType === 'crusher') result.targetParticleSizeMm = node.targetParticleSizeMm;
   if (node?.nodeType === 'magSep') {
     result.fieldStrength = node.fieldStrength;
