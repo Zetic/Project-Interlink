@@ -390,11 +390,6 @@ function simulateCrusherNode(blueprint, node, dt) {
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
   const freeOutputKg = hopperFreeCapacityKg(outputHopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG) {
-    node.lastError = null;
-    node.operatingState = 'idle';
-    return;
-  }
   if (freeOutputKg <= HOPPER_TOLERANCE_KG) {
     node.lastError = 'Product storage is full';
     node.operatingState = 'blocked';
@@ -498,11 +493,6 @@ function simulateMagSepNode(blueprint, node, dt) {
   }
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG) {
-    node.lastError = null;
-    node.operatingState = 'idle';
-    return;
-  }
 
   const particleSizeMm = inputHopper.particleSizeMm;
   const candidateRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt);
