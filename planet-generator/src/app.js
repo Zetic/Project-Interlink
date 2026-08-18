@@ -38,7 +38,11 @@ function renderComposition(obj) {
 }
 
 function renderAtmosphere(atm) {
-  return `${atm.pressureBar} bar &mdash; ${renderComposition(atm.composition)}`;
+  if (!atm || (atm.pressureBar ?? 0) <= 0) return 'Effectively none';
+  const comp = atm.composition && Object.keys(atm.composition).length > 0
+    ? renderComposition(atm.composition)
+    : 'Trace composition unavailable';
+  return `${atm.pressureBar} bar &mdash; ${comp}`;
 }
 
 function renderResourcesTable(resources, mode) {
