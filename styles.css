@@ -325,3 +325,477 @@ hr {
 .batch-detail {
   margin-top: 10px;
 }
+
+/* ── Mode bar ─────────────────────────────────────────────────────────────── */
+
+#mode-bar {
+  background: #111;
+  border-bottom: 1px solid #333;
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+#mode-label {
+  color: #a0c8ff;
+  font-size: 1rem;
+  letter-spacing: 0.15em;
+  font-weight: bold;
+  flex: 1;
+}
+
+#mode-toggle-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  background: #1a1a1a;
+  border: 1px solid #555;
+  color: #aaa;
+}
+
+#mode-toggle-btn:hover {
+  background: #2a2a2a;
+  color: #d4d4d4;
+}
+
+/* ── Player workspace shell ───────────────────────────────────────────────── */
+
+#player-view {
+  height: calc(100vh - 41px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ws-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ws-header {
+  background: #0f1a2a;
+  border-bottom: 1px solid #1e3a5f;
+  padding: 8px 20px;
+  flex-shrink: 0;
+}
+
+.ws-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ws-breadcrumb {
+  color: #6699cc;
+  font-size: 13px;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ws-breadcrumb:hover {
+  color: #a0c8ff;
+  text-decoration: underline;
+}
+
+.ws-breadcrumb--active {
+  color: #d4d4d4;
+  cursor: default;
+  pointer-events: none;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+
+.ws-breadcrumb-sep {
+  color: #555;
+  font-size: 12px;
+}
+
+.ws-main {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+}
+
+.ws-empty {
+  color: #666;
+  font-style: italic;
+  margin: 40px auto;
+  text-align: center;
+}
+
+/* ── Planet workspace ─────────────────────────────────────────────────────── */
+
+.ws-planet-header {
+  margin-bottom: 20px;
+}
+
+.ws-planet-name {
+  font-size: 1.4rem;
+  color: #a0c8ff;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.ws-planet-meta {
+  color: #888;
+  font-size: 12px;
+}
+
+.ws-region-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.ws-region-card {
+  background: #111a2a;
+  border: 1px solid #2a3d5a;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.ws-region-card:hover,
+.ws-region-card:focus {
+  border-color: #4a7ab5;
+  background: #162035;
+  outline: none;
+}
+
+.ws-region-card-name {
+  color: #a0c8ff;
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.ws-region-card-meta,
+.ws-region-card-features {
+  color: #888;
+  font-size: 12px;
+}
+
+.ws-region-card-enter {
+  margin-top: 8px;
+  color: #5599cc;
+  font-size: 12px;
+}
+
+/* ── Region workspace ─────────────────────────────────────────────────────── */
+
+.ws-region-header {
+  margin-bottom: 20px;
+}
+
+.ws-region-heading {
+  font-size: 1.2rem;
+  color: #a0c8ff;
+  margin-bottom: 4px;
+}
+
+.ws-region-desc,
+.ws-region-bgres {
+  color: #888;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.ws-sites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.ws-site-card {
+  background: #111a22;
+  border: 1px solid #2a3a4a;
+  padding: 14px;
+}
+
+.ws-site-card.ws-site-enterable {
+  border-color: #2a4a2a;
+  background: #0e1c14;
+}
+
+.ws-site-unknown {
+  border-color: #333;
+  color: #555;
+  font-style: italic;
+}
+
+.ws-site-unknown-label {
+  font-size: 12px;
+}
+
+.ws-site-name {
+  color: #c8e0b0;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.ws-site-type {
+  color: #888;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.ws-badge {
+  display: inline-block;
+  background: #1a2a1a;
+  border: 1px solid #3a5a3a;
+  color: #88cc88;
+  font-size: 11px;
+  padding: 2px 6px;
+  margin: 2px 2px 4px 0;
+}
+
+.ws-badge--ore {
+  border-color: #5a4a2a;
+  background: #2a2010;
+  color: #ccaa55;
+}
+
+.ws-site-enter-btn {
+  margin-top: 8px;
+  font-size: 12px;
+  background: #1e3a2f;
+  border: 1px solid #3a7a5a;
+  color: #88ddaa;
+}
+
+.ws-site-enter-btn:hover {
+  background: #2a4a3f;
+}
+
+.ws-site-no-entry {
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+  display: block;
+  margin-top: 6px;
+}
+
+/* ── Engineering workspace ────────────────────────────────────────────────── */
+
+.ws-eng-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 12px;
+  flex-shrink: 0;
+}
+
+.ws-eng-title {
+  flex: 1;
+  color: #c8d8e8;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.ws-sim-status {
+  color: #6aaa88;
+  font-size: 12px;
+  min-width: 200px;
+}
+
+.ws-eng-layout {
+  display: flex;
+  gap: 16px;
+  height: calc(100vh - 160px);
+  min-height: 400px;
+}
+
+.ws-canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  background: #0a0f16;
+  border: 1px solid #1e2e3e;
+  position: relative;
+  cursor: default;
+}
+
+.ws-eng-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  min-width: 1200px;
+  min-height: 500px;
+}
+
+.ws-eng-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: all;
+}
+
+/* ── Engineering nodes ────────────────────────────────────────────────────── */
+
+.ws-node {
+  position: absolute;
+  border: 1px solid #3a5a7a;
+  border-radius: 3px;
+  cursor: move;
+  user-select: none;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ws-node--selected {
+  border-color: #ffcc44 !important;
+  box-shadow: 0 0 0 1px #ffcc4466;
+}
+
+.ws-node--extractor { border-color: #3a7a5a; }
+.ws-node--hopper    { border-color: #2a4a7a; }
+.ws-node--crusher   { border-color: #7a5a3a; }
+.ws-node--magSep    { border-color: #5a3a7a; }
+
+.ws-node-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c0d4e8;
+  padding: 4px 8px;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  pointer-events: none;
+}
+
+.ws-node-label span {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+/* Hopper fill bar */
+.ws-hopper-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #1e3a5f44;
+  border-top: 1px solid #2a5a8a66;
+  transition: height 0.2s;
+}
+
+/* Port dots */
+.ws-port {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #3a6a9a;
+  background: #0e1e2e;
+  cursor: crosshair;
+  z-index: 5;
+}
+
+.ws-port--input  { border-color: #4a8aaa; background: #0e1a22; }
+.ws-port--output { border-color: #6aaa6a; background: #0e1e0e; }
+
+.ws-port:hover {
+  border-color: #88ccff;
+  background: #1a2a3a;
+}
+
+/* ── Inspector panel ──────────────────────────────────────────────────────── */
+
+.ws-inspector {
+  width: 240px;
+  flex-shrink: 0;
+  background: #0c121c;
+  border: 1px solid #1e2e3e;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ws-inspector-title {
+  background: #111a2a;
+  padding: 8px 12px;
+  color: #6699cc;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  border-bottom: 1px solid #1e2e3e;
+}
+
+.ws-inspector-body {
+  padding: 12px;
+  font-size: 12px;
+  overflow-y: auto;
+  flex: 1;
+  color: #b0c0d0;
+}
+
+.ws-ins-type {
+  color: #6aaa88;
+  font-weight: bold;
+  margin-bottom: 8px;
+  letter-spacing: 0.05em;
+}
+
+.ws-ins-row {
+  margin-bottom: 4px;
+}
+
+.ws-ins-note {
+  color: #aa8833;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.ws-ins-comp {
+  margin-top: 8px;
+  border-top: 1px solid #1e2e3e;
+  padding-top: 8px;
+}
+
+.ws-ins-comp-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #8090a0;
+  margin-bottom: 2px;
+}
+
+.ws-ins-action {
+  margin-top: 12px;
+  border-top: 1px solid #1e2e3e;
+  padding-top: 8px;
+}
+
+.ws-btn-disconnect {
+  font-size: 11px;
+  background: #2a1010;
+  border: 1px solid #5a2a2a;
+  color: #cc6666;
+  padding: 4px 10px;
+}
+
+.ws-btn-disconnect:hover {
+  background: #3a1818;
+}
