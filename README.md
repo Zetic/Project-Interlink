@@ -45,7 +45,7 @@ Solved systems should eventually be reusable as components inside larger systems
 
 The project is currently focused on its first real simulation subsystem: **procedural planetary world generation**.
 
-The original planet generator began as a standalone tech demo, but its useful code has now been promoted into the Interlink simulation foundation rather than discarded.
+The original planet generator began as a standalone tech demo, but its useful code has now been promoted into the Interlink simulation foundation and the web application itself now lives directly at the repository root.
 
 The current web application can:
 
@@ -129,13 +129,22 @@ Star/system generation should be introduced incrementally when the planet model 
 
 # Current Architecture
 
-The working application is under:
+The runnable web application is now at the repository root:
 
 ```text
-planet-generator/
+Project-Interlink/
+├── index.html
+├── styles.css
+├── src/
+├── DESIGN.md
+├── README.md
+├── PATCH_NOTES.md
+└── .github/
 ```
 
-It is currently a lightweight static web application using:
+The former `planet-generator/` wrapper directory has been removed. The move changed file locations only; the application's relative CSS and ES-module imports did not require source-code changes.
+
+The app is currently a lightweight static web application using:
 
 - HTML
 - CSS
@@ -217,7 +226,7 @@ The architecture foundation is now strong enough that the immediate priority is 
 
 The next issue is intended to establish:
 
-- a minimal Node-based test setup
+- a minimal Node-based test setup at repository root
 - deterministic same-seed regression tests
 - namespaced RNG tests
 - world-reference integrity tests
@@ -377,7 +386,7 @@ These inspirations belong here as context. The canonical design in `DESIGN.md` s
 
 Because the project uses JavaScript ES modules, open it through a local HTTP server rather than double-clicking `index.html`.
 
-From the repository's `planet-generator` directory:
+From the repository root:
 
 ```bash
 python -m http.server 8000
@@ -394,6 +403,18 @@ Then open:
 ```text
 http://localhost:8000
 ```
+
+## GitHub Pages
+
+The repository is now laid out so GitHub Pages can serve the application directly when configured with:
+
+```text
+Source: Deploy from a branch
+Branch: main
+Folder: / (root)
+```
+
+The published project URL should then load the root `index.html` directly rather than requiring a `/planet-generator/` path.
 
 ---
 
