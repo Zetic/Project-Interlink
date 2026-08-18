@@ -5,6 +5,7 @@ import {
   createBlueprint,
   blueprintAddHopper,
   blueprintAddCrusher,
+  blueprintAddMagSep,
   blueprintConnect,
   setNodeEnabled,
   simulationTick,
@@ -62,4 +63,25 @@ test('crusher inspection reports configured and actual feed/product flow', () =>
   assert.equal(details.actualFeedKgPerSecond, 4);
   assert.equal(details.actualProductKgPerSecond, 4);
   assert.equal(details.targetParticleSizeMm, 10);
+});
+
+test('magnetic separator inspection reports total product as concentrate plus tailings', () => {
+  const blueprint = createBlueprint();
+  const input = blueprintAddHopper(blueprint);
+  const separator = blueprintAddMagSep(blueprint, { throughputKgPerSecond: 4, fieldStrength: 0.6 });
+  const concentrate = blueprintAddHopper(blueprint);
+  const tailings = blueprintAddHopper(blueprint);
+  blueprintConnect(blueprint, input.id, input.outputPortId, separator.id, separator.inputPortId);
+  blueprintConnect(blueprint, separator.id, separator.concentratePortId, concentrate.id, concentrate.inputPortId);
+  blueprintConnect(blueprint, separator.id, separator.tailingsPortId, tailings.id, tailings.inputPortId);
+  hopperReceiveInflow(input, { hematite: 2, magnetite: 1, quartzAndGangue: 1 }, 15, 1);
+  setNodeEnabled(blueprint, separator.id, true);
+  simulationTick(blueprint, { resourceOccurrences: {} }, 0.1);
+
+  const details = machineInspection(blueprint, separator);
+  assert.equal(details.operatingState, 'running');
+  assert.ok(details.concentrate.totalFlowKgPerSecond > 0);
+  assert.ok(details.tailings.totalFlowKgPerSecond > 0);
+  assert.ok(Math.abs(details.actualProductKgPerSecond - (details.concentrate.totalFlowKgPerSecond + details.tailings.totalFlowKgPerSecond)) < 1e-12);
+  assert.ok(Math.abs(details.actualProductKgPerSecond - details.actualFeedKgPerSecond) < 1e-12);
 });
