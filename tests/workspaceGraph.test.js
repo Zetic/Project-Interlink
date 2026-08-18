@@ -13,6 +13,7 @@ import {
   projectBoundaryGraph,
   graphConnectionEndpoint,
   disconnectGraphConnection,
+  renderGraphConnections,
 } from '../src/workspace/workspaceGraph.js';
 
 test('shared graph projects local connections with the original endpoints', () => {
@@ -37,6 +38,66 @@ test('shared graph projects Region and Planet transfers into visible edges', () 
     id: 'region-a',
     nodeType: 'region',
     ports: [createSystemPort({ id: 'out', direction: 'output' })],
+  });
+
+  test('Region boundary adapters project hidden terminals to visible boundary buffers', () => {
+    const regionImport = createCompositeNode({
+      id: 'region-import-hopper',
+      nodeType: 'hopper',
+      ports: [createSystemPort({ id: 'output', direction: 'output' })],
+    });
+    const regionExport = createCompositeNode({
+      id: 'region-export-hopper',
+      nodeType: 'hopper',
+      ports: [createSystemPort({ id: 'input', direction: 'input' })],
+    });
+    const site = createCompositeNode({
+      id: 'site-1',
+      nodeType: 'site',
+      ports: [
+        createSystemPort({ id: 'material-input', direction: 'input' }),
+        createSystemPort({ id: 'material-output', direction: 'output' }),
+      ],
+    });
+    const definition = {
+      level: 'region',
+      scopeId: 'region-1',
+      nodes: [regionImport, regionExport, site],
+    };
+    const transfers = {
+      export: {
+        id: 'export',
+        sourceCompositeId: 'site-1',
+        sourcePortId: 'material-output',
+        targetCompositeId: 'region-1-export-terminal',
+        targetPortId: 'material-input',
+        scopeId: 'region-1',
+      },
+      import: {
+        id: 'import',
+        sourceCompositeId: 'region-1-import-terminal',
+        sourcePortId: 'material-output',
+        targetCompositeId: 'site-1',
+        targetPortId: 'material-input',
+        scopeId: 'region-1',
+      },
+    };
+    const graph = projectBoundaryGraph(definition, transfers, (nodeId, portId) => {
+      if (nodeId === 'region-1-export-terminal') return { nodeId: 'region-export-hopper', portId: 'input' };
+      if (nodeId === 'region-1-import-terminal') return { nodeId: 'region-import-hopper', portId: 'output' };
+      return { nodeId, portId };
+    });
+
+    assert.deepEqual(graphConnectionEndpoint(graph.connections.find(item => item.id === 'export'), 'target'), {
+      nodeId: 'region-export-hopper',
+      portId: 'input',
+    });
+    assert.deepEqual(graphConnectionEndpoint(graph.connections.find(item => item.id === 'import'), 'source'), {
+      nodeId: 'region-import-hopper',
+      portId: 'output',
+    });
+    assert.deepEqual(graph.nodes.find(node => node.id === 'region-import-hopper').ports.map(port => port.id), ['output']);
+    assert.deepEqual(graph.nodes.find(node => node.id === 'region-export-hopper').ports.map(port => port.id), ['input']);
   });
   const target = createCompositeNode({
     id: 'region-b',
@@ -78,9 +139,60 @@ test('common disconnect resolves the correct simulation adapter', () => {
       target: { nodeId: 'b', portId: 'in' },
     }],
   };
+  const transfers = { 'boundary-1': graph.connections[0] };
   let disconnected = null;
   assert.equal(disconnectGraphConnection(graph, 'boundary-1', {
-    'boundary-transfer': connection => { disconnected = connection.id; },
+    'boundary-transfer': connection => {
+      disconnected = connection.id;
+      delete transfers[connection.id];
+    },
   }), true);
   assert.equal(disconnected, 'boundary-1');
+  assert.equal(transfers['boundary-1'], undefined);
+});
+
+test('common disconnect dispatches real blueprint and boundary adapters', () => {
+  const blueprint = createBlueprint();
+  const source = blueprintAddHopper(blueprint);
+  const target = blueprintAddCrusher(blueprint);
+  const local = blueprintConnect(blueprint, source.id, source.outputPortId, target.id, target.inputPortId);
+  const localGraph = projectBlueprintGraph(blueprint);
+  assert.equal(disconnectGraphConnection(localGraph, local.id, {
+    blueprint: connection => blueprint.connections[connection.id] && delete blueprint.connections[connection.id],
+  }), true);
+  assert.equal(blueprint.connections[local.id], undefined);
+});
+
+test('shared SVG renderer creates and reuses one stable path per projected edge', () => {
+  const children = [];
+  const svg = {
+    contains: element => children.includes(element),
+    appendChild: element => children.push(element),
+  };
+  const makePath = () => ({
+    attrs: {},
+    classList: { add() {}, toggle() {} },
+    setAttribute(name, value) { this.attrs[name] = value; },
+    addEventListener() {},
+    remove() { children.splice(children.indexOf(this), 1); },
+  });
+  const graph = {
+    connections: [{
+      id: 'edge-1',
+      source: { nodeId: 'a', portId: 'out' },
+      target: { nodeId: 'b', portId: 'in' },
+    }],
+  };
+  const elements = new Map();
+  const options = {
+    svg, graph, elements, createPath: makePath,
+    endpointPosition: endpoint => endpoint.nodeId === 'a' ? { x: 0, y: 10 } : { x: 100, y: 20 },
+  };
+  renderGraphConnections(options);
+  const path = elements.get('edge-1');
+  assert.ok(path);
+  assert.match(path.attrs.d, /^M 0 10 C 50 10, 50 20, 100 20$/);
+  renderGraphConnections(options);
+  assert.equal(elements.get('edge-1'), path);
+  assert.equal(children.length, 1);
 });

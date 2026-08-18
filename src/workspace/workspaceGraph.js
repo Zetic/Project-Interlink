@@ -23,6 +23,13 @@ function graphNode(node, position = { x: 0, y: 0 }, ports) {
   };
 }
 
+function visibleBoundaryPorts(node) {
+  const ports = node.visiblePorts ?? node.ports ?? getNodePortDefinitions(node);
+  if (node.boundaryRole === 'import') return ports.filter(port => port.direction === 'output');
+  if (node.boundaryRole === 'export') return ports.filter(port => port.direction === 'input');
+  return ports;
+}
+
 function graphConnection(connection, adapter) {
   return {
     id: connection.id,
@@ -56,7 +63,7 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
   const nodes = (definition?.nodes ?? []).map(node => graphNode(
     node,
     definition.layout?.nodePositions?.[node.id] ?? { x: 0, y: 0 },
-    node.visiblePorts ?? node.ports,
+    visibleBoundaryPorts(node),
   ));
   const nodeIds = new Set(nodes.map(node => node.id));
   const connections = Object.values(transfers).filter(transfer => {
@@ -65,6 +72,7 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
         && nodeIds.has(transfer.sourceCompositeId)
         && nodeIds.has(transfer.targetCompositeId);
     }
+
     return transfer.scopeId === definition?.scopeId;
   }).map(transfer => {
     const connection = graphConnection({
@@ -83,6 +91,95 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
     };
   });
   return { nodes, connections };
+}
+
+/**
+ * Render projected nodes and install the shared node, port, and pointer
+ * interaction hooks used by every workspace level.
+ */
+export function renderGraphNodes({
+  canvas,
+  graph,
+  elements = new Map(),
+  width = 160,
+  height = 100,
+  portRadius = 7,
+  className = '',
+  nodeClass = node => `ws-node--${node.type}`,
+  label = node => node.label,
+  nodeContent,
+  portClass = () => '',
+  onNodePointerDown,
+  onNodeSelect,
+  onPortStart,
+  onPortFinish,
+} = {}) {
+  if (!canvas) return;
+  const activeIds = new Set();
+  for (const node of graph?.nodes ?? []) {
+    activeIds.add(node.id);
+    let element = elements.get(node.id);
+    if (!element || !canvas.contains(element)) {
+      element = document.createElement('div');
+      element.addEventListener('mousedown', event => {
+        const port = event.target.closest('.ws-port');
+        if (port) {
+          onPortStart?.(node, port.dataset.portId, event);
+          return;
+        }
+        onNodePointerDown?.(node, event);
+      });
+      element.addEventListener('mouseup', event => {
+        const port = event.target.closest('.ws-port');
+        if (port) onPortFinish?.(node, port.dataset.portId, event);
+      });
+      element.addEventListener('click', event => {
+        if (!event.target.closest('.ws-port,.ws-enter')) onNodeSelect?.(node.id);
+      });
+      canvas.appendChild(element);
+      elements.set(node.id, element);
+    }
+
+    element.className = `ws-node ${className} ${nodeClass(node)}`;
+    Object.assign(element.style, {
+      left: `${node.position.x}px`,
+      top: `${node.position.y}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+    });
+    element.innerHTML = '';
+    nodeContent?.(element, node);
+    if (!nodeContent) {
+      const nodeLabel = document.createElement('div');
+      nodeLabel.className = 'ws-node-label';
+      nodeLabel.innerHTML = String(label(node)).split('\n')
+        .map(line => `<span>${line}</span>`).join('');
+      element.appendChild(nodeLabel);
+    }
+
+    const portsByDirection = { input: [], output: [] };
+    for (const port of node.ports) portsByDirection[port.direction]?.push(port);
+    for (const direction of ['input', 'output']) {
+      portsByDirection[direction].forEach((port, index) => {
+        const step = height / (portsByDirection[direction].length + 1);
+        const dot = document.createElement('div');
+        dot.className = `ws-port ws-port--${direction} ${portClass(node, port, direction)}`;
+        dot.title = port.label;
+        dot.dataset.nodeId = node.id;
+        dot.dataset.portId = port.id;
+        dot.style.left = `${(direction === 'input' ? 0 : width) - portRadius}px`;
+        dot.style.top = `${step * (index + 1) - portRadius}px`;
+        element.appendChild(dot);
+      });
+    }
+    element.classList.toggle('ws-node--selected', node.selected === true);
+  }
+  for (const [id, element] of elements) {
+    if (!activeIds.has(id)) {
+      element.remove();
+      elements.delete(id);
+    }
+  }
 }
 
 export function graphConnectionEndpoint(connection, side = 'source') {
