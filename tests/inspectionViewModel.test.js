@@ -9,8 +9,7 @@ import {
   setNodeEnabled,
   simulationTick,
 } from '../src/simulation/simulationEngine.js';
-import { hopperReceiveInflow } from '../src/simulation/hopperNode.js';
-import { createBoundaryBuffer } from '../src/simulation/hopperNode.js';
+import { hopperReceiveInflow, createBoundaryBuffer } from '../src/simulation/hopperNode.js';
 import { createMaterialStream } from '../src/simulation/materialStream.js';
 import { hopperInspection, streamInspection, machineInspection } from '../src/workspace/inspectionViewModel.js';
 

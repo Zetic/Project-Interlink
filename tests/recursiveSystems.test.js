@@ -153,7 +153,7 @@ test('generated Sites expose distinct import/export boundary owners without impl
   assert.equal(input.node.boundaryRole, 'import');
   assert.equal(output.node.boundaryRole, 'export');
   assert.notEqual(input.node, output.node);
-  assert.equal(world.simulation.transfers && Object.keys(world.simulation.transfers).length, 0);
+  assert.equal(Object.keys(world.simulation.transfers ?? {}).length, 0);
   assert.equal(site.ports.find(port => port.id === 'material-input').childNodeId, input.node.id);
   assert.equal(site.ports.find(port => port.id === 'material-output').childNodeId, output.node.id);
 });
