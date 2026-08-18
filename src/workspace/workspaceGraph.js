@@ -73,10 +73,12 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
       targetPortId: transfer.targetPortId,
       kind: 'material',
     }, 'boundary-transfer');
-    connection.transfer = transfer;
-    connection.visibleSource = endpointResolver?.(transfer.sourceCompositeId, transfer.sourcePortId) ?? connection.source;
-    connection.visibleTarget = endpointResolver?.(transfer.targetCompositeId, transfer.targetPortId) ?? connection.target;
-    return connection;
+    return {
+      ...connection,
+      transfer,
+      visibleSource: endpointResolver?.(transfer.sourceCompositeId, transfer.sourcePortId) ?? connection.source,
+      visibleTarget: endpointResolver?.(transfer.targetCompositeId, transfer.targetPortId) ?? connection.target,
+    };
   });
   return { nodes, connections };
 }
@@ -97,7 +99,9 @@ export function disconnectGraphConnection(graph, connectionId, adapters = {}) {
   const connection = resolveGraphConnection(graph, connectionId);
   if (!connection) return false;
   const disconnect = adapters[connection.adapter];
-  if (typeof disconnect !== 'function') throw new Error(`No disconnect adapter for '${connection.adapter}'`);
+  if (typeof disconnect !== 'function') {
+    throw new Error(`No disconnect adapter for '${connection.adapter}' (connection '${connectionId}')`);
+  }
   disconnect(connection);
   return true;
 }
@@ -112,14 +116,19 @@ export function renderGraphConnections({
   selectedId = null,
   onSelect,
   className = '',
+  createPath = null,
 } = {}) {
   if (!svg) return;
+  const makePath = createPath ?? (() => {
+    if (typeof document === 'undefined') throw new Error('Graph edge rendering requires a document');
+    return document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  });
   const activeIds = new Set();
   for (const connection of graph?.connections ?? []) {
     activeIds.add(connection.id);
     let path = elements.get(connection.id);
     if (!path || !svg.contains(path)) {
-      path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path = makePath();
       path.setAttribute('fill', 'none');
       path.setAttribute('cursor', 'pointer');
       path.classList.add('ws-connection');
