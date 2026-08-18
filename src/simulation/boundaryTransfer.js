@@ -58,7 +58,7 @@ export function transferBoundaryMaterial({
   }
 
   const rate = requestedRateKgPerSecond == null
-    ? availableKg / dt
+    ? Math.min(availableKg / dt, freeKg / dt)
     : Math.max(0, Math.min(requestedRateKgPerSecond, availableKg / dt, freeKg / dt));
   if (rate <= 0) return { movedKg: 0, componentMassKg: {} };
 

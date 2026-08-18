@@ -103,10 +103,15 @@ export function resolveBoundaryChain(composite, portId, workspaces = {}) {
   let currentNode = composite;
   let currentPortId = portId;
   let workspace = workspaces[currentNode.childWorkspaceId] ?? workspaces;
+  const visited = new Set();
 
   for (;;) {
+    const visitKey = `${currentNode.id}:${currentPortId}`;
+    if (visited.has(visitKey)) throw new Error(`Boundary mapping cycle detected at '${visitKey}'`);
+    visited.add(visitKey);
     const resolved = resolveBoundaryPort(currentNode, currentPortId, workspace);
     if (!resolved.node || resolved.node.kind !== 'composite') return resolved;
+    if (!resolved.port?.id) throw new Error(`Boundary '${visitKey}' does not resolve to a child port`);
     currentNode = resolved.node;
     currentPortId = resolved.port?.id;
     workspace = workspaces[currentNode.childWorkspaceId] ?? workspaces;

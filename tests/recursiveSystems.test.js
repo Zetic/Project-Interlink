@@ -166,6 +166,8 @@ test('generated regions and sites expose recursive system-node contracts', () =>
   assert.deepEqual(region.siteIds, regionNode.inspectableState.siteIds);
   if (region.siteIds.length > 0) {
     const site = world.sites[region.siteIds[0]];
+    const regionBoundary = resolveBoundaryPort(regionNode, 'ore-output', { nodes: world.systemNodes });
+    assert.equal(regionBoundary.node.id, site.id);
     assert.equal(site.regionId, regionId);
     assert.equal(world.systemNodes[site.id].kind, 'composite');
     assert.equal(site.boundaryPorts[0].kind, 'material');
