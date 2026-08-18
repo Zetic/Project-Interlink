@@ -1,18 +1,22 @@
-/**
- * Tests for the continuous simulation layer:
- * - MaterialStream
- * - HopperNode
- * - ContinuousProcessing (Crusher + Magnetic Separator)
- * - SimulationEngine (end-to-end chain + backpressure)
- * - Blueprint layout isolation (UI drag does not mutate physical state)
- */
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createMaterialStream, totalMassFlowKgPerSecond, validateComponentMassFlowRates } from '../src/simulation/materialStream.js';
-import { createHopper, hopperStoredMassKg, hopperFreeCapacityKg, hopperReceiveInflow, hopperWithdraw } from '../src/simulation/hopperNode.js';
-import { applyContinuousCrushing, applyContinuousMagneticSeparation } from '../src/simulation/continuousProcessing.js';
+import {
+  createMaterialStream,
+  setMaterialStreamState,
+  totalMassFlowKgPerSecond,
+  validateComponentMassFlowRates,
+} from '../src/simulation/materialStream.js';
+import {
+  createHopper,
+  hopperStoredMassKg,
+  hopperReceiveInflow,
+  hopperWithdraw,
+} from '../src/simulation/hopperNode.js';
+import {
+  applyContinuousCrushing,
+  applyContinuousMagneticSeparation,
+} from '../src/simulation/continuousProcessing.js';
 import {
   createBlueprint,
   blueprintAddExtractor,
@@ -21,6 +25,8 @@ import {
   blueprintAddMagSep,
   blueprintConnect,
   blueprintDisconnect,
+  checkBlueprintConnection,
+  getStreamForConnection,
   simulationTick,
   simulationAdvance,
   createBlueprintLayout,
@@ -31,315 +37,365 @@ import {
 import { createWorld } from '../src/core/world/worldState.js';
 
 const MASS_TOL = 1e-6;
-
-// Reset ID ordinals before each test file run for reproducibility
-_resetOrdinals();
-
-// ─── MATERIAL STREAM ──────────────────────────────────────────────────────────
-
-test('stream: createMaterialStream returns valid stream', () => {
-  const stream = createMaterialStream({
-    id: 's1',
-    sourceNodeId: 'n1', sourcePortId: 'output',
-    targetNodeId: 'n2', targetPortId: 'input',
-    componentMassFlowKgPerSecond: { hematite: 2, magnetite: 1 },
-    particleSizeMm: 80,
-  });
-  assert.equal(stream.id, 's1');
-  assert.equal(stream.particleSizeMm, 80);
-  assert.equal(stream.componentMassFlowKgPerSecond.hematite, 2);
-});
-
-test('stream: totalMassFlowKgPerSecond sums constituents', () => {
-  const total = totalMassFlowKgPerSecond({ hematite: 2, magnetite: 1, quartzAndGangue: 0.5 });
-  assert.ok(Math.abs(total - 3.5) < MASS_TOL);
-});
-
-test('stream: all component flow rates must be non-negative', () => {
-  assert.throws(() => {
-    createMaterialStream({
-      id: 's2', sourceNodeId: 'n1', sourcePortId: 'output',
-      targetNodeId: 'n2', targetPortId: 'input',
-      componentMassFlowKgPerSecond: { hematite: -1 },
-      particleSizeMm: 10,
-    });
-  }, /non-negative/);
-});
-
-test('stream: all component flow rates must be finite', () => {
-  assert.throws(() => validateComponentMassFlowRates({ hematite: Infinity }), /finite/);
-  assert.throws(() => validateComponentMassFlowRates({ hematite: NaN }), /finite/);
-});
-
-test('stream: zero rates are valid', () => {
-  const stream = createMaterialStream({
-    id: 's3', sourceNodeId: 'n1', sourcePortId: 'output',
-    targetNodeId: 'n2', targetPortId: 'input',
-    componentMassFlowKgPerSecond: { hematite: 0, magnetite: 0 },
-    particleSizeMm: 5,
-  });
-  assert.equal(totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond), 0);
-});
-
-// ─── HOPPER NODE ──────────────────────────────────────────────────────────────
-
-test('hopper: inflow increases stored constituents', () => {
-  const hopper = createHopper({ id: 'h1', capacityKg: 500 });
-  hopperReceiveInflow(hopper, { hematite: 2, magnetite: 1 }, 80, 1);
-  assert.ok(Math.abs(hopper.storedComponentsKg.hematite - 2) < MASS_TOL);
-  assert.ok(Math.abs(hopper.storedComponentsKg.magnetite - 1) < MASS_TOL);
-  assert.ok(Math.abs(hopperStoredMassKg(hopper) - 3) < MASS_TOL);
-});
-
-test('hopper: outflow decreases stored constituents', () => {
-  const hopper = createHopper({ id: 'h2', capacityKg: 500, initialComponentsKg: { hematite: 10, magnetite: 5 }, initialParticleSizeMm: 80 });
-  const { actualTotalKg } = hopperWithdraw(hopper, { hematite: 2, magnetite: 1 }, 1);
-  assert.ok(actualTotalKg > 0);
-  assert.ok(hopper.storedComponentsKg.hematite < 10);
-});
-
-test('hopper: full container limits inflow', () => {
-  const hopper = createHopper({ id: 'h3', capacityKg: 10, initialComponentsKg: { hematite: 9.99 }, initialParticleSizeMm: 80 });
-  hopperReceiveInflow(hopper, { hematite: 100 }, 80, 1); // request 100 kg, only ~0.01 free
-  assert.ok(hopperStoredMassKg(hopper) <= 10 + 1e-6, `Stored ${hopperStoredMassKg(hopper)} should not exceed capacity 10`);
-});
-
-test('hopper: empty container returns zero from withdraw', () => {
-  const hopper = createHopper({ id: 'h4', capacityKg: 500 });
-  const { actualTotalKg } = hopperWithdraw(hopper, { hematite: 5 }, 1);
-  assert.equal(actualTotalKg, 0);
-});
-
-test('hopper: constituent mass is conserved over inflow/outflow', () => {
-  const hopper = createHopper({ id: 'h5', capacityKg: 500 });
-  hopperReceiveInflow(hopper, { hematite: 3, magnetite: 2 }, 80, 1);
-  const before = hopperStoredMassKg(hopper);
-  const { actualTotalKg } = hopperWithdraw(hopper, { hematite: 1, magnetite: 1 }, 1);
-  const after = hopperStoredMassKg(hopper);
-  assert.ok(Math.abs(before - after - actualTotalKg) < MASS_TOL);
-});
-
-test('hopper: mixed compatible inflows aggregate without retaining per-transfer objects', () => {
-  const hopper = createHopper({ id: 'h6', capacityKg: 500 });
-  hopperReceiveInflow(hopper, { hematite: 2 }, 80, 1);
-  hopperReceiveInflow(hopper, { hematite: 3, magnetite: 1 }, 80, 1);
-  // Result is a single aggregated object, not an array of transfers
-  assert.equal(typeof hopper.storedComponentsKg, 'object');
-  assert.ok(Math.abs(hopper.storedComponentsKg.hematite - 5) < MASS_TOL);
-  assert.ok(Math.abs(hopper.storedComponentsKg.magnetite - 1) < MASS_TOL);
-});
-
-test('hopper: stored mass cannot go negative', () => {
-  const hopper = createHopper({ id: 'h7', capacityKg: 500, initialComponentsKg: { hematite: 1 }, initialParticleSizeMm: 80 });
-  hopperWithdraw(hopper, { hematite: 100 }, 1); // request more than available
-  assert.ok(hopper.storedComponentsKg.hematite >= 0);
-});
-
-// ─── CONTINUOUS CRUSHING ──────────────────────────────────────────────────────
-
-test('crusher: preserves constituent flow rates while changing particle size', () => {
-  const feed = { componentMassFlowKgPerSecond: { hematite: 3, magnetite: 1 }, particleSizeMm: 80 };
-  const { productRates } = applyContinuousCrushing(feed, 15, 10);
-  assert.equal(productRates.particleSizeMm, 15);
-  // Throughput >= feed, so no throttling → rates preserved
-  assert.ok(Math.abs(productRates.componentMassFlowKgPerSecond.hematite - 3) < MASS_TOL);
-  assert.ok(Math.abs(productRates.componentMassFlowKgPerSecond.magnetite - 1) < MASS_TOL);
-});
-
-test('crusher: throughput limit throttles feed', () => {
-  const feed = { componentMassFlowKgPerSecond: { hematite: 8, magnetite: 2 }, particleSizeMm: 80 };
-  const { actualFeedRates } = applyContinuousCrushing(feed, 15, 4); // capacity = 4 kg/s, feed = 10 kg/s
-  const actualTotal = Object.values(actualFeedRates.componentMassFlowKgPerSecond).reduce((s, r) => s + r, 0);
-  assert.ok(Math.abs(actualTotal - 4) < MASS_TOL, `Expected throttled feed = 4 kg/s, got ${actualTotal}`);
-});
-
-test('crusher: rejects targetParticleSizeMm >= feed size', () => {
-  const feed = { componentMassFlowKgPerSecond: { hematite: 1 }, particleSizeMm: 15 };
-  assert.throws(() => applyContinuousCrushing(feed, 15, 10), /targetParticleSizeMm/);
-  assert.throws(() => applyContinuousCrushing(feed, 20, 10), /targetParticleSizeMm/);
-});
-
-// ─── CONTINUOUS MAGNETIC SEPARATION ───────────────────────────────────────────
-
-test('magSep: conserves constituent flow across concentrate and tailings', () => {
-  const feed = {
-    componentMassFlowKgPerSecond: { hematite: 4, magnetite: 2, goethite: 1, quartzAndGangue: 1 },
-    particleSizeMm: 15,
-  };
-  const { concentrateRates, tailingsRates } = applyContinuousMagneticSeparation(feed, 0.6);
-  for (const cid of Object.keys(feed.componentMassFlowKgPerSecond)) {
-    const inRate = feed.componentMassFlowKgPerSecond[cid];
-    const concRate = concentrateRates.componentMassFlowKgPerSecond[cid] ?? 0;
-    const tailRate = tailingsRates.componentMassFlowKgPerSecond[cid] ?? 0;
-    assert.ok(Math.abs(inRate - (concRate + tailRate)) < MASS_TOL,
-      `Conservation violated for ${cid}: in=${inRate} conc=${concRate} tail=${tailRate}`);
-  }
-});
-
-test('magSep: rejects feed particle size above max', () => {
-  const feed = { componentMassFlowKgPerSecond: { hematite: 1, magnetite: 1, goethite: 0.5, quartzAndGangue: 0.5 }, particleSizeMm: 30 };
-  assert.throws(() => applyContinuousMagneticSeparation(feed, 0.6, 25), /particle size/);
-});
-
-test('magSep: particle size propagates to outputs', () => {
-  const feed = {
-    componentMassFlowKgPerSecond: { hematite: 2, magnetite: 1, goethite: 0.5, quartzAndGangue: 0.5 },
-    particleSizeMm: 12,
-  };
-  const { concentrateRates, tailingsRates } = applyContinuousMagneticSeparation(feed, 0.6);
-  assert.equal(concentrateRates.particleSizeMm, 12);
-  assert.equal(tailingsRates.particleSizeMm, 12);
-});
-
-// ─── END-TO-END CHAIN ─────────────────────────────────────────────────────────
+let cachedIronOreSeed = null;
 
 function findIronOreOccurrence(world) {
   return Object.values(world.resourceOccurrences).find(
-    occ => occ.resourceId === 'iron-ore' && occ.composition && typeof occ.composition === 'object'
+    occurrence => occurrence.resourceId === 'iron-ore' && occurrence.composition && typeof occurrence.composition === 'object'
   ) ?? null;
 }
 
 function buildTestWorld() {
+  if (cachedIronOreSeed) {
+    const world = createWorld(cachedIronOreSeed);
+    return { world, occ: findIronOreOccurrence(world) };
+  }
+
   for (let i = 0; i < 200; i++) {
-    const world = createWorld(`sim-chain-${i}`);
+    const seed = `sim-chain-${i}`;
+    const world = createWorld(seed);
     const occ = findIronOreOccurrence(world);
-    if (occ) return { world, occ };
+    if (occ) {
+      cachedIronOreSeed = seed;
+      return { world, occ };
+    }
   }
   throw new Error('Could not find iron-ore occurrence with composition in test seed range');
 }
 
-test('chain: extractor → hopper → crusher → hopper → magSep → output hoppers advances deterministically', () => {
+function sumHopperComponents(...hoppers) {
+  const totals = {};
+  for (const hopper of hoppers) {
+    for (const [componentId, kg] of Object.entries(hopper.storedComponentsKg)) {
+      totals[componentId] = (totals[componentId] ?? 0) + kg;
+    }
+  }
+  return totals;
+}
+
+function buildFullChain(world, occ, capacities = {}) {
   _resetOrdinals();
-  const { world, occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractor = blueprintAddExtractor(blueprint, occ.id, 5);
+  const hopperA = blueprintAddHopper(blueprint, capacities.feed ?? 1000);
+  const crusher = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
+  const hopperB = blueprintAddHopper(blueprint, capacities.crushed ?? 1000);
+  const magSep = blueprintAddMagSep(blueprint, { fieldStrength: 0.6, throughputKgPerSecond: 4 });
+  const concentrateHopper = blueprintAddHopper(blueprint, capacities.concentrate ?? 1000);
+  const tailingsHopper = blueprintAddHopper(blueprint, capacities.tailings ?? 1000);
 
-  const bp = createBlueprint();
-  const extractor = blueprintAddExtractor(bp, occ.id, 5);           // 5 kg/s
-  const hopperA   = blueprintAddHopper(bp, 1000);                    // feed hopper
-  const crusher   = blueprintAddCrusher(bp, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
-  const hopperB   = blueprintAddHopper(bp, 1000);                    // crushed hopper
-  const magSep    = blueprintAddMagSep(bp, { fieldStrength: 0.6 });
-  const concHopper = blueprintAddHopper(bp, 1000);
-  const tailHopper = blueprintAddHopper(bp, 1000);
+  blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
+  blueprintConnect(blueprint, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
+  blueprintConnect(blueprint, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
+  blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
+  blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
+  blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
 
-  blueprintConnect(bp, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
-  blueprintConnect(bp, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
-  blueprintConnect(bp, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
-  blueprintConnect(bp, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
-  blueprintConnect(bp, magSep.id, magSep.concentratePortId, concHopper.id, concHopper.inputPortId);
-  blueprintConnect(bp, magSep.id, magSep.tailingsPortId, tailHopper.id, tailHopper.inputPortId);
+  return { blueprint, extractor, hopperA, crusher, hopperB, magSep, concentrateHopper, tailingsHopper };
+}
 
-  // Run 10 seconds worth of simulation
-  simulationAdvance(bp, world, 10, SIMULATION_STEP_S);
-
-  // After 10 s: extractor pushes 5 kg/s, crusher takes 4 kg/s
-  // hopperA should have some accumulation (bottleneck), hopperB should have received crushed material
-  const massA = hopperStoredMassKg(hopperA);
-  const massB = hopperStoredMassKg(hopperB);
-  const massCon = hopperStoredMassKg(concHopper);
-  const massTail = hopperStoredMassKg(tailHopper);
-
-  // Material should have moved through the chain
-  assert.ok(massCon + massTail > 0, 'Some material should have reached output hoppers');
-
-  // Conservation: total material in system is at most what extractor produced
-  const extractorProduced = 5 * 10; // kg
-  const totalInSystem = massA + massB + massCon + massTail;
-  assert.ok(totalInSystem <= extractorProduced + MASS_TOL * 100,
-    `Total in system (${totalInSystem}) should not exceed extractor produced (${extractorProduced})`);
-  assert.ok(totalInSystem > 0, 'System should have material');
+test('stream: total flow is derived from constituent rates', () => {
+  const stream = createMaterialStream({
+    id: 's1', sourceNodeId: 'n1', sourcePortId: 'out', targetNodeId: 'n2', targetPortId: 'in',
+    componentMassFlowKgPerSecond: { hematite: 2, magnetite: 1 }, particleSizeMm: 80,
+  });
+  assert.equal(totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond), 3);
+  assert.equal(Object.hasOwn(stream, 'totalMassFlowKgPerSecond'), false);
 });
 
-test('chain: bottleneck causes accumulation in buffer hopper', () => {
-  _resetOrdinals();
-  const { world, occ } = buildTestWorld();
-
-  const bp = createBlueprint();
-  const extractor = blueprintAddExtractor(bp, occ.id, 5); // 5 kg/s extractor
-  const hopper    = blueprintAddHopper(bp, 1000);          // large buffer
-  // No downstream consumer — everything accumulates
-
-  blueprintConnect(bp, extractor.id, extractor.outputPortId, hopper.id, hopper.inputPortId);
-
-  simulationAdvance(bp, world, 10, SIMULATION_STEP_S);
-  // Should have accumulated ~50 kg (5 kg/s × 10 s)
-  const stored = hopperStoredMassKg(hopper);
-  assert.ok(stored > 40, `Expected ~50 kg accumulated, got ${stored}`);
+test('stream: inactive connections use the same contract with zero flow', () => {
+  const stream = createMaterialStream({
+    id: 's0', sourceNodeId: 'n1', sourcePortId: 'out', targetNodeId: 'n2', targetPortId: 'in',
+    componentMassFlowKgPerSecond: {}, particleSizeMm: null,
+  });
+  assert.equal(totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond), 0);
+  setMaterialStreamState(stream, { hematite: 1 }, 15);
+  assert.equal(totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond), 1);
+  setMaterialStreamState(stream, {}, null);
+  assert.equal(stream.particleSizeMm, null);
 });
 
-test('chain: full hopper blocks extractor inflow', () => {
-  _resetOrdinals();
-  const { world, occ } = buildTestWorld();
-
-  const bp = createBlueprint();
-  const extractor = blueprintAddExtractor(bp, occ.id, 5);
-  const hopper    = blueprintAddHopper(bp, 10); // tiny capacity
-
-  blueprintConnect(bp, extractor.id, extractor.outputPortId, hopper.id, hopper.inputPortId);
-
-  simulationAdvance(bp, world, 20, SIMULATION_STEP_S);
-  // Hopper should not exceed capacity
-  assert.ok(hopperStoredMassKg(hopper) <= 10 + MASS_TOL,
-    `Hopper should not exceed capacity 10 kg, got ${hopperStoredMassKg(hopper)}`);
+test('stream: component rates must be finite and non-negative', () => {
+  assert.throws(() => validateComponentMassFlowRates({ hematite: -1 }), /non-negative/);
+  assert.throws(() => validateComponentMassFlowRates({ hematite: Infinity }), /finite/);
+  assert.throws(() => validateComponentMassFlowRates({ hematite: NaN }), /finite/);
 });
 
-test('chain: empty input hopper prevents downstream processing', () => {
-  _resetOrdinals();
-  const { world, occ } = buildTestWorld();
-
-  const bp = createBlueprint();
-  // Hopper with no feed, connected to crusher
-  const hopper  = blueprintAddHopper(bp, 1000);
-  const crusher = blueprintAddCrusher(bp, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
-  const outHopper = blueprintAddHopper(bp, 1000);
-
-  blueprintConnect(bp, hopper.id, hopper.outputPortId, crusher.id, crusher.inputPortId);
-  blueprintConnect(bp, crusher.id, crusher.outputPortId, outHopper.id, outHopper.inputPortId);
-
-  simulationAdvance(bp, world, 5, SIMULATION_STEP_S);
-
-  // Nothing should have passed through with empty input
-  assert.equal(hopperStoredMassKg(outHopper), 0);
+test('hopper: inflow and outflow conserve stored constituent mass', () => {
+  const hopper = createHopper({ id: 'h1', capacityKg: 100 });
+  hopperReceiveInflow(hopper, { hematite: 3, magnetite: 2 }, 80, 1);
+  const before = hopperStoredMassKg(hopper);
+  const withdrawal = hopperWithdraw(hopper, { hematite: 1, magnetite: 1 }, 1);
+  const after = hopperStoredMassKg(hopper);
+  assert.ok(Math.abs(before - after - withdrawal.actualTotalKg) < MASS_TOL);
 });
 
-// ─── UI / STATE SEPARATION ────────────────────────────────────────────────────
+test('hopper: capacity clamps inflow without exceeding physical capacity', () => {
+  const hopper = createHopper({
+    id: 'h2', capacityKg: 10, initialComponentsKg: { hematite: 9.99 }, initialParticleSizeMm: 80,
+  });
+  const accepted = hopperReceiveInflow(hopper, { hematite: 100 }, 80, 1);
+  assert.ok(accepted <= 0.010001);
+  assert.ok(hopperStoredMassKg(hopper) <= 10 + MASS_TOL);
+});
 
-test('layout: node layout/drag does not mutate physical material quantities', () => {
+test('hopper: mixed inflows aggregate rather than retaining transfer objects', () => {
+  const hopper = createHopper({ id: 'h3', capacityKg: 100 });
+  hopperReceiveInflow(hopper, { hematite: 2 }, 80, 1);
+  hopperReceiveInflow(hopper, { hematite: 3, magnetite: 1 }, 80, 1);
+  assert.deepEqual(hopper.storedComponentsKg, { hematite: 5, magnetite: 1 });
+  assert.equal(Array.isArray(hopper.storedComponentsKg), false);
+});
+
+test('hopper: empty storage cannot provide unavailable material', () => {
+  const hopper = createHopper({ id: 'h4', capacityKg: 100 });
+  const withdrawal = hopperWithdraw(hopper, { hematite: 5 }, 1);
+  assert.equal(withdrawal.actualTotalKg, 0);
+  assert.equal(hopperStoredMassKg(hopper), 0);
+});
+
+test('crusher: preserves constituent flow while changing particle size', () => {
+  const feed = { componentMassFlowKgPerSecond: { hematite: 3, magnetite: 1 }, particleSizeMm: 80 };
+  const result = applyContinuousCrushing(feed, 15, 10);
+  assert.deepEqual(result.productRates.componentMassFlowKgPerSecond, result.actualFeedRates.componentMassFlowKgPerSecond);
+  assert.equal(result.productRates.particleSizeMm, 15);
+});
+
+test('crusher: throughput limit throttles feed', () => {
+  const feed = { componentMassFlowKgPerSecond: { hematite: 8, magnetite: 2 }, particleSizeMm: 80 };
+  const result = applyContinuousCrushing(feed, 15, 4);
+  assert.ok(Math.abs(totalMassFlowKgPerSecond(result.actualFeedRates.componentMassFlowKgPerSecond) - 4) < MASS_TOL);
+});
+
+test('magnetic separator: conserves every constituent across both outputs', () => {
+  const feed = {
+    componentMassFlowKgPerSecond: { hematite: 4, magnetite: 2, goethite: 1, quartzAndGangue: 1 },
+    particleSizeMm: 15,
+  };
+  const result = applyContinuousMagneticSeparation(feed, 0.6);
+  for (const [componentId, inputRate] of Object.entries(feed.componentMassFlowKgPerSecond)) {
+    const outputRate = (result.concentrateRates.componentMassFlowKgPerSecond[componentId] ?? 0)
+      + (result.tailingsRates.componentMassFlowKgPerSecond[componentId] ?? 0);
+    assert.ok(Math.abs(inputRate - outputRate) < MASS_TOL, componentId);
+  }
+});
+
+test('magnetic separator: retains particle-size applicability rule', () => {
+  assert.throws(() => applyContinuousMagneticSeparation({
+    componentMassFlowKgPerSecond: { hematite: 1 }, particleSizeMm: 30,
+  }, 0.6, 25), /particle size/);
+});
+
+test('connections: solver rejects visually connectable but unsupported node transitions', () => {
   _resetOrdinals();
   const { world, occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractor = blueprintAddExtractor(blueprint, occ.id);
+  const crusher = blueprintAddCrusher(blueprint);
+  const check = checkBlueprintConnection(blueprint, extractor.id, extractor.outputPortId, crusher.id, crusher.inputPortId);
+  assert.equal(check.ok, false);
+  assert.match(check.reason, /not supported/);
+  assert.equal(blueprintConnect(blueprint, extractor.id, extractor.outputPortId, crusher.id, crusher.inputPortId), null);
+  assert.ok(world);
+});
 
-  const bp = createBlueprint();
-  const hopper = blueprintAddHopper(bp, 1000);
+test('connections: one material output cannot fan out and duplicate matter', () => {
+  _resetOrdinals();
+  const { occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractor = blueprintAddExtractor(blueprint, occ.id);
+  const hopperA = blueprintAddHopper(blueprint);
+  const hopperB = blueprintAddHopper(blueprint);
+  assert.ok(blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId));
+  assert.equal(blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperB.id, hopperB.inputPortId), null);
+  assert.equal(Object.keys(blueprint.connections).length, 1);
+});
+
+test('connections: one target input accepts only one material stream', () => {
+  _resetOrdinals();
+  const { occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractorA = blueprintAddExtractor(blueprint, occ.id);
+  const extractorB = blueprintAddExtractor(blueprint, occ.id);
+  const hopper = blueprintAddHopper(blueprint);
+  assert.ok(blueprintConnect(blueprint, extractorA.id, extractorA.outputPortId, hopper.id, hopper.inputPortId));
+  assert.equal(blueprintConnect(blueprint, extractorB.id, extractorB.outputPortId, hopper.id, hopper.inputPortId), null);
+});
+
+test('crusher: disconnected product output does not consume input matter', () => {
+  _resetOrdinals();
+  const { world } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const feed = blueprintAddHopper(blueprint, 100);
+  const crusher = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
+  hopperReceiveInflow(feed, { hematite: 1, magnetite: 1 }, 80, 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, crusher.id, crusher.inputPortId);
+  const before = hopperStoredMassKg(feed);
+  simulationTick(blueprint, world, 0.1);
+  assert.ok(Math.abs(hopperStoredMassKg(feed) - before) < MASS_TOL);
+});
+
+test('crusher: partially full output backpressures feed instead of deleting product', () => {
+  _resetOrdinals();
+  const { world } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const feed = blueprintAddHopper(blueprint, 100);
+  const crusher = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
+  const output = blueprintAddHopper(blueprint, 10);
+  hopperReceiveInflow(feed, { hematite: 5, magnetite: 5 }, 80, 1);
+  hopperReceiveInflow(output, { hematite: 9.95 }, 15, 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, crusher.id, crusher.inputPortId);
+  blueprintConnect(blueprint, crusher.id, crusher.outputPortId, output.id, output.inputPortId);
+
+  const beforeFeed = hopperStoredMassKg(feed);
+  const beforeOutput = hopperStoredMassKg(output);
+  simulationTick(blueprint, world, 0.1);
+  const feedDecrease = beforeFeed - hopperStoredMassKg(feed);
+  const outputIncrease = hopperStoredMassKg(output) - beforeOutput;
+  assert.ok(Math.abs(feedDecrease - outputIncrease) < MASS_TOL);
+  assert.ok(outputIncrease <= 0.050001);
+});
+
+test('crusher: nearly empty input cannot create a full-tick output', () => {
+  _resetOrdinals();
+  const { world } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const feed = blueprintAddHopper(blueprint, 100);
+  const crusher = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
+  const output = blueprintAddHopper(blueprint, 100);
+  hopperReceiveInflow(feed, { hematite: 0.1 }, 80, 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, crusher.id, crusher.inputPortId);
+  blueprintConnect(blueprint, crusher.id, crusher.outputPortId, output.id, output.inputPortId);
+
+  simulationTick(blueprint, world, 0.1);
+  assert.ok(hopperStoredMassKg(feed) < MASS_TOL);
+  assert.ok(Math.abs(hopperStoredMassKg(output) - 0.1) < MASS_TOL);
+});
+
+test('magnetic separator: full required output backpressures without consuming feed', () => {
+  _resetOrdinals();
+  const { world } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const feed = blueprintAddHopper(blueprint, 100);
+  const magSep = blueprintAddMagSep(blueprint, { fieldStrength: 0.6, throughputKgPerSecond: 4 });
+  const concentrate = blueprintAddHopper(blueprint, 1);
+  const tailings = blueprintAddHopper(blueprint, 100);
+  hopperReceiveInflow(feed, { hematite: 5, magnetite: 2, goethite: 1, quartzAndGangue: 2 }, 15, 1);
+  hopperReceiveInflow(concentrate, { hematite: 1 }, 15, 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, magSep.id, magSep.inputPortId);
+  blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrate.id, concentrate.inputPortId);
+  blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailings.id, tailings.inputPortId);
+
+  const beforeFeed = hopperStoredMassKg(feed);
+  const beforeTailings = hopperStoredMassKg(tailings);
+  simulationTick(blueprint, world, 0.1);
+  assert.ok(Math.abs(hopperStoredMassKg(feed) - beforeFeed) < MASS_TOL);
+  assert.ok(Math.abs(hopperStoredMassKg(tailings) - beforeTailings) < MASS_TOL);
+});
+
+test('magnetic separator: disconnected required output does not consume feed', () => {
+  _resetOrdinals();
+  const { world } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const feed = blueprintAddHopper(blueprint, 100);
+  const magSep = blueprintAddMagSep(blueprint);
+  const concentrate = blueprintAddHopper(blueprint, 100);
+  hopperReceiveInflow(feed, { hematite: 5, magnetite: 2, goethite: 1, quartzAndGangue: 2 }, 15, 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, magSep.id, magSep.inputPortId);
+  blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrate.id, concentrate.inputPortId);
+  const before = hopperStoredMassKg(feed);
+  simulationTick(blueprint, world, 0.1);
+  assert.ok(Math.abs(hopperStoredMassKg(feed) - before) < MASS_TOL);
+});
+
+test('chain: automated extractor → crusher → separator conserves total sourced matter exactly', () => {
+  const { world, occ } = buildTestWorld();
+  const chain = buildFullChain(world, occ);
+  simulationAdvance(chain.blueprint, world, 10, SIMULATION_STEP_S);
+
+  const storedTotal = [chain.hopperA, chain.hopperB, chain.concentrateHopper, chain.tailingsHopper]
+    .reduce((sum, hopper) => sum + hopperStoredMassKg(hopper), 0);
+  assert.ok(Math.abs(storedTotal - chain.blueprint.simulationStats.extractedKg) < MASS_TOL * 100);
+  assert.ok(Math.abs(chain.blueprint.simulationStats.extractedKg - 50) < 1e-5);
+});
+
+test('chain: constituent totals match the composition of actually extracted matter', () => {
+  const { world, occ } = buildTestWorld();
+  const chain = buildFullChain(world, occ);
+  simulationAdvance(chain.blueprint, world, 10, SIMULATION_STEP_S);
+  const totals = sumHopperComponents(chain.hopperA, chain.hopperB, chain.concentrateHopper, chain.tailingsHopper);
+  const compositionTotal = Object.values(occ.composition).reduce((sum, pct) => sum + pct, 0);
+
+  for (const [componentId, pct] of Object.entries(occ.composition)) {
+    const expected = chain.blueprint.simulationStats.extractedKg * pct / compositionTotal;
+    assert.ok(Math.abs((totals[componentId] ?? 0) - expected) < 1e-5, componentId);
+  }
+});
+
+test('chain: extractor respects full storage and stats track actual rather than theoretical extraction', () => {
+  _resetOrdinals();
+  const { world, occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractor = blueprintAddExtractor(blueprint, occ.id, 5);
+  const hopper = blueprintAddHopper(blueprint, 10);
+  blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopper.id, hopper.inputPortId);
+  simulationAdvance(blueprint, world, 20, SIMULATION_STEP_S);
+  assert.ok(Math.abs(hopperStoredMassKg(hopper) - 10) < MASS_TOL);
+  assert.ok(Math.abs(blueprint.simulationStats.extractedKg - 10) < MASS_TOL);
+});
+
+test('chain: bottleneck accumulates matter in the upstream physical buffer', () => {
+  const { world, occ } = buildTestWorld();
+  const chain = buildFullChain(world, occ);
+  simulationAdvance(chain.blueprint, world, 10, SIMULATION_STEP_S);
+  assert.ok(hopperStoredMassKg(chain.hopperA) > 9, '5 kg/s extraction feeding a 4 kg/s crusher should accumulate upstream');
+});
+
+test('chain: advancing streams does not allocate MaterialBatch objects per tick', () => {
+  const { world, occ } = buildTestWorld();
+  const chain = buildFullChain(world, occ);
+  const before = Object.keys(world.materialBatches).length;
+  simulationAdvance(chain.blueprint, world, 5, SIMULATION_STEP_S);
+  assert.equal(Object.keys(world.materialBatches).length, before);
+});
+
+test('chain: same world state and timestep produce deterministic continuous simulation', () => {
+  const first = buildTestWorld();
+  const firstChain = buildFullChain(first.world, first.occ);
+  simulationAdvance(firstChain.blueprint, first.world, 5, SIMULATION_STEP_S);
+  const firstSnapshot = JSON.parse(JSON.stringify(firstChain.blueprint));
+
+  const second = buildTestWorld();
+  const secondChain = buildFullChain(second.world, second.occ);
+  simulationAdvance(secondChain.blueprint, second.world, 5, SIMULATION_STEP_S);
+  assert.deepEqual(secondChain.blueprint, firstSnapshot);
+});
+
+test('connections: disconnect removes its associated stream', () => {
+  _resetOrdinals();
+  const { occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractor = blueprintAddExtractor(blueprint, occ.id);
+  const hopper = blueprintAddHopper(blueprint);
+  const connection = blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopper.id, hopper.inputPortId);
+  assert.ok(getStreamForConnection(blueprint, connection.id));
+  blueprintDisconnect(blueprint, connection.id);
+  assert.equal(getStreamForConnection(blueprint, connection.id), null);
+});
+
+test('layout: moving a node does not mutate physical material state', () => {
+  _resetOrdinals();
+  const blueprint = createBlueprint();
+  const hopper = blueprintAddHopper(blueprint, 500);
   const layout = createBlueprintLayout();
-
-  // Simulate receiving some material
   hopperReceiveInflow(hopper, { hematite: 50 }, 80, 1);
-  const massBefore = hopperStoredMassKg(hopper);
-
-  // Move the node around
+  const physicalBefore = JSON.stringify(hopper);
   layoutMoveNode(layout, hopper.id, 100, 200);
   layoutMoveNode(layout, hopper.id, 300, 400);
-
-  const massAfter = hopperStoredMassKg(hopper);
-  assert.ok(Math.abs(massBefore - massAfter) < MASS_TOL, 'Layout drag must not change physical material quantity');
-  assert.equal(layout.nodePositions[hopper.id].x, 300);
+  assert.equal(JSON.stringify(hopper), physicalBefore);
+  assert.deepEqual(layout.nodePositions[hopper.id], { x: 300, y: 400 });
+  assert.equal(blueprint.nodes[hopper.id].x, undefined);
 });
-
-test('layout: blueprint.nodes is separate from layout.nodePositions', () => {
-  _resetOrdinals();
-  const bp = createBlueprint();
-  const hopper = blueprintAddHopper(bp, 500);
-  const layout = createBlueprintLayout();
-
-  layoutMoveNode(layout, hopper.id, 50, 75);
-
-  // Physical node should have no x/y position
-  assert.equal(bp.nodes[hopper.id].x, undefined);
-  assert.equal(bp.nodes[hopper.id].y, undefined);
-  // Layout has position
-  assert.equal(layout.nodePositions[hopper.id].x, 50);
-});
-
-// ─── EXISTING TESTS SMOKE CHECK ───────────────────────────────────────────────
 
 test('existing world generation remains stable', () => {
   const world = createWorld('stability-check');
