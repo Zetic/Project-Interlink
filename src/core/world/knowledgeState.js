@@ -9,6 +9,8 @@
  * isFeatureDiscovered(knowledge, featureId) — boolean check.
  */
 
+import { componentsPercent } from '../materials/materialBatches.js';
+
 /**
  * Possible discovery states for a feature (ordered by progression).
  * Only 'unknown' and 'discovered' are used by the current UI; the rest
@@ -35,6 +37,8 @@ export const DISCOVERY_STATES = /** @type {const} */ ({
 export function createKnowledge(world) {
   const knowledge = {
     features: {},
+    materialBatches: {},
+    nextMaterialAnalysisOrdinal: 1,
   };
 
   for (const featureId of Object.keys(world.features)) {
@@ -65,12 +69,50 @@ export function discoverFeature(knowledge, featureId) {
 }
 
 /**
+ * Record explicit player analysis for a material batch.
+ * Analysis updates knowledge state only; it does not modify world truth.
+ *
+ * @param {object} knowledge
+ * @param {object} world
+ * @param {string} batchId
+ * @returns {object} analysis record
+ */
+export function analyzeMaterialBatch(knowledge, world, batchId) {
+  const batch = world?.materialBatches?.[batchId];
+  if (!batch) throw new Error(`Cannot analyze unknown material batch '${batchId}'`);
+
+  if (!knowledge.materialBatches[batchId]) {
+    knowledge.materialBatches[batchId] = {
+      analysisState: 'analyzed',
+      analysisOrdinal: knowledge.nextMaterialAnalysisOrdinal,
+      sourceOccurrenceId: batch.sourceOccurrenceId,
+      resourceId: batch.resourceId,
+      totalMassKg: batch.totalMassKg,
+      componentMassesKg: { ...batch.componentsKg },
+      componentPercents: componentsPercent(batch.componentsKg),
+    };
+    knowledge.nextMaterialAnalysisOrdinal += 1;
+  }
+
+  return knowledge.materialBatches[batchId];
+}
+
+/**
  * @param {object} knowledge
  * @param {string} featureId
  * @returns {boolean}
  */
 export function isFeatureDiscovered(knowledge, featureId) {
   return knowledge.features[featureId]?.discoveryState === DISCOVERY_STATES.DISCOVERED;
+}
+
+/**
+ * @param {object} knowledge
+ * @param {string} batchId
+ * @returns {boolean}
+ */
+export function isBatchAnalyzed(knowledge, batchId) {
+  return knowledge.materialBatches[batchId]?.analysisState === 'analyzed';
 }
 
 /**
@@ -86,6 +128,12 @@ export function validateKnowledge(knowledge, world) {
   for (const featureId of Object.keys(knowledge.features)) {
     if (!world.features[featureId]) {
       errors.push(`Knowledge references unknown featureId '${featureId}'`);
+    }
+  }
+
+  for (const batchId of Object.keys(knowledge.materialBatches ?? {})) {
+    if (!world.materialBatches?.[batchId]) {
+      errors.push(`Knowledge references unknown material batch '${batchId}'`);
     }
   }
 

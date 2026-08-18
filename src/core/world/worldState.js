@@ -15,6 +15,8 @@
  *   regions: {},       // keyed by regionId
  *   features: {},      // keyed by featureId
  *   resourceOccurrences: {},  // keyed by occurrenceId
+ *   materialBatches: {},       // keyed by batchId
+ *   processResults: {},        // keyed by processRunId
  * }
  */
 
@@ -44,6 +46,10 @@ export function createWorld(seed) {
     regions: {},
     features: {},
     resourceOccurrences: {},
+    materialBatches: {},
+    processResults: {},
+    nextMaterialBatchOrdinal: 1,
+    nextProcessRunOrdinal: 1,
   };
 
   // Lift regions out of the planet array into the flat map
@@ -150,6 +156,53 @@ export function validateWorld(world) {
     for (const oid of (region.backgroundResourceOccurrences ?? [])) {
       if (!world.resourceOccurrences[oid]) {
         errors.push(`Region '${rid}' references unknown background occurrence '${oid}'`);
+      }
+    }
+  }
+
+  // Material batch references and physical invariants
+  for (const [bid, batch] of Object.entries(world.materialBatches ?? {})) {
+    if (!world.resourceOccurrences[batch.sourceOccurrenceId]) {
+      errors.push(`Material batch '${bid}' references unknown source occurrence '${batch.sourceOccurrenceId}'`);
+    }
+    if (!batch.componentsKg || typeof batch.componentsKg !== 'object') {
+      errors.push(`Material batch '${bid}' is missing componentsKg`);
+      continue;
+    }
+
+    const componentEntries = Object.entries(batch.componentsKg);
+    let massSum = 0;
+    for (const [componentId, massKg] of componentEntries) {
+      if (typeof massKg !== 'number' || Number.isNaN(massKg) || !Number.isFinite(massKg)) {
+        errors.push(`Material batch '${bid}' component '${componentId}' has invalid mass '${massKg}'`);
+      }
+      if (massKg < 0) {
+        errors.push(`Material batch '${bid}' component '${componentId}' has negative mass '${massKg}'`);
+      }
+      massSum += massKg;
+    }
+
+    if (componentEntries.length === 0) {
+      errors.push(`Material batch '${bid}' has no components`);
+    }
+
+    if (typeof batch.totalMassKg !== 'number' || Number.isNaN(batch.totalMassKg) || !Number.isFinite(batch.totalMassKg)) {
+      errors.push(`Material batch '${bid}' has invalid totalMassKg '${batch.totalMassKg}'`);
+    } else if (Math.abs(batch.totalMassKg - massSum) > 1e-6) {
+      errors.push(`Material batch '${bid}' totalMassKg '${batch.totalMassKg}' does not match component sum '${massSum}'`);
+    }
+  }
+
+  // Process result references
+  for (const [runId, result] of Object.entries(world.processResults ?? {})) {
+    for (const inputBatchId of (result.inputBatchIds ?? [])) {
+      if (!world.materialBatches[inputBatchId]) {
+        errors.push(`Process result '${runId}' references unknown input batch '${inputBatchId}'`);
+      }
+    }
+    for (const output of (result.outputBatches ?? [])) {
+      if (!world.materialBatches[output.batchId]) {
+        errors.push(`Process result '${runId}' references unknown output batch '${output.batchId}'`);
       }
     }
   }

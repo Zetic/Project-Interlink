@@ -7,7 +7,7 @@
  *                     way that intentionally alters outputs for the same seed.
  */
 
-// Schema v2: regional background resources normalized into world.resourceOccurrences
+// Schema v3: adds world.materialBatches and world.processResults for playable processing state
 // Generator v2: feature physical states and resources are constrained by feature type
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const GENERATOR_VERSION = 2;
