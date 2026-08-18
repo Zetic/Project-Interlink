@@ -491,12 +491,17 @@ function renderParentWorkspace(container) {
     className: 'ws-system-node',
     nodeClass: node => `ws-node--${node.type}${node.source.boundaryRole ? ' ws-node--boundary' : ''}${inspector.selectedSystemId === node.id ? ' ws-node--selected' : ''}`,
     portClass: (_node, _port, direction) => `ws-system-port ws-system-port--${direction}`,
-    nodeContent: (element, graphNode) => {
+    nodeContent: (element, graphNode, isNew) => {
       const node = graphNode.source;
-      element.innerHTML = `<div class="ws-node-label"><strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span></div>`;
+      const label = isNew ? document.createElement('div') : element.querySelector('.ws-node-label');
+      if (isNew) {
+        label.className = 'ws-node-label';
+        element.appendChild(label);
+      }
+      label.innerHTML = `<strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span>`;
       const canEnter = node.nodeType === 'region'
         || (node.nodeType === 'site' && Boolean(compatibleOccurrenceForSite(wsState.world.sites[node.id])));
-      if (canEnter) {
+      if (canEnter && isNew) {
         const button = document.createElement('button');
         button.className = 'ws-system-enter ws-enter';
         button.textContent = 'Enter →';
@@ -810,19 +815,25 @@ function renderEngineeringNodes() {
     width: NODE_WIDTH,
     height: NODE_HEIGHT,
     nodeClass: node => `ws-node--${node.type}${node.source.boundaryRole ? ' ws-node--boundary' : ''}${inspector.selectedNodeId === node.id ? ' ws-node--selected' : ''}`,
-    nodeContent: (element, graphNode) => {
+    nodeContent: (element, graphNode, isNew) => {
       const node = graphNode.source;
-      if (node.nodeType === 'hopper') {
+      if (node.nodeType === 'hopper' && isNew) {
         const fill = document.createElement('div');
         fill.className = 'ws-hopper-fill';
         fill.style.height = `${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%`;
         element.appendChild(fill);
       }
-      const label = document.createElement('div');
-      label.className = 'ws-node-label';
+      const label = isNew ? document.createElement('div') : element.querySelector('.ws-node-label');
+      if (isNew) {
+        label.className = 'ws-node-label';
+        element.appendChild(label);
+      }
       label.innerHTML = nodeLabel(node).split('\n')
         .map(line => `<span>${escHtml(line)}</span>`).join('');
-      element.appendChild(label);
+      const fill = element.querySelector('.ws-hopper-fill');
+      if (fill && node.nodeType === 'hopper') {
+        fill.style.height = `${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%`;
+      }
     },
     onNodePointerDown: (node, event) => startNodeDrag(node.id, event),
     onNodeSelect: selectNode,
@@ -1092,9 +1103,9 @@ function onInspectorClick(event) {
     });
     inspector.selectedConnId = null;
   } else if (button.dataset.nodeId) {
+    const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout);
     for (const connection of [...Object.values(wsState.blueprint.connections)]) {
       if (connection.sourceNodeId === button.dataset.nodeId || connection.targetNodeId === button.dataset.nodeId) {
-        const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout);
         disconnectGraphConnection(graph, connection.id, {
           blueprint: item => blueprintDisconnect(wsState.blueprint, item.id),
         });

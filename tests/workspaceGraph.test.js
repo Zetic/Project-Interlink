@@ -40,65 +40,6 @@ test('shared graph projects Region and Planet transfers into visible edges', () 
     ports: [createSystemPort({ id: 'out', direction: 'output' })],
   });
 
-  test('Region boundary adapters project hidden terminals to visible boundary buffers', () => {
-    const regionImport = createCompositeNode({
-      id: 'region-import-hopper',
-      nodeType: 'hopper',
-      ports: [createSystemPort({ id: 'output', direction: 'output' })],
-    });
-    const regionExport = createCompositeNode({
-      id: 'region-export-hopper',
-      nodeType: 'hopper',
-      ports: [createSystemPort({ id: 'input', direction: 'input' })],
-    });
-    const site = createCompositeNode({
-      id: 'site-1',
-      nodeType: 'site',
-      ports: [
-        createSystemPort({ id: 'material-input', direction: 'input' }),
-        createSystemPort({ id: 'material-output', direction: 'output' }),
-      ],
-    });
-    const definition = {
-      level: 'region',
-      scopeId: 'region-1',
-      nodes: [regionImport, regionExport, site],
-    };
-    const transfers = {
-      export: {
-        id: 'export',
-        sourceCompositeId: 'site-1',
-        sourcePortId: 'material-output',
-        targetCompositeId: 'region-1-export-terminal',
-        targetPortId: 'material-input',
-        scopeId: 'region-1',
-      },
-      import: {
-        id: 'import',
-        sourceCompositeId: 'region-1-import-terminal',
-        sourcePortId: 'material-output',
-        targetCompositeId: 'site-1',
-        targetPortId: 'material-input',
-        scopeId: 'region-1',
-      },
-    };
-    const graph = projectBoundaryGraph(definition, transfers, (nodeId, portId) => {
-      if (nodeId === 'region-1-export-terminal') return { nodeId: 'region-export-hopper', portId: 'input' };
-      if (nodeId === 'region-1-import-terminal') return { nodeId: 'region-import-hopper', portId: 'output' };
-      return { nodeId, portId };
-    });
-
-    assert.deepEqual(graphConnectionEndpoint(graph.connections.find(item => item.id === 'export'), 'target'), {
-      nodeId: 'region-export-hopper',
-      portId: 'input',
-    });
-    assert.deepEqual(graphConnectionEndpoint(graph.connections.find(item => item.id === 'import'), 'source'), {
-      nodeId: 'region-import-hopper',
-      portId: 'output',
-    });
-    assert.deepEqual(graph.nodes.find(node => node.id === 'region-import-hopper').ports.map(port => port.id), ['output']);
-    assert.deepEqual(graph.nodes.find(node => node.id === 'region-export-hopper').ports.map(port => port.id), ['input']);
-  });
   const target = createCompositeNode({
     id: 'region-b',
     nodeType: 'region',
@@ -128,6 +69,66 @@ test('shared graph projects Region and Planet transfers into visible edges', () 
     nodeId: target.id,
     portId: 'in',
   });
+});
+
+test('Region boundary adapters project hidden terminals to visible boundary buffers', () => {
+  const regionImport = createCompositeNode({
+    id: 'region-import-hopper',
+    nodeType: 'hopper',
+    ports: [createSystemPort({ id: 'output', direction: 'output' })],
+  });
+  const regionExport = createCompositeNode({
+    id: 'region-export-hopper',
+    nodeType: 'hopper',
+    ports: [createSystemPort({ id: 'input', direction: 'input' })],
+  });
+  const site = createCompositeNode({
+    id: 'site-1',
+    nodeType: 'site',
+    ports: [
+      createSystemPort({ id: 'material-input', direction: 'input' }),
+      createSystemPort({ id: 'material-output', direction: 'output' }),
+    ],
+  });
+  const definition = {
+    level: 'region',
+    scopeId: 'region-1',
+    nodes: [regionImport, regionExport, site],
+  };
+  const transfers = {
+    export: {
+      id: 'export',
+      sourceCompositeId: 'site-1',
+      sourcePortId: 'material-output',
+      targetCompositeId: 'region-1-export-terminal',
+      targetPortId: 'material-input',
+      scopeId: 'region-1',
+    },
+    import: {
+      id: 'import',
+      sourceCompositeId: 'region-1-import-terminal',
+      sourcePortId: 'material-output',
+      targetCompositeId: 'site-1',
+      targetPortId: 'material-input',
+      scopeId: 'region-1',
+    },
+  };
+  const graph = projectBoundaryGraph(definition, transfers, (nodeId, portId) => {
+    if (nodeId === 'region-1-export-terminal') return { nodeId: 'region-export-hopper', portId: 'input' };
+    if (nodeId === 'region-1-import-terminal') return { nodeId: 'region-import-hopper', portId: 'output' };
+    return { nodeId, portId };
+  });
+
+  assert.deepEqual(graphConnectionEndpoint(graph.connections.find(item => item.id === 'export'), 'target'), {
+    nodeId: 'region-export-hopper',
+    portId: 'input',
+  });
+  assert.deepEqual(graphConnectionEndpoint(graph.connections.find(item => item.id === 'import'), 'source'), {
+    nodeId: 'region-import-hopper',
+    portId: 'output',
+  });
+  assert.deepEqual(graph.nodes.find(node => node.id === 'region-import-hopper').ports.map(port => port.id), ['output']);
+  assert.deepEqual(graph.nodes.find(node => node.id === 'region-export-hopper').ports.map(port => port.id), ['input']);
 });
 
 test('common disconnect resolves the correct simulation adapter', () => {

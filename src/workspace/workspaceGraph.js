@@ -119,7 +119,8 @@ export function renderGraphNodes({
   for (const node of graph?.nodes ?? []) {
     activeIds.add(node.id);
     let element = elements.get(node.id);
-    if (!element || !canvas.contains(element)) {
+    const isNew = !element || !canvas.contains(element);
+    if (isNew) {
       element = document.createElement('div');
       element.addEventListener('mousedown', event => {
         const port = event.target.closest('.ws-port');
@@ -147,30 +148,31 @@ export function renderGraphNodes({
       width: `${width}px`,
       height: `${height}px`,
     });
-    element.innerHTML = '';
-    nodeContent?.(element, node);
+    nodeContent?.(element, node, isNew);
     if (!nodeContent) {
-      const nodeLabel = document.createElement('div');
+      const nodeLabel = element.querySelector('.ws-node-label') ?? document.createElement('div');
       nodeLabel.className = 'ws-node-label';
       nodeLabel.innerHTML = String(label(node)).split('\n')
         .map(line => `<span>${line}</span>`).join('');
-      element.appendChild(nodeLabel);
+      if (!nodeLabel.parentNode) element.appendChild(nodeLabel);
     }
 
-    const portsByDirection = { input: [], output: [] };
-    for (const port of node.ports) portsByDirection[port.direction]?.push(port);
-    for (const direction of ['input', 'output']) {
-      portsByDirection[direction].forEach((port, index) => {
-        const step = height / (portsByDirection[direction].length + 1);
-        const dot = document.createElement('div');
-        dot.className = `ws-port ws-port--${direction} ${portClass(node, port, direction)}`;
-        dot.title = port.label;
-        dot.dataset.nodeId = node.id;
-        dot.dataset.portId = port.id;
-        dot.style.left = `${(direction === 'input' ? 0 : width) - portRadius}px`;
-        dot.style.top = `${step * (index + 1) - portRadius}px`;
-        element.appendChild(dot);
-      });
+    if (isNew) {
+      const portsByDirection = { input: [], output: [] };
+      for (const port of node.ports) portsByDirection[port.direction]?.push(port);
+      for (const direction of ['input', 'output']) {
+        portsByDirection[direction].forEach((port, index) => {
+          const step = height / (portsByDirection[direction].length + 1);
+          const dot = document.createElement('div');
+          dot.className = `ws-port ws-port--${direction} ${portClass(node, port, direction)}`;
+          dot.title = port.label ?? port.id;
+          dot.dataset.nodeId = node.id;
+          dot.dataset.portId = port.id;
+          dot.style.left = `${(direction === 'input' ? 0 : width) - portRadius}px`;
+          dot.style.top = `${step * (index + 1) - portRadius}px`;
+          element.appendChild(dot);
+        });
+      }
     }
     element.classList.toggle('ws-node--selected', node.selected === true);
   }
