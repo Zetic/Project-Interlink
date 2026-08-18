@@ -239,3 +239,89 @@ hr {
   border-top: 1px solid #2a2a2a;
   margin-bottom: 16px;
 }
+
+/* Processing prototype */
+
+#processing-section h3 {
+  color: #8fb6e6;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  margin: 14px 0 8px;
+}
+
+.processing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.panel {
+  background: #111;
+  border: 1px solid #2a2a2a;
+  padding: 10px;
+}
+
+.panel label {
+  display: block;
+  margin: 6px 0 3px;
+  color: #8a8a8a;
+}
+
+.panel select,
+.panel input[type="number"],
+.panel input[type="range"] {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  color: #d4d4d4;
+  padding: 6px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.panel input[type="range"] {
+  padding: 0;
+}
+
+.inline-note {
+  color: #666;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.status-message {
+  min-height: 20px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.status-message.info {
+  color: #9ad2a3;
+}
+
+.status-message.error {
+  color: #e99696;
+}
+
+.matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.matrix-table th,
+.matrix-table td {
+  border: 1px solid #2a2a2a;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.matrix-table th {
+  color: #8fb6e6;
+  background: #151515;
+}
+
+.batch-detail {
+  margin-top: 10px;
+}

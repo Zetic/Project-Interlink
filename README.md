@@ -95,7 +95,7 @@ This remains a simplified procedural model rather than research-grade planetary 
 The current serialized world shape and generator rules are versioned. After the first regression/normalization pass:
 
 ```text
-schemaVersion: 2
+schemaVersion: 3
 generatorVersion: 2
 ```
 
