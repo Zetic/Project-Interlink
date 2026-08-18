@@ -556,20 +556,20 @@ function updateCompositeInspector(force = false) {
       const span = body.querySelector(`[data-boundary-component="${CSS.escape(component.componentId)}"]`);
       if (span) span.textContent = `${component.massKg.toFixed(3)} kg (${component.percentage.toFixed(1)}%)`;
     }
-    if (node?.nodeType === 'site') {
-      const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
-      const outputPort = getSystemNodePort(node, 'material-output');
-      const output = workspace?.nodes?.[outputPort?.childNodeId];
-      const span = body.querySelector('[data-live="site-output"]');
-      if (span) span.textContent = (output ? hopperStoredMassKg(output) : 0).toFixed(2);
-    }
-    if (node?.nodeType === 'transfer-terminal') {
-      const regionNode = wsState.world.systemNodes[node.inspectableState.regionId];
-      const workspace = getSimulationWorkspace(wsState.world, regionNode.childWorkspaceId);
-      const output = workspace?.nodes?.[`${node.inspectableState.regionId}-export-hopper`];
-      const span = body.querySelector('[data-live="terminal-buffer"]');
-      if (span) span.textContent = (output ? hopperStoredMassKg(output) : 0).toFixed(2);
-    }
+  }
+  if (node?.nodeType === 'site') {
+    const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
+    const outputPort = getSystemNodePort(node, 'material-output');
+    const output = workspace?.nodes?.[outputPort?.childNodeId];
+    const span = body.querySelector('[data-live="site-output"]');
+    if (span) span.textContent = (output ? hopperStoredMassKg(output) : 0).toFixed(2);
+  }
+  if (node?.nodeType === 'transfer-terminal') {
+    const regionNode = wsState.world.systemNodes[node.inspectableState.regionId];
+    const workspace = getSimulationWorkspace(wsState.world, regionNode.childWorkspaceId);
+    const output = workspace?.nodes?.[`${node.inspectableState.regionId}-export-hopper`];
+    const span = body.querySelector('[data-live="terminal-buffer"]');
+    if (span) span.textContent = (output ? hopperStoredMassKg(output) : 0).toFixed(2);
   }
   body.querySelectorAll('[data-transfer-rate]').forEach(span => { const t = wsState.world.simulation.transfers[span.dataset.transferRate]; if (t) span.textContent = t.lastRateKgPerSecond.toFixed(2); });
 }
