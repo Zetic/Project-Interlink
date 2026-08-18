@@ -67,10 +67,18 @@ export function createWorld(seed) {
       featureIds.push(feature.id);
     }
 
-    // Store a flat region (without nested features array)
+    // Lift background resource occurrences into the flat map
+    const bgOccurrenceIds = [];
+    for (const occ of region.backgroundResourceOccurrences) {
+      world.resourceOccurrences[occ.id] = occ;
+      bgOccurrenceIds.push(occ.id);
+    }
+
+    // Store a flat region (without nested features/occurrence arrays; reference by IDs)
     world.regions[region.id] = {
       ...region,
       features: featureIds,
+      backgroundResourceOccurrences: bgOccurrenceIds,
     };
     regionIds.push(region.id);
   }
@@ -133,6 +141,15 @@ export function validateWorld(world) {
     for (const oid of feature.resourceOccurrences) {
       if (!world.resourceOccurrences[oid]) {
         errors.push(`Feature '${fid}' references unknown occurrence '${oid}'`);
+      }
+    }
+  }
+
+  // Background occurrence references from regions
+  for (const [rid, region] of Object.entries(world.regions)) {
+    for (const oid of (region.backgroundResourceOccurrences ?? [])) {
+      if (!world.resourceOccurrences[oid]) {
+        errors.push(`Region '${rid}' references unknown background occurrence '${oid}'`);
       }
     }
   }

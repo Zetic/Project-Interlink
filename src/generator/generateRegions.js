@@ -112,7 +112,7 @@ export function generateRegions(planet, rng, rootSeed) {
       geologicActivity: parseFloat(geologicActivity.toFixed(2)),
       age,
       surfaceCover,
-      backgroundResources: [],
+      backgroundResourceOccurrences: [],
       features: [],
     };
 
@@ -132,7 +132,10 @@ export function generateRegions(planet, rng, rootSeed) {
     if (atmoResource && planet.atmosphere?.pressureBar > 0) {
       selected.unshift(atmoResource);
     }
-    region.backgroundResources = selected.map(r => makeRegionResource(r, bgRng));
+    // Each occurrence gets a stable ID so worldState can index it
+    region.backgroundResourceOccurrences = selected.map((r, i) =>
+      makeRegionResource(r, bgRng, `${regionId}-bg-${i}`, regionId)
+    );
 
     // Features — pass rootSeed so each feature can derive its own namespace
     region.features = generateFeatures(region, planet, rootSeed);

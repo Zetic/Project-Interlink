@@ -130,7 +130,10 @@ function renderRegion(region) {
       </div>
       <div class="resource-section">
         <strong>Background Resources:</strong>
-        <ul>${renderResourcesTable(region.backgroundResources, 'region')}</ul>
+        <ul>${renderResourcesTable(
+          (region.backgroundResourceOccurrences ?? []).map(id => world.resourceOccurrences[id]).filter(Boolean),
+          'region'
+        )}</ul>
       </div>
       <div class="features-section" id="features-${escHtml(region.id)}">
         ${featureHtml}

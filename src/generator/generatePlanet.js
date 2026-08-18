@@ -472,7 +472,7 @@ function validatePlanet(planet) {
   if (!planet.biospherePresent) {
     const bioIds = new Set(['wood', 'plant-biomass', 'peat', 'organic-soil', 'coal', 'guano', 'latex', 'reef-material']);
     for (const region of planet.regions) {
-      for (const r of region.backgroundResources) {
+      for (const r of region.backgroundResourceOccurrences) {
         if (bioIds.has(r.resourceId)) errors.push(`Biological resource ${r.resourceId} in region without biosphere`);
       }
       for (const feature of region.features) {

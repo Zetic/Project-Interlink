@@ -52,16 +52,23 @@ export function quantityClass(value) {
 }
 
 /**
- * Generate a regional resource occurrence.
+ * Generate a regional resource occurrence with a stable ID.
+ * @param {object} resource - ResourceDefinition from the catalog.
+ * @param {object} rng
+ * @param {string} occurrenceId - Stable ID assigned by the caller.
+ * @param {string} regionId - Source region ID for back-reference.
  */
-export function makeRegionResource(resource, rng) {
+export function makeRegionResource(resource, rng, occurrenceId, regionId) {
   const abundance = rng.range(0.3, 1.0);
   return {
+    id: occurrenceId,
     resourceId: resource.id,
     name: resource.name,
     abundance: parseFloat(abundance.toFixed(2)),
     quantityEstimate: abundanceClass(abundance),
     compositionNotes: compositionNote(resource, rng),
+    sourceType: 'region',
+    sourceId: regionId,
   };
 }
 
@@ -70,8 +77,9 @@ export function makeRegionResource(resource, rng) {
  * @param {object} resource  - ResourceDefinition from the catalog.
  * @param {object} rng
  * @param {string} occurrenceId - Stable ID assigned by the caller.
+ * @param {string} featureId - Source feature ID for back-reference.
  */
-export function makeFeatureResource(resource, rng, occurrenceId) {
+export function makeFeatureResource(resource, rng, occurrenceId, featureId) {
   const concentration = parseFloat(rng.range(1, 80).toFixed(1));
   const qv = rng.random();
   return {
@@ -82,6 +90,8 @@ export function makeFeatureResource(resource, rng, occurrenceId) {
     quantityClass: quantityClass(qv),
     descriptor: featureDescriptor(resource, rng),
     composition: featureComposition(resource, rng),
+    sourceType: 'feature',
+    sourceId: featureId,
   };
 }
 

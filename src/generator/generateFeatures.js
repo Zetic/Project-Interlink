@@ -5,7 +5,7 @@
  * resourceOccurrences (separate from the catalog ResourceDefinitions).
  */
 
-import { resourcesByTags, makeFeatureResource } from './generateResources.js';
+import { resourcesByTags, makeFeatureResource, getFeatureResources } from './generateResources.js';
 import { rngFor } from './random.js';
 
 const FEATURE_TYPES = [
@@ -153,6 +153,59 @@ function featureResourceTags(featureType, region, planetComposition) {
   return tags;
 }
 
+/**
+ * Return allowed physical states for a given feature type.
+ * Returns null for unconstrained types.
+ */
+function allowedPhysicalStates(featureType) {
+  switch (featureType) {
+    case 'Aquifer':           return ['Liquid', 'Mixed'];
+    case 'Gas Reservoir':     return ['Gaseous', 'Mixed'];
+    case 'Magma Chamber':     return ['Liquid'];
+    case 'Ice Body':          return ['Solid'];
+    case 'Hydrothermal System': return ['Liquid', 'Mixed'];
+    default:                  return null; // unconstrained
+  }
+}
+
+/**
+ * Apply hard resource compatibility filters for specific feature types.
+ * Returns a filtered (and possibly replaced) candidate array.
+ */
+function applyResourceCompatibility(featureType, candidates, allFeatureResources) {
+  const byId = Object.fromEntries(allFeatureResources.map(r => [r.id, r]));
+
+  switch (featureType) {
+    case 'Aquifer': {
+      // Must be fluid — water / brine compatible only; exclude magma and gas
+      const allowed = new Set(['groundwater', 'brine', 'fresh-water', 'saline-water', 'lithium-brine']);
+      const filtered = candidates.filter(r => allowed.has(r.id));
+      // Fallback if nothing matches (e.g. very dry planet): prefer groundwater
+      return filtered.length > 0 ? filtered : [byId['groundwater']].filter(Boolean);
+    }
+    case 'Gas Reservoir': {
+      const allowed = new Set(['natural-gas', 'gas-clathrate', 'hydrocarbons']);
+      const filtered = candidates.filter(r => allowed.has(r.id));
+      return filtered.length > 0 ? filtered : [byId['natural-gas']].filter(Boolean);
+    }
+    case 'Magma Chamber': {
+      // Magma chamber must contain magma; optionally geothermal-fluid
+      const allowed = new Set(['magma', 'geothermal-fluid']);
+      const filtered = candidates.filter(r => allowed.has(r.id));
+      return filtered.length > 0 ? filtered : [byId['magma']].filter(Boolean);
+    }
+    case 'Ice Body': {
+      // Must be frozen-volatile compatible
+      const allowed = new Set(['water-ice', 'gas-clathrate', 'ammonia-water-solution', 'permafrost']);
+      const filtered = candidates.filter(r => allowed.has(r.id));
+      return filtered.length > 0 ? filtered : [byId['water-ice']].filter(Boolean);
+    }
+    default:
+      return candidates;
+  }
+}
+
+
 export function generateFeatures(region, planet, rootSeed) {
   // Each feature gets its own namespaced RNG derived from the root seed so
   // adding/removing features in one region does not reshuffle other regions.
@@ -160,6 +213,8 @@ export function generateFeatures(region, planet, rootSeed) {
   const count = countRng.int(2, 4);
   const pool = weightedFeatureTypes(region, planet.biospherePresent);
   const features = [];
+  // Cache the full feature resource catalog once — it does not change per iteration
+  const allFeatureResources = getFeatureResources();
 
   for (let i = 0; i < count; i++) {
     const featureId = `feature-${region.id}-${i}`;
@@ -170,7 +225,11 @@ export function generateFeatures(region, planet, rootSeed) {
     const depthM = parseFloat(featureRng.range(10, 4000).toFixed(0));
     const geometry = featureRng.pick(['Tabular', 'Lenticular', 'Nodular', 'Vein', 'Massive', 'Layered', 'Irregular', 'Pipe-like']);
     const accessibility = featureRng.pick(['Easy', 'Moderate', 'Difficult', 'Extreme']);
-    const physicalState = featureRng.pick(['Solid', 'Liquid', 'Mixed', 'Gaseous', 'Plastic']);
+
+    // Physical state is constrained by feature type for compatibility
+    const stateOptions = allowedPhysicalStates(featureType) ?? ['Solid', 'Liquid', 'Mixed', 'Gaseous', 'Plastic'];
+    const physicalState = featureRng.pick(stateOptions);
+
     const tempOffset = featureRng.range(-20, 80);
     const temperatureK = parseFloat((planet.meanTemperatureK + tempOffset).toFixed(1));
     const pressureBar = parseFloat(featureRng.range(0.1, 50).toFixed(2));
@@ -186,13 +245,16 @@ export function generateFeatures(region, planet, rootSeed) {
       candidateResources = candidateResources.filter(r => !r.tags.includes('biological'));
     }
 
+    // Apply hard compatibility rules for specific feature types
+    candidateResources = applyResourceCompatibility(featureType, candidateResources, allFeatureResources);
+
     const numResources = resourceRng.int(1, Math.min(3, candidateResources.length || 1));
     const shuffled = [...candidateResources];
     resourceRng.shuffle(shuffled);
     const picked = shuffled.slice(0, numResources);
     // Each occurrence gets a stable ID so worldState can index it
     const resourceOccurrences = picked.map((r, ri) =>
-      makeFeatureResource(r, resourceRng, `${featureId}-occ-${ri}`)
+      makeFeatureResource(r, resourceRng, `${featureId}-occ-${ri}`, featureId)
     );
 
     // Physical feature — no 'discovered' flag; that belongs in knowledgeState
