@@ -1,0 +1,16 @@
+/* Review-fix layer for the first player workspace. Kept separate so the
+   original prototype/debug stylesheet remains easy to compare and remove. */
+.ws-node--extractor { background: #1e3a2f; }
+.ws-node--hopper { background: #1e2a3a; }
+.ws-node--crusher { background: #3a2a1e; }
+.ws-node--magSep { background: #2a1e3a; }
+
+.ws-connection { stroke: #5599cc; }
+.ws-connection--selected { stroke: #ffcc44; }
+.ws-connection-preview { stroke: #88ccff; }
+
+#ws-player-seed {
+  display: block;
+  width: min(420px, 100%);
+  margin: 6px 0 10px;
+}

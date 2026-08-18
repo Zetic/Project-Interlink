@@ -3,52 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Planet Generator</title>
+  <title>Project Interlink</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="workspace-overrides.css">
 </head>
 <body>
-  <header>
-    <h1>PLANET GENERATOR</h1>
-    <div class="controls">
-      <label for="seed-input">Seed:</label>
-      <input type="text" id="seed-input" placeholder="Enter seed or leave blank for random">
-      <button id="generate-btn">Generate Planet</button>
+  <!-- Mode toggle -->
+  <div id="mode-bar">
+    <span id="mode-label">PROJECT INTERLINK</span>
+    <button id="mode-toggle-btn" title="Switch between Player and Debug views">Debug View</button>
+  </div>
+
+  <!-- ── Player workspace ──────────────────────────────────────────────────── -->
+  <div id="player-view">
+    <div class="ws-shell">
+      <div class="ws-header">
+        <nav id="ws-breadcrumbs" class="ws-breadcrumbs" aria-label="Workspace navigation"></nav>
+      </div>
+      <div id="ws-main" class="ws-main">
+        <p class="ws-empty">Loading player workspace…</p>
+      </div>
     </div>
-  </header>
+  </div>
 
-  <main>
-    <section id="planet-section" style="display:none">
-      <h2>PLANET SUMMARY</h2>
-      <div id="planet-summary"></div>
-    </section>
+  <!-- ── Debug / prototype view (original UI) ─────────────────────────────── -->
+  <div id="debug-view" style="display:none">
+    <header>
+      <h1>DEBUG — PLANET GENERATOR</h1>
+      <div class="controls">
+        <label for="seed-input">Seed:</label>
+        <input type="text" id="seed-input" placeholder="Enter seed or leave blank for random">
+        <button id="generate-btn">Generate Planet</button>
+      </div>
+    </header>
 
-    <section id="regions-section" style="display:none">
-      <h2>REGIONS</h2>
-      <div id="regions-list"></div>
-    </section>
+    <main>
+      <section id="planet-section" style="display:none">
+        <h2>PLANET SUMMARY</h2>
+        <div id="planet-summary"></div>
+      </section>
 
-    <section id="discovery-section" style="display:none">
-      <hr>
-      <div id="discovery-counter">Features Discovered: 0 / 0</div>
-      <button id="discover-btn">Discover Feature</button>
-      <div id="all-discovered" style="display:none">All features discovered.</div>
-    </section>
+      <section id="regions-section" style="display:none">
+        <h2>REGIONS</h2>
+        <div id="regions-list"></div>
+      </section>
 
-    <section id="processing-section" style="display:none">
-      <h2>MATTER PROCESSING PROTOTYPE</h2>
-      <div id="processing-controls"></div>
-      <div id="processing-message" class="status-message"></div>
+      <section id="discovery-section" style="display:none">
+        <hr>
+        <div id="discovery-counter">Features Discovered: 0 / 0</div>
+        <button id="discover-btn">Discover Feature</button>
+        <div id="all-discovered" style="display:none">All features discovered.</div>
+      </section>
 
-      <h3>Sample Batches</h3>
-      <div id="processing-batches"></div>
+      <section id="processing-section" style="display:none">
+        <h2>MATTER PROCESSING PROTOTYPE</h2>
+        <div id="processing-controls"></div>
+        <div id="processing-message" class="status-message"></div>
 
-      <h3>Sample Analysis</h3>
-      <div id="analysis-result"></div>
+        <h3>Sample Batches</h3>
+        <div id="processing-batches"></div>
 
-      <h3>Latest Process Result</h3>
-      <div id="process-result"></div>
-    </section>
-  </main>
+        <h3>Sample Analysis</h3>
+        <div id="analysis-result"></div>
+
+        <h3>Latest Process Result</h3>
+        <div id="process-result"></div>
+      </section>
+    </main>
+  </div>
 
   <script type="module" src="src/app.js"></script>
 </body>

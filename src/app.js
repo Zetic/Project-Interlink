@@ -22,6 +22,7 @@ import { acquireSampleFromOccurrence, DEFAULT_SAMPLE_MASS_KG } from './core/mate
 import { componentsPercent } from './core/materials/materialBatches.js';
 import { CRUSHING_PROCESS_ID, listProcessDefinitions } from './core/processes/processDefinitions.js';
 import { runProcessAndCommit } from './core/processes/processExecution.js';
+import { initWorkspace, updateWorkspaceKnowledge } from './workspace/workspaceUI.js';
 
 // ---------- Application state ----------
 
@@ -622,6 +623,9 @@ function onGeneratePlanet() {
   el('regions-section').style.display = 'block';
   el('discovery-section').style.display = 'block';
   el('processing-section').style.display = 'block';
+
+  // Initialise the player-facing workspace with the new world + knowledge
+  initWorkspace(world, knowledge);
 }
 
 function onDiscoverFeature() {
@@ -653,6 +657,9 @@ function onDiscoverFeature() {
 
   updateDiscoveryCounter();
   renderProcessingSection();
+
+  // Sync discovery state to the player workspace
+  updateWorkspaceKnowledge(knowledge);
 }
 
 function onCollectSample() {
@@ -723,7 +730,23 @@ function onRunProcess() {
 
 // ---------- Init ----------
 
+// Mode toggle: player view ↔ debug view
+let currentMode = 'player'; // default to player workspace
+
+function setMode(mode) {
+  currentMode = mode;
+  el('player-view').style.display = mode === 'player' ? '' : 'none';
+  el('debug-view').style.display  = mode === 'debug'  ? '' : 'none';
+  el('mode-toggle-btn').textContent = mode === 'player' ? 'Debug View' : 'Player View';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  setMode('player');
+
+  el('mode-toggle-btn').addEventListener('click', () => {
+    setMode(currentMode === 'player' ? 'debug' : 'player');
+  });
+
   el('generate-btn').addEventListener('click', onGeneratePlanet);
   el('discover-btn').addEventListener('click', onDiscoverFeature);
   el('seed-input').addEventListener('keydown', e => {

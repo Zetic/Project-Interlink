@@ -11,17 +11,7 @@ import {
   getProcessDefinition,
   MAGNETIC_SEPARATION_PROCESS_ID,
 } from './processDefinitions.js';
-
-const MAGNETIC_RESPONSE_BY_COMPONENT = {
-  magnetite: { baseRecovery: 0.2, variableRecovery: 0.75 },
-  hematite: { baseRecovery: 0.08, variableRecovery: 0.32 },
-  goethite: { baseRecovery: 0.05, variableRecovery: 0.18 },
-  quartzAndGangue: { baseRecovery: 0.01, variableRecovery: 0.04 },
-};
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
+import { assertCrushingTarget, splitMagneticComponents } from './processPhysics.js';
 
 function assertWorldOrdinals(world) {
   if (!Number.isInteger(world.nextMaterialBatchOrdinal) || world.nextMaterialBatchOrdinal < 1) {
@@ -160,27 +150,6 @@ function validateOutputPortBatches(processDefinition, outputPortBatches) {
   }
 }
 
-function buildOutputComponents(inputComponentsKg, fieldStrength) {
-  const concentrateComponentsKg = {};
-  const tailingsComponentsKg = {};
-
-  for (const [componentId, inputMassKg] of Object.entries(inputComponentsKg)) {
-    const response = MAGNETIC_RESPONSE_BY_COMPONENT[componentId];
-    const recovery = clamp(response.baseRecovery + response.variableRecovery * fieldStrength, 0, 1);
-
-    const concentrateMassKg = roundKg(inputMassKg * recovery);
-    const tailingsMassKg = roundKg(inputMassKg - concentrateMassKg);
-
-    concentrateComponentsKg[componentId] = concentrateMassKg;
-    tailingsComponentsKg[componentId] = tailingsMassKg;
-  }
-
-  return {
-    concentrateComponentsKg,
-    tailingsComponentsKg,
-  };
-}
-
 function runMagneticSeparation(processDefinition, inputBatchesByPort, normalizedParameters) {
   const inputBatch = inputBatchesByPort.feed;
   const maxFeedParticleSizeMm = processDefinition.maxFeedParticleSizeMm ?? Infinity;
@@ -190,29 +159,20 @@ function runMagneticSeparation(processDefinition, inputBatchesByPort, normalized
     );
   }
 
-  for (const componentId of Object.keys(inputBatch.componentsKg)) {
-    if (!MAGNETIC_RESPONSE_BY_COMPONENT[componentId]) {
-      throw new Error(`Process '${processDefinition.id}' does not support component '${componentId}'`);
-    }
-  }
-
   const { fieldStrength } = normalizedParameters;
-  const { concentrateComponentsKg, tailingsComponentsKg } = buildOutputComponents(
-    inputBatch.componentsKg,
-    fieldStrength
-  );
+  const { concentrate, tailings } = splitMagneticComponents(inputBatch.componentsKg, fieldStrength, roundKg);
 
   return {
     outputPortBatches: [
       {
         outputId: 'concentrate',
-        componentsKg: concentrateComponentsKg,
+        componentsKg: concentrate,
         particleSizeMm: inputBatch.particleSizeMm,
         resourceId: null,
       },
       {
         outputId: 'tailings',
-        componentsKg: tailingsComponentsKg,
+        componentsKg: tailings,
         particleSizeMm: inputBatch.particleSizeMm,
         resourceId: null,
       },
@@ -223,12 +183,7 @@ function runMagneticSeparation(processDefinition, inputBatchesByPort, normalized
 function runCrushing(processDefinition, inputBatchesByPort, normalizedParameters) {
   const inputBatch = inputBatchesByPort.feed;
   const { targetParticleSizeMm } = normalizedParameters;
-
-  if (targetParticleSizeMm >= inputBatch.particleSizeMm) {
-    throw new Error(
-      `Process '${processDefinition.id}' requires targetParticleSizeMm below current feed size (${inputBatch.particleSizeMm} mm)`
-    );
-  }
+  assertCrushingTarget(inputBatch.particleSizeMm, targetParticleSizeMm);
 
   return {
     outputPortBatches: [
@@ -349,8 +304,6 @@ export function runProcessAndCommit(world, processId, inputBindings, parameters 
     throw new Error(`Process '${processId}' violates matter conservation`);
   }
 
-  // Stage every ID and output batch before mutating World State. If validation
-  // fails anywhere below, the physical input batches and world counters remain unchanged.
   const runId = `process-run-${world.nextProcessRunOrdinal}`;
   if (world.processResults[runId]) {
     throw new Error(`Process result id '${runId}' already exists`);
@@ -393,7 +346,6 @@ export function runProcessAndCommit(world, processId, inputBindings, parameters 
     metrics: executionResult.metrics,
   };
 
-  // Commit only after the entire transition has been successfully validated.
   for (const inputBatch of inputBatches) {
     inputBatch.status = 'consumed';
     inputBatch.consumedByProcessRunId = runId;
