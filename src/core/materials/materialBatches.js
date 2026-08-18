@@ -107,7 +107,7 @@ export function createMaterialBatch({
 
   return {
     id,
-    sourceOccurrenceId: sourceOccurrenceId ?? normalizedProvenance.sourceOccurrenceIds[0] ?? null,
+    sourceOccurrenceId,
     resourceId,
     particleSizeMm: parseFloat(particleSizeMm.toFixed(3)),
     provenance: normalizedProvenance,

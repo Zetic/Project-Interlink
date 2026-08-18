@@ -131,13 +131,13 @@ function runMagneticSeparation(processDefinition, inputBatchesByPort, normalized
         outputId: 'concentrate',
         componentsKg: concentrateComponentsKg,
         particleSizeMm: inputBatch.particleSizeMm,
-        resourceId: inputBatch.resourceId,
+        resourceId: null,
       },
       {
         outputId: 'tailings',
         componentsKg: tailingsComponentsKg,
         particleSizeMm: inputBatch.particleSizeMm,
-        resourceId: inputBatch.resourceId,
+        resourceId: null,
       },
     ],
   };
@@ -159,7 +159,7 @@ function runCrushing(processDefinition, inputBatchesByPort, normalizedParameters
         outputId: 'product',
         componentsKg: { ...inputBatch.componentsKg },
         particleSizeMm: targetParticleSizeMm,
-        resourceId: inputBatch.resourceId,
+        resourceId: null,
       },
     ],
   };
@@ -219,7 +219,6 @@ export function executeProcess(processDefinition, inputBatchesByPort, parameters
   return {
     processId: processDefinition.id,
     inputBindings: (processDefinition.inputs ?? []).map(input => ({ inputId: input.id, batchId: inputBatchesByPort[input.id].id })),
-    inputBatchIds: inputBatches.map(batch => batch.id),
     parameters: normalizedParameters,
     outputPortBatches: execution.outputPortBatches,
     metrics,
@@ -301,7 +300,6 @@ export function runProcessAndCommit(world, processId, inputBindings, parameters 
     id: runId,
     processId,
     inputBindings: executionResult.inputBindings,
-    inputBatchIds: executionResult.inputBatchIds,
     outputBatches: stagedOutputBatches.map(output => ({
       outputId: output.outputId,
       batchId: output.batchId,

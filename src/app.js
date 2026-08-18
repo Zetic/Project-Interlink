@@ -562,10 +562,11 @@ function bindProcessingEventHandlers() {
     });
   }
 
-  const parameterInputs = document.querySelectorAll('[data-process-param-id]');
-  for (const input of parameterInputs) {
-    input.addEventListener('input', () => {
-      const parameterId = input.getAttribute('data-process-param-id');
+  const controlsRoot = el('processing-controls');
+  if (controlsRoot) {
+    controlsRoot.oninput = event => {
+      const input = event.target;
+      const parameterId = input?.getAttribute?.('data-process-param-id');
       if (!parameterId) return;
 
       const numericValue = parseFloat(input.value);
@@ -575,7 +576,7 @@ function bindProcessingEventHandlers() {
         uiState.processParametersByProcessId[uiState.selectedProcessId] = {};
       }
       uiState.processParametersByProcessId[uiState.selectedProcessId][parameterId] = numericValue;
-    });
+    };
   }
 
   const collectButton = el('collect-sample-btn');
