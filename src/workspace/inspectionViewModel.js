@@ -62,6 +62,7 @@ export function machineInspection(blueprint, node) {
     operatingState: node?.operatingState ?? 'off',
     configuredThroughputKgPerSecond,
     actualFeedKgPerSecond: inputInspection?.totalFlowKgPerSecond ?? 0,
+    actualProductKgPerSecond: outputByPort.product?.totalFlowKgPerSecond ?? 0,
     lastError: node?.lastError ?? null,
     input: inputInspection,
     outputs: outputByPort,

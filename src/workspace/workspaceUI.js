@@ -493,7 +493,10 @@ function selectSystem(systemId) {
 function formatCompositeInspector(node) {
   if (!node) return 'Select a system.';
   let html = `<div class="ws-ins-type">${escHtml(node.systemType?.toUpperCase() ?? node.nodeType.toUpperCase())}</div><div class="ws-ins-row"><b>ID:</b> ${escHtml(node.id)}</div>`;
-  if (node.nodeType === 'region') {
+  if (node.nodeType === 'hopper') {
+    const details = hopperInspection(node);
+    html += `<div class="ws-ins-row"><b>Stored:</b> <span data-live="boundary-stored">${details.storedMassKg.toFixed(3)}</span> kg</div><div class="ws-ins-row"><b>Capacity:</b> ${details.capacityKg} kg</div><div class="ws-ins-row"><b>Free:</b> <span data-live="boundary-free">${details.freeCapacityKg.toFixed(3)}</span> kg</div><div class="ws-ins-row"><b>Particle size:</b> <span data-live="boundary-particle-size">${details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`}</span></div><div class="ws-ins-comp">${details.components.map(component => `<div class="ws-ins-comp-row"><span>${escHtml(component.componentId)}</span><span data-boundary-component="${escHtml(component.componentId)}">${component.massKg.toFixed(3)} kg (${component.percentage.toFixed(1)}%)</span></div>`).join('') || '<span>no stored constituents</span>'}</div>`;
+  } else if (node.nodeType === 'region') {
     const region = wsState.world.regions[node.id];
     html += `<div class="ws-ins-row"><b>Known sites:</b> ${knownSiteIds(region).length}</div>`;
     const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
@@ -526,7 +529,10 @@ function formatCompositeInspector(node) {
 function updateCompositeInspector(force = false) {
   const body = el('ws-composite-inspector-body');
   if (!body) return;
-  const node = wsState.world?.systemNodes?.[inspector.selectedSystemId];
+  const node = wsState.world?.systemNodes?.[inspector.selectedSystemId]
+    ?? (wsState.currentLevel === 'region'
+      ? getSimulationWorkspace(wsState.world, `${wsState.selectedRegionId}-workspace`)?.nodes?.[inspector.selectedSystemId]
+      : null);
   const key = `system:${node?.id ?? 'none'}:${inspector.message}`;
   if (force || inspector.renderKey !== key) {
     body.innerHTML = `${inspector.message ? `<div class="ws-ins-note">${escHtml(inspector.message)}</div>` : ''}${node ? formatCompositeInspector(node) : 'Select a Region, Site, or transfer node.'}`;
@@ -540,6 +546,30 @@ function updateCompositeInspector(force = false) {
     const exp = workspace?.nodes?.[`${node.id}-export-hopper`];
     if (body.querySelector('[data-live="region-import"]')) body.querySelector('[data-live="region-import"]').textContent = (imp ? hopperStoredMassKg(imp) : 0).toFixed(2);
     if (body.querySelector('[data-live="region-export"]')) body.querySelector('[data-live="region-export"]').textContent = (exp ? hopperStoredMassKg(exp) : 0).toFixed(2);
+  }
+  if (node?.nodeType === 'hopper') {
+    const details = hopperInspection(node);
+    const stored = body.querySelector('[data-live="boundary-stored"]'); if (stored) stored.textContent = details.storedMassKg.toFixed(3);
+    const free = body.querySelector('[data-live="boundary-free"]'); if (free) free.textContent = details.freeCapacityKg.toFixed(3);
+    const particle = body.querySelector('[data-live="boundary-particle-size"]'); if (particle) particle.textContent = details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`;
+    for (const component of details.components) {
+      const span = body.querySelector(`[data-boundary-component="${CSS.escape(component.componentId)}"]`);
+      if (span) span.textContent = `${component.massKg.toFixed(3)} kg (${component.percentage.toFixed(1)}%)`;
+    }
+    if (node?.nodeType === 'site') {
+      const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
+      const outputPort = getSystemNodePort(node, 'material-output');
+      const output = workspace?.nodes?.[outputPort?.childNodeId];
+      const span = body.querySelector('[data-live="site-output"]');
+      if (span) span.textContent = (output ? hopperStoredMassKg(output) : 0).toFixed(2);
+    }
+    if (node?.nodeType === 'transfer-terminal') {
+      const regionNode = wsState.world.systemNodes[node.inspectableState.regionId];
+      const workspace = getSimulationWorkspace(wsState.world, regionNode.childWorkspaceId);
+      const output = workspace?.nodes?.[`${node.inspectableState.regionId}-export-hopper`];
+      const span = body.querySelector('[data-live="terminal-buffer"]');
+      if (span) span.textContent = (output ? hopperStoredMassKg(output) : 0).toFixed(2);
+    }
   }
   body.querySelectorAll('[data-transfer-rate]').forEach(span => { const t = wsState.world.simulation.transfers[span.dataset.transferRate]; if (t) span.textContent = t.lastRateKgPerSecond.toFixed(2); });
 }
@@ -645,7 +675,7 @@ function formatNodeInspector(node) {
   if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
     const details = machineInspection(wsState.blueprint, node);
     html += `<div class="ws-ins-row"><b>State:</b> <span data-live="state">${escHtml(details.operatingState)}</span></div><div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${details.enabled ? 'On' : 'Off'}</button></div>`;
-    html += `<div class="ws-ins-row"><b>Configured throughput:</b> ${details.configuredThroughputKgPerSecond} kg/s</div><div class="ws-ins-row"><b>Actual feed:</b> <span data-live="machine-feed">${details.actualFeedKgPerSecond.toFixed(3)}</span> kg/s</div>`;
+    html += `<div class="ws-ins-row"><b>Configured throughput:</b> ${details.configuredThroughputKgPerSecond} kg/s</div><div class="ws-ins-row"><b>Actual feed:</b> <span data-live="machine-feed">${details.actualFeedKgPerSecond.toFixed(3)}</span> kg/s</div><div class="ws-ins-row"><b>Actual product:</b> <span data-live="machine-product">${details.actualProductKgPerSecond.toFixed(3)}</span> kg/s</div>`;
     if (node.nodeType === 'extractor') html += `<div class="ws-ins-row"><b>Occurrence:</b> ${escHtml(wsState.world?.resourceOccurrences?.[node.occurrenceId]?.name ?? node.occurrenceId)}</div>`;
     if (node.nodeType === 'crusher') html += `<div class="ws-ins-row"><b>Target size:</b> ${node.targetParticleSizeMm} mm</div>`;
     if (node.nodeType === 'magSep') {
@@ -688,6 +718,7 @@ function updateInspector(force = false) {
     } else {
       const details = machineInspection(wsState.blueprint, node);
       const feed = body.querySelector('[data-live="machine-feed"]'); if (feed) feed.textContent = details.actualFeedKgPerSecond.toFixed(3);
+      const product = body.querySelector('[data-live="machine-product"]'); if (product) product.textContent = details.actualProductKgPerSecond.toFixed(3);
       for (const [key, stream] of [['feed', details.feed], ['concentrate', details.concentrate], ['tailings', details.tailings]]) {
         const span = body.querySelector(`[data-live="${key}-flow"]`); if (span) span.textContent = (stream?.totalFlowKgPerSecond ?? 0).toFixed(3);
       }

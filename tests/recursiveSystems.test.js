@@ -141,6 +141,23 @@ test('generated Regions expose material input/output and runtime buffers without
   assert.equal(workspace.nodes[`${regionId}-export-hopper`].nodeType, 'hopper');
 });
 
+test('generated Sites expose distinct import/export boundary owners without implicit logistics', () => {
+  const world = createWorld('site-boundaries');
+  createWorldSimulation(world);
+  const siteId = Object.keys(world.sites)[0];
+  const site = world.systemNodes[siteId];
+  const workspace = getSimulationWorkspace(world, site.childWorkspaceId);
+  const input = resolveBoundaryPort(site, 'material-input', workspace);
+  const output = resolveBoundaryPort(site, 'material-output', workspace);
+
+  assert.equal(input.node.boundaryRole, 'import');
+  assert.equal(output.node.boundaryRole, 'export');
+  assert.notEqual(input.node, output.node);
+  assert.equal(world.simulation.transfers && Object.keys(world.simulation.transfers).length, 0);
+  assert.equal(site.ports.find(port => port.id === 'material-input').childNodeId, input.node.id);
+  assert.equal(site.ports.find(port => port.id === 'material-output').childNodeId, output.node.id);
+});
+
 test('world transfer registry rejects source fan-out and input fan-in', () => {
   const world = createWorld('transfer-contracts');
   createWorldSimulation(world);
