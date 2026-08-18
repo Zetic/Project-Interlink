@@ -3,7 +3,7 @@
  * Returns a plain JavaScript planet object with no DOM dependencies.
  */
 
-import { createRNG, hashSeed } from './random.js';
+import { createRNG, hashSeed, rngFor } from './random.js';
 import { generateRegions } from './generateRegions.js';
 
 const PLANET_NAMES = [
@@ -289,25 +289,36 @@ function classifyPlanetType(planet) {
 export function generatePlanet(seedInput) {
   const seedStr = String(seedInput ?? 'default-seed');
   const numericSeed = hashSeed(seedStr);
+  // Top-level RNG for planet name pick; all subsystems use namespaced streams
   const rng = createRNG(numericSeed);
   const name = rng.pick(PLANET_NAMES);
 
+  // Each generation domain gets its own namespaced RNG stream so that changes
+  // to one domain do not reshuffle unrelated domains for the same seed.
+  const baseRng        = rngFor(seedStr, 'planet:base');
+  const bulkRng        = rngFor(seedStr, 'planet:bulk');
+  const thermalRng     = rngFor(seedStr, 'planet:thermal');
+  const interiorRng    = rngFor(seedStr, 'planet:interior');
+  const atmosphereRng  = rngFor(seedStr, 'planet:atmosphere');
+  const activeRng      = rngFor(seedStr, 'planet:active');
+  const exteriorRng    = rngFor(seedStr, 'planet:exterior');
+
   // A. Base state
-  const base = generateBaseState(rng);
+  const base = generateBaseState(baseRng);
   // B. Bulk matter
-  const bulkMatter = generateBulkMatter(base, rng);
+  const bulkMatter = generateBulkMatter(base, bulkRng);
   // C. Thermal environment
-  const thermal = generateThermalEnvironment(base, bulkMatter, rng);
+  const thermal = generateThermalEnvironment(base, bulkMatter, thermalRng);
   // D. Interior partitioning
-  const structure = generateInteriorStructure(base, bulkMatter, thermal, rng);
-  // E. Physical dimensions
+  const structure = generateInteriorStructure(base, bulkMatter, thermal, interiorRng);
+  // E. Physical dimensions (deterministic derivation — no RNG needed)
   const dimensions = derivePhysicalDimensions(base, bulkMatter, structure);
   // F. Atmosphere
-  const atmosphere = generateAtmosphere(base, bulkMatter, thermal, dimensions, rng);
+  const atmosphere = generateAtmosphere(base, bulkMatter, thermal, dimensions, atmosphereRng);
   // G. Active state
-  const activeState = generateActiveState(base, structure, rng);
+  const activeState = generateActiveState(base, structure, activeRng);
   // H. Exterior state
-  const exterior = deriveExteriorState(bulkMatter, thermal, atmosphere, activeState, rng);
+  const exterior = deriveExteriorState(bulkMatter, thermal, atmosphere, activeState, exteriorRng);
 
   // Assemble planet (without regions first for biosphere reference)
   const planet = {
@@ -349,8 +360,10 @@ export function generatePlanet(seedInput) {
 
   planet.planetType = classifyPlanetType(planet);
 
-  // Generate regions
-  planet.regions = generateRegions(planet, rng);
+  // Generate regions — pass the root seed so region/feature sub-systems can
+  // derive independent namespaced RNG streams.
+  const regionRng = rngFor(seedStr, 'planet:regions');
+  planet.regions = generateRegions(planet, regionRng, seedStr);
 
   // Validate before returning
   validatePlanet(planet);
@@ -433,11 +446,24 @@ function validatePlanet(planet) {
   const areaSum = planet.regions.reduce((a, r) => a + r.areaPercent, 0);
   if (Math.abs(areaSum - 100) > 1.5) errors.push(`Region areas sum to ${areaSum}`);
 
-  // Feature parent regions
+  // Feature invariants
   for (const region of planet.regions) {
     for (const feature of region.features) {
+      // Feature ID must belong to this region
       if (!feature.id.startsWith(`feature-${region.id}`)) {
         errors.push(`Feature ${feature.id} in wrong region ${region.id}`);
+      }
+      // Physical features must not carry player-discovery state
+      if ('discovered' in feature) {
+        errors.push(`Feature ${feature.id} contains 'discovered' — move to knowledgeState`);
+      }
+      // Feature must carry regionId back-reference
+      if (feature.regionId !== region.id) {
+        errors.push(`Feature ${feature.id} has wrong regionId '${feature.regionId}', expected '${region.id}'`);
+      }
+      // Resource occurrences should be an array
+      if (!Array.isArray(feature.resourceOccurrences)) {
+        errors.push(`Feature ${feature.id} missing resourceOccurrences array`);
       }
     }
   }
@@ -450,7 +476,7 @@ function validatePlanet(planet) {
         if (bioIds.has(r.resourceId)) errors.push(`Biological resource ${r.resourceId} in region without biosphere`);
       }
       for (const feature of region.features) {
-        for (const r of feature.resources) {
+        for (const r of feature.resourceOccurrences) {
           if (bioIds.has(r.resourceId)) errors.push(`Biological resource ${r.resourceId} in feature without biosphere`);
         }
       }

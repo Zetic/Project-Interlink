@@ -67,11 +67,15 @@ export function makeRegionResource(resource, rng) {
 
 /**
  * Generate a feature resource occurrence.
+ * @param {object} resource  - ResourceDefinition from the catalog.
+ * @param {object} rng
+ * @param {string} occurrenceId - Stable ID assigned by the caller.
  */
-export function makeFeatureResource(resource, rng) {
+export function makeFeatureResource(resource, rng, occurrenceId) {
   const concentration = parseFloat(rng.range(1, 80).toFixed(1));
   const qv = rng.random();
   return {
+    id: occurrenceId,
     resourceId: resource.id,
     name: resource.name,
     concentrationPercent: concentration,
