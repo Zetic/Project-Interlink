@@ -38,6 +38,8 @@ sources
 
 World generation exists to create meaningful physical starting conditions for gameplay. Do not allow development to become generation-only.
 
+A generated Feature should eventually matter because it creates a physical opportunity, constraint, resource, environment, or interaction for the player. Do not treat Features as decorative metadata with no eventual gameplay role.
+
 ---
 
 # Repository / Platform Guardrails
@@ -83,17 +85,22 @@ Do not recreate the removed `planet-generator/` wrapper directory.
 - global Pause/Resume
 - active-machine `enabled` command state
 - derived `off / idle / running / blocked` operating state
-- persistent Site engineering sessions while navigating
+- persistent Site simulation sessions while navigating
 - recursive Site/Region system metadata and typed boundary ports
 - explicit Site Import / Site Export and Region Import / Region Export physical boundary buffers
 - nested boundary resolution and conserved transfer primitives
 - draggable Site, Region, and Planet node workspaces
+- one shared `GraphNode` / `GraphPort` / `GraphConnection` projection layer
+- one shared graph-node renderer and stable edge renderer across Site, Region, and Planet
+- common selected-node projection, common connection-preview renderer, and adapter-based disconnect dispatch
+- Region hidden-terminal → visible-boundary endpoint projection regression coverage
 - detailed Hopper/stream/machine/boundary/transfer inspection
 - stable live node and connection DOM
-- Debug View retained for prototype/debug workflows
 - deterministic automated tests / GitHub Actions
 
-The current remaining architectural defect is that Site engineering and Region/Planet parent workspaces still use separate player-facing graph/connection implementations. Do not add more hierarchy-specific graph code on top of that duplication.
+Issue #18 / PR #19 completed the shared graph architecture. Do **not** reintroduce hierarchy-specific graph renderers or parallel node/edge systems.
+
+The active cleanup problem is now the application shell and remaining prototype-era concepts around that graph: separate Site vs parent workspace shells, inconsistent Inspector styling/sizing, different node/canvas dimensions, legacy Debug View/startup wiring, discovery/survey gating, and special `engineering` terminology/compatibility gates.
 
 ---
 
@@ -106,17 +113,32 @@ WORLD / SIMULATION STATE
 objective physical truth
         ↓
 PLAYER KNOWLEDGE STATE
-what the player has discovered or measured
+measurements / analysis / estimates / confidence
         ↓
 APPLICATION / UI STATE
-selection, node layout, panels, temporary interaction state
+selection / graph layout / viewport pan+zoom / panels / temporary interactions
 ```
 
 Physical state must not live only in DOM objects.
 
-Knowledge actions reveal/estimate physical truth rather than mutate it merely because the player learned it.
+Knowledge actions may measure or estimate physical truth; they do not mutate physical truth merely because the player learned something.
 
-Workspace node positions are application state unless an explicit gameplay rule makes physical position meaningful.
+Workspace node positions and viewport transforms are application state unless an explicit gameplay rule later makes physical position meaningful.
+
+## Structural world visibility is not a Knowledge gate
+
+The project direction no longer uses Feature discovery/surveying to determine whether generated Regions, Sites, or Features exist in Player View.
+
+After planet generation:
+
+- all generated Regions are visible
+- all generated Sites are visible in their Regions
+- every generated Feature belongs to an enterable Site
+- entering a Site exposes its Feature node(s)
+
+Do not introduce or preserve `unknown/discovered` gating merely to hide generated structural entities.
+
+Knowledge State remains useful for meaningful analysis/measurement data such as exact composition, estimates, sensor readings, characterization, uncertainty, or confidence.
 
 ---
 
@@ -230,17 +252,17 @@ Until an explicit splitter exists, one material output port must not fan out to 
 
 # Uniform Workspace Graph — Hard UI Contract
 
-The player-facing hierarchy must use **one shared node/port/connection architecture at every implemented scale**.
+The player-facing hierarchy uses **one shared node/port/connection architecture at every implemented scale**.
 
 Do not interpret “uniform” as merely making separate Site, Region, and Planet renderers look similar.
 
-From the player's perspective, primitive apparatus, boundary buffers, and composite systems share this interaction language:
+From the player's perspective, primitive apparatus, Feature nodes, boundary buffers, and composite systems share this interaction language:
 
 ```text
 select
 → drag/rearrange
 → inspect
-→ connect typed ports
+→ connect typed ports where physically meaningful
 → enter/drill down if composite
 → observe live state
 ```
@@ -249,12 +271,13 @@ Examples:
 
 ```text
 Primitive: Extractor, Hopper, Crusher, Magnetic Separator, Boundary Buffer
+Physical Feature: Ore Deposit, Aquifer, Volcanic Vent, Reservoir, Cavern
 Composite: Site, Region, Planet, Facility later
 ```
 
 ## Shared graph abstraction
 
-Implement/generalize the smallest common graph layer capable of projecting all current workspace entities into common UI concepts such as:
+Preserve the common graph responsibilities established by Issue #18:
 
 ```text
 GraphNode
@@ -273,22 +296,19 @@ GraphConnection
 └── disconnect action
 ```
 
-Names may differ, but the responsibilities must be shared.
-
 Use one common path for:
 
 - stable node DOM creation/update
 - stable edge DOM/SVG creation/update
-- layout positioning
-- node dragging
-- port drag/connect interaction
+- graph-node selection state
+- port rendering
+- port drag/connect gesture
 - graph-edge drawing
 - edge selection
-- Inspector selection
-- disconnect behavior
-- composite enter/drill-down
+- connection preview
+- adapter-based disconnect behavior
 
-Do **not** maintain independent implementations equivalent to `renderNode()/renderConnections()` for Site and `renderParentNode()/renderSystemConnections()` for Region/Planet once Issue #18 is complete.
+Do **not** reintroduce independent implementations equivalent to separate Site and Region/Planet graph renderers.
 
 ## Simulation adapters are allowed and expected
 
@@ -305,8 +325,6 @@ Region/Planet connection → BoundaryTransfer
 
 Local process physics and hierarchy-transfer physics may remain distinct behind adapters.
 
-The graph layer should depend on the common connection contract it needs to render and interact, not on hierarchy-specific storage details.
-
 ## Visibility invariant
 
 A critical invariant is:
@@ -317,193 +335,105 @@ The reverse should also hold for normal player-created edges: a visible persiste
 
 Do not allow a state where validation reports a source as already connected while the workspace shows no corresponding edge.
 
-## Layout semantics
+---
 
-Workspace node positions are UI/application state. Do not make Region/Planet layout coordinates physical simulation coordinates unless a future issue explicitly introduces that concept.
+# Uniform Workspace Shell — Hard UI Contract
+
+Planet, Region, and Site are different graphs inside the **same application shell**.
+
+Target structure:
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│ Breadcrumbs / World Controls                                 │
+├───────────────────────────────────────────────────────────────┤
+│ Zoom Out · Zoom % · Zoom In · Fit · Center                  │
+├──────────────────────────────────────────────┬────────────────┤
+│                                              │                │
+│              GRAPH VIEWPORT                  │   INSPECTOR    │
+│                                              │                │
+│       pan / zoom / nodes / connections       │   same shell   │
+│                                              │   everywhere   │
+└──────────────────────────────────────────────┴────────────────┘
+```
+
+Do not maintain separate outer interaction-area designs for Site vs Region/Planet once the cleanup is complete.
+
+The shared shell must own or standardize:
+
+- graph viewport allocation/size behavior
+- Inspector width
+- Inspector background/border/spacing/typography
+- normal node dimensions
+- toolbar placement
+- port and selected-node visual language
+- edge visual language
+- status/error presentation
+- action/button styling
+
+Specialized node content and modest type-specific colors are fine. Different hierarchy levels should not feel like different applications.
+
+## Viewport pan / zoom contract
+
+Use a fixed visible viewport over a larger logical graph world.
+
+Per-workspace UI state should include conceptually:
+
+```text
+panX
+panY
+zoom
+```
+
+Requirements:
+
+- mouse wheel zooms toward the pointer
+- middle-mouse drag and/or Space + left-drag pans
+- left-drag on a node continues to move the node
+- port dragging continues to create connections
+- toolbar exposes Zoom Out / Zoom In / Fit / Center and current zoom percentage
+- zoom is bounded to a sane range
+- each workspace remembers its own viewport transform
+- node layer and SVG/connection layer use the same transform
+- pointer coordinates are converted from screen/viewport coordinates to graph coordinates before node dragging or port interaction math
+- viewport state remains UI/application state and must not affect simulation truth
+
+Where practical, extract pure coordinate/viewport helpers so zoom/pan math can be unit-tested without browser DOM.
 
 ---
 
-# Composite Boundary Buffers — Hard Physical Contract
+# One Inspector — Hard UI Contract
 
-Every composite system that exchanges material with its parent should expose explicit child-visible boundary storage nodes.
+Use one Inspector container, style system, and interaction contract across Planet, Region, Site, Feature, boundary, machine, storage, and connection selection.
 
-For the current hierarchy, every Site should have at minimum:
-
-```text
-Site Import Boundary Buffer
-Site Export Boundary Buffer
-```
-
-Every Region should have at minimum:
+The outer structure should remain conceptually stable:
 
 ```text
-Region Import Boundary Buffer
-Region Export Boundary Buffer
+INSPECTOR
+
+TYPE / NAME
+
+STATE
+...
+
+DETAILS
+...
+
+CONTROLS
+...
+
+CONNECTIONS / CONTENTS
+...
+
+ACTIONS
+...
 ```
 
-## Site Import
+The selected entity determines which sections/fields appear. It must not determine a completely different Inspector panel design.
 
-From Region view, the Site node exposes a parent-facing material input.
+Do not retain one `.ws-inspector` system for Site and another `.ws-composite-inspector` system for Region/Planet after cleanup.
 
-Inside Site view, that same boundary buffer exposes material outward to local systems:
-
-```text
-REGION
-material → [Site input]
-
-SITE
-[Site Import] → local Hopper / machine / feature
-```
-
-## Site Export
-
-Inside Site view, local systems connect into the Site Export buffer:
-
-```text
-local Hopper → [Site Export]
-```
-
-At Region level, the Site node exposes that same stored state as a parent-facing output:
-
-```text
-[Site output] → regional logistics
-```
-
-## Region boundaries
-
-Apply the same model recursively:
-
-```text
-REGION WORKSPACE
-[Region Import] → Sites/facilities
-Sites/facilities → [Region Export]
-
-PLANET WORKSPACE
-[Region input] / [Region output]
-```
-
-## One physical state across hierarchy views
-
-The internal boundary buffer and the parent-facing composite port are two views of the same physical state.
-
-Never duplicate inventory because the same boundary is visible at two hierarchy levels.
-
-For example, if Site Export contains 347 kg, the Region-level Site node may display `347 kg available`, but there is still exactly one 347 kg physical owner.
-
-## Boundary nodes should be visibly distinct
-
-Do not disguise Site Import as an ordinary unnamed Hopper or map Site Export directly onto a process Hopper.
-
-Use explicit player-facing labels/node semantics such as:
-
-```text
-Site Import
-Site Export
-Region Import
-Region Export
-```
-
-The implementation may reuse common storage helpers internally.
-
----
-
-# No Implicit Cross-Boundary Logistics
-
-A boundary existing does **not** imply transportation.
-
-Do not automatically create Site → Region transfers when a Site engineering session is created, entered, reset, or registered.
-
-The player must explicitly create the connection that moves matter across the next hierarchy level.
-
-Desired chain:
-
-```text
-Concentrate Hopper
-    ↓ explicit Site-workspace connection
-Site Export Buffer
-    ↓ explicit Region-workspace connection
-Region Export / logistics
-    ↓ explicit Planet-workspace connection
-Destination Region Import Buffer
-```
-
-If a connection does not exist, material remains in its current physical buffer. When that buffer fills, normal backpressure should propagate.
-
----
-
-# Parent Composite Nodes Are Views of Their Child Boundaries
-
-A Site or Region node shown in its parent workspace should expose:
-
-- typed input/output ports
-- live available/imported material summaries where useful
-- selection/Inspector state
-- draggable layout position
-- enter/drill-down action
-
-The node itself must not create an independent duplicate buffer for each displayed port.
-
-Use explicit mapping from parent-facing ports to the corresponding child-visible boundary buffers.
-
----
-
-# Features Inside Sites
-
-A Site is not one `ResourceOccurrence`.
-
-A Site is a geographically bounded composite system associated with a Region and may contain:
-
-- one or more Features / ResourceOccurrences
-- extraction apparatus
-- storage
-- processing
-- import/export boundaries
-- later power/logistics/control systems
-
-Do not architect Sites as source-only systems.
-
-Features may eventually expose input/output interfaces where physically meaningful, for example injection wells, storage caverns, reservoirs, waste sinks, or backfill areas.
-
-Site Import must remain available so future receiving behavior is natural.
-
----
-
-# Simulation Time vs Machine Control
-
-Maintain three concepts:
-
-```text
-WORLD TIME
-running / paused
-
-MACHINE COMMAND STATE
-enabled / disabled
-
-MACHINE OPERATING STATE
-off / idle / running / blocked / faulted later
-```
-
-World simulation runs by default.
-
-Pause is global player time control and must not change machine `enabled` flags.
-
-Simulation progression must not depend on the currently rendered workspace.
-
-Active apparatus defaults `enabled: false` when newly created.
-
-`enabled: true` means operation is permitted, not guaranteed. An enabled machine may be Idle or Blocked and should automatically resume when its physical constraint clears.
-
-Use the same `enabled` primitive as the future automation/control target.
-
----
-
-# Live Inspector / Rendering Contract
-
-The Inspector must remain interactive while simulation runs.
-
-Keep the stable-DOM improvements from the recursive milestone. Do not regress to destroying/recreating every node, connection, or Inspector control every animation frame.
-
-However, stable rendering must not reduce inspection detail.
+The Inspector must remain interactive while simulation runs. Build structural content when selection/structure changes and update live values in place where practical.
 
 ## Hopper / boundary-buffer inspection
 
@@ -540,147 +470,452 @@ At minimum expose where relevant:
 - particle-size constraints/settings
 - last error/blocking reason
 
-For Magnetic Separator specifically, show distinct live summaries for:
+For Magnetic Separator specifically, show distinct live summaries for feed, concentrate, and tailings.
+
+## Feature inspection
+
+Feature inspection should expose generated physical properties and currently implemented interfaces/actions.
+
+Do not display player-facing concepts such as:
 
 ```text
-feed
-concentrate
-tailings
+engineering available
+engineering unavailable
 ```
 
-The underlying simulation already has the corresponding stream state; do not duplicate physics to obtain Inspector values.
-
-## Preferred rendering pattern
-
-Build Inspector structure when selection or structure changes, then update dynamic spans/rows in place during live simulation.
-
-If a variable-size constituent list changes, update only that constituent section rather than discarding the entire Inspector interaction tree every frame.
-
-Where practical, extract a DOM-independent inspection/view-model helper so detailed values can be regression-tested without relying on browser DOM tests.
+A currently unimplemented Feature interaction is a development limitation, not a world-state classification.
 
 ---
 
-# Current Immediate Priority — Issue #18
+# Application Start Flow — Hard Contract
 
-The active corrective priority is:
+Remove the prototype Debug/Player mode split from the application flow.
 
-> **Unify Site, Region, and Planet under one node/connection workspace architecture.**
-
-The current app already has draggable node views at all three scales. The issue is that Site and parent-level workspaces still use different renderer/connection interaction stacks, which can allow simulation connections and visible graph edges to disagree.
-
-Target architecture:
+Target:
 
 ```text
-SHARED WORKSPACE GRAPH
-
-GraphNode / GraphPort / GraphConnection
+LANDING SCREEN
+PROJECT INTERLINK
+Seed [________________]
+[ Generate World ]
         ↓
-shared renderer + interaction + Inspector selection
+Planet Workspace
         ↓
-connection adapter
-   ├── local blueprint connection / MaterialStream
-   └── recursive BoundaryTransfer
+Region Workspace
+        ↓
+Site Workspace
 ```
 
-This pass should focus on graph architecture and behavioral consistency, not new simulation domains.
+The landing screen owns world creation directly.
+
+Generating a world should:
+
+1. create World State;
+2. create Knowledge State;
+3. initialize world simulation;
+4. initialize Player workspace state;
+5. transition directly to Planet workspace.
+
+Do not generate a Player world by filling hidden Debug inputs and programmatically clicking a Debug button.
+
+## Remove legacy Debug presentation
+
+Remove from the normal app:
+
+- Debug / Player mode toggle
+- old Debug Planet Generator header and summary panels
+- legacy Regions debug listing
+- global Discover Feature button/counter
+- old prototype batch/process UI panels
+- obsolete debug-only UI state and event handlers that exist solely for those panels
+
+Removing the Debug View does **not** mean deleting valid generator, simulation, material/process APIs, or tests merely because the old UI once exercised them.
+
+Do not create a replacement hidden Debug View in the same cleanup.
 
 ---
 
-# Requirements for Issue #18
+# Planet → Region → Site — No Special Engineering Mode
 
-## 1. One node renderer/interaction path
+The player hierarchy is simply:
 
-Primitive machines, Hoppers, boundary buffers, Sites, and Regions should project into one shared node UI abstraction.
+```text
+Planet Workspace
+      ↓
+Region Workspace
+      ↓
+Site Workspace
+```
 
-Do not preserve separate hierarchy-specific node interaction implementations merely because their underlying simulation objects differ.
+A Site is not a special Engineering Mode.
 
-## 2. One connection renderer/interaction path
+Remove or rename player/application concepts such as:
 
-Local Site connections and Region/Planet transfers should project into one shared edge abstraction.
+```text
+currentLevel === 'engineering'
+renderEngineeringWorkspace()
+createEngineeringSession()
+engineeringSessions
+engineering available
+engineering unavailable
+compatibleOccurrenceForSite()
+```
 
-Every edge should support the same basic player behavior:
+Use ordinary Site language instead, conceptually:
 
-- visible line/path
-- live state display where available
-- selection
-- inspection
-- disconnect
+```text
+currentLevel === 'site'
+renderSiteWorkspace()
+createSiteSession()
+siteSessions
+```
 
-## 3. One drag-to-connect interaction path
+Do not gate Site entry on iron ore, process compatibility, or whether a particular prototype apparatus can currently use the Feature.
 
-Use the same conceptual source-port → target-port gesture and common compatibility/error presentation at every hierarchy level.
-
-Simulation-specific validation may be delegated to adapters.
-
-## 4. Preserve simulation-specific execution behind adapters
-
-Do not rewrite Magnetic Separator/Crusher/local continuous physics as `BoundaryTransfer` merely to make rendering common.
-
-Do not rewrite hierarchy transfer as local process streams merely to make rendering common.
-
-Unify the UI graph contract, not the physical solvers.
-
-## 5. Preserve recursive ownership
-
-Parent-facing Site/Region ports must continue to expose the same child boundary buffers without duplicating matter.
-
-## 6. Preserve explicit logistics
-
-No hierarchy-crossing material movement may become implicit as part of the refactor.
-
-## 7. Preserve stable live interaction
-
-Do not regress to frame-by-frame destructive node/edge/Inspector rebuilds.
-
-## 8. Keep Debug View
-
-Do not remove the Debug View or its manual validation controls.
+Every generated Site is enterable.
 
 ---
 
-# Required Regression Coverage for Issue #18
+# Sites and Features — Hard World/UI Contract
 
-Add fast deterministic coverage for the common graph projection/adapter layer where practical.
+A Site is a geographically bounded composite workspace associated with a Region.
 
-At minimum prove:
+A Feature is a physical world system located inside a Site.
 
-### Edge visibility / identity
+The intended hierarchy is:
 
-- every local connection projected into the current Site workspace produces one graph edge
-- every Region-level `BoundaryTransfer` in the current Region workspace produces one graph edge
-- every Planet-level `BoundaryTransfer` in the current Planet workspace produces one graph edge
-- graph edges resolve to the same source/target ports used by the underlying connection
-- no existing connection can be omitted merely because its endpoint uses a boundary adapter composite
+```text
+Planet
+  └── Region
+      └── Site
+          ├── Feature(s)
+          ├── Site Import
+          ├── Site Export
+          └── apparatus / storage / processes
+```
 
-### Interaction consistency
+## Every Feature gets an enterable Site
 
-- selecting an edge can resolve the underlying local connection or boundary transfer through the common graph abstraction
-- disconnecting through the common graph action removes the correct underlying connection
-- moving nodes changes layout state only
+World generation must not create Sites only for Features with a currently supported `ResourceOccurrence`.
 
-### Ownership / physics regression
+Every generated Feature must be associated with an enterable Site from world creation onward.
 
-- parent/child boundary mapping still resolves to one physical buffer
-- explicit connection requirements remain intact
-- constituent conservation and backpressure remain intact
-- local Magnetic Separator/Crusher physics remain unchanged
+Prefer the Site shape:
 
-### Existing regression
+```text
+featureIds: [...]
+```
 
-All existing generation, batch, continuous-flow, world-clock, machine-state, boundary-buffer, Inspector, and recursive-transfer tests remain green.
+over a singular `featureId`, even if current generation creates one Feature per Site.
+
+This preserves the long-term ability for one Site to contain multiple Features.
+
+If the serialized world shape changes, increment `schemaVersion` and update version-sensitive tests/fixtures accordingly.
+
+## Features appear as graph nodes inside Site
+
+Entering a Site should expose its Feature node(s) through the shared graph system.
+
+Feature nodes should be:
+
+- visible immediately after world creation when entering the Site
+- selectable
+- inspectable
+- laid out in Site UI state
+- able to expose typed ports/interfaces where physically appropriate
+
+Do not require a Feature to become a separate nested workspace simply because it is a node. The Site is the location/workspace.
+
+## Every Feature should eventually be exploitable/interactable
+
+The long-term design rule is:
+
+> **A Feature should exist because it creates a physical opportunity, constraint, resource, environment, or interaction for the player—not merely as decorative world-generation metadata.**
+
+Feature interfaces should follow physical meaning rather than a universal ore-source assumption.
+
+Examples:
+
+```text
+Ore Deposit       → solid extraction
+Injection Well    ← material/fluid input
+Reservoir         ↔ fluid interaction
+Storage Cavern    ↔ storage interaction
+Volcanic Vent     → thermal/gas/fluid opportunities later
+```
+
+Future interface kinds may include material, fluid, gas, thermal/energy, pressure/environment, data/measurement, or other types when active gameplay requires them.
+
+The active cleanup does **not** need to implement mature exploitation mechanics for every Feature type. It must establish the correct accessible Feature-node architecture and remove the old visibility/compatibility gates.
 
 ---
 
-# Explicitly Out of Scope for Issue #18
+# Composite Boundary Buffers — Hard Physical Contract
 
-Do not add unless strictly required to prove the shared graph contract:
+Every composite system that exchanges material with its parent should expose explicit child-visible boundary storage nodes.
 
-- right-click/context menus beyond minimal hooks needed for future use
+For the current hierarchy, every Site should have at minimum:
+
+```text
+Site Import Boundary Buffer
+Site Export Boundary Buffer
+```
+
+Every Region should have at minimum:
+
+```text
+Region Import Boundary Buffer
+Region Export Boundary Buffer
+```
+
+## Site Import
+
+From Region view, the Site node exposes a parent-facing material input.
+
+Inside Site view, that same boundary buffer exposes material outward to local systems:
+
+```text
+REGION
+material → [Site input]
+
+SITE
+[Site Import] → local system / Feature interaction
+```
+
+## Site Export
+
+Inside Site view, local systems connect into the Site Export buffer:
+
+```text
+local system → [Site Export]
+```
+
+At Region level, the Site node exposes that same stored state as a parent-facing output:
+
+```text
+[Site output] → regional logistics
+```
+
+## Region boundaries
+
+Apply the same model recursively:
+
+```text
+REGION WORKSPACE
+[Region Import] → Sites/facilities
+Sites/facilities → [Region Export]
+
+PLANET WORKSPACE
+[Region input] / [Region output]
+```
+
+## One physical state across hierarchy views
+
+The internal boundary buffer and the parent-facing composite port are two views of the same physical state.
+
+Never duplicate inventory because the same boundary is visible at two hierarchy levels.
+
+Boundary nodes should remain visibly distinct and explicitly labeled.
+
+---
+
+# No Implicit Cross-Boundary Logistics
+
+A boundary existing does **not** imply transportation.
+
+Do not automatically create Site → Region transfers when a Site session is created, entered, reset, or registered.
+
+The player must explicitly create the connection that moves matter across the next hierarchy level.
+
+Desired chain:
+
+```text
+local system
+    ↓ explicit Site-workspace connection
+Site Export Buffer
+    ↓ explicit Region-workspace connection
+Region Export / logistics
+    ↓ explicit Planet-workspace connection
+Destination Region Import Buffer
+```
+
+If a connection does not exist, material remains in its current physical buffer. When that buffer fills, normal backpressure should propagate.
+
+---
+
+# Parent Composite Nodes Are Views of Their Child Boundaries
+
+A Site or Region node shown in its parent workspace should expose:
+
+- typed input/output ports
+- live available/imported material summaries where useful
+- selection/Inspector state
+- draggable layout position
+- enter/drill-down action
+
+The node itself must not create an independent duplicate buffer for each displayed port.
+
+Use explicit mapping from parent-facing ports to the corresponding child-visible boundary buffers.
+
+---
+
+# Simulation Time vs Machine Control
+
+Maintain three concepts:
+
+```text
+WORLD TIME
+running / paused
+
+MACHINE COMMAND STATE
+enabled / disabled
+
+MACHINE OPERATING STATE
+off / idle / running / blocked / faulted later
+```
+
+World simulation runs by default.
+
+Pause is global player time control and must not change machine `enabled` flags.
+
+Simulation progression must not depend on the currently rendered workspace.
+
+Active apparatus defaults `enabled: false` when newly created.
+
+`enabled: true` means operation is permitted, not guaranteed. An enabled machine may be Idle or Blocked and should automatically resume when its physical constraint clears.
+
+Use the same `enabled` primitive as the future automation/control target.
+
+---
+
+# Current Immediate Priority — Unified Game Interface / Prototype Cleanup
+
+The active corrective milestone is:
+
+> **Planet, Region, and Site are different graphs inside the same interface—not different interfaces.**
+
+This is a cleanup and structural UI milestone. Preserve the physical simulation while removing prototype-era application structure and terminology.
+
+## Required implementation direction
+
+1. Replace the Debug/Player mode split with a dedicated landing screen and direct world creation.
+2. Remove the legacy Debug View and debug-only presentation/event-handling code.
+3. Transition from world generation directly into Planet workspace.
+4. Remove global Feature discovery, Prototype Survey Bootstrap, discovery counters, and structural visibility gating.
+5. Ensure all generated Regions and Sites are visible immediately.
+6. Ensure every generated Feature is associated with an enterable Site.
+7. Change Site data toward `featureIds` rather than singular `featureId`; bump schema if serialized shape changes.
+8. Make every Site enterable regardless of process/resource compatibility.
+9. Remove/rename `engineering` workspace/session concepts to normal Site terminology.
+10. Render Feature node(s) inside Site workspaces through the shared graph architecture.
+11. Do not classify Features as engineering available/unavailable.
+12. Build one shared outer workspace shell for Planet, Region, and Site.
+13. Standardize normal node dimensions rather than hierarchy-specific default sizes.
+14. Build one fixed graph viewport with common pan/zoom/fit/center behavior.
+15. Store per-workspace viewport transform as UI state.
+16. Ensure pan/zoom transforms both node and edge layers identically.
+17. Convert pointer coordinates correctly under zoom for node movement and connections.
+18. Use one Inspector container/style/update contract everywhere.
+19. Consolidate overlapping UI/CSS rules rather than adding another permanent override layer where practical.
+20. Preserve the shared graph architecture from Issue #18.
+21. Preserve recursive boundary ownership, explicit logistics, matter conservation, backpressure, process physics, world clock, and machine state.
+22. Keep the current automatic iron-processing prototype only as needed for simulation validation; it must not gate Site entry or define Feature availability.
+23. Remove dead prototype code only when no retained test/runtime behavior depends on it.
+24. Run all automated tests and perform a browser smoke pass for viewport/Inspector/entry interaction.
+
+---
+
+# Required Regression Coverage for the Cleanup
+
+Add fast deterministic coverage where practical.
+
+## World / Site / Feature structure
+
+Prove that:
+
+- every generated Region remains represented in the Planet workspace model
+- every generated Feature is associated with a Site
+- every generated Site is addressable/enterable regardless of current process compatibility
+- a Feature with zero resource occurrences still receives an enterable Site
+- Site `featureIds` reference valid Features
+- no Site/Feature structural visibility depends on discovery state
+- world generation remains deterministic for the same seed
+
+## Knowledge isolation
+
+Prove that:
+
+- removing Feature discovery gating does not collapse World and Knowledge state
+- material-batch analysis continues to update Knowledge only
+- future measurement/analysis state can remain separate from physical truth
+
+Delete or rewrite tests whose only purpose was validating the removed structural discovery mechanic.
+
+## Viewport math
+
+Where extracted as pure helpers, prove:
+
+- screen → graph coordinate conversion is correct at different zoom values
+- pan offsets are correctly applied
+- zooming around a pointer preserves the intended graph point under the cursor
+- Fit/Center calculations do not mutate node positions or simulation state
+
+## Shared shell / graph invariants
+
+Preserve proof that:
+
+- local Site connections render as graph edges
+- Region BoundaryTransfers render as graph edges
+- Planet BoundaryTransfers render as graph edges
+- hidden boundary adapters resolve to visible endpoints
+- selected-node state is consistent
+- connection preview remains common
+- disconnect dispatch reaches the correct simulation adapter
+
+## Ownership / physics regression
+
+All existing relevant tests for:
+
+- constituent conservation
+- backpressure
+- Hopper capacity
+- Crusher / Magnetic Separator physics
+- world-owned simulation clock
+- machine state
+- recursive boundary ownership
+- explicit boundary transfer
+- stable graph identity
+
+must remain green.
+
+## Browser smoke pass
+
+Automated Node tests may not fully exercise DOM/SVG pointer behavior. Manually verify at minimum:
+
+- landing screen generates a world and opens Planet view
+- Planet → Region → Site navigation works for different Feature types
+- all Sites are enterable
+- Feature nodes appear inside Sites
+- node dragging works at 100%, zoomed in, and zoomed out
+- port drag/connect preview stays aligned while zoomed/panned
+- edges remain aligned with ports during pan/zoom
+- Fit and Center behave predictably
+- Inspector geometry/style is the same at Planet, Region, and Site levels
+- world Pause/Resume remains functional
+- existing automated systems continue running when navigating elsewhere
+
+---
+
+# Explicitly Out of Scope for This Cleanup
+
+Do not expand the cleanup into unrelated gameplay systems unless strictly necessary for the structural changes above:
+
+- mature exploitation mechanics for every generated Feature type
 - realistic rail/truck/conveyor pathfinding
 - logistics scheduling/economics
 - splitter/merger gameplay
 - precise geological depletion/reserves
-- full automated surveying system
+- a new survey/discovery system
 - power grids
 - thermodynamics
 - fluids/gases
@@ -696,18 +931,9 @@ Do not add unless strictly required to prove the shared graph contract:
 - star/system generation
 - Web Worker/Wasm optimization
 - polished final art
+- full replacement of the current prototype processing chain with player construction
 
-The goal is to make the existing node language structurally uniform before adding more interaction features.
-
----
-
-# Discovery / Survey Direction
-
-The current Discover/prototype survey actions are scaffolding.
-
-Future surveying should become an automated system that updates Knowledge State over time.
-
-Do not expand surveying substantially in the shared-graph pass unless needed to access a test Site.
+The purpose is to make the current game interface and hierarchy coherent before adding more simulation domains.
 
 ---
 
@@ -721,6 +947,7 @@ containers = quantities
 processes  = transformations/capacities
 systems    = graphs with explicit external contracts
 layouts    = application-state positions
+viewports  = application-state pan/zoom
 ```
 
 World simulation frequency remains independent from rendering FPS.
@@ -741,13 +968,18 @@ For gameplay features, ask:
 
 > **What physical world state does this act on?**
 
+For generated Features, ask:
+
+> **What physical opportunity, constraint, resource, environment, or interaction does this Feature create?**
+
 When a parent/child design choice is ambiguous, favor the option that preserves:
 
 1. physical conservation
 2. one clear physical owner
 3. explicit interfaces
 4. one shared player-facing graph language at every scale
-5. automation
-6. future composition/nesting
+5. one shared application shell and interaction language
+6. automation
+7. future composition/nesting
 
 without adding unnecessary machinery to the active issue.
