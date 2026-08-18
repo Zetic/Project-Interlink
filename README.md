@@ -81,8 +81,11 @@ Current implemented behavior includes:
 - per-machine `enabled` plus `off / idle / running / blocked` operating state
 - persistent per-Site engineering sessions while navigating elsewhere
 - recursive Site and Region system metadata with typed boundary ports
+- explicit Site Import / Site Export and Region Import / Region Export physical boundary buffers
 - conserved cross-boundary transfer primitives
-- stable engineering node/connection DOM during live simulation
+- draggable Site, Region, and Planet node workspaces
+- detailed live Hopper, stream, machine, boundary, and transfer inspection
+- stable node/connection DOM during live simulation
 - retained Debug View
 - deterministic `node:test` regression coverage and GitHub Actions CI
 
@@ -111,20 +114,18 @@ Magnetic Separator
        └────────→ Tailings Hopper
 ```
 
-## Important current UX/architecture gaps
+## Important current UX/architecture gap
 
-The recursive runtime exists, but the player-facing hierarchy is not yet expressed consistently enough.
+The hierarchy is now visibly node-based at Site, Region, and Planet scale, but the implementation still contains **two separate graph/connection UI stacks**:
 
-The current merged implementation still has several prototype behaviors that should be corrected before expanding into richer logistics:
+- Site engineering uses the blueprint node/connection/stream renderer and interaction code.
+- Region and Planet use a separate parent-system node/`BoundaryTransfer` renderer and interaction path.
 
-- Planet and Region views render static system cards rather than draggable node canvases.
-- Site and Region external ports exist, but parent-level nodes do not yet use the same spatial interaction model as machines.
-- A Site's external output is currently mapped directly to the concentrate Hopper rather than to an explicit child-visible Site Export buffer.
-- Entering a Site currently creates an automatic hidden Site → Regional Export transfer, which can drain concentrate without a player-created logistics connection.
-- The Site Import buffer exists as an ordinary Hopper rather than as an explicit boundary node, and there is no symmetric explicit Site Export node.
-- The detailed Inspector information from the earlier engineering workspace was reduced during the stable-live-render refactor: Hopper composition/particle size and stream constituent rates/particle size are no longer shown.
+That duplication can make the UI disagree with simulation truth. For example, a Region-level transfer can exist and reject a second connection as “already connected” while the corresponding visible edge is missing.
 
-These are implementation gaps in the current recursive presentation, not changes to the underlying conservation model.
+This is not a conservation-model problem. It is a workspace-architecture problem.
+
+The next corrective pass is tracked in **Issue #18** and should unify all implemented hierarchy levels behind one shared node/port/connection presentation and interaction layer.
 
 ---
 
@@ -237,7 +238,7 @@ Processes must not consume matter unless the corresponding outputs can be commit
 
 # Player Interface: One Node Language at Every Scale
 
-The Player View should use a **uniform draggable node-workspace language across scales**.
+The Player View uses a **uniform node-workspace language across scales**.
 
 From the player's perspective:
 
@@ -281,7 +282,45 @@ select
 → observe live state
 ```
 
-A Region or Site should not merely be styled to look like a node. Its parent workspace should actually use the same graph/canvas interaction semantics as the Site engineering workspace.
+## One graph architecture, not merely similar-looking views
+
+Uniformity means more than making Region and Planet nodes visually resemble Site machinery.
+
+All implemented workspace levels should project into the same player-facing graph abstraction:
+
+```text
+GraphNode
+├── id
+├── label / type
+├── layout position
+├── typed ports
+├── selectable / inspectable
+└── enterable child workspace when composite
+
+GraphConnection
+├── source node + port
+├── target node + port
+├── live state / flow summary
+├── selectable / inspectable
+└── disconnect action
+```
+
+The same renderer and interaction code should handle:
+
+- node dragging
+- port dragging / connection creation
+- edge drawing
+- edge selection
+- Inspector selection
+- disconnect behavior
+- layout state
+- composite drill-down
+
+The simulation object behind a connection may differ. A Site-local edge may resolve to a `MaterialStream`, while a Region/Planet edge may resolve to a hierarchy-crossing `BoundaryTransfer`. That difference belongs behind the shared graph interface; it should not create a second player-facing graph system.
+
+The invariant is:
+
+> **If a connection exists in simulation state, the current workspace must represent it as the corresponding graph edge.**
 
 ## Draggable workspace hierarchy
 
@@ -305,7 +344,7 @@ MINING SITE WORKSPACE
 Resource → Extractor → Hopper → Processing → [ Site Export ]
 ```
 
-Planet, Region, and Site workspaces should therefore share a reusable visual interaction model:
+Planet, Region, and Site workspaces should therefore share the same visual interaction model and implementation primitives:
 
 - stable draggable node DOM
 - workspace-specific layout state
@@ -430,7 +469,7 @@ reservoir              ↔ water
 backfill area           ← fill material
 ```
 
-The immediate corrective pass does not need to implement every feature interaction type, but the Site Import/Export architecture must not assume Sites can only send material outward.
+The current prototype does not need to implement every feature interaction type, but the Site Import/Export architecture must not assume Sites can only send material outward.
 
 ---
 
@@ -532,55 +571,47 @@ The Debug View should not dictate normal player interaction semantics.
 
 # Immediate Development Priority
 
-The next corrective milestone is:
+The next corrective milestone is **Issue #18: unify Site, Region, and Planet under one node/connection workspace architecture.**
 
-> **Finish the uniform recursive-workspace contract before adding richer logistics or surveying.**
+The goal is not to redesign process physics or hierarchy ownership. It is to remove duplicate player-facing graph stacks so the same node/port/edge behavior is used everywhere.
 
-The pass should correct the UX/architecture gaps revealed by the merged recursive milestone rather than introduce a new major simulation domain.
-
-Required target behavior:
+Required direction:
 
 ```text
-PLANET WORKSPACE (draggable canvas)
-
-[Region A] ○ ─────────────→ ○ [Region B]
-    ↓ enter
-
-REGION A WORKSPACE (draggable canvas)
-
-[Region Import] ○ ──→ ○ [Site / Facility]
-[Mining Site] ○ ─────→ ○ [Region Export]
-      ↓ enter
-
-SITE WORKSPACE (draggable canvas)
-
-[Site Import] ○ ──→ local systems
-Resource → Extractor → Hopper → Crusher → Separator
-                                      ├─→ Concentrate Hopper → [Site Export]
-                                      └─→ Tailings Hopper
+Shared Workspace Graph Layer
+├── GraphNode projection
+├── GraphPort projection
+├── GraphConnection projection
+├── one node renderer
+├── one edge renderer
+├── one drag/connect interaction path
+├── one selection/Inspector path
+└── adapters to underlying simulation objects
+      ├── local MaterialStream / blueprint connection
+      └── hierarchy BoundaryTransfer
 ```
 
-The corrective pass should:
+Issue #18 should:
 
-1. replace Planet/Region static card grids with reusable draggable node workspaces;
-2. add explicit Site Import and Site Export boundary-buffer nodes;
-3. expose Site parent ports as views of those same buffers;
-4. keep Region Import and Region Export as explicit draggable boundary nodes;
-5. expose Region parent ports as views of those same buffers;
-6. remove hidden/automatic Site → Region transfers;
-7. require the player to create cross-boundary connections explicitly;
-8. restore detailed Hopper, stream, Crusher, and Magnetic Separator inspection while preserving stable live interaction;
-9. keep world simulation continuous and machine command states unchanged;
-10. add regression tests for boundary ownership, no implicit transfer, parent-layout isolation, and detailed inspection data.
+1. extract/generalize one reusable graph node renderer for primitive, boundary, Site, and Region nodes;
+2. extract/generalize one reusable connection renderer for local streams and parent-level transfers;
+3. use one drag-to-connect interaction path and one port compatibility presentation path;
+4. use one connection selection/inspection/disconnect interaction at all hierarchy levels;
+5. ensure every simulation connection visible in a workspace always has a corresponding edge;
+6. preserve explicit Site/Region boundary buffers and one-owner matter conservation;
+7. preserve local process physics and hierarchy-transfer physics behind adapters rather than forcing them into one solver;
+8. keep layout state as UI/application state;
+9. keep world simulation, machine state, Inspector detail, and Debug View unchanged unless required by the refactor;
+10. add regression coverage for graph projection/edge visibility so a transfer cannot exist while its workspace shows no line.
 
-Do not expand this pass into realistic rail/truck pathfinding, power grids, depletion, full surveying, fluids, thermodynamics, arbitrary user-authored nesting, or polished logistics art.
+Do not expand Issue #18 into richer logistics, pathfinding, power, surveying, thermodynamics, fluids, chemistry, or polished UI work.
 
 ---
 
 # Near-Term Roadmap
 
-1. **Uniform draggable recursive-workspace + explicit boundary-buffer corrective pass.**
-2. Stabilize composite boundary/connection semantics and parent-level transfer UX.
+1. **Issue #18 — one shared node/port/connection workspace architecture across Site, Region, and Planet.**
+2. Stabilize the resulting shared graph API and context-sensitive interaction hooks.
 3. Add an initial real survey-system process to replace prototype discovery bootstrap.
 4. Deepen resource reserve/depletion and extraction physics when the player-facing loop can consume them.
 5. Add explicit logistics apparatus/capacity such as conveyors, roads/rail, pipelines, or vehicles incrementally.
