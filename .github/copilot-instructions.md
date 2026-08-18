@@ -5,11 +5,11 @@
 Use repository documents for different purposes:
 
 - `DESIGN.md` — canonical long-term game design and intended gameplay direction
-- `README.md` — current project state, roadmap, setup, and near-term design decisions
-- `.github/copilot-instructions.md` — implementation guardrails and current priorities for coding agents
+- `README.md` — current project state, roadmap, and near-term architectural decisions
+- `.github/copilot-instructions.md` — implementation guardrails and active coding priorities
 - `PATCH_NOTES.md` — historical development record
 
-Remain compatible with `DESIGN.md`, but **do not implement every future concept merely because it appears there**. Follow the active issue and current development order.
+Remain compatible with `DESIGN.md`, but do **not** implement every future concept merely because it appears there. Follow the active issue and current development order.
 
 ---
 
@@ -19,13 +19,9 @@ Project Interlink is a systems-driven simulation and management game.
 
 > **Everything is a system, and every system can become a component of a larger system.**
 
-A guiding progression principle is:
-
 > **Yesterday's factory becomes today's machine.**
 
-World generation exists to create meaningful physical starting conditions for gameplay. Do not allow development to become generation-only.
-
-Automation is a core interaction principle from the beginning, not only an optimization added late in progression.
+Automation is a core interaction principle from the beginning.
 
 Player-facing systems should increasingly teach:
 
@@ -40,13 +36,13 @@ sources
 → automation
 ```
 
-rather than repetitive action buttons.
+World generation exists to create meaningful physical starting conditions for gameplay. Do not allow development to become generation-only.
 
 ---
 
 # Repository / Platform Guardrails
 
-The runnable application lives at repository root.
+The runnable app lives at repository root.
 
 Keep the project web-based and preserve:
 
@@ -56,7 +52,7 @@ Keep the project web-based and preserve:
 - relative imports compatible with GitHub Pages project paths
 - DOM-independent simulation/process logic
 
-Do not introduce a framework, backend, database, ECS, dependency-injection system, or large infrastructure layer without a concrete requirement.
+Do not introduce a framework, backend, database, ECS, dependency-injection framework, WebAssembly, or large infrastructure layer without a concrete requirement.
 
 Do not recreate the removed `planet-generator/` wrapper directory.
 
@@ -64,7 +60,7 @@ Do not recreate the removed `planet-generator/` wrapper directory.
 
 # Foundational State Architecture
 
-The established architecture is:
+Preserve the established separation:
 
 ```text
 WORLD / SIMULATION STATE
@@ -74,38 +70,47 @@ PLAYER KNOWLEDGE STATE
 what the player has discovered or measured
         ↓
 APPLICATION / UI STATE
-selection, layout, panels, temporary controls
+selection, visual layout, panels, temporary interaction state
 ```
 
-Do not redo this separation without a concrete need.
-
-Physical state must not live only in DOM elements or UI state.
+Physical state must not live only in DOM objects.
 
 Knowledge actions should reveal/estimate physical truth rather than mutate that truth merely because the player learned it.
 
+UI layout such as node position remains application state unless an explicit gameplay rule makes physical position meaningful.
+
 ---
 
-# Current Simulation Foundation
+# Current Implemented Foundation
 
-The current processing branch establishes:
+After the first continuous-workspace milestone, `main` includes:
 
 - `schemaVersion: 4`
 - `generatorVersion: 2`
-- physical `MaterialBatch` state
-- provenance separated from processed-material identity
+- deterministic seeded world generation
+- World / Knowledge / UI state separation
+- `MaterialBatch` discrete physical lots
+- provenance separated from material identity
 - particle-size state
-- explicit process input bindings
 - reusable `ProcessDefinition` metadata
-- Crushing
-- Magnetic Separation
-- process-specific executors behind generic lifecycle/commit infrastructure
-- explicit input/output port contracts
-- constituent-level and total-mass conservation
-- atomic process transitions
-- strict parameter/input/output validation
-- deterministic two-stage chain tests
+- Crushing and Magnetic Separation
+- shared discrete/continuous process physics
+- strict batch-process input/output/parameter validation
+- atomic batch process commits
+- `MaterialStream` continuous rate/state objects
+- finite-capacity Hopper storage nodes
+- automated prototype extraction from `ResourceOccurrence`
+- continuous Crusher and Magnetic Separator execution
+- transactional backpressure / output-capacity checks
+- one-to-one material-port connections pending an explicit splitter
+- connection compatibility tied to solver semantics
+- first Player View with Planet → Region → Engineering navigation
+- per-occurrence engineering runtime sessions
+- draggable engineering nodes, connection drawing, and Inspector
+- Debug View retained for prototype/debug workflows
+- deterministic automated tests / GitHub Actions
 
-Do not regress these contracts while introducing continuous flow or blueprint interaction.
+Do not regress these contracts while implementing recursive hierarchy and world-level controls.
 
 ---
 
@@ -115,47 +120,55 @@ Do not regress these contracts while introducing continuous flow or blueprint in
 
 For stored material, constituent quantities are authoritative.
 
-Percentages displayed to the player are derived values and should not become a second mutable source of truth.
+Displayed percentages are derived values and must not become a second mutable truth.
 
-Continue rejecting invalid negative, NaN, Infinity, and effectively zero physical quantities where appropriate.
+Reject invalid negative, NaN, Infinity, and physically meaningless values where appropriate.
 
 ## Provenance is not material identity
 
-Keep a distinction between:
+Keep:
 
 ```text
 Where did this matter come from?
         ≠
-What physical/material state is it in now?
+What material/physical state is it now?
 ```
 
-Do not force processed matter to retain one natural `resourceId` merely because the raw sample originally came from that resource type.
+Do not force processed matter to retain one original natural resource identity.
 
 ## Abstract history, preserve matter
 
-Use this rule:
+Use:
 
 > **Abstract the history. Preserve the resulting matter.**
 
-Do not retain every transfer event or tiny historical sub-batch if physically mixed matter can be represented by an aggregate state without losing gameplay-relevant information.
+Do not retain every tiny transfer event when physically mixed matter can be represented by aggregate state without losing gameplay-relevant information.
+
+## Physical ownership invariant
+
+Every modeled unit of matter must have one physical owner/location at a time, for example:
+
+- natural resource occurrence/reserve
+- storage/container contents
+- machine internal buffer/chamber
+- transport inventory when transit is explicitly modeled
+- discrete physical package/sample
+
+A stream describes transfer between owners. It must not duplicate source/destination matter.
 
 ---
 
 # Batch / Storage / Stream Semantics
 
-This is an important long-term contract.
+## MaterialBatch is not flow
 
-## MaterialBatch is not a per-tick flow object
+Never implement continuous flow by allocating batches per simulation tick.
 
-Do **not** implement continuous flow by creating many `MaterialBatch` objects every simulation tick.
+`MaterialBatch` is for physically meaningful discrete lots such as samples, packages, shipments, isolated charges, or similar cases.
 
-A batch should represent a meaningful discrete/stored amount of matter when that representation has a physical reason, such as a sample, package, cargo lot, or other discrete quantity.
+## Bulk matter belongs to storage
 
-Bulk industrial matter should normally be associated with a physical holder.
-
-## Physical storage owns bulk matter
-
-Examples include:
+Bulk industrial matter should normally be held by a physical entity:
 
 - hopper
 - bin
@@ -163,22 +176,14 @@ Examples include:
 - tank
 - pressure vessel
 - stockpile
+- machine buffer
 - cargo container/vehicle
-- machine input/output buffer
 
-There should not be a magical free-floating bulk inventory dimension.
+Do not create a magical free-floating bulk inventory.
 
-If a large amount of material exists, some physical world/system entity should hold it.
+## MaterialStream is rate + state
 
-External storage should be capable of becoming a blueprint node with explicit ports and finite capacity.
-
-Machines may also have small internal input/output buffers when that improves physical coherence without forcing the player to place a separate external container around every apparatus.
-
-## MaterialStream represents rate + state
-
-Continuous streams should be mathematical flow-state objects, not sequences of tiny batches.
-
-Prefer constituent mass-flow rates as the physical source of truth, conceptually:
+Prefer constituent mass-flow rates as the source of truth:
 
 ```js
 {
@@ -191,371 +196,463 @@ Prefer constituent mass-flow rates as the physical source of truth, conceptually
 }
 ```
 
-Total flow may be derived from constituent flow rates.
+Total flow should be derived.
 
-Additional stream properties such as phase, temperature, pressure, moisture, etc. should only be introduced when an active issue needs them.
+Only add additional properties (temperature, pressure, phase, moisture, etc.) when an active issue needs them.
 
-Do not prematurely build a universal material-property framework.
-
-## Containers integrate streams over time
-
-A storage entity should accumulate/remove matter through flow over a simulation timestep.
+## Containers integrate streams
 
 Conceptually:
 
 ```text
-stored quantity += inflow * dt
-stored quantity -= outflow * dt
+stored += inflow × dt
+stored -= outflow × dt
 ```
 
-If material is physically mixed in one container, aggregate the resulting physical contents rather than permanently keeping every historical transfer as a separate simulated object.
+If contents physically mix, aggregate them rather than retaining arbitrary historical sub-batches.
 
 ---
 
-# Throughput / Backpressure Direction
+# Throughput / Backpressure / Atomicity
 
-The intended industrial model should allow simple physical constraints to create system behavior naturally.
-
-Example:
-
-```text
-Miner capacity:   5 kg/s
-Crusher capacity: 4 kg/s
-```
-
-With a finite hopper between them, the hopper accumulates 1 kg/s until full.
-
-A full output buffer may block a process. A blocked process may stop consuming its input, which can eventually block upstream equipment.
-
-Prefer these general capacity/availability rules over machine-specific special cases.
-
-For a process timestep, the amount processed should conceptually be limited by things such as:
+For a continuous process timestep, feasible throughput should be limited by:
 
 ```text
 input available
-process throughput capacity × dt
-output free capacity
+process throughput × dt
+all required output free capacity
+connectivity / operating requirements
 ```
 
-Do not overbuild transport physics, conveyor routing, or fluid-network pressure in the first stream milestone unless explicitly required.
+Do not withdraw process input and then discover that an output cannot accept the result.
+
+A process transfer should be planned/staged and committed coherently so that:
+
+- missing outputs block operation
+- full outputs block/throttle operation
+- partial input only produces proportional output
+- constituent mass remains conserved
+- failed planning does not mutate physical state
+
+Until an explicit splitter exists, one material output port should not fan out to multiple destinations and duplicate flow.
 
 ---
 
-# Raw Resource Collection Direction
+# Recursive System-Node Interface — New Core Contract
 
-The current `Gather X kg` action is prototype/debug scaffolding.
+The player-facing hierarchy should now be treated as a **uniform system-node model**.
 
-Do not treat manual gathering as the normal final production loop.
+Do not retain the older instruction that Regions must not have ports. That distinction is superseded.
 
-The intended automated production chain begins conceptually as:
+From the player's perspective:
+
+> **Anything treated as a system may be represented as a node with typed external ports.**
+
+The implementation may distinguish primitive and composite node kinds internally.
+
+## Primitive nodes
+
+Examples:
 
 ```text
-ResourceOccurrence
-        ↓
-Extraction Interface / Apparatus
-        ↓
-Material Stream
-        ↓
-Container / Buffer
-        ↓
-Processing Network
+Extractor
+Hopper
+Crusher
+Magnetic Separator
+Pump later
 ```
 
-The resource occurrence is physical world matter, not a generic infinite crafting-token node.
+## Composite nodes
 
-Extraction apparatus should eventually vary by physical source type, e.g. hard-rock mining, wells, pumps, atmospheric intake, etc.
-
-Current resource occurrence quantities are not yet precise reserve masses. Until depletion is deliberately implemented, any automated extraction rate/source behavior must be clearly documented as prototype behavior and must not invent false geological precision.
-
----
-
-# Discovery / Survey Direction
-
-The current `Discover Feature` button is also prototype/debug scaffolding.
-
-The final player path should move toward discovery as an automated/system process:
+Examples:
 
 ```text
-Unknown world
-    ↓
-Survey apparatus/network
-    ↓
-Knowledge improves
-    ↓
-Features/resources become known
-    ↓
-Measurement confidence improves
+Site
+Facility
+Region
+Planet
+Player-created production system later
 ```
 
-Do not remove the existing discovery/debug controls until a replacement player-facing survey path exists, but do not build new player progression around repeated manual discovery clicks.
+A composite node owns/contains a child workspace/subgraph and exposes an external interface to its parent.
 
----
+## Common interaction language
 
-# Interface Direction
-
-The current seed/planet/region list and button/form interface remains valuable as a developer/debug view.
-
-It is **not** the intended long-term player interface.
-
-The player-facing UI should begin moving toward hierarchical workspaces:
+Prefer consistent player interaction across scales:
 
 ```text
-Star/System (later)
-    ↓
+select
+→ inspect
+→ connect ports
+→ enter/drill down if composite
+→ observe state
+```
+
+Do not force every entity to expose identical port types; expose the physical/logistical interfaces that the system actually provides.
+
+## Typed boundary ports
+
+Composite systems need explicit parent-facing boundary ports.
+
+Example child workspace:
+
+```text
+Resource → Extractor → Hopper → [SITE ORE OUTPUT]
+```
+
+Parent Region workspace:
+
+```text
+[Mining Site]──ore out○ → regional logistics
+```
+
+The parent may treat the Site as one node without losing access to its internal graph when entered.
+
+## Parent/child boundary mapping
+
+Boundary ports are abstraction boundaries, **not teleportation**.
+
+A child output port should map to physical state/flow at the boundary. Parent-level logistics must then move that matter onward.
+
+Conceptually:
+
+```text
+child apparatus
+→ child boundary output
+→ parent transport/logistics
+→ destination boundary input
+→ destination child apparatus
+```
+
+Matter conservation must hold across every hierarchy boundary.
+
+Do not silently copy stream state from one hierarchy to another as if it were duplicate matter.
+
+## Geography as composite systems
+
+Target hierarchy:
+
+```text
 Planet Workspace
-    ↓
+├── Region Node
+├── Region Node
+└── Region Node
+      ↓ enter
 Region Workspace
-    ↓
-Site / Facility Workspace
-    ↓
-Process / Apparatus Blueprint
+├── Site Node
+├── Site Node
+├── logistics/system nodes
+└── Region boundary ports
+      ↓ enter site
+Site Workspace
+├── ResourceOccurrence/source interface
+├── Extractor
+├── Storage
+├── Processing
+└── Site boundary ports
 ```
 
-Common workspace interaction primitives may include:
+This is intended to become the foundation for later Site → Region → Planet logistics.
 
-- selection
-- inspection
-- pan/zoom
-- node-like visual entities
-- drill-down / enter
-- breadcrumbs
+## Player-created composite systems later
 
-But visual similarity must not collapse distinct simulation concepts.
+The same abstraction should eventually allow a solved internal graph to become a reusable parent-level node.
 
-A Region is not a process node. A planet is not a machine. A container is not merely UI layout.
-
-Use shared visual/workspace infrastructure where useful, while preserving semantic entity types.
-
-## Debug UI must remain available
-
-Do not delete the existing prototype UI during the first real-interface milestone.
-
-Retain it behind a clear developer/debug view or mode for:
-
-- seed generation/control
-- raw generated state
-- region/feature inspection
-- Knowledge State inspection
-- batch/process result inspection
-- validation/debug actions
-
-This makes it possible to verify player-facing behavior against underlying physical truth.
+Do not implement arbitrary nesting/editor tooling unless the active issue asks for it, but avoid architecture that would prevent it.
 
 ---
 
-# Simulation Time vs Rendering
+# Simulation Time vs Machine Control — New Core Contract
 
-Do not couple industrial simulation updates to browser rendering FPS.
+Do not use one Run/Stop concept for both world time and machinery.
 
-The player interface may render/animate at `requestAnimationFrame` speed while physical simulation runs at a fixed or otherwise controlled timestep.
+Maintain three concepts:
 
-For the first continuous-flow prototype, a simple deterministic fixed timestep is preferred.
+```text
+WORLD TIME
+running / paused
 
-Avoid recalculating simulation simply because a blueprint node is being dragged visually.
+MACHINE COMMAND STATE
+enabled / disabled
 
-Do not optimize prematurely with workers/Wasm/complex dirty-graph scheduling, but preserve a clean boundary so those techniques remain possible later.
+MACHINE OPERATING STATE
+off / idle / running / blocked / faulted (as needed)
+```
+
+## World time
+
+The world/session simulation should run by default.
+
+Pause is a global/player time-control feature for inspection/planning. Pausing must not change machine `enabled` values.
+
+Simulation ownership should move out of a single visible Engineering workspace. Navigating away from a Site/Region must not inherently stop automated systems.
+
+Do not make simulation progress depend on which workspace is currently rendered.
+
+## Active machinery enabled state
+
+Active apparatus must have an explicit `enabled` command state.
+
+For the next milestone:
+
+- Extractor has `enabled`
+- Crusher has `enabled`
+- Magnetic Separator has `enabled`
+- newly created active apparatus defaults to `enabled: false`
+- passive Hopper/storage does not receive a universal machine On/Off toggle
+
+`enabled: true` means operation is permitted, not guaranteed.
+
+An enabled machine may be:
+
+```text
+IDLE    — no feed / nothing to do
+RUNNING — processing
+BLOCKED — output/full/connectivity constraint
+FAULTED — invalid/incompatible operating condition if modeled
+```
+
+When a blocking condition clears, an enabled machine should resume without another manual start command.
+
+Use the same `enabled` primitive as the future automation-control target rather than inventing a second controller-only switch later.
+
+---
+
+# Live Inspector / Rendering Contract
+
+The Inspector must remain interactive while simulation runs.
+
+Do not rebuild/destroy every engineering node DOM element every animation frame. That can interrupt click/mousedown/mouseup interaction and makes continuous simulation hostile to inspection.
+
+Prefer stable interactive DOM/node objects and update only dynamic presentation fields such as:
+
+- quantity/fill display
+- stream rate/width
+- operating-state badge
+- machine enabled indicator
+- Inspector text/value fields
+
+Selection should persist while values update.
+
+The Inspector should progressively be usable for primitive and composite nodes, connections, streams, Sites, and Regions where relevant.
+
+Simulation tick functions must remain DOM-independent.
 
 ---
 
 # Current Immediate Priority
 
-After the two-stage material-process PR is complete, the next milestone is:
+The next issue should consolidate the architecture introduced by the first continuous workspace milestone.
 
-> **Build the first hierarchical player workspace and automated resource-flow vertical slice while preserving the existing interface as a developer/debug view.**
+Target:
 
-The intended prototype should demonstrate this player-facing flow:
+> **Implement recursive system nodes/boundary ports, world-level continuous simulation, per-machine enable/operating state, and stable live Inspector interaction.**
 
-```text
-Planet Workspace
-    ↓ enter Region
-Region Workspace
-    ↓ enter resource/site
-Engineering Workspace
+The issue should prove the concepts using existing solid-material machinery rather than adding many new resource/process types.
 
-Resource Occurrence
-        ↓
-Extractor
-        ↓ material stream
-Container
-        ↓ material stream
-Crusher
-        ↓ material stream
-Container
-        ↓ material stream
-Magnetic Separator
-       ├────────→ Concentrate Container
-       └────────→ Tailings Container
-```
-
-This milestone is meant to prove the interaction/simulation language, not finish industrial gameplay.
-
----
-
-# First Hierarchical Workspace Requirements
-
-For the next interface issue, prefer a deliberately small coherent implementation.
-
-## World navigation
-
-Provide a player-facing workspace shell with:
-
-- a main canvas/workspace area
-- an inspector/details area
-- breadcrumbs/back navigation
-- Planet workspace containing Region entities
-- ability to enter a Region workspace
-- Region workspace capable of presenting known/unknown features or resource sites from existing World/Knowledge state
-
-Do not invent fake process ports on Regions.
-
-Generated layout may be simple/deterministic. Do not build a map-generation/rendering engine merely for visual polish.
-
-## Engineering workspace
-
-Provide the first real process-node workspace with enough interaction to prove:
-
-- draggable engineering nodes
-- explicit ports
-- connection creation/removal
-- compatibility checks sufficient for implemented material ports
-- pan/zoom if practical within scope
-- selection + inspector
-- simulation connections mapped to actual simulation semantics rather than a parallel editor-only graph
-
-A saved UI position belongs to application/blueprint layout state, not physical simulation state unless an active design explicitly makes physical position meaningful.
-
-## Automated chain
-
-Do not use a player-facing `Gather` button to feed the engineering chain.
-
-Introduce the smallest viable automated source/extractor/stream/container semantics necessary to feed the existing Crusher and Magnetic Separator process physics.
-
-It is acceptable for extractor rate/depletion details to be prototype approximations while exact resource reserves remain unmodeled, provided the limitation is explicit and no arbitrary reserve truth is invented.
-
-## Storage nodes
-
-Implement a minimal finite-capacity solid-material container/hopper node suitable for this chain.
-
-Its stored contents should be aggregate physical matter.
-
-It should have explicit material input/output ports.
-
-Do not implement tanks, pressure vessels, phase behavior, corrosion, thermal ratings, or generalized container classes unless required by the active issue.
-
-## Streams
-
-Implement a minimal solid-material stream representation using continuous rates.
-
-Do not allocate one batch per tick.
-
-Preserve modeled constituents and relevant physical state such as particle size.
-
-## Capacity / blocking
-
-Introduce enough rate/capacity behavior to demonstrate a meaningful buffer/bottleneck.
-
-At minimum, finite storage should prevent unlimited accumulation and should constrain/stop upstream/downstream flow coherently when full/empty.
-
-Do not implement full conveyor/pathfinding/logistics routing.
-
----
-
-# Existing Process Contracts Must Survive
-
-Continuous processing must continue to respect the existing process definitions and physical rules.
-
-Do not create a separate unrelated set of “blueprint recipes” that duplicates process behavior.
-
-The blueprint workspace should visualize/use the same process identity/port/parameter semantics already proven by the batch prototype.
-
-Where discrete and continuous execution differ, share transformation logic where practical and keep the physical relationship clear.
-
-For example, the same magnetic-separation behavior may apply to:
+A representative target is:
 
 ```text
-Discrete: 10 kg feed → output kg quantities
-Continuous: 10 kg/s feed → output kg/s rates
+PLANET WORKSPACE
+
+[Region A] ─────────────── [Region B]
+    ↓ enter
+
+REGION A WORKSPACE
+
+[Mining Site] → [Region Export / logistics placeholder]
+     ↓ enter
+
+MINING SITE WORKSPACE
+
+ResourceOccurrence
+       ↓
+Extractor (disabled by default)
+       ↓
+Hopper
+       ↓
+Crusher (disabled by default)
+       ↓
+Site Output boundary port
 ```
 
-Do not silently allow continuous execution to violate constituent conservation merely because it uses rates.
+Where practical, the existing Magnetic Separator chain should remain available inside the Site workspace and continue obeying conservation/backpressure rules.
 
 ---
 
-# Testing Expectations for the Next Milestone
+# Requirements for the Next Milestone
 
-Keep `npm test` fast and deterministic.
+## 1. Generic system-node contracts
 
-At minimum, new continuous-flow/workspace work should test simulation contracts such as:
+Introduce the smallest useful model for:
 
-- stream constituent flow rates are finite/non-negative
-- stream total flow derives consistently from constituent rates
-- container contents remain finite/non-negative and do not exceed capacity within tolerance
-- material entering/leaving storage is conserved
-- crusher continuous transformation preserves constituent mass flow
-- magnetic separation continuous transformation conserves constituent mass flow across outputs
-- particle-size rules remain enforced
-- a simple source → extractor → container → crusher → container → separator chain behaves deterministically for fixed inputs/timestep
-- a full container blocks or limits further inflow coherently
-- an empty input container prevents downstream processing
-- simulation tick functions remain DOM-independent
-- UI node movement does not mutate physical material state
-- existing deterministic world-generation and batch/process tests remain green
+- primitive node
+- composite node
+- node ID/type
+- typed input/output ports
+- child workspace reference for composite nodes
+- parent-facing boundary-port mapping
 
-Do not make browser/DOM interaction tests the only protection for physical simulation logic.
+Do not build a speculative universal graph framework far beyond current needs.
+
+## 2. Site as composite node
+
+A Site should be a node visible from Region workspace.
+
+Entering it reveals the existing engineering graph.
+
+The Site must be able to expose at least one material output boundary port backed by actual child-workspace flow/state.
+
+Do not key the player's conceptual Site solely to one `ResourceOccurrence`; occurrences are resources inside/associated with the Site.
+
+## 3. Region as composite node
+
+A Region should be a node visible from Planet workspace and should be enterable.
+
+Inside Region workspace, Sites should appear as connectable nodes.
+
+The Region should be able to expose at least one material boundary output that a parent Planet workspace can connect to a minimal logistics/transfer placeholder or another Region interface.
+
+The first milestone does not need realistic rail/truck physics, but hierarchy crossing must be explicit and conserved.
+
+## 4. Boundary flow conservation
+
+Add tests showing that child output quantity/flow is not duplicated or lost when exposed to the parent.
+
+Boundary interfaces must not create a second copy of the same matter.
+
+## 5. World-level simulation clock
+
+Move simulation progression out of the visible Engineering workspace's local Run button/state.
+
+Simulation should start running automatically after a world/session is initialized.
+
+Provide global Pause/Resume UI.
+
+Navigating Planet ↔ Region ↔ Site must not reset or freeze existing simulation sessions.
+
+## 6. Machine enabled/operating state
+
+Add `enabled` to active apparatus, default false for newly created active machinery.
+
+Add a minimal runtime operating state sufficient to distinguish at least:
+
+```text
+off
+idle
+running
+blocked
+```
+
+Expose enabled control and operating state in the node/Inspector UI.
+
+## 7. Stable Inspector while running
+
+Refactor rendering so the user can select, inspect, drag, connect/disconnect, and use Inspector controls while world simulation continues.
+
+Do not solve this by pausing simulation during interaction.
+
+## 8. Preserve existing physics
+
+Do not fork/duplicate Crusher or Magnetic Separator physics.
+
+Preserve:
+
+- constituent conservation
+- particle-size rules
+- output-capacity backpressure
+- one-to-one material port rule pending explicit splitter
+- no per-tick batch allocation
+- deterministic fixed-step physical updates
+
+## 9. Tests
+
+Add deterministic tests for:
+
+- active machinery defaults disabled
+- disabled machinery consumes/produces nothing
+- enabling machinery permits operation when conditions allow
+- enabled + missing feed => idle
+- enabled + full/missing output => blocked
+- blocked machinery resumes when constraint clears
+- Pause freezes world physical state without changing enabled flags
+- Resume continues from same state
+- navigation/UI state changes do not stop physical sessions
+- Site boundary port conserves matter across child/parent interface
+- Region boundary port conserves matter across child/parent interface
+- composite-node external interface resolves to the correct child boundary
+- Inspector selection state can persist across simulation/render updates at the application-state level
+- existing batch/world/continuous regression tests remain green
+
+Avoid relying only on browser DOM tests for conservation/control semantics.
 
 ---
 
-# Out of Scope for the First Workspace / Stream Issue
+# Debug UI
 
-Unless explicitly required, do not add:
+Preserve the existing Debug View.
 
-- complete surveying system
-- precise geological reserve/depletion simulation
-- conveyors/pathfinding
-- vehicle logistics
-- power networks
+Do not remove manual Gather/Discover/batch-process controls merely to make the Player View cleaner. They remain valuable for validating underlying state until equivalent debugging tools exist elsewhere.
+
+Do not build new normal player progression around those buttons.
+
+---
+
+# Discovery / Survey Direction
+
+The current Discover/prototype survey actions are scaffolding.
+
+Future surveying should become an automated system that updates Knowledge State over time.
+
+Do not expand surveying substantially in the recursive-system milestone unless necessary to access a test Site.
+
+---
+
+# Explicit Out of Scope for the Next Milestone
+
+Unless required to prove hierarchy contracts, do not add:
+
+- realistic rail/truck/conveyor routing/pathfinding
+- splitter/merger gameplay beyond what current one-to-one ports need
+- precise geological depletion/reserves
+- full surveying system
+- power grids
 - thermodynamics
 - fluids/gases
 - pressure/vacuum
 - chemistry/reaction networks
 - wear/maintenance
-- full particle-size distributions
-- research/progression tree
-- sensors/controllers/PLC logic
-- arbitrary multi-feed process graphs beyond what the first chain needs
-- nested blueprints
-- factory aggregation/collapse logic
-- multiplayer/backend/database
+- full particle distributions
+- PLC/controller programming UI
+- arbitrary player-created nested blueprint editor
+- mature factory aggregation solver
+- persistence/backend/database
+- multiplayer
 - framework migration
 - star/system generation
-- high-performance worker/Wasm infrastructure
-- polished final art/visual effects
+- Web Worker/Wasm optimization
+- polished final art
 
-Keep the issue focused on proving the first authentic Interlink workspace and automated material-flow semantics.
+Use placeholders only where they prove a hierarchy/boundary contract. Do not mistake placeholders for final logistics physics.
 
 ---
 
-# Longer-Term Performance Direction
+# Performance Direction
 
-The architecture should remain compatible with large networks by favoring aggregate state:
+Favor aggregate state:
 
 ```text
-streams = rates
+streams    = rates/state
 containers = quantities
-processes = transformations/capacities
+processes  = transformations/capacities
+systems    = graphs with explicit external contracts
 ```
 
-Future optimization may include:
+World simulation frequency should remain independent from rendering FPS.
 
-- simulation frequency independent from rendering
-- dependency/dirty-subgraph recalculation
-- Web Workers for heavy simulation
-- aggregated simulation of mature nested systems
-- Wasm only if profiling justifies it
+Future optimization may include dirty/dependency recalculation, Web Workers, or aggregated mature composite systems, but do not implement them prematurely.
 
-Do not implement these prematurely.
-
-The nested-system design may eventually provide a natural optimization strategy: detailed solved systems can behave as higher-level components when the player is operating at a larger scale.
+Recursive system boundaries should be designed so that a detailed child system can eventually expose an aggregate parent-level contract without requiring parent code to inspect every internal node on every update.
 
 ---
 
@@ -569,6 +666,14 @@ For gameplay features, ask:
 
 > **What physical world state does this act on?**
 
-Prefer small vertical slices that prove real contracts over large speculative frameworks.
+Prefer small coherent vertical slices and explicit invariants over broad speculative abstractions.
 
-Do not add complexity merely because a future design might someday need it.
+When a parent/child system design choice is ambiguous, favor the option that preserves:
+
+1. physical conservation
+2. explicit interfaces
+3. consistent player interaction language
+4. automation
+5. future composition/nesting
+
+without adding unnecessary machinery to the current issue.
