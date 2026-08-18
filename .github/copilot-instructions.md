@@ -4,64 +4,124 @@
 
 Project Interlink is a systems-driven simulation and management game being developed as a web application.
 
-The core design principle is:
+> **Everything is a system, and every system can become a component of a larger system.**
 
-> Everything is a system, and every system can become a component of a larger system.
+The long-term game should emphasize interconnected physical, chemical, industrial, logistical, and control systems rather than conventional character-action gameplay. The eventual interface should feel closer to an interactive engineering workspace, process diagram, network, and simulation dashboard than a traditional rendered world.
 
-The long-term game should emphasize interconnected physical, chemical, industrial, logistical, and control systems rather than conventional character-action gameplay. The eventual interface should feel closer to an interactive engineering workspace, process diagram, network, and simulation dashboard than a traditional rendered game world.
-
-The repository is still at an early foundational stage. **Do not attempt to build the entire game at once.** Build incrementally from the existing planet-generation system.
+The repository is still early. **Do not attempt to build the whole game at once.** Extend the current simulation foundation incrementally and preserve working behavior unless an issue explicitly changes it.
 
 ---
 
 # Current Project State
 
-The existing `planet-generator/` web application is the first working Interlink subsystem and should be promoted into the game's simulation foundation rather than treated as disposable prototype code.
+The original `planet-generator/` tech demo has now been promoted into the first real Interlink simulation subsystem.
 
 Current working behavior includes:
 
 1. Deterministic seeded planet generation.
 2. Causal planet-generation passes rather than archetype-first generation.
-3. Planet properties including mass, radius, gravity, density, composition, volatiles, atmosphere, temperature, interior fractions, geologic activity, magnetic state, and surface state.
-4. Derived human-readable planet classification after physical generation.
-5. Region generation from planet conditions.
-6. Background natural resources belonging directly to regions.
-7. Hidden geological/environmental features inside regions.
-8. Natural resources and compositions associated with features.
-9. A simple discovery UI that reveals generated features.
+3. Generated planet mass, orbit, composition, volatiles, thermal environment, interior structure, physical dimensions, atmosphere, internal activity, surface state, and derived classification.
+4. Region generation from planetary conditions.
+5. Background natural resources belonging to regions.
+6. Hidden geological/environmental features inside regions.
+7. Generated natural-resource occurrences and compositions associated with features.
+8. A discovery UI that reveals already-existing features.
 
-The next architectural phase is to separate permanent simulation state from player knowledge and UI state, establish stable deterministic generation namespaces, and formalize reusable world/resource data concepts before adding more gameplay.
+The foundational state architecture is now established:
+
+```text
+WORLD / SIMULATION STATE
+objective physical truth
+        ↓
+PLAYER KNOWLEDGE STATE
+what has been discovered or estimated
+        ↓
+APPLICATION / UI STATE
+selection, display, filters, temporary controls
+```
+
+The current root world state contains version metadata and flat ID-indexed maps for generated entities. Physical discovery state is no longer stored on features. Procedural generation uses deterministic namespaced/sub-seeded RNG streams.
+
+**Do not redo this foundation without a concrete need.** The next development priority is automated simulation regression protection, then deeper causal regional geology and feature/resource formation.
+
+---
+
+# Immediate Development Priority: Simulation Contracts and Tests
+
+Before making large changes to geology, resources, or gameplay, establish executable regression tests for the simulation.
+
+Prefer the built-in Node.js test runner (`node:test`) unless there is a clear need for a third-party test framework. Keep runtime dependencies at zero or near zero.
+
+Tests should protect these contracts:
+
+## Determinism
+
+- same root seed + same generator version produces identical world data
+- same seed + same RNG namespace produces the same sequence
+- unrelated RNG namespaces are independent
+- simulation/generation modules do not use scattered `Math.random()` calls
+
+## World integrity
+
+- all planet → region references resolve
+- all region → feature references resolve
+- all feature/resource-occurrence references resolve
+- parent/back-reference IDs agree
+- generated IDs are unique and stable for a generated world
+- no physical feature contains player discovery state
+
+## Knowledge integrity
+
+- all knowledge records reference real world entities
+- discovering a feature mutates knowledge only
+- discovery does not alter feature/resource truth
+
+## Numeric invariants
+
+Where applicable:
+
+- complete compositions sum to approximately 100%
+- core + deep interior + envelope fractions sum to approximately 1
+- region area percentages sum to approximately 100%
+- atmospheric composition sums to approximately 100% when atmosphere exists
+- no NaN or Infinity
+- physical quantities that cannot be negative are not negative
+
+## Domain compatibility
+
+Obvious impossible combinations should be prevented and tested.
+
+Examples:
+
+- aquifers should be fluid-compatible rather than arbitrary solid/gas/plastic features
+- gas reservoirs should be gaseous and contain gas-compatible resources
+- magma chambers should be magma/high-temperature compatible
+- ice bodies should be solid/frozen volatile-compatible
+- biological resources must require appropriate biological conditions
+
+Do not turn this testing phase into a complete geology simulator. Establish only clear contracts that future generation work can safely build on.
+
+## Broad seed testing
+
+Include a deterministic smoke/property-style test over many seeds (hundreds are sufficient initially) that verifies all validators and key invariants pass.
+
+The suite should be fast enough to run on every pull request.
+
+## CI
+
+Once a minimal test command exists, add a small GitHub Actions workflow that runs the tests on pull requests and pushes to the main development branch.
+
+Do not add a heavy build pipeline just for the current static application.
 
 ---
 
 # Required Architectural Direction
 
-## 1. Three State Layers
-
-Interlink must distinguish between:
-
-```text
-WORLD / SIMULATION STATE
-What physically exists
-
-        ↓
-
-PLAYER KNOWLEDGE STATE
-What has been discovered, measured, inferred, or estimated
-
-        ↓
-
-APPLICATION / UI STATE
-What the player currently has selected, expanded, filtered, or displayed
-```
-
-These layers must not be conflated.
+## 1. Keep Three State Layers Separate
 
 ### World State
 
-Contains objective simulated reality.
-
-Examples:
+Contains objective simulated reality:
 
 - planets
 - regions
@@ -71,24 +131,13 @@ Examples:
 - physical quantities
 - future facilities/processes/material streams
 
-A feature's physical existence must not depend on whether the player has discovered it.
+A feature exists independently of whether it has been discovered.
 
 ### Knowledge State
 
-Contains what the player currently knows about world objects.
+Contains what the player knows about world objects.
 
-Examples:
-
-```js
-knowledge.features[featureId] = {
-  discoveryState: 'unknown',
-  surveyConfidence: 0,
-  estimatedComposition: null,
-  estimatedQuantity: null,
-};
-```
-
-Possible future progression:
+Current discovery may remain binary, but the architecture should support future states such as:
 
 ```text
 Unknown
@@ -104,37 +153,34 @@ Quantity Estimated
 Characterized
 ```
 
-The current `Discover Feature` behavior may remain simple, but discovery state should migrate out of the physical feature object and into knowledge state.
+Discovery must reveal existing world truth rather than generate or modify it.
 
 ### UI State
 
-Contains presentation-only state.
+Contains presentation-only state such as:
 
-Examples:
-
-- selected planet/region/feature
+- selected entity
 - expanded panels
 - filters
-- active tab
+- active view
 - graph viewport
 - temporary form values
 
-UI state must not become simulation truth.
+UI state must never become simulation truth.
 
 ---
 
 ## 2. Root World State
 
-Do not let the planet object permanently become the root container for the entire future game.
+The planet object must not become the permanent root container for the game.
 
-Establish a serializable root structure conceptually similar to:
+The current direction is conceptually:
 
 ```js
 world = {
-  schemaVersion: 1,
-  generatorVersion: 1,
+  schemaVersion,
+  generatorVersion,
   seed,
-
   planetId,
   planets: {},
   regions: {},
@@ -143,127 +189,107 @@ world = {
 };
 ```
 
-The exact shape may evolve, but the root should provide a stable home for world entities and version metadata.
+Keep this plain and serializable. Stable ID references are preferred over deeply nested mutable object graphs for permanent world state.
 
-For the current single-planet application, convenience references are fine. Do not overengineer multi-planet gameplay yet.
+Do not add multi-planet gameplay merely because the container can support it.
 
 ---
 
 ## 3. Definitions vs Occurrences
 
-Keep reusable definitions separate from generated occurrences.
+Reusable definitions and generated physical occurrences are different concepts.
 
-Examples:
+Example:
 
 ```text
-Resource Definition
+ResourceDefinition
 Iron Ore
 ```
 
 versus:
 
 ```text
-Resource Occurrence
-Feature #17
-Iron Ore
-Hematite 61%
-Magnetite 14%
-Goethite 7%
-Quartz/gangue 18%
-Quantity: ...
-```
-
-Likewise distinguish constituent/mineral definitions from raw-resource definitions.
-
-Conceptually:
-
-```text
-ConstituentDefinition
-ResourceDefinition
 ResourceOccurrence
-Feature
-Region
-Planet
+location: feature-17
+resourceId: iron-ore
+hematite: 61%
+magnetite: 14%
+goethite: 7%
+gangue: 18%
+quantity: ...
 ```
 
-These do not need to be classes. Prefer plain serializable JavaScript objects unless classes solve a real problem.
+Likewise, mineral/chemical constituents should eventually be distinct from raw-resource definitions.
 
-A catalog definition should describe what a resource type is. A generated occurrence should describe a particular natural instance of that resource.
+Prefer plain data definitions over unnecessary classes.
+
+**Long-term consistency rule:** all extractable natural material instances, including broad regional resources, should eventually have stable occurrence identity rather than mixing embedded anonymous objects with normalized occurrence objects.
 
 ---
 
-## 4. Stable Deterministic Generation Namespaces
+## 4. Deterministic Namespaced RNG
 
-Do not rely forever on one long shared RNG stream for the entire world.
+All simulation randomness should flow through seeded deterministic generators.
 
-A single sequential stream means adding one new random roll early in generation can unintentionally change every region, feature, and resource generated afterward for the same seed.
-
-Move toward deterministic namespaced/sub-seeded streams such as:
+Use independent namespaces/substreams such as:
 
 ```text
-world seed
-│
-├── planet:base
-├── planet:composition
-├── planet:interior
-├── planet:atmosphere
-│
-├── region:0
-│   ├── terrain
-│   ├── geology
-│   ├── resources
-│   └── features
-│
-└── region:1
-    └── ...
+planet:base
+planet:bulk
+planet:thermal
+planet:interior
+planet:atmosphere
+region:<id>
+region:<id>:resources
+region:<id>:features
+feature:<id>
+feature:<id>:resources
 ```
 
-A useful API may look conceptually like:
+A useful API already exists conceptually as:
 
 ```js
-rngFor(seed, 'planet:composition');
-rngFor(seed, `region:${regionId}:geology`);
-rngFor(seed, `feature:${featureId}:resources`);
+rngFor(seed, namespace)
 ```
-
-Exact implementation is flexible.
 
 Goals:
 
-- same seed + same generator version is reproducible
-- unrelated generator changes should not reshuffle unrelated subsystems
-- lazy generation can resolve details independently
-- debugging a particular region/feature is reproducible
+- reproducible debugging
+- stable shareable seeds
+- reduced cross-system reshuffling after unrelated generator changes
+- support for deterministic lazy generation later
 
-Do not use `Math.random()` inside simulation/generation modules.
+Do not use `Math.random()` inside simulation/generation modules. UI-only random seed creation is acceptable.
 
 ---
 
-## 5. Schema and Generator Versioning
+## 5. Versioning
 
-Generated worlds should carry at least:
+Generated worlds carry:
 
 ```js
 schemaVersion
 generatorVersion
 ```
 
-`schemaVersion` describes the serialized world-data shape.
+`schemaVersion` describes serialized data shape.
 
-`generatorVersion` describes the procedural rules used to produce deterministic content.
+`generatorVersion` describes procedural rules that determine seeded output.
 
-Do not build a full migration framework yet, but establish these fields early so future saves and seeds can be interpreted intentionally.
+When a generation change intentionally changes results for the same seed, consider whether `generatorVersion` should be incremented.
+
+Do not build a migration system until persistence requires one.
 
 ---
 
 # Dependency Direction
 
-Prefer this conceptual dependency flow:
+Prefer:
 
 ```text
 DATA DEFINITIONS
       ↓
-SIMULATION / GENERATION CORE
+SIMULATION / GENERATION
       ↓
 WORLD STATE
       ↓
@@ -276,159 +302,82 @@ Dependencies should not flow backward without a clear reason.
 
 In particular:
 
-- core generation must not depend on DOM state
-- world truth must not depend on discovery state
-- player knowledge must not alter physical generation merely by observing something
-- UI selection/visibility must not alter simulation truth
-
----
-
-# Suggested Code Organization
-
-Do not perform a massive rewrite merely to match folders, but move gradually toward an organization similar to:
-
-```text
-planet-generator/src/
-│
-├── core/
-│   ├── world/
-│   │   ├── worldState.js
-│   │   ├── knowledgeState.js
-│   │   └── versions.js
-│   │
-│   ├── generation/
-│   │   ├── planet/
-│   │   ├── regions/
-│   │   ├── features/
-│   │   └── resources/
-│   │
-│   ├── random/
-│   │   └── seededRandom.js
-│   │
-│   └── validation/
-│
-├── data/
-│   ├── resources.js
-│   ├── constituents.js
-│   └── featureTypes.js
-│
-└── ui/
-    ├── rendering/
-    └── app.js
-```
-
-This structure is guidance, not a rigid requirement. Preserve working behavior and avoid needless file churn.
-
----
-
-# Existing Generator Architecture
-
-The current generation modules are already usefully separated from the DOM.
-
-Existing modules include:
-
-- `generatePlanet.js`
-- `generateRegions.js`
-- `generateFeatures.js`
-- `generateResources.js`
-- `random.js`
-
-Preserve the principle that generator functions operate on plain data rather than DOM elements.
-
-The current planet generator now follows a causal pipeline broadly equivalent to:
-
-```text
-Base state
-    ↓
-Bulk matter / volatiles
-    ↓
-Thermal environment
-    ↓
-Interior structure
-    ↓
-Physical dimensions
-    ↓
-Atmosphere
-    ↓
-Internal activity
-    ↓
-Exterior state
-    ↓
-Derived planet classification
-    ↓
-Regions
-```
-
-Continue strengthening causal relationships rather than returning to archetype-first generation.
+- generation must not depend on DOM state
+- world truth must not depend on discovery
+- observing something must not change physical generation
+- UI visibility/selection must not affect world truth
 
 ---
 
 # Core Simulation Philosophy
 
-## Generate Causes, Not Unrelated Random Results
-
-Procedural generation should be causal whenever reasonable.
+## Generate Causes, Not Independent Random Results
 
 Prefer:
 
 ```text
-Planet properties
+Planet conditions
     ↓
-Regional conditions
+Regional conditions / geology
     ↓
 Feature formation
     ↓
-Natural resource occurrence
+Natural-resource occurrence
 ```
 
-Avoid independently rolling unrelated values that produce contradictory worlds.
+Randomness should create variation **inside physical/geological constraints**.
 
 Examples:
 
-- water-rich planets should more readily produce wet regions, aquifers, ice, oceans, or water-related resources
-- high geological activity should increase volcanic, fault, hydrothermal, magma, and mineralization features
-- region composition should influence which deposits can occur
-- biological resources must depend on a biosphere being present
+- water-rich worlds should more readily produce wet regions, aquifers, ice, or water resources
+- geological activity should influence volcanic, fault, hydrothermal, magma, and mineralization features
+- local composition/geological environment should influence deposit occurrence
+- biological resources require an appropriate biosphere/history
 
-Randomness should provide variation **inside physical and geological constraints**.
+When adding a generated property, ask:
+
+> What downstream result does this influence?
+
+When adding an output, ask:
+
+> What upstream conditions caused this?
+
+Avoid adding simulation values that are only disconnected flavor.
 
 ---
 
-## Regions and Features Are Both Physical Resource Sources
+## Regions and Features Are Both Resource Sources
 
-A region represents broad background matter and environmental reservoirs.
+A region represents widespread/background reservoirs such as:
 
-Examples:
-
-- basaltic crust
-- sand
+- crustal rock
 - regolith
+- sand
 - water
 - ice
 - atmosphere
-- biomass
+- widespread biomass
 
-A feature represents a localized geological/environmental structure, concentration, unusual condition, or access path.
+A feature represents localized structure, concentration, special conditions, or access such as:
 
-Examples:
-
-- ore body
+- ore deposit
 - aquifer
-- hydrothermal system
-- salt basin
+- gas reservoir
 - fault
 - cave
 - crater
-- gas reservoir
+- hydrothermal system
+- volcanic vent
 - magma chamber
+- salt basin
 
-Features should not be required to represent materials that are naturally widespread throughout a region.
+Features should not be required to represent material that naturally occurs across a broad region.
 
 ---
 
 ## Raw Resources Are Natural Feedstocks
 
-Do not confuse a mineral species with a naturally extracted feedstock.
+Do not confuse mineral species with naturally extracted feedstocks.
 
 Prefer:
 
@@ -442,92 +391,66 @@ Composition:
   Quartz/gangue 17%
 ```
 
-rather than treating every hematite occurrence as its own fundamental resource type.
+rather than making each mineralogical variant a different fundamental raw-resource ID.
 
-Likewise:
-
-```text
-Feature: Aluminum Ore Deposit
-Raw resource: Aluminum Ore
-Descriptor: boehmite-rich bauxite
-Composition:
-  Boehmite
-  Gibbsite
-  Hematite
-  Kaolinite
-  other minerals
-```
-
-The resource identity and generated composition are separate concepts.
-
-A single resource definition can therefore have many generated occurrences.
+A resource definition identifies the feedstock class. A generated occurrence carries subtype, composition, concentration, quantity, and location.
 
 ---
 
 ## Preserve Matter Composition
 
-Whenever practical, resources should carry meaningful composition data instead of functioning as arbitrary tokens.
+Whenever practical, natural resources should carry meaningful composition data rather than behaving as arbitrary tokens.
 
 Examples:
 
 - ores contain mineral constituents
-- brines contain dissolved salts and trace constituents
+- brines contain dissolved species
 - natural gas contains a gas mixture
 - atmosphere contains gas fractions
 - rocks contain mineral mixtures
-- biomass contains organic material classes
 
-Future processing gameplay will consume these material streams. Avoid hard-coded abstractions such as:
-
-```text
-1 Iron Ore = 1 Iron
-```
-
-Useful products should eventually derive from feedstock composition and processing capability.
+Future processing should derive outputs from feedstock composition and process capability rather than hard-coded conversions such as `1 Iron Ore = 1 Iron`.
 
 ---
 
-# Planet / Region / Feature Direction
+# Current Planet / Region / Feature Direction
 
-For current work, the important physical hierarchy is:
+The current physical hierarchy is:
 
 ```text
 Planet
   └─ Region
        ├─ Background natural resources
        └─ Feature
-            └─ Natural resource occurrences / compositions
+            └─ Natural-resource occurrences
 ```
 
-Future versions may add geological hierarchy such as provinces, formations, deposits, ore bodies, veins, and pockets, but only add those levels when they produce a concrete simulation or gameplay benefit.
+Do not add geological hierarchy (province → formation → deposit → ore body, etc.) until it gives a concrete simulation or gameplay benefit.
 
-## Planet Properties
+## Planet
 
-Useful planet-level concepts include:
+The planet generator is already causal enough to serve as the upstream model. Preserve its broad pass order:
 
-- mass
-- radius
-- density
-- gravity
-- escape velocity
-- bulk composition
-- volatile inventory
-- atmosphere
-- temperature
-- internal heat
-- geologic activity
-- interior structure
-- magnetic state
-- surface state
-- biosphere presence
+```text
+Base state
+→ bulk matter / volatiles
+→ thermal environment
+→ interior structure
+→ physical dimensions
+→ atmosphere
+→ internal activity
+→ exterior state
+→ derived classification
+→ regions
+```
 
-The target is **physically constrained and causally plausible**, not research-grade planetary science.
+The target is physically constrained and causally plausible, not research-grade planetary science.
 
 ## Regions
 
-Regions should carry local conditions derived from the planet and should influence feature/resource generation.
+Regions should increasingly derive coherent local geology/environment from planet conditions. Current regional random perturbations are acceptable scaffolding, but future work should strengthen causal geology rather than simply adding more random labels.
 
-Useful properties include:
+Useful regional concepts include:
 
 - area
 - latitude
@@ -538,149 +461,98 @@ Useful properties include:
 - moisture / volatile availability
 - geologic activity
 - surface cover
-- age/history where meaningful
+- meaningful geological age/history
 - heterogeneity
-
-A region is a bundle of physical/environmental properties, not merely a biome label.
 
 ## Features
 
-Feature types may include:
+Feature type, physical state, temperature/pressure, and possible resources must become increasingly compatible with the conditions that form that feature.
 
-- mineral deposit
-- geological formation
-- aquifer
-- gas reservoir
-- cave / cavern
-- ravine
-- fault
-- crater
-- volcanic vent
-- hydrothermal system
-- magma chamber
-- ice body
-- salt basin
-- outcrop
-
-Feature probability should depend on regional and planetary conditions.
-
-Features can contain resources, modify accessibility, expose deeper material, or provide unusual temperature/pressure/fluid conditions.
+Do not allow broad tag matching to become a substitute for geological causality as the system matures.
 
 ---
 
 # Lazy Generation Direction
 
-As worlds become more detailed, do not generate millions of feature objects at startup.
+As detail grows, do not generate millions of objects at startup.
 
-Preferred long-term strategy:
+Preferred future strategy:
 
 1. Generate world seed and planet state.
-2. Generate regional state and broad material/geological potential.
+2. Generate regional state and broad geological/material potential.
 3. Resolve major features when appropriate.
 4. Resolve smaller deposits/structures when surveyed or inspected.
 5. Persist anything discovered, extracted, modified, or named.
-6. Reconstruct untouched details deterministically from namespaced seeds and generator version.
+6. Reconstruct untouched detail deterministically from seed, namespace, and generator version.
 
-Lazy generation must **resolve pre-existing deterministic reality**, not create resources because the player looked for them.
+Lazy generation must resolve pre-existing deterministic reality, not create resources because the player looked for them.
 
 ---
 
-# Interlink Long-Term Gameplay Philosophy
+# Long-Term Interlink Gameplay Philosophy
 
-These principles are architectural guidance. Do not implement all of them unless the current issue explicitly requires them.
+These are architectural constraints, not immediate implementation tasks.
 
 ## Systems Become Components
 
-The eventual game should support a hierarchy such as:
-
 ```text
-Primitive function
+Primitive Function
     ↓
 Apparatus
     ↓
 Process
     ↓
-Production line
+Production Line
     ↓
 Facility
     ↓
-Industrial network
+Industrial Network
     ↓
-Planetary system
+Planetary System
 ```
 
 A working system should eventually be reusable as a component of a larger system.
 
-> Yesterday's factory becomes today's machine.
+> **Yesterday's factory becomes today's machine.**
 
 ## Blueprint / Network-Oriented Interaction
 
-Interlink is intended to be largely UI-driven.
+Long-term interaction should emphasize:
 
-Long term, expect interaction through:
-
-- nodes
-- ports
-- material streams
-- energy streams
+- nodes and ports
+- material and energy streams
 - process diagrams
-- nested systems
-- graphs
-- dashboards
-- sensors
-- controllers
-- alerts
-- composition readouts
+- nested reusable systems
+- graphs and dashboards
+- sensors/controllers
+- alerts and composition readouts
 
-Do not assume the project needs a conventional 3D or character-controlled world.
+Do not assume a conventional 3D or character-controlled game world is required.
 
-Favor clarity, information density, inspectability, and systems reasoning over decorative game UI.
+## Capability-Based Progression
 
-## Progress Through Capability
-
-Long-term progression should emerge primarily from physical and engineering capabilities such as:
-
-- temperature
-- pressure
-- purity
-- vacuum
-- electrical capability
-- material compatibility
-- chemical resistance
-- throughput
-- control precision
-
-Avoid arbitrary unlocks when a physical capability can naturally serve as the gate.
+Progression should emerge from capabilities such as temperature, pressure, purity, vacuum, electrical capability, material compatibility, chemical resistance, throughput, and control precision rather than arbitrary tech-level locks where possible.
 
 ## Simulate Decisions, Aggregate Busywork
 
-Use detail when it creates meaningful player decisions.
-
-Aggregate detail that mostly creates repetitive setup work.
-
-Do not simulate every bolt, brick, valve, atom, or molecule merely because it is possible.
-
-Prefer functional abstractions with meaningful consequences.
+Simulate detail when changing it creates meaningful player decisions. Aggregate detail that mainly creates repetitive setup work.
 
 ---
 
 # Web Application Guidance
 
-The project will remain a web application for the foreseeable future.
-
 For now:
 
-- prefer browser-native JavaScript unless a framework provides a clear benefit
-- do not migrate frameworks merely for modernization
-- keep dependencies minimal
-- keep the app easy to run through a simple local HTTP server
-- preserve modular ES modules
-- keep simulation code independent from DOM code
-- avoid unnecessary backend infrastructure until persistence/server simulation actually requires it
+- keep the project web-based
+- prefer browser-native JavaScript while it remains sufficient
+- preserve ES modules
+- keep runtime dependencies minimal
+- keep simulation code DOM-independent
+- do not migrate to React/Vue/etc. merely for modernization
+- do not introduce a backend/database until persistence or server simulation requires one
+- avoid ECS, dependency injection, message buses, or enterprise architecture without a concrete need
 
-If the UI becomes complex enough that a framework is clearly beneficial, propose the migration before performing a large rewrite.
-
-Do not respond to architectural concerns by introducing unnecessary enterprise infrastructure such as dependency-injection frameworks, message buses, databases, ECS architectures, or server stacks without a concrete need.
+The current static app should remain easy to run through a local HTTP server.
 
 ---
 
@@ -689,111 +561,38 @@ Do not respond to architectural concerns by introducing unnecessary enterprise i
 When modifying this repository:
 
 1. Inspect the existing implementation first.
-2. Preserve working behavior unless the issue explicitly changes it.
-3. Keep generation functions small, deterministic, and composable.
+2. Preserve behavior unless the issue explicitly changes it.
+3. Keep generation deterministic, small, and composable.
 4. Prefer plain serializable data structures.
-5. Separate world truth, player knowledge, and UI state.
-6. Keep definition data separate from generated occurrences.
-7. Route simulation randomness through deterministic namespaced RNGs.
+5. Preserve World / Knowledge / UI separation.
+6. Keep definitions separate from occurrences.
+7. Route simulation randomness through namespaced seeded RNGs.
 8. Keep IDs stable where practical.
-9. Carry `schemaVersion` and `generatorVersion` in generated world state.
-10. Add validation for important invariants.
-11. Avoid circular dependencies.
-12. Keep rendering/formatting outside the simulation core.
-13. Document non-obvious physical approximations.
-14. Prefer data-driven definitions over growing switch statements when complexity warrants it.
-15. Do not add speculative systems unrelated to the current task.
-16. When realism conflicts with playability or implementation cost, preserve causal plausibility and meaningful decisions rather than maximal detail.
+9. Maintain `schemaVersion` and `generatorVersion` deliberately.
+10. Add or update automated tests when changing simulation contracts.
+11. Add validation for important invariants.
+12. Avoid circular dependencies.
+13. Keep rendering/formatting out of simulation logic.
+14. Document non-obvious physical approximations.
+15. Prefer data-driven compatibility rules as complexity grows.
+16. Do not add speculative systems unrelated to the current issue.
+17. When realism conflicts with scope, preserve causal plausibility and meaningful decisions rather than maximal detail.
 
 ---
 
-# Important Data Invariants
+# Near-Term Development Order
 
-Where applicable:
+Unless an issue explicitly changes priority:
 
-- complete percentage compositions should sum to approximately 100%
-- structural mass fractions should sum to approximately 1
-- region area percentages should sum to approximately 100%
-- quantities and physical values should not be negative unless explicitly meaningful
-- biological resources should not appear without appropriate biological conditions
-- feature resources should be compatible with feature type and local geology
-- world generation must not depend on DOM/UI state
-- discovery must not create or alter physical resources merely by observing them
-- same seed + same generator version should reproduce the same intended world state
+1. **Add automated simulation regression tests and executable invariants.**
+2. Normalize any remaining inconsistent occurrence/reference models exposed by those tests.
+3. Improve causal regional geology.
+4. Improve feature formation and feature/resource compatibility.
+5. Improve natural-resource composition and deposit generation.
+6. Expand discovery into surveying/knowledge confidence.
+7. Add extraction concepts.
+8. Add processing/material transformation.
+9. Add automation and reusable systems.
+10. Add larger industrial/network gameplay.
 
-Validation failures should be visible during development rather than silently ignored.
-
----
-
-# Naming Guidance
-
-Use names that describe simulated concepts rather than implementation accidents.
-
-Prefer reusable natural feedstocks such as:
-
-- `Iron Ore`
-- `Copper Ore`
-- `Brine`
-- `Natural Gas`
-- `Atmospheric Gas`
-- `Basalt`
-
-with occurrence-specific composition and descriptors.
-
-Avoid creating a new resource definition for every composition variant unless it truly represents a distinct natural material class.
-
-Human-readable occurrence descriptors may still say things like `Hematite-rich Iron Ore` or `Boehmite-rich Bauxite`.
-
----
-
-# Near-Term Priorities
-
-Unless a user request explicitly changes priority, development should generally proceed in this order:
-
-1. Establish World State / Knowledge State / UI State separation.
-2. Establish schema/generator versioning and namespaced deterministic RNG streams.
-3. Formalize definitions vs generated occurrences.
-4. Preserve and validate the existing planet-generation vertical slice through that refactor.
-5. Improve causal regional geology.
-6. Improve feature formation.
-7. Improve natural-resource occurrence generation and compositions.
-8. Expand discovery into surveying/knowledge confidence.
-9. Improve visualization and inspection.
-10. Add extraction/exploitation concepts.
-11. Add processing and material transformation.
-12. Add automation and reusable systems.
-13. Add larger industrial/network gameplay.
-
-Do not jump directly to industrial gameplay while the foundational world model is still being established.
-
----
-
-# Current Product Goal
-
-At the current stage, a successful build should make it interesting to repeatedly generate planets and inspect **why they differ**, while establishing a data architecture that future Interlink gameplay can safely build upon.
-
-The application should make relationships visible:
-
-```text
-Planet conditions
-    ↓
-Region conditions
-    ↓
-Feature formation
-    ↓
-Natural resource distribution
-```
-
-When adding a generation property, ask:
-
-> What downstream result does this property influence?
-
-If it influences nothing and is only flavor text, reconsider whether it belongs in the simulation yet.
-
-When adding a generated result, ask:
-
-> What upstream conditions caused this result?
-
-If the answer is simply "a random roll," look for a reasonable causal dependency.
-
-This causal, inspectable, deterministic systems model is the foundation future Interlink gameplay should build upon.
+Do not jump into factories, blueprints, research, or late-game systems while generated-world causality is still being established.
