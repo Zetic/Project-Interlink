@@ -7,5 +7,7 @@
  *                     way that intentionally alters outputs for the same seed.
  */
 
-export const SCHEMA_VERSION = 1;
-export const GENERATOR_VERSION = 1;
+// Schema v2: regional background resources normalized into world.resourceOccurrences
+// Generator v2: feature physical states and resources are constrained by feature type
+export const SCHEMA_VERSION = 2;
+export const GENERATOR_VERSION = 2;
