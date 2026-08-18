@@ -53,6 +53,7 @@ test('shared graph projects Region and Planet transfers into visible edges', () 
   };
   const graph = projectBoundaryGraph({
     scopeId: 'planet',
+    level: 'planet',
     planetScopeId: 'planet',
     nodes: [source, target],
   }, { [transfer.id]: transfer }, (nodeId, portId) => ({ nodeId, portId }));

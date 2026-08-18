@@ -280,6 +280,7 @@ function systemWorkspaceDefinition() {
       title: planet?.name ?? 'Planet',
       nodes: (planet?.regions ?? []).map(id => wsState.world.systemNodes[id]).filter(Boolean),
       scopeId: planet?.id,
+      level: 'planet',
       planetScopeId: planet?.id,
       prototypeSurveyFeatureId: null,
     };
@@ -301,6 +302,7 @@ function systemWorkspaceDefinition() {
     title: region?.name ?? 'Region',
     nodes,
     scopeId: region?.id,
+    level: 'region',
     planetScopeId: currentPlanet()?.id,
     prototypeSurveyFeatureId: prototypeSurveyFeatureId(region),
   };

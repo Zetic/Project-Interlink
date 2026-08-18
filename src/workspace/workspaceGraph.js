@@ -60,7 +60,7 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
   ));
   const nodeIds = new Set(nodes.map(node => node.id));
   const connections = Object.values(transfers).filter(transfer => {
-    if (definition?.planetScopeId && definition.scopeId === definition.planetScopeId) {
+    if (definition?.level === 'planet') {
       return nodeIds.has(transfer.sourceCompositeId) && nodeIds.has(transfer.targetCompositeId);
     }
     return transfer.scopeId === definition?.scopeId;
@@ -144,6 +144,7 @@ export function renderGraphConnections({
     const target = endpointPosition(graphConnectionEndpoint(connection, 'target'));
     const midX = (source.x + target.x) / 2;
     path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
+    // Keep low-flow edges visible while scaling active flow within a readable range.
     path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + flow(connection) * 0.5)));
     path.classList.toggle('ws-connection--selected', selectedId === connection.id);
   }
