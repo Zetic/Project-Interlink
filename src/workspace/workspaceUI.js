@@ -501,7 +501,8 @@ function renderParentWorkspace(container) {
       label.innerHTML = `<strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span>`;
       const canEnter = node.nodeType === 'region'
         || (node.nodeType === 'site' && Boolean(compatibleOccurrenceForSite(wsState.world.sites[node.id])));
-      if (canEnter && isNew) {
+      const existingEnter = element.querySelector('.ws-system-enter');
+      if (canEnter && !existingEnter) {
         const button = document.createElement('button');
         button.className = 'ws-system-enter ws-enter';
         button.textContent = 'Enter →';
@@ -514,6 +515,8 @@ function renderParentWorkspace(container) {
           });
         });
         element.appendChild(button);
+      } else if (!canEnter) {
+        existingEnter?.remove();
       }
     },
     onNodePointerDown: (node, event) => startSystemNodeDrag(node.id, event),
