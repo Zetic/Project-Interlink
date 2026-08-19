@@ -5,6 +5,19 @@ import { workspaceShellMarkup } from '../src/workspace/workspaceUI.js';
 
 const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
+function cssRule(css, selector) {
+  const selectorIndex = css.indexOf(selector);
+  const openIndex = css.indexOf('{', selectorIndex);
+  if (selectorIndex < 0 || openIndex < 0) return '';
+
+  let depth = 0;
+  for (let index = openIndex; index < css.length; index++) {
+    if (css[index] === '{') depth += 1;
+    if (css[index] === '}' && --depth === 0) return css.slice(openIndex + 1, index);
+  }
+  return '';
+}
+
 test('workspace shell owns shared controls and reserves semantic content slots', () => {
   const markup = workspaceShellMarkup({
     title: 'Region <A>',
@@ -26,11 +39,11 @@ test('workspace shell owns shared controls and reserves semantic content slots',
 });
 
 test('player shell reserves a viewport-safe outer inset', () => {
-  const playerViewRule = styles.match(/#player-view\s*\{([^}]*)\}/)?.[1] ?? '';
+  const playerViewRule = cssRule(styles, '#player-view');
 
   assert.ok(playerViewRule.trim(), 'expected a #player-view style rule');
   assert.match(playerViewRule, /^\s*width:\s*calc\(100%\s*-\s*16px\)\s*;/m);
-  assert.match(playerViewRule, /^\s*height:\s*calc\(100vh\s*-\s*16px\)\s*;/m);
+  assert.match(playerViewRule, /^\s*height:\s*calc\(100(?!d)vh\s*-\s*16px\)\s*;/m);
   assert.match(playerViewRule, /^\s*height:\s*calc\(100dvh\s*-\s*16px\)\s*;/m);
   assert.match(playerViewRule, /^\s*margin:\s*8px\s*;/m);
 });
