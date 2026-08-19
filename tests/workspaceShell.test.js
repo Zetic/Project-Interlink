@@ -59,8 +59,8 @@ test('player shell reserves a viewport-safe outer inset', () => {
     .map(declaration => declaration.trim().replace(/\s+/g, ' '))
     .filter(Boolean);
 
-  assert.ok(declarations.includes('width: calc(100% - 16px)'));
-  assert.ok(declarations.includes('height: calc(100vh - 16px)'));
-  assert.ok(declarations.includes('height: calc(100dvh - 16px)'));
-  assert.ok(declarations.includes('margin: 8px'));
+  assert.ok(declarations.includes('width: calc(100% - 16px)'), 'expected viewport-safe width');
+  assert.ok(declarations.includes('height: calc(100vh - 16px)'), 'expected viewport height fallback');
+  assert.ok(declarations.includes('height: calc(100dvh - 16px)'), 'expected dynamic viewport height');
+  assert.ok(declarations.includes('margin: 8px'), 'expected 8px outer shell inset');
 });
