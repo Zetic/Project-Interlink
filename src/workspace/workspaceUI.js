@@ -386,7 +386,10 @@ function installNavigationEvents() {
       return;
     }
     const entry = event.target.closest('[data-navigation-entry]');
-    if (entry) navigateNavigationEntry(entry.dataset.navigationEntry);
+    if (entry) {
+      navigateNavigationEntry(entry.dataset.navigationEntry);
+      return;
+    }
   });
   document.addEventListener('input', event => {
     if (!event.target.matches('#ws-navigation-search')) return;
