@@ -358,7 +358,8 @@ function installNavigationEvents() {
   const controller = new AbortController();
   wsState.navigationEventController = controller;
   const eventOptions = { signal: controller.signal };
-  document.addEventListener('click', event => {
+  const navigationEventRoot = el('player-view') ?? document;
+  navigationEventRoot.addEventListener('click', event => {
     const toggle = event.target.closest('#ws-navigation-toggle');
     if (toggle) {
       setNavigationOpen(!wsState.navigationOpen);
@@ -395,22 +396,23 @@ function installNavigationEvents() {
       return;
     }
   }, eventOptions);
-  document.addEventListener('input', event => {
+  navigationEventRoot.addEventListener('input', event => {
     if (!event.target.matches('#ws-navigation-search')) return;
     wsState.navigationQuery = event.target.value;
     renderNavigationDrawer();
   }, eventOptions);
-  document.addEventListener('change', event => {
+  navigationEventRoot.addEventListener('change', event => {
     const input = event.target.closest('[data-navigation-filter]');
     if (!input || !event.target.closest('#ws-navigation-drawer')) return;
     if (input.checked) wsState.navigationHiddenCategories.delete(input.dataset.navigationFilter);
     else wsState.navigationHiddenCategories.add(input.dataset.navigationFilter);
     renderNavigationDrawer();
   }, eventOptions);
-  document.addEventListener('keydown', event => {
+  navigationEventRoot.addEventListener('keydown', event => {
     if (event.key === 'Escape' && wsState.navigationOpen) {
+      const shouldRestoreFocus = event.target.closest('#ws-navigation-drawer, #ws-navigation-toggle');
       setNavigationOpen(false);
-      el('ws-navigation-toggle')?.focus();
+      if (shouldRestoreFocus) el('ws-navigation-toggle')?.focus();
     }
   }, eventOptions);
 }
