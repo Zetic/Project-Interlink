@@ -59,7 +59,10 @@ export const NODE_DEFINITIONS = Object.freeze([
     category: NODE_CATEGORIES.APPARATUS.key,
     description: 'Reduces the particle size of solid material streams.',
     searchTerms: ['crusher', 'crushing', 'grinding', 'size reduction', 'ore', 'solid', 'particle'],
-    create: blueprintAddCrusher,
+    create: blueprint => blueprintAddCrusher(blueprint, {
+      throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
+      targetParticleSizeMm: DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
+    }),
   }),
   definition({
     id: 'magnetic-separator',
@@ -68,7 +71,9 @@ export const NODE_DEFINITIONS = Object.freeze([
     category: NODE_CATEGORIES.APPARATUS.key,
     description: 'Separates material streams using magnetic response.',
     searchTerms: ['magnetic separator', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings'],
-    create: blueprintAddMagSep,
+    create: blueprint => blueprintAddMagSep(blueprint, {
+      fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH,
+    }),
   }),
   definition({
     id: 'hopper',
