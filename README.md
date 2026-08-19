@@ -527,9 +527,9 @@ Persistent graph edges must correspond to real underlying relationships. Materia
 
 # Immediate Development Direction
 
-The Site/Feature resource-access pass is the final world-to-industry contract needed before player-authored construction.
+The Site/Feature resource-access architecture is the final world-to-industry contract needed before player-authored construction.
 
-After this architecture is stable, the next major gameplay milestone is:
+The next major gameplay milestone is:
 
 ```text
 Enter Site
