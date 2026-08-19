@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   createBlueprint,
+  blueprintAddFeatureSource,
   blueprintAddExtractor,
   blueprintAddHopper,
   blueprintAddCrusher,
@@ -40,12 +41,43 @@ import {
 } from '../src/simulation/hopperNode.js';
 
 function testWorld() {
-  return { resourceOccurrences: { occ: { id: 'occ', resourceId: 'iron-ore', composition: { hematite: 100 } } } };
+  return {
+    resourceOccurrences: {
+      occ: {
+        id: 'occ',
+        resourceId: 'iron-ore',
+        composition: { hematite: 100 },
+        sourceType: 'feature',
+        sourceId: 'feature-test',
+      },
+    },
+    features: {
+      'feature-test': { id: 'feature-test', name: 'Test Deposit', resourceOccurrences: ['occ'] },
+    },
+  };
 }
 
-test('schema v6 records enterable Feature Site state shape change', () => {
-  assert.equal(SCHEMA_VERSION, 6);
-  assert.equal(createWorld('schema-six').schemaVersion, 6);
+function connectTestFeature(blueprint, world, extractor) {
+  const feature = world.features['feature-test'];
+  const node = blueprintAddFeatureSource(blueprint, {
+    featureId: feature.id,
+    displayName: feature.name,
+    resourceOccurrenceIds: feature.resourceOccurrences,
+  });
+  const connection = blueprintConnect(
+    blueprint,
+    node.id,
+    node.resourceAccessPortId,
+    extractor.id,
+    extractor.sourceInputPortId,
+  );
+  assert.ok(connection);
+  return node;
+}
+
+test('schema v7 records canonical Site Feature ResourceOccurrence ownership', () => {
+  assert.equal(SCHEMA_VERSION, 7);
+  assert.equal(createWorld('schema-seven').schemaVersion, 7);
 });
 
 test('active machinery starts disabled and reports off', () => {
@@ -56,10 +88,11 @@ test('active machinery starts disabled and reports off', () => {
   }
 });
 
-test('disabled extractor produces nothing; enabling permits operation', () => {
+test('disabled extractor produces nothing; enabling permits operation when a Feature source is connected', () => {
   const world = testWorld();
   const blueprint = createBlueprint();
   const extractor = blueprintAddExtractor(blueprint, 'occ', 5);
+  connectTestFeature(blueprint, world, extractor);
   const output = blueprintAddHopper(blueprint);
   blueprintConnect(blueprint, extractor.id, extractor.outputPortId, output.id, output.inputPortId);
   simulationTick(blueprint, world);
@@ -141,7 +174,7 @@ test('generated Regions expose material input/output, physical buffers, and chil
   createWorldSimulation(world);
   const regionId = world.planets[world.planetId].regions[0];
   const regionNode = world.systemNodes[regionId];
-  assert.deepEqual(regionNode.ports.map(p => [p.id, p.direction]), [['material-input', 'input'], ['material-output', 'output']]);
+  assert.deepEqual(regionNode.ports.map(port => [port.id, port.direction]), [['material-input', 'input'], ['material-output', 'output']]);
   const workspace = getSimulationWorkspace(world, regionNode.childWorkspaceId);
   assert.equal(workspace.nodes[`${regionId}-import-hopper`].nodeType, 'hopper');
   assert.equal(workspace.nodes[`${regionId}-export-hopper`].nodeType, 'hopper');
@@ -166,7 +199,7 @@ test('generated Sites expose distinct import/export boundary owners without impl
   assert.equal(site.ports.find(port => port.id === 'material-output').childNodeId, output.node.id);
 });
 
-test('boundary buffers expose only their child-facing port to engineering connections', () => {
+test('boundary buffers expose only their child-facing port to Site connections', () => {
   const importBoundary = createBoundaryBuffer({ id: 'site-import', capacityKg: 10, role: 'import' });
   const exportBoundary = createBoundaryBuffer({ id: 'site-export', capacityKg: 10, role: 'export' });
   assert.deepEqual(getNodePortDefinitions(importBoundary).map(port => [port.id, port.direction]), [['output', 'output']]);
@@ -237,6 +270,7 @@ test('world pause freezes physical state without changing machine command state'
   const world = testWorld();
   const blueprint = createBlueprint();
   const extractor = blueprintAddExtractor(blueprint, 'occ', 5);
+  connectTestFeature(blueprint, world, extractor);
   const output = blueprintAddHopper(blueprint);
   blueprintConnect(blueprint, extractor.id, extractor.outputPortId, output.id, output.inputPortId);
   setNodeEnabled(blueprint, extractor.id, true);
