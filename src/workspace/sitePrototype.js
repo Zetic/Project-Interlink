@@ -9,3 +9,8 @@ export function prototypeOccurrenceForSite(world, site) {
   }
   return null;
 }
+
+export function prototypeNodeTypesForSite(world, site) {
+  if (!prototypeOccurrenceForSite(world, site)) return [];
+  return ['extractor', 'hopper', 'crusher', 'hopper', 'magSep', 'hopper', 'hopper'];
+}

@@ -44,7 +44,7 @@ import {
   disconnectGraphConnection,
 } from './workspaceGraph.js';
 import { clampZoom, screenToGraph, zoomAroundPoint, fitViewport, centerViewport } from './viewport.js';
-import { prototypeOccurrenceForSite } from './sitePrototype.js';
+import { prototypeNodeTypesForSite, prototypeOccurrenceForSite } from './sitePrototype.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -93,6 +93,24 @@ let dragState = null;
 let systemDragState = null;
 
 function el(id) { return document.getElementById(id); }
+function renderWorkspaceShell(container, {
+  header = '',
+  toolbarLeading = '',
+  canvasId,
+  svgId,
+  inspectorBodyId,
+  inspectorInitial = '',
+} = {}) {
+  container.innerHTML = `${header}<div class="ws-toolbar">${toolbarLeading}<button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div><div class="ws-layout"><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div>`;
+  return {
+    toolbar: container.querySelector('.ws-toolbar'),
+    viewport: container.querySelector('.ws-viewport'),
+    canvas: el(canvasId),
+    svg: el(svgId),
+    inspector: container.querySelector('.ws-inspector'),
+    inspectorBody: el(inspectorBodyId),
+  };
+}
 function escHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -178,7 +196,10 @@ function createSiteSession(occurrenceId, siteId) {
   }
   const prototypeOccurrence = prototypeOccurrenceForSite(wsState.world, site);
   const prototypeOccurrenceId = prototypeOccurrence?.id ?? null;
-  const extractor = prototypeOccurrenceId ? blueprintAddExtractor(blueprint, prototypeOccurrenceId, 5) : null;
+  const prototypeNodeTypes = prototypeNodeTypesForSite(wsState.world, site);
+  const extractor = prototypeNodeTypes.includes('extractor')
+    ? blueprintAddExtractor(blueprint, prototypeOccurrenceId, 5)
+    : null;
   const hopperA = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
   const crusher = extractor ? blueprintAddCrusher(blueprint, {
     throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
@@ -357,7 +378,7 @@ function eventGraphPoint(event, surface, key) {
   );
 }
 
-function installViewport(surface, canvas, svg, key, boundsProvider) {
+function installViewport(surface, canvas, svg, key, boundsProvider, controlsRoot = null) {
   if (!surface || !canvas || !svg) return;
   const apply = () => {
     const viewport = workspaceViewport(key);
@@ -366,11 +387,11 @@ function installViewport(surface, canvas, svg, key, boundsProvider) {
     svg.style.transformOrigin = '0 0';
     canvas.style.transform = transform;
     svg.style.transform = transform;
-    surface.querySelectorAll('[data-zoom-label]').forEach(label => {
+    controlsRoot.querySelectorAll('[data-zoom-label]').forEach(label => {
       label.textContent = `${Math.round(viewport.zoom * 100)}%`;
     });
   };
-  surface.parentElement.querySelectorAll('[data-viewport]').forEach(button => {
+  controlsRoot.querySelectorAll('[data-viewport]').forEach(button => {
     button.addEventListener('click', () => {
       const viewport = workspaceViewport(key);
       if (button.dataset.viewport === 'in') viewport.zoom = clampZoom(viewport.zoom + 0.1);
@@ -530,9 +551,13 @@ function renderParentWorkspace(container) {
     ? `<div class="ws-planet-header"><div class="ws-planet-name">${escHtml(definition.title)}</div><div class="ws-planet-meta">Draggable planetary system graph</div></div>`
     : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Draggable region system graph · explicit import/export boundaries</div></div>`;
 
-  container.innerHTML = `${header}<div class="ws-toolbar"><button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div><div class="ws-layout"><div class="ws-viewport" data-viewport-surface><svg id="ws-system-svg" class="ws-graph-svg"></svg><div id="ws-system-canvas" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="ws-composite-inspector-body" class="ws-inspector-body"></div></div></div>`;
-  const canvas = el('ws-system-canvas');
-  const svg = el('ws-system-svg');
+  const shell = renderWorkspaceShell(container, {
+    header,
+    canvasId: 'ws-system-canvas',
+    svgId: 'ws-system-svg',
+    inspectorBodyId: 'ws-composite-inspector-body',
+  });
+  const { canvas, svg } = shell;
   const layout = ensureSystemLayout(definition);
   const graph = projectBoundaryGraph(
     { ...definition, layout },
@@ -632,7 +657,7 @@ function renderParentWorkspace(container) {
   canvas.addEventListener('mouseleave', () => { systemDragState = null; });
   renderSystemConnections(svg, definition);
   installViewport(
-    canvas.parentElement,
+    shell.viewport,
     canvas,
     svg,
     definition.id,
@@ -645,6 +670,7 @@ function renderParentWorkspace(container) {
         maxY: Math.max(bounds.maxY, position.y + NODE_HEIGHT),
       }), { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT });
     },
+    shell.toolbar,
   );
   updateCompositeInspector(true);
 }
@@ -945,7 +971,13 @@ function renderSiteWorkspace(container) {
   inspector.renderKey = null;
   const site = wsState.world?.sites?.[wsState.selectedSiteId];
   const feature = site ? wsState.world?.features?.[site.featureIds?.[0]] : null;
-  container.innerHTML = `<div class="ws-toolbar"><span class="ws-site-title">Site — ${escHtml(feature?.name ?? wsState.selectedSiteId)}</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span><button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div><div class="ws-layout"><div class="ws-viewport" data-viewport-surface><svg id="ws-site-svg" class="ws-graph-svg"></svg><div id="ws-site-canvas" class="ws-graph-canvas"></div></div><div id="ws-inspector" class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="ws-inspector-body" class="ws-inspector-body">Select a node or connection.</div></div></div>`;
+  const shell = renderWorkspaceShell(container, {
+    toolbarLeading: `<span class="ws-site-title">Site — ${escHtml(feature?.name ?? wsState.selectedSiteId)}</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span>`,
+    canvasId: 'ws-site-canvas',
+    svgId: 'ws-site-svg',
+    inspectorBodyId: 'ws-inspector-body',
+    inspectorInitial: 'Select a node or connection.',
+  });
   el('ws-sim-reset')?.addEventListener('click', onResetSite);
   el('ws-inspector-body')?.addEventListener('click', onInspectorClick);
   renderSiteNodes();
@@ -954,9 +986,9 @@ function renderSiteWorkspace(container) {
   el('ws-site-svg')?.addEventListener('mousemove', onCanvasMouseMove);
   el('ws-site-svg')?.addEventListener('mouseup', onCanvasMouseUp);
   installViewport(
-    el('ws-site-canvas')?.parentElement,
-    el('ws-site-canvas'),
-    el('ws-site-svg'),
+    shell.viewport,
+    shell.canvas,
+    shell.svg,
     `site:${wsState.selectedSiteId}`,
     () => Object.values(wsState.blueprintLayout.nodePositions).reduce((bounds, position) => ({
       minX: Math.min(bounds.minX, position.x),
@@ -964,6 +996,7 @@ function renderSiteWorkspace(container) {
       maxX: Math.max(bounds.maxX, position.x + NODE_WIDTH),
       maxY: Math.max(bounds.maxY, position.y + NODE_HEIGHT),
     }), { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT }),
+    shell.toolbar,
   );
 }
 
