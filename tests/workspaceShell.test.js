@@ -12,7 +12,7 @@ function cssRule(css, selector) {
     const candidateIndex = css.indexOf(selector, searchFrom);
     if (candidateIndex < 0) break;
     const nextCharacter = css[candidateIndex + selector.length];
-    if (nextCharacter == null || /[\s{,]/.test(nextCharacter)) {
+    if (nextCharacter === undefined || /[\s{,]/.test(nextCharacter)) {
       selectorIndex = candidateIndex;
       break;
     }
