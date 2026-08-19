@@ -10,7 +10,7 @@ A guiding progression principle is:
 
 > **Yesterday's factory becomes today's machine.**
 
-The canonical long-term game design is documented in [`DESIGN.md`](DESIGN.md). This README records the current implementation state and near-term architectural direction.
+The canonical long-term game design is documented in [`DESIGN.md`](DESIGN.md). This README records the **current implementation state**, the architectural contracts that now exist in code, and the next development direction.
 
 ---
 
@@ -54,41 +54,11 @@ Player-facing systems should increasingly replace repetitive action buttons with
 
 ---
 
-# Current State
+# Current Project State
 
-The project has a deterministic world-generation foundation, discrete material-processing semantics, a continuous solid-material simulation, recursive Site/Region/Planet runtime ownership, and a shared player-facing graph architecture.
+Interlink now has a coherent first vertical architecture from generated world state through continuous material processing and recursive player workspaces.
 
-Current implemented behavior includes:
-
-- deterministic seeded planet generation and causal generation passes
-- Regions, Features, Sites, and normalized `ResourceOccurrence` entities
-- World / Knowledge / UI state separation
-- deterministic namespaced RNG streams
-- physical `MaterialBatch` state for meaningful discrete lots/samples
-- provenance separated from current material identity
-- particle size as a modeled material property
-- reusable `ProcessDefinition` metadata with explicit ports and parameters
-- Crushing and Magnetic Separation with shared discrete/continuous transformation physics
-- continuous `MaterialStream` rate/state objects
-- finite-capacity Hopper nodes that physically own bulk matter
-- automated prototype extraction from a real occurrence
-- continuous Crusher and Magnetic Separator execution
-- constituent-level and total-mass conservation
-- transactional process/backpressure behavior
-- one-to-one material port connections until an explicit splitter is implemented
-- connection compatibility tied to actual solver semantics
-- world-owned fixed-step simulation with global Pause/Resume
-- per-machine `enabled` plus `off / idle / running / blocked` operating state
-- persistent per-Site simulation sessions while navigating elsewhere
-- recursive Site and Region system metadata with typed boundary ports
-- explicit Site Import / Site Export and Region Import / Region Export physical boundary buffers
-- conserved cross-boundary transfer primitives
-- draggable Site, Region, and Planet node workspaces
-- one shared `GraphNode` / `GraphPort` / `GraphConnection` projection and rendering layer across Site, Region, and Planet
-- shared node rendering, edge rendering, selection, connection preview, and adapter-based disconnect behavior
-- detailed live Hopper, stream, machine, boundary, and transfer inspection
-- stable node/connection DOM during live simulation
-- deterministic `node:test` regression coverage and GitHub Actions CI
+The major interface cleanup that followed the first prototype is complete: the old Debug/Player split, discovery-gated world navigation, special Engineering workspace, separate hierarchy UI shells, finite positive-only graph area, and unlabeled node families have all been replaced by one common application language.
 
 The serialized versions are currently:
 
@@ -97,7 +67,129 @@ schemaVersion: 6
 generatorVersion: 2
 ```
 
-The first continuous processing chain remains:
+## Implemented foundation
+
+### World generation and state
+
+- deterministic seeded planet generation
+- causal generation passes rather than planet-archetype-first generation
+- deterministic namespaced RNG streams
+- Regions, Features, Sites, and normalized `ResourceOccurrence` entities
+- every generated Feature has an enterable Site
+- Site data uses `featureIds`
+- Features with zero resource occurrences still remain real, visible world structure
+- World / Knowledge / UI state separation
+- structural world visibility is not gated by Knowledge State
+
+### Matter and processing
+
+- `MaterialBatch` for meaningful discrete lots/samples
+- provenance separated from current material identity
+- particle size as a modeled material property
+- reusable `ProcessDefinition` metadata with explicit ports and parameters
+- Crushing and Magnetic Separation
+- shared transformation physics between discrete and continuous execution
+- `MaterialStream` as rate + state rather than batches-per-tick
+- finite-capacity Hopper storage
+- constituent-level and total-mass conservation
+- transactional process/backpressure behavior
+- one-to-one material output connections until an explicit splitter exists
+
+### Continuous simulation
+
+- fixed-step world simulation independent from rendering FPS
+- continuous Extractor, Crusher, and Magnetic Separator execution
+- global world Pause/Resume
+- per-machine `enabled` command state
+- derived `off / idle / running / blocked` operating state
+- persistent Site simulation sessions while navigating elsewhere
+- automated systems continue running when the player views another workspace
+
+### Recursive systems and physical boundaries
+
+- typed primitive/composite system metadata
+- Site and Region child workspaces
+- explicit Site Import / Site Export boundary buffers
+- explicit Region Import / Region Export boundary buffers
+- parent-facing ports resolve to the same child-visible physical boundary state
+- conserved cross-boundary `BoundaryTransfer` behavior
+- no automatic Site → Region transfer merely because a boundary exists
+
+### Player-facing graph architecture
+
+- Planet → Region → Site navigation
+- every implemented hierarchy level uses the same node/port/edge interaction language
+- one shared `GraphNode` / `GraphPort` / `GraphConnection` projection layer
+- one shared graph node renderer
+- stable shared SVG edge rendering
+- shared selection, connection preview, and adapter-based disconnect behavior
+- Feature nodes are visible and inspectable inside Sites
+- one shared workspace shell and Inspector geometry across hierarchy levels
+- per-workspace pan/zoom state
+- mouse-wheel pointer-centered zoom
+- Zoom Out / Zoom In / Fit / Center controls
+- signed, effectively unbounded logical graph coordinates
+- node/connection dragging continues independently from transformed DOM-layer bounds
+- graph coordinates remain UI/application state rather than physical coordinates
+
+### Node recognition
+
+Every graph node now has a persistent category header whose job is to answer:
+
+> **What kind of thing is this?**
+
+The current recognition vocabulary is:
+
+```text
+PLANET
+REGION
+SITE
+FACILITY
+FEATURE
+APPARATUS
+CONTAINER
+BOUNDARY
+PROCESS
+SENSOR
+CONTROLLER
+LOGISTICS
+SYSTEM
+```
+
+Category is intentionally separate from subtype and operating state.
+
+Examples:
+
+```text
+APPARATUS
+Crusher
+
+CONTAINER
+Raw Ore Hopper
+
+FEATURE
+Banded Iron Formation
+Mineral Deposit
+
+BOUNDARY
+Site Export
+```
+
+Current Crushers, Extractors, and Magnetic Separators are **APPARATUS** that execute processes; they are not themselves abstract `PROCESS` nodes.
+
+Composite nodes carry a hierarchy/drill-down cue while retaining the same basic node interaction contract.
+
+### Verification
+
+- deterministic `node:test` regression suite
+- GitHub Actions CI
+- regression coverage for generation, conservation, knowledge isolation, recursive boundaries, graph adapters, viewport math, signed graph coordinates, and node-category mapping
+
+---
+
+# Current Playable Simulation Slice
+
+The first continuous processing chain is still the iron-processing demonstration:
 
 ```text
 Resource Occurrence
@@ -115,23 +207,11 @@ Magnetic Separator
        └────────→ Tailings Hopper
 ```
 
-## Current interface cleanup gap
+This chain is now a **temporary validation scaffold**, not the intended permanent player-construction model.
 
-Issue #18 / PR #19 successfully unified the underlying graph interaction architecture, but the application still visibly carries several prototype-era interface systems around that shared graph.
+It is only instantiated for a Site with a compatible iron-ore occurrence. Site identity, Site visibility, Feature visibility, and Site entry do not depend on this compatibility.
 
-Current cleanup targets include:
-
-- Site workspaces and Region/Planet workspaces still use different outer layout shells
-- normal Site nodes and parent/composite nodes use different default dimensions
-- Site and parent workspaces use different canvas dimensions and overflow behavior
-- Site Inspector and Region/Planet Inspector use different widths, colors, spacing, and DOM structures
-- the original Debug View / Planet Generator interface still exists beside the Player View
-- Player View world creation still reaches back into the old Debug UI controls
-- legacy Discover / Prototype Survey behavior still gates Feature/Site visibility
-- Site entry is still coupled to prototype process compatibility
-- the code still uses `engineering` as a special workspace/session concept even though a Site should simply be another recursive game workspace
-
-The next cleanup milestone should make the game feel like one application at every hierarchy level rather than several prototypes sharing simulation code.
+A non-iron or zero-occurrence Site still exists as a real workspace with its Feature(s) and Site boundaries even when no prototype process chain is available there.
 
 ---
 
@@ -144,19 +224,19 @@ WORLD / SIMULATION STATE
 objective physical truth
         ↓
 PLAYER KNOWLEDGE STATE
-measurements, analyses, estimates, and other information learned by the player
+measurements, analyses, estimates, confidence
         ↓
 APPLICATION / UI STATE
-selection, node layout, viewport position/zoom, panels, temporary interaction state
+selection, graph layout, viewport pan/zoom, panels, temporary interaction state
 ```
 
 Physical truth must not migrate into DOM/UI state merely because it is easier to render there.
 
 Knowledge actions may reveal measurements or estimates of world truth; they do not mutate physical truth merely because the player learned something.
 
-## Structural visibility is not a Knowledge gate
+Workspace node positions and viewport transforms are UI/application state unless a future gameplay rule explicitly gives those coordinates physical meaning.
 
-The current design direction no longer uses Feature discovery/surveying to decide whether generated world structure exists in the player interface.
+## Structural visibility is not a Knowledge gate
 
 After planet generation:
 
@@ -165,9 +245,9 @@ After planet generation:
 - every generated Feature belongs to an enterable Site
 - entering a Site exposes its generated Feature node(s)
 
-Knowledge State remains important for actual information such as material analysis, composition estimates, sensor measurements, confidence, and future scientific characterization. It should not be used simply to hide generated Regions, Sites, or Features.
+Knowledge State remains important for material analysis, composition estimates, sensors, scientific characterization, uncertainty, confidence, and other information the player actually learns.
 
-Workspace node positions and viewport pan/zoom are UI/application state unless a future gameplay rule explicitly gives those coordinates physical meaning.
+It should not be used simply to hide generated Regions, Sites, or Features.
 
 ---
 
@@ -225,7 +305,7 @@ stored quantity -= outflow × dt
 
 If contents physically mix, aggregate the resulting material state rather than retaining arbitrary historical transfer objects.
 
-Composite-system boundaries that can hold matter should follow the same ownership rule: the boundary buffer is the physical owner while material waits to cross the hierarchy boundary.
+Composite-system boundary buffers follow exactly the same physical-ownership rule.
 
 ---
 
@@ -242,7 +322,7 @@ Crusher:   4 kg/s
 
 With a finite Hopper between them, the Hopper accumulates approximately 1 kg/s until another constraint changes the flow.
 
-For a continuous process timestep, feasible throughput should be limited by:
+For a continuous process timestep, feasible throughput is limited by:
 
 ```text
 input available
@@ -255,52 +335,11 @@ Processes must not consume matter unless the corresponding outputs can be commit
 
 ---
 
-# Player Interface: One Node Language at Every Scale
-
-The Player View uses a **uniform node-workspace language across scales**.
+# One Node Language at Every Scale
 
 From the player's perspective:
 
 > **Anything that can be treated as a system can be represented as a node with an explicit external interface.**
-
-Internally, the simulation may distinguish primitive apparatus from composite systems, but the player's core interaction model should remain consistent.
-
-## Primitive, physical, and composite nodes
-
-Primitive/apparatus examples:
-
-```text
-Extractor
-Hopper
-Crusher
-Magnetic Separator
-Boundary Buffer
-Pump later
-```
-
-World-Feature examples:
-
-```text
-Ore Deposit
-Volcanic Vent
-Aquifer
-Reservoir
-Storage Cavern
-Salt Flat
-Fault / geological structure
-```
-
-Composite examples:
-
-```text
-Site
-Facility
-Region
-Planet
-Player-created production system later
-```
-
-A composite node contains another workspace/subgraph.
 
 The common interaction language is:
 
@@ -313,40 +352,29 @@ select
 → observe live state
 ```
 
-## One graph architecture
-
-Issue #18 established a shared player-facing graph abstraction:
+Examples:
 
 ```text
-GraphNode
-├── id
-├── label / type
-├── layout position
-├── typed ports
-├── selectable / inspectable
-└── enterable child workspace when composite
-
-GraphConnection
-├── source node + port
-├── target node + port
-├── live state / flow summary
-├── selectable / inspectable
-└── disconnect action
+APPARATUS     Extractor, Crusher, Magnetic Separator, Pump later
+CONTAINER     Hopper, Tank, Silo, storage systems
+FEATURE       Ore Deposit, Aquifer, Volcanic Vent, Cavern
+BOUNDARY      Site Import/Export, Region Import/Export
+COMPOSITE     Site, Region, Facility, Planet
 ```
 
-The simulation object behind a connection may differ. A Site-local edge may resolve to a `MaterialStream`, while a Region/Planet edge may resolve to a hierarchy-crossing `BoundaryTransfer`. That difference belongs behind the shared graph interface; it must not create a second player-facing graph system.
+The simulation object behind an edge may differ. A Site-local edge may resolve to a `MaterialStream`, while a Region/Planet edge may resolve to a hierarchy-crossing `BoundaryTransfer`.
 
-The invariant is:
+That difference belongs behind the shared graph interface; it must not create a second player-facing graph system.
 
-> **If a connection exists in simulation state, the current workspace must represent it as the corresponding graph edge.**
+The graph visibility invariant is:
+
+> **If a connection exists in simulation/application graph state and belongs to the current workspace, a corresponding visible graph edge must exist.**
 
 ---
 
-# One Workspace Shell at Every Scale
+# Workspace and Viewport Contract
 
-The next interface direction is stronger than shared graph mechanics: Planet, Region, and Site should be different graphs rendered inside the **same application shell**.
-
-Target structure:
+Planet, Region, and Site are different graphs inside the same application shell.
 
 ```text
 ┌───────────────────────────────────────────────────────────────┐
@@ -357,63 +385,60 @@ Target structure:
 │                                              │                │
 │              GRAPH VIEWPORT                  │   INSPECTOR    │
 │                                              │                │
-│       pan / zoom / nodes / connections       │   same width   │
-│                                              │   same style   │
+│       pan / zoom / nodes / connections       │   same shell   │
 │                                              │   everywhere   │
 └──────────────────────────────────────────────┴────────────────┘
 ```
 
-The hierarchy changes the graph contents, not the surrounding interface.
+## The viewport is finite; graph space is not
 
-The shared shell should standardize:
-
-- viewport dimensions / available screen allocation
-- Inspector width and styling
-- node dimensions for normal nodes
-- panel backgrounds, borders, typography, and spacing
-- toolbar placement
-- selected-state styling
-- port styling
-- connection styling
-- action/button presentation
-- status/error presentation
-
-Specialized node colors or content are fine; hierarchy-specific visual systems are not.
-
-## Pan and zoom
-
-The visible graph area should be a fixed viewport over a larger logical graph world.
-
-Conceptually:
+Logical graph coordinates may be positive or negative.
 
 ```text
-VIEWPORT
-  └── GRAPH WORLD
-      ├── node layer
-      └── connection/SVG layer
-
-viewport state:
-  panX
-  panY
-  zoom
+(-4000, -2500)
+(0, 0)
+(8500, 300)
 ```
 
-Expected interaction direction:
+are all valid UI positions.
 
-- mouse wheel zooms toward the pointer
-- middle-mouse drag and/or Space + left-drag pans
-- left-drag on a node moves the node
-- drag from a port creates a connection
-- toolbar provides Zoom Out / Zoom In / Fit / Center
-- each workspace remembers its own viewport state
+Pan/zoom determines which portion of the logical graph is visible; it must not determine where a node is allowed to exist.
 
-Node positions and viewport transforms remain application state. Pointer-to-graph coordinate conversion must account for zoom so dragging and connecting remain accurate at every scale.
+`Fit` and `Center` derive their camera transform from the actual current node bounds, including nodes in negative graph space.
+
+Node and edge layers always share the same viewport transform.
 
 ---
 
-# Planet → Region → Site: No Special "Engineering" Mode
+# Node Recognition Contract
 
-The hierarchy should read simply as:
+Node recognition is now part of the permanent UI language.
+
+The category header describes **semantic family**, not machine state and not exact subtype.
+
+```text
+┌─ APPARATUS ───────────────────┐
+│ Magnetic Separator            │
+│ Running · 3.9 kg/s            │
+└───────────────────────────────┘
+```
+
+Rules:
+
+- header = semantic category
+- main body/title = instance/subtype identity
+- status = operating condition
+- ports = interface type/direction
+- selection styling = selection/attention
+- category appearance remains stable when operating state changes
+
+Do not turn every machine subtype into a separate top-level category. The player should learn a small stable family vocabulary even as the machine catalog grows.
+
+---
+
+# Planet → Region → Site
+
+The implemented hierarchy is simply:
 
 ```text
 Planet Workspace
@@ -423,38 +448,11 @@ Region Workspace
 Site Workspace
 ```
 
-A Site is not an "Engineering Mode" and should not require an "engineering interaction" compatibility check.
+There is no special Engineering Mode.
 
-The code and UI should move away from concepts such as:
+Every generated Site is enterable regardless of which process prototypes currently exist.
 
-```text
-engineering available
-engineering unavailable
-compatibleOccurrenceForSite()
-currentLevel === 'engineering'
-renderEngineeringWorkspace()
-createEngineeringSession()
-engineeringSessions
-```
-
-and toward ordinary Site concepts such as:
-
-```text
-currentLevel === 'site'
-renderSiteWorkspace()
-createSiteSession()
-siteSessions
-```
-
-Every generated Site should be enterable regardless of which process prototypes are currently implemented.
-
----
-
-# Sites and Features
-
-A Site is a geographically bounded composite workspace. A Feature is a physical world system located at a Site.
-
-The intended relationship is:
+A Site is a geographic/composite workspace. A Feature is a physical world system inside that Site.
 
 ```text
 Planet
@@ -466,134 +464,75 @@ Planet
           └── player apparatus / storage / processes
 ```
 
-## Every generated Feature gets a Site
+---
 
-World generation should no longer create Sites only for Features that happen to contain a currently supported resource occurrence.
+# Features
 
-Every generated Feature should belong to an enterable Site from world creation onward.
+A Feature should exist because it creates a physical opportunity, constraint, resource, environment, or interaction for the player—not merely as decorative world-generation metadata.
 
-The Site data model should prefer:
-
-```text
-featureIds: [...]
-```
-
-over a singular `featureId`, even if generation initially produces one Feature per Site. This preserves the intended long-term model where one geographic Site may contain multiple related Features.
-
-A serialized shape change should increment `schemaVersion` appropriately.
-
-## Features are real graph nodes inside Sites
-
-Entering a Site should make its Feature(s) visible as selectable and inspectable nodes in the Site graph.
+Feature types should eventually expose interfaces appropriate to their physical behavior rather than all pretending to be ore sources.
 
 Examples:
 
 ```text
-[ Ore Deposit ] → extraction apparatus
-[ Injection Well ] ← fluid/material input
-[ Reservoir ] ↔ fluid interaction
-[ Storage Cavern ] ↔ storage interaction
-[ Volcanic Vent ] → heat / gas / fluid opportunities later
+Mineral Deposit  → solid extraction
+Aquifer          → fluid source/sink behavior later
+Reservoir        ↔ fluid interaction later
+Storage Cavern   ↔ storage interaction later
+Injection Well   ← material/fluid input later
+Volcanic Vent    → heat/gas/fluid opportunity later
+Geothermal Area  → thermal-energy opportunity later
 ```
 
-A Feature does not need to be another nested workspace merely because it is selectable. The Site is the location/workspace; the Feature is a physical system inside it.
+Future interfaces may include:
 
-## Every Feature should create a gameplay opportunity
+```text
+material
+fluid
+ gas
+thermal / energy
+pressure / environment
+data / measurement
+mechanical work
+```
 
-Long term, every Feature type generated by the game should be exploitable or interactable in some meaningful physical way.
-
-A useful design rule is:
-
-> **A Feature should exist because it creates a physical opportunity, constraint, resource, environment, or interaction for the player—not merely as decorative world-generation metadata.**
-
-Different Feature types should eventually expose interfaces appropriate to their physical behavior. Do not assume every Feature is simply a material-output source.
-
-Future interfaces may include material, fluid, gas, heat/energy, pressure/environment, data/measurement, or other typed interactions as gameplay requires them.
-
-The current cleanup milestone does **not** need to implement full exploitation mechanics for every generated Feature type. It must, however, remove visibility/entry gating and establish the correct Site/Feature architecture so those interactions can be added incrementally.
+Only add a physical interface when its gameplay/simulation semantics are defined. Do not add decorative ports merely to make every Feature look connected.
 
 ---
 
-# Composite Boundaries: Explicit Import and Export Buffers
+# Composite Boundaries and Explicit Logistics
 
-Every composite system that can exchange matter with its parent should expose explicit child-visible boundary nodes.
+Every composite system that exchanges matter with its parent should expose explicit child-visible boundary storage.
 
-For the current hierarchy, a normal Site should have both:
+For Sites:
 
 ```text
 Site Import Boundary Buffer
 Site Export Boundary Buffer
 ```
 
-and a Region should likewise have:
+For Regions:
 
 ```text
 Region Import Boundary Buffer
 Region Export Boundary Buffer
 ```
 
-## Direction semantics
+The child-visible boundary and the parent-facing composite port are two views of the **same physical state**, not duplicate inventories.
 
-The same boundary is viewed from opposite sides of the hierarchy.
-
-A Site Import looks like an input port on the Site node from the Region workspace:
-
-```text
-REGION WORKSPACE
-material ───→ ○ [ Site ]
-```
-
-Inside the Site, the same physical buffer exposes an output toward local systems:
-
-```text
-SITE WORKSPACE
-[ Site Import ] ○ ───→ local system / Feature interaction
-```
-
-A Site Export is the reverse:
-
-```text
-SITE WORKSPACE
-local system ───→ ○ [ Site Export ]
-```
-
-which appears at Region level as:
-
-```text
-[ Site ] ○ ───→ regional logistics
-```
-
-## One physical buffer, two hierarchy views
-
-The internal boundary node and the parent-facing composite port are **not separate inventories**.
-
-For example:
-
-```text
-Site Export Buffer = 347 kg
-```
-
-may be displayed both inside the Site and on the Site node in Region view, but there is still only one physical 347 kg state.
-
-Never implement duplicated inventory for the same boundary.
-
-## No implicit transfer
-
-A boundary existing does not automatically move material.
-
-Desired behavior:
+A boundary existing does not imply movement.
 
 ```text
 local system
-    ↓ player-created Site connection
+    ↓ explicit Site connection
 Site Export Buffer
-    ↓ player-created Region-level connection
-Region logistics / Region Export Buffer
-    ↓ player-created Planet-level connection
-Destination Region Import Buffer
+    ↓ explicit Region-level connection
+regional system / Region Export
+    ↓ explicit Planet-level connection
+Destination Region Import
 ```
 
-If the player has not created the next connection, the current buffer should simply accumulate until it fills and backpressure propagates naturally.
+If the next connection does not exist, material remains where it is. A full buffer should propagate normal backpressure rather than causing hidden transport or matter loss.
 
 ---
 
@@ -614,9 +553,7 @@ Off / Idle / Running / Blocked / Faulted later
 
 The world simulation runs by default.
 
-Pause is a player time-control/inspection tool. Pausing must not change machine `enabled` values. Resuming continues with the same command state.
-
-Simulation belongs to the world/session, not the currently visible workspace. Leaving a Site or Region must not make automated systems stop merely because the player is looking elsewhere.
+Pause is a player time-control/inspection tool. Pausing must not change machine `enabled` values.
 
 New active machinery defaults disabled/off. `enabled: true` means operation is permitted, not guaranteed. An enabled machine may still be Idle or Blocked and should resume automatically when the physical constraint clears.
 
@@ -624,183 +561,88 @@ New active machinery defaults disabled/off. `enabled: true` means operation is p
 
 # One Inspector Contract
 
-Planet, Region, Site, Feature, boundary, machine, storage, and connection selection should all use one Inspector container and design language.
+Planet, Region, Site, Feature, boundary, apparatus, storage, and connection selection share the same Inspector shell and design language.
 
-The surrounding Inspector should remain stable:
+The selected entity determines which fields appear; it should not create a separate hierarchy-specific Inspector system.
 
-```text
-INSPECTOR
+Useful current inspection includes:
 
-TYPE / NAME
+- Hopper/boundary stored mass, capacity, free capacity, particle size, and constituents
+- stream source/target, total flow, particle size, and constituent flow rates
+- machine enabled/operating state, configured and actual throughput, process parameters, and blocking/error state
+- Magnetic Separator feed/concentrate/tailings summaries
+- Feature generated physical properties
+- hierarchy transfer capacity/rate and boundary state
 
-STATE
-...
-
-DETAILS
-...
-
-CONTROLS
-...
-
-CONNECTIONS / CONTENTS
-...
-
-ACTIONS
-...
-```
-
-Content varies by selected entity; the panel width, typography, spacing, colors, section styling, action placement, and live-update behavior should not.
-
-The Inspector must remain fully usable while simulation is running. Prefer building structural content when selection changes and updating live values in place rather than rebuilding the interaction tree every frame.
-
-## Storage / boundary-buffer inspection
-
-At minimum show:
-
-```text
-Stored mass
-Capacity
-Free capacity
-Particle size
-Constituent masses
-Derived constituent percentages where useful
-Current inflow/outflow when available
-```
-
-## Material-stream inspection
-
-At minimum show:
-
-```text
-Source / target ports
-Total flow kg/s
-Particle size
-Constituent flow rates kg/s
-```
-
-## Active-machine inspection
-
-At minimum show useful configuration and live operating information, including where available:
-
-```text
-Enabled
-Operating state
-Configured throughput/capacity
-Actual current throughput
-Input/output port flow summaries
-Particle-size constraints/settings
-Process-specific parameters
-Last blocking/error reason
-```
-
-For the Magnetic Separator, the player should be able to distinguish feed, concentrate, and tailings flow while it runs.
-
-## Feature inspection
-
-A Feature Inspector should present the generated physical properties and currently implemented interfaces/actions for that Feature without labeling the Feature as "engineering available" or "engineering unavailable."
+The Inspector remains interactive while simulation runs.
 
 ---
 
-# Application Start Flow
+# Current Limitation: Construction Is Still a Prototype Scaffold
 
-The long-term application should not start inside a debug/prototype interface.
+The workspace architecture is now ready for player construction, but the first iron process chain is still created automatically for compatible Sites.
 
-Target startup flow:
+This is the largest remaining mismatch between the current prototype and the intended game loop.
 
-```text
-PROJECT INTERLINK
-
-Seed [________________]
-
-[ Generate World ]
-        ↓
-Planet Workspace
-        ↓
-Region Workspace
-        ↓
-Site Workspace
-```
-
-The landing screen owns world creation directly. Generating a world should:
-
-1. create World State;
-2. create Knowledge State;
-3. initialize the world simulation;
-4. initialize Player workspace state;
-5. transition directly to the Planet workspace.
-
-Player world generation must not simulate a click on hidden Debug View controls.
-
----
-
-# Remove Legacy Debug / Discovery Presentation
-
-The original Debug View, mode toggle, Planet Generator summary UI, global Discover Feature button, and prototype batch/process panels were useful during early development but should now be removed from the normal application.
-
-Removing the Debug View means removing its **presentation and obsolete UI-only coordination code**, not deleting valid simulation APIs, generators, process physics, or automated tests merely because those systems were once exercised through the Debug UI.
-
-The cleanup should remove dead debug-only handlers and state once their presentation is gone.
-
-Feature discovery / survey gating should also be removed from the normal world flow:
+The long-term interaction should be:
 
 ```text
-Generate World
-→ all Regions visible
-→ all Sites visible
-→ all Sites enterable
-→ all generated Feature nodes visible inside their Sites
+enter Site
+→ inspect Feature
+→ choose apparatus/storage
+→ place nodes
+→ connect typed ports
+→ configure equipment
+→ enable machinery
+→ observe flow / constraints
+→ iterate
 ```
 
-Knowledge State remains for meaningful measurements and analysis rather than structural visibility.
+rather than receiving a pre-built factory.
 
 ---
 
 # Immediate Development Priority
 
-The next milestone is a **major player-interface and prototype-code cleanup**.
+The recommended next milestone is **player-authored Site construction and the transition away from the automatically spawned iron factory**.
 
 The goal is:
 
-> **Planet, Region, and Site are different graphs inside the same interface—not different interfaces.**
+> **The player should build the first useful system using the same node language they will eventually use to build a planetary industry.**
 
-The cleanup should:
+A focused first construction milestone should:
 
-1. replace the Debug/Player mode system with a Landing → Game flow;
-2. remove the old Debug View, mode toggle, legacy global discovery UI, and debug-only processing presentation;
-3. make all generated Regions and Sites immediately visible;
-4. create/associate an enterable Site for every generated Feature;
-5. move the Site model toward `featureIds` and bump schema version if the serialized shape changes;
-6. make every Site enterable without process/ore compatibility gating;
-7. remove the special `engineering` workspace/session concept and rename it to ordinary Site terminology;
-8. render generated Feature node(s) inside Site workspaces;
-9. retain Feature-specific physical interfaces as an extensible concept without requiring all Feature exploitation mechanics in this cleanup;
-10. create one shared workspace shell for Planet, Region, and Site;
-11. standardize normal node dimensions and UI styling;
-12. create one fixed graph viewport with shared pan, zoom, Fit, and Center behavior;
-13. store viewport pan/zoom per workspace as UI state;
-14. use one Inspector container/style/update contract at every hierarchy level;
-15. preserve the shared graph architecture established by Issue #18;
-16. preserve matter ownership, recursive boundary buffers, explicit logistics, backpressure, world time, machine state, and process physics;
-17. add regression coverage for Site/Feature generation, direct visibility/entry, viewport coordinate transforms where practical, and existing simulation invariants;
-18. perform a browser smoke pass because pan/zoom and shell behavior are DOM/pointer-interaction heavy.
+1. add a simple apparatus/container construction palette or equivalent placement interaction;
+2. allow the player to place the existing Extractor, Hopper, Crusher, and Magnetic Separator nodes where physically applicable;
+3. place new active apparatus disabled/off by default;
+4. keep graph layout coordinates purely in UI state;
+5. use the existing typed-port connection system rather than creating a second construction connection path;
+6. preserve existing process/backpressure/conservation behavior after player placement;
+7. make Feature/applicability requirements explicit without using them to gate Site entry;
+8. keep Site/Region boundary movement explicit;
+9. allow removal/reconfiguration without silently destroying owned matter;
+10. retain a test/bootstrap construction helper if useful for deterministic simulation tests, but stop treating the automatically created iron chain as the normal player experience once construction is usable;
+11. add regression coverage for placement, defaults, removal safety, and connection behavior;
+12. perform browser smoke testing for construction interactions.
 
-This pass should clean and consolidate the current UI/CSS rather than add another override layer where practical.
+After that foundation is usable, deepen Feature exploitation **one physical interaction type at a time** rather than adding superficial mechanics to every generated Feature at once.
 
 ---
 
 # Near-Term Roadmap
 
-1. **Unified workspace shell / startup / Feature-access cleanup.**
-2. Stabilize shared viewport, Inspector, and context-sensitive interaction APIs.
-3. Replace remaining prototype auto-layout/auto-created processing assumptions with player construction workflows where useful.
-4. Deepen Feature-specific exploitation one physical interaction type at a time.
-5. Deepen resource reserve/depletion and extraction physics when the player-facing loop can consume them.
-6. Add explicit logistics apparatus/capacity such as conveyors, roads/rail, pipelines, or vehicles incrementally.
-7. Add power/energy requirements and operating constraints.
-8. Expand continuous processing, sensors, controllers, and automation.
-9. Allow player-created solved subgraphs to become reusable composite nodes.
-10. Introduce larger-scale aggregation/performance strategies for mature nested systems.
-11. Expand chemistry, thermodynamics, pressure/vacuum, fluids/gases, and planetary/system-scale industry iteratively.
+1. **Player-authored Site construction using the existing graph architecture.**
+2. Retire the automatic iron-chain player bootstrap while retaining deterministic test helpers where useful.
+3. Improve node recognition/details and construction ergonomics as real gameplay exposes needs.
+4. Implement deeper mineral-deposit extraction and reserve/depletion semantics.
+5. Add the next meaningful Feature interaction family, such as fluid source/sink or thermal opportunity.
+6. Add explicit splitter/merger behavior when branching material flow becomes necessary.
+7. Add logistics apparatus/capacity incrementally: conveyors, pipelines, vehicles, roads/rail where justified.
+8. Add power/energy requirements and operating constraints.
+9. Expand sensors, Knowledge-State measurements, controllers, and automation.
+10. Allow solved player-created subgraphs to become reusable composite systems.
+11. Introduce larger-scale aggregation/performance strategies for mature nested systems.
+12. Expand chemistry, thermodynamics, pressure/vacuum, fluids/gases, and planetary/system-scale industry iteratively.
 
 ---
 
@@ -838,6 +680,10 @@ For gameplay features, ask:
 For generated Features, ask:
 
 > **What physical opportunity, constraint, resource, environment, or interaction does this Feature create?**
+
+For interface additions, ask:
+
+> **Does this make a node, connection, state, or decision easier to recognize without inventing a second interaction language?**
 
 Prefer small coherent vertical slices, explicit physical ownership, reusable interaction semantics, and one consistent application language over broad speculative abstractions.
 
