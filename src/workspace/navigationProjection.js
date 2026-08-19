@@ -293,7 +293,7 @@ function addCanonicalHierarchy(entries, world) {
   }
 }
 
-function addGraphNode(entries, world, node, workspaceId, sessionId = null) {
+function addGraphNode(entries, world, node, workspaceId) {
   if (!node?.id) return;
   const category = categoryForNode(node);
   const owner = nodeOwner(world, node, workspaceId);
@@ -322,7 +322,6 @@ function addGraphNode(entries, world, node, workspaceId, sessionId = null) {
   }
 
   const parentKey = owner?.key ?? null;
-  const ownerEntry = parentKey ? entries.get(parentKey) : null;
   const workspaceLevel = owner?.level
     ?? workspaceOwner(world, workspaceId)?.level
     ?? (COMPOSITE_TYPES.has(node.nodeType) ? node.nodeType : null);
@@ -343,36 +342,29 @@ function addGraphNode(entries, world, node, workspaceId, sessionId = null) {
     searchTerms: graphNodeSearchTerms(world, node),
     source: node,
   }));
-
-  // A future graph node may be discovered before its owner is materialized in
-  // the canonical maps. Keep it indexable without inventing a second hierarchy.
-  if (!ownerEntry && parentKey && !entries.has(parentKey)) {
-    return;
-  }
-  void sessionId;
 }
 
 function collectGraphNodes(world, siteSessions = {}) {
   const sources = [];
   for (const node of Object.values(world?.systemNodes ?? {})) {
-    sources.push({ node, workspaceId: null, sessionId: null });
+    sources.push({ node, workspaceId: null });
   }
 
   for (const [workspaceId, workspace] of Object.entries(world?.simulation?.workspaces ?? {})) {
     for (const node of Object.values(workspace?.nodes ?? {})) {
-      sources.push({ node, workspaceId, sessionId: workspaceId });
+      sources.push({ node, workspaceId });
     }
   }
 
   for (const [sessionId, blueprint] of Object.entries(world?.simulation?.sessions ?? {})) {
     for (const node of Object.values(blueprint?.nodes ?? {})) {
-      sources.push({ node, workspaceId: `${sessionId}-workspace`, sessionId });
+      sources.push({ node, workspaceId: `${sessionId}-workspace` });
     }
   }
 
   for (const [siteId, session] of Object.entries(siteSessions ?? {})) {
     for (const node of Object.values(session?.blueprint?.nodes ?? {})) {
-      sources.push({ node, workspaceId: `${siteId}-workspace`, sessionId: siteId });
+      sources.push({ node, workspaceId: `${siteId}-workspace` });
     }
   }
   return sources;
@@ -507,8 +499,8 @@ export function navigationEntryForTarget(index, targetId) {
 export function buildNavigationIndex(world, { siteSessions = {} } = {}) {
   const entries = new Map();
   addCanonicalHierarchy(entries, world);
-  for (const { node, workspaceId, sessionId } of collectGraphNodes(world, siteSessions)) {
-    addGraphNode(entries, world, node, workspaceId, sessionId);
+  for (const { node, workspaceId } of collectGraphNodes(world, siteSessions)) {
+    addGraphNode(entries, world, node, workspaceId);
   }
 
   const allEntries = [...entries.values()];
@@ -532,5 +524,9 @@ export function buildNavigationIndex(world, { siteSessions = {} } = {}) {
   };
 }
 
+/**
+ * Descriptive aliases kept for callers that refer to the derived result as a
+ * projection or a created index; both remain pure views over the same source.
+ */
 export const buildNavigationProjection = buildNavigationIndex;
 export const createNavigationIndex = buildNavigationIndex;

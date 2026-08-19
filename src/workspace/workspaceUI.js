@@ -83,6 +83,7 @@ const wsState = {
   navigationFilters: null,
   navigationManualExpandedKeys: new Set(),
   navigationEventsInstalled: false,
+  navigationIndexCache: null,
 };
 
 const NODE_WIDTH = 160;
@@ -206,7 +207,13 @@ function renderBreadcrumbs() {
 }
 
 function navigationIndex() {
-  return buildNavigationIndex(wsState.world, { siteSessions: wsState.siteSessions });
+  return wsState.navigationIndexCache ??= buildNavigationIndex(wsState.world, {
+    siteSessions: wsState.siteSessions,
+  });
+}
+
+function invalidateNavigationIndex() {
+  wsState.navigationIndexCache = null;
 }
 
 function activeNavigationKey(index) {
@@ -383,6 +390,7 @@ function activateSiteSession(occurrenceId, siteId) {
     session = createSiteSession(occurrenceId, siteId);
     wsState.siteSessions[siteId] = session;
     registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
+    invalidateNavigationIndex();
   }
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
@@ -1495,6 +1503,7 @@ function onResetSite() {
   const session = createSiteSession(wsState.selectedOccurrenceId, siteId);
   wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
+  invalidateNavigationIndex();
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
   inspector.selectedNodeId = null;
@@ -1538,6 +1547,7 @@ export function initWorkspace(world, knowledge) {
   wsState.navigationQuery = '';
   wsState.navigationFilters = null;
   wsState.navigationManualExpandedKeys = new Set([`planet:${world.planetId}`]);
+  wsState.navigationIndexCache = null;
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.selectedSystemId = null;
@@ -1545,8 +1555,8 @@ export function initWorkspace(world, knowledge) {
   inspector.message = '';
   inspector.renderKey = null;
   installNavigationEvents();
-  el('ws-navigation-search')?.setAttribute('value', '');
-  if (el('ws-navigation-search')) el('ws-navigation-search').value = '';
+  const navigationSearch = el('ws-navigation-search');
+  if (navigationSearch) navigationSearch.value = '';
   renderWorkspace();
   startSimulation();
 }
