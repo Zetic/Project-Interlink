@@ -1,4 +1,4 @@
-import { getResourceDefinition } from '../../generator/generateResources.js';
+import { getResourceDefinition } from '../../data/resourceDefinitions.js';
 
 export const MATERIAL_FORMS = Object.freeze({
   SOLID_PARTICULATE: 'solid-particulate',

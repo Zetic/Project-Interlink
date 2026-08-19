@@ -1,15 +1,16 @@
 import { requireLiberationClass, liberationClassIndex, listLiberationClasses } from '../materials/liberationClasses.js';
-import { requireMaterialSpecies } from '../materials/materialSpecies.js';
+import { getMaterialSpecies } from '../materials/materialSpecies.js';
 import {
   getParticleSizeBin,
+  listParticleSizeBins,
   particleSizeBinIdForMm,
   particleSizeBinIndex,
   representativeParticleSizeMm,
 } from '../materials/particleSizeBins.js';
 import {
-  addSolidFraction,
+  addSolidFractionUnchecked,
   createSolidMaterialState,
-  iterateSolidFractions,
+  forEachSolidFraction,
   totalSolidQuantity,
   validateSolidMaterialState,
 } from '../materials/solidMaterialState.js';
@@ -28,9 +29,9 @@ function mergeShares(entries) {
 
 function coarsestActiveBinIndex(solidState) {
   let coarsestIndex = -1;
-  for (const fraction of iterateSolidFractions(solidState)) {
+  forEachSolidFraction(solidState, fraction => {
     coarsestIndex = Math.max(coarsestIndex, particleSizeBinIndex(fraction.sizeBinId));
-  }
+  });
   return coarsestIndex;
 }
 
@@ -47,8 +48,11 @@ function computedCrushingSizeShares(inputSizeBinId, targetParticleSizeMm) {
 }
 
 function listOrderedSizeBinIds() {
-  return ['lt-1mm', '1-5mm', '5-15mm', '15-25mm', '25-60mm', '60-120mm', '120mm-plus'];
+  return listParticleSizeBins().map(bin => bin.id);
 }
+
+// Process carryover/entrainment belongs to the separator model, not intrinsic species data.
+const MAGNETIC_SEPARATOR_BASE_CARRYOVER = 0.02;
 
 function distributeLiberationMass(outputState, speciesId, inputLiberationClassId, inputSizeBinId, outputSizeBinId, massKg) {
   const liberationClasses = listLiberationClasses();
@@ -60,14 +64,19 @@ function distributeLiberationMass(outputState, speciesId, inputLiberationClassId
   const maxLift = Math.min(maxIndex - inputIndex, sizeImprovement >= 2 ? 2 : sizeImprovement >= 1 ? 1 : 0);
 
   if (maxLift <= 0 || inputIndex >= maxIndex) {
-    addSolidFraction(outputState, { speciesId, sizeBinId: outputSizeBinId, liberationClassId: inputLiberationClassId, quantity: massKg });
+    addSolidFractionUnchecked(outputState, {
+      speciesId,
+      sizeBinId: outputSizeBinId,
+      liberationClassId: inputLiberationClassId,
+      quantity: massKg,
+    });
     return;
   }
 
   const improvedShare = clamp(0.2 + 0.2 * sizeImprovement, 0, maxLift >= 2 ? 0.8 : 0.65);
   const sameShare = 1 - improvedShare;
   if (sameShare > 0) {
-    addSolidFraction(outputState, {
+    addSolidFractionUnchecked(outputState, {
       speciesId,
       sizeBinId: outputSizeBinId,
       liberationClassId: liberationClasses[inputIndex].id,
@@ -75,7 +84,7 @@ function distributeLiberationMass(outputState, speciesId, inputLiberationClassId
     });
   }
   if (maxLift === 1) {
-    addSolidFraction(outputState, {
+    addSolidFractionUnchecked(outputState, {
       speciesId,
       sizeBinId: outputSizeBinId,
       liberationClassId: liberationClasses[inputIndex + 1].id,
@@ -83,13 +92,13 @@ function distributeLiberationMass(outputState, speciesId, inputLiberationClassId
     });
     return;
   }
-  addSolidFraction(outputState, {
+  addSolidFractionUnchecked(outputState, {
     speciesId,
     sizeBinId: outputSizeBinId,
     liberationClassId: liberationClasses[inputIndex + 1].id,
     quantity: massKg * improvedShare * 0.65,
   });
-  addSolidFraction(outputState, {
+  addSolidFractionUnchecked(outputState, {
     speciesId,
     sizeBinId: outputSizeBinId,
     liberationClassId: liberationClasses[inputIndex + 2].id,
@@ -111,14 +120,20 @@ export function magneticRecoveryForFraction(speciesId, sizeBinId, liberationClas
   if (typeof fieldStrength !== 'number' || !Number.isFinite(fieldStrength) || fieldStrength < 0 || fieldStrength > 1) {
     throw new Error('Magnetic Separator fieldStrength must be a number in [0, 1]');
   }
-  const species = requireMaterialSpecies(speciesId);
+  const species = getMaterialSpecies(speciesId);
   const liberationClass = requireLiberationClass(liberationClassId);
   const sizeSuitability = particleSizeSuitability(sizeBinId);
-  const magnetic = species.physicalProperties?.magneticResponse;
-  if (!magnetic) throw new Error(`Material species '${speciesId}' does not define magnetic response`);
+  const magnetic = species?.physicalProperties?.magneticResponse;
+  if (!magnetic) {
+    throw new Error(`Magnetic Separator does not support species '${speciesId}' without magnetic response data`);
+  }
   const fieldCurve = 0.15 + 0.85 * fieldStrength;
-  const magneticRecovery = magnetic.susceptibility * liberationClass.recoveryFactor * sizeSuitability * fieldCurve;
-  const entrainment = magnetic.entrainmentFactor * sizeSuitability * (0.25 + 0.75 * fieldStrength);
+  const magneticRecovery =
+    magnetic.normalizedSeparationCoefficient
+    * liberationClass.recoveryFactor
+    * sizeSuitability
+    * fieldCurve;
+  const entrainment = MAGNETIC_SEPARATOR_BASE_CARRYOVER * sizeSuitability * (0.25 + 0.75 * fieldStrength);
   return clamp(magneticRecovery + entrainment, 0, 1);
 }
 
@@ -127,7 +142,7 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
   const concentrate = createSolidMaterialState();
   const tailings = createSolidMaterialState();
 
-  for (const fraction of iterateSolidFractions(feedSolidState)) {
+  forEachSolidFraction(feedSolidState, (fraction) => {
     const bin = getParticleSizeBin(fraction.sizeBinId);
     if (!bin) throw new Error(`Unknown particle-size bin '${fraction.sizeBinId}'`);
     if (bin.maxMm > maxFeedParticleSizeMm) {
@@ -141,9 +156,9 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
       fraction.liberationClassId,
       fieldStrength,
     );
-    addSolidFraction(concentrate, { ...fraction, quantity: fraction.quantity * recovery });
-    addSolidFraction(tailings, { ...fraction, quantity: fraction.quantity - (fraction.quantity * recovery) });
-  }
+    addSolidFractionUnchecked(concentrate, { ...fraction, quantity: fraction.quantity * recovery });
+    addSolidFractionUnchecked(tailings, { ...fraction, quantity: fraction.quantity - (fraction.quantity * recovery) });
+  });
 
   return { concentrate, tailings };
 }
@@ -169,7 +184,7 @@ export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
   validateSolidMaterialState(feedSolidState);
   assertCrushingTarget(feedSolidState, targetParticleSizeMm);
   const product = createSolidMaterialState();
-  for (const fraction of iterateSolidFractions(feedSolidState)) {
+  forEachSolidFraction(feedSolidState, (fraction) => {
     const sizeShares = computedCrushingSizeShares(fraction.sizeBinId, targetParticleSizeMm);
     for (const outputShare of sizeShares) {
       distributeLiberationMass(
@@ -181,7 +196,7 @@ export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
         fraction.quantity * outputShare.share,
       );
     }
-  }
+  });
   const inputTotal = totalSolidQuantity(feedSolidState);
   const outputTotal = totalSolidQuantity(product);
   if (Math.abs(inputTotal - outputTotal) > 1e-9 * Math.max(1, inputTotal)) {

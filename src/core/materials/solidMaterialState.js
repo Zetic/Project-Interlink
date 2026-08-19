@@ -1,5 +1,5 @@
 import { requireLiberationClass } from './liberationClasses.js';
-import { requireMaterialSpecies } from './materialSpecies.js';
+import { requireMaterialConstituentId } from './materialSpecies.js';
 import { particleSizeBinIdForMm, requireParticleSizeBin } from './particleSizeBins.js';
 
 export const SOLID_MATERIAL_TOLERANCE = 1e-9;
@@ -23,13 +23,47 @@ function assertFiniteNonNegative(value, label) {
   }
 }
 
+function resolveSolidQuantity(quantity, massKg, rateKgPerSecond) {
+  return quantity ?? massKg ?? rateKgPerSecond;
+}
+
+function validateSolidFractionDescriptor(speciesId, sizeBinId, liberationClassId, resolvedQuantity) {
+  requireMaterialConstituentId(speciesId);
+  requireParticleSizeBin(sizeBinId);
+  requireLiberationClass(liberationClassId);
+  assertFiniteNonNegative(resolvedQuantity, 'solid fraction quantity');
+}
+
+function addResolvedSolidFraction(state, speciesId, sizeBinId, liberationClassId, resolvedQuantity) {
+  if (resolvedQuantity <= SOLID_MATERIAL_TOLERANCE) return state;
+  const key = fractionKey(speciesId, sizeBinId, liberationClassId);
+  state.fractions[key] = (state.fractions[key] ?? 0) + resolvedQuantity;
+  return state;
+}
+
+function pruneSolidMaterialStateUnchecked(state, tolerance = SOLID_MATERIAL_TOLERANCE) {
+  for (const [key, quantity] of Object.entries(state.fractions)) {
+    if (quantity <= tolerance) delete state.fractions[key];
+  }
+  return state;
+}
+
+function *iterateSolidFractionsUnchecked(state) {
+  for (const [key, quantity] of Object.entries(state.fractions)) {
+    if (quantity <= SOLID_MATERIAL_TOLERANCE) continue;
+    yield { ...parseFractionKey(key), quantity };
+  }
+}
+
 export function roundSolidQuantity(value) {
   return parseFloat(value.toFixed(6));
 }
 
 export function createSolidMaterialState(fractions = []) {
   const state = { fractions: {} };
-  for (const fraction of fractions) addSolidFraction(state, fraction);
+  for (const fraction of fractions) addSolidFractionUnchecked(state, fraction);
+  pruneSolidMaterialStateUnchecked(state);
+  validateSolidMaterialState(state);
   return state;
 }
 
@@ -40,8 +74,10 @@ export function createSolidMaterialStateFromSpeciesQuantities(speciesQuantities,
   const sizeBinId = particleSizeBinIdForMm(particleSizeMm);
   const state = createSolidMaterialState();
   for (const [speciesId, quantity] of Object.entries(speciesQuantities ?? {})) {
-    addSolidFraction(state, { speciesId, sizeBinId, liberationClassId, quantity });
+    addSolidFractionUnchecked(state, { speciesId, sizeBinId, liberationClassId, quantity });
   }
+  pruneSolidMaterialStateUnchecked(state);
+  validateSolidMaterialState(state);
   return state;
 }
 
@@ -84,7 +120,7 @@ export function validateSolidMaterialState(state) {
   }
   for (const [key, quantity] of Object.entries(state.fractions)) {
     const { speciesId, sizeBinId, liberationClassId } = parseFractionKey(key);
-    requireMaterialSpecies(speciesId);
+    requireMaterialConstituentId(speciesId);
     requireParticleSizeBin(sizeBinId);
     requireLiberationClass(liberationClassId);
     assertFiniteNonNegative(quantity, `Fraction '${key}' quantity`);
@@ -103,9 +139,25 @@ export function validateSolidMaterialBody(body) {
 
 export function iterateSolidFractions(state) {
   validateSolidMaterialState(state);
-  return Object.entries(state.fractions)
-    .filter(([, quantity]) => quantity > SOLID_MATERIAL_TOLERANCE)
-    .map(([key, quantity]) => ({ ...parseFractionKey(key), quantity }));
+  return [...iterateSolidFractionsUnchecked(state)];
+}
+
+export function forEachSolidFraction(state, callback) {
+  validateSolidMaterialState(state);
+  for (const fraction of iterateSolidFractionsUnchecked(state)) callback(fraction);
+}
+
+export function addSolidFractionUnchecked(state, {
+  speciesId,
+  sizeBinId,
+  liberationClassId,
+  quantity,
+  massKg,
+  rateKgPerSecond,
+}) {
+  const resolvedQuantity = resolveSolidQuantity(quantity, massKg, rateKgPerSecond);
+  validateSolidFractionDescriptor(speciesId, sizeBinId, liberationClassId, resolvedQuantity);
+  return addResolvedSolidFraction(state, speciesId, sizeBinId, liberationClassId, resolvedQuantity);
 }
 
 export function addSolidFraction(state, {
@@ -117,15 +169,8 @@ export function addSolidFraction(state, {
   rateKgPerSecond,
 }) {
   validateSolidMaterialState(state);
-  requireMaterialSpecies(speciesId);
-  requireParticleSizeBin(sizeBinId);
-  requireLiberationClass(liberationClassId);
-  const resolvedQuantity = quantity ?? massKg ?? rateKgPerSecond;
-  assertFiniteNonNegative(resolvedQuantity, 'solid fraction quantity');
-  if (resolvedQuantity <= SOLID_MATERIAL_TOLERANCE) return state;
-  const key = fractionKey(speciesId, sizeBinId, liberationClassId);
-  state.fractions[key] = (state.fractions[key] ?? 0) + resolvedQuantity;
-  return pruneSolidMaterialState(state);
+  addSolidFractionUnchecked(state, { speciesId, sizeBinId, liberationClassId, quantity, massKg, rateKgPerSecond });
+  return pruneSolidMaterialStateUnchecked(state);
 }
 
 export function addSolidMaterialState(target, source, factor = 1) {
@@ -134,28 +179,28 @@ export function addSolidMaterialState(target, source, factor = 1) {
   if (typeof factor !== 'number' || !Number.isFinite(factor) || factor < 0) {
     throw new Error('solid material factor must be a finite non-negative number');
   }
-  for (const fraction of iterateSolidFractions(source)) {
-    addSolidFraction(target, { ...fraction, quantity: fraction.quantity * factor });
+  for (const fraction of iterateSolidFractionsUnchecked(source)) {
+    addResolvedSolidFraction(target, fraction.speciesId, fraction.sizeBinId, fraction.liberationClassId, fraction.quantity * factor);
   }
-  return pruneSolidMaterialState(target);
+  return pruneSolidMaterialStateUnchecked(target);
 }
 
 export function pruneSolidMaterialState(state, tolerance = SOLID_MATERIAL_TOLERANCE) {
   validateSolidMaterialState(state);
-  for (const [key, quantity] of Object.entries(state.fractions)) {
-    if (quantity <= tolerance) delete state.fractions[key];
-  }
-  return state;
+  return pruneSolidMaterialStateUnchecked(state, tolerance);
 }
 
 export function totalSolidQuantity(state) {
   validateSolidMaterialState(state);
-  return iterateSolidFractions(state).reduce((sum, fraction) => sum + fraction.quantity, 0);
+  let total = 0;
+  for (const fraction of iterateSolidFractionsUnchecked(state)) total += fraction.quantity;
+  return total;
 }
 
 function summarize(state, pickKey) {
   const summary = {};
-  for (const fraction of iterateSolidFractions(state)) {
+  validateSolidMaterialState(state);
+  for (const fraction of iterateSolidFractionsUnchecked(state)) {
     const key = pickKey(fraction);
     summary[key] = (summary[key] ?? 0) + fraction.quantity;
   }
@@ -180,10 +225,10 @@ export function multiplySolidMaterialState(state, factor) {
     throw new Error('solid material factor must be a finite non-negative number');
   }
   const scaled = createSolidMaterialState();
-  for (const fraction of iterateSolidFractions(state)) {
-    addSolidFraction(scaled, { ...fraction, quantity: fraction.quantity * factor });
+  for (const fraction of iterateSolidFractionsUnchecked(state)) {
+    addResolvedSolidFraction(scaled, fraction.speciesId, fraction.sizeBinId, fraction.liberationClassId, fraction.quantity * factor);
   }
-  return scaled;
+  return pruneSolidMaterialStateUnchecked(scaled);
 }
 
 export function scaleSolidMaterialState(state, factor) {
@@ -207,11 +252,11 @@ export function withdrawSolidMaterialState(state, requestedQuantity) {
   validateSolidMaterialState(state);
   assertFiniteNonNegative(requestedQuantity, 'withdraw requested quantity');
   const withdrawn = proportionalSolidMaterialShare(state, requestedQuantity);
-  for (const fraction of iterateSolidFractions(withdrawn)) {
+  for (const fraction of iterateSolidFractionsUnchecked(withdrawn)) {
     const key = fractionKey(fraction.speciesId, fraction.sizeBinId, fraction.liberationClassId);
     state.fractions[key] = Math.max(0, (state.fractions[key] ?? 0) - fraction.quantity);
   }
-  pruneSolidMaterialState(state);
+  pruneSolidMaterialStateUnchecked(state);
   return withdrawn;
 }
 

@@ -92,15 +92,7 @@ function validateInputBindings(processDefinition, inputBindings) {
 function materialBodyForBatchLike(batch) {
   if (batch?.materialBody) return batch.materialBody;
   if (batch?.componentsKg && batch?.particleSizeMm) {
-    try {
-      return createSolidMaterialBody(createSolidMaterialStateFromSpeciesQuantities(batch.componentsKg, batch.particleSizeMm));
-    } catch (error) {
-      if (error.message.startsWith('Unsupported material species')) {
-        const speciesId = error.message.match(/'([^']+)'/)?.[1] ?? 'unknown';
-        throw new Error(`Magnetic Separator does not support component '${speciesId}'`);
-      }
-      throw error;
-    }
+    return createSolidMaterialBody(createSolidMaterialStateFromSpeciesQuantities(batch.componentsKg, batch.particleSizeMm));
   }
   throw new Error(`Input batch '${batch?.id ?? 'unknown'}' is missing materialBody`);
 }

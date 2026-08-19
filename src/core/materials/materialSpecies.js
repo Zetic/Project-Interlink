@@ -5,7 +5,8 @@ export const MATERIAL_SPECIES = Object.freeze({
     formula: 'Fe2O3',
     kind: 'mineral',
     physicalProperties: Object.freeze({
-      magneticResponse: Object.freeze({ susceptibility: 0.55, entrainmentFactor: 0.01 }),
+      // Gameplay-tuned separator coefficient, not literal SI magnetic susceptibility.
+      magneticResponse: Object.freeze({ normalizedSeparationCoefficient: 0.55 }),
     }),
   }),
   magnetite: Object.freeze({
@@ -14,7 +15,7 @@ export const MATERIAL_SPECIES = Object.freeze({
     formula: 'Fe3O4',
     kind: 'mineral',
     physicalProperties: Object.freeze({
-      magneticResponse: Object.freeze({ susceptibility: 1, entrainmentFactor: 0.005 }),
+      magneticResponse: Object.freeze({ normalizedSeparationCoefficient: 1 }),
     }),
   }),
   goethite: Object.freeze({
@@ -23,7 +24,7 @@ export const MATERIAL_SPECIES = Object.freeze({
     formula: 'FeO(OH)',
     kind: 'mineral',
     physicalProperties: Object.freeze({
-      magneticResponse: Object.freeze({ susceptibility: 0.35, entrainmentFactor: 0.01 }),
+      magneticResponse: Object.freeze({ normalizedSeparationCoefficient: 0.35 }),
     }),
   }),
   quartz: Object.freeze({
@@ -32,7 +33,7 @@ export const MATERIAL_SPECIES = Object.freeze({
     formula: 'SiO2',
     kind: 'mineral',
     physicalProperties: Object.freeze({
-      magneticResponse: Object.freeze({ susceptibility: 0, entrainmentFactor: 0.02 }),
+      magneticResponse: Object.freeze({ normalizedSeparationCoefficient: 0 }),
     }),
   }),
   quartzAndGangue: Object.freeze({
@@ -42,7 +43,7 @@ export const MATERIAL_SPECIES = Object.freeze({
     kind: 'pseudo-species',
     description: 'Legacy unresolved gangue mixture placeholder retained for prototype compatibility.',
     physicalProperties: Object.freeze({
-      magneticResponse: Object.freeze({ susceptibility: 0, entrainmentFactor: 0.02 }),
+      magneticResponse: Object.freeze({ normalizedSeparationCoefficient: 0 }),
     }),
   }),
   'gangue-mixture': Object.freeze({
@@ -52,10 +53,20 @@ export const MATERIAL_SPECIES = Object.freeze({
     kind: 'pseudo-species',
     description: 'Unresolved non-ore mineral mixture placeholder for prototype catalogs.',
     physicalProperties: Object.freeze({
-      magneticResponse: Object.freeze({ susceptibility: 0, entrainmentFactor: 0.02 }),
+      magneticResponse: Object.freeze({ normalizedSeparationCoefficient: 0 }),
     }),
   }),
 });
+
+export function requireMaterialConstituentId(speciesId) {
+  if (typeof speciesId !== 'string' || !speciesId) {
+    throw new Error('Material constituent id must be a non-empty string');
+  }
+  if (speciesId.includes('|')) {
+    throw new Error(`Material constituent id '${speciesId}' cannot contain '|'`);
+  }
+  return speciesId;
+}
 
 export function listMaterialSpecies() {
   return Object.values(MATERIAL_SPECIES);
@@ -66,6 +77,7 @@ export function getMaterialSpecies(speciesId) {
 }
 
 export function requireMaterialSpecies(speciesId) {
+  requireMaterialConstituentId(speciesId);
   const species = getMaterialSpecies(speciesId);
   if (!species) throw new Error(`Unsupported material species '${speciesId}'`);
   return species;

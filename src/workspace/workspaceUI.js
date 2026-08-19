@@ -1335,9 +1335,25 @@ function selectSystem(systemId) {
 
 function summaryRowsHtml(rows, emptyLabel, suffix = 'kg') {
   if (!rows?.length) return `<span>${escHtml(emptyLabel)}</span>`;
-  return rows.map(row => (
-    `<div class="ws-ins-comp-row"><span>${escHtml(row.label ?? row.id)}</span><span>${row.quantity.toFixed(3)} ${suffix} (${row.percentage.toFixed(1)}%)</span></div>`
-  )).join('');
+  return rows.map(row => summaryRowHtml(row, suffix)).join('');
+}
+
+function summaryRowHtml(row, suffix) {
+  return `<div class="ws-ins-comp-row"><span>${escHtml(row.label ?? row.id)}</span><span>${row.quantity.toFixed(3)} ${suffix} (${row.percentage.toFixed(1)}%)</span></div>`;
+}
+
+export function compactCompositionSummaryHtml(rows, emptyLabel, suffix = 'kg') {
+  if (!rows?.length) return `<span>${escHtml(emptyLabel)}</span>`;
+  const primaryRows = rows.slice(0, 4);
+  const overflowRows = rows.slice(4);
+  const primaryHtml = primaryRows.map(row => summaryRowHtml(row, suffix)).join('');
+  if (!overflowRows.length) return primaryHtml;
+
+  const otherQuantity = overflowRows.reduce((sum, row) => sum + row.quantity, 0);
+  const otherPercentage = overflowRows.reduce((sum, row) => sum + row.percentage, 0);
+  const otherHtml = summaryRowHtml({ label: 'Other', quantity: otherQuantity, percentage: otherPercentage }, suffix);
+  const detailHtml = overflowRows.map(row => summaryRowHtml(row, suffix)).join('');
+  return `${primaryHtml}${otherHtml}<details class="ws-ins-comp-details"><summary>Show all ${rows.length} species</summary>${detailHtml}</details>`;
 }
 
 function formatTransferInspector(transfer) {
@@ -1361,7 +1377,7 @@ function formatCompositeInspector(node) {
       <div class="ws-ins-row"><b>Capacity:</b> ${details.capacityKg} kg</div>
       <div class="ws-ins-row"><b>Free:</b> <span data-live="boundary-free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
-      <div class="ws-ins-comp"><b>Composition</b>${summaryRowsHtml(details.composition, 'no stored material')}</div>
+      <div class="ws-ins-comp"><b>Composition</b><div data-live-section="boundary-components">${compactCompositionSummaryHtml(details.composition, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="boundary-size">${summaryRowsHtml(details.particleSizeDistribution, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="boundary-liberation">${summaryRowsHtml(details.liberationDistribution, 'no stored material')}</div></div>`;
   } else if (node.nodeType === 'region') {
@@ -1446,10 +1462,12 @@ function updateCompositeInspector(force = false) {
     const details = hopperInspection(node);
     const stored = body.querySelector('[data-live="boundary-stored"]');
     const free = body.querySelector('[data-live="boundary-free"]');
+    const components = body.querySelector('[data-live-section="boundary-components"]');
     const size = body.querySelector('[data-live-section="boundary-size"]');
     const liberation = body.querySelector('[data-live-section="boundary-liberation"]');
     if (stored) stored.textContent = details.storedMassKg.toFixed(3);
     if (free) free.textContent = details.freeCapacityKg.toFixed(3);
+    if (components) components.innerHTML = compactCompositionSummaryHtml(details.composition, 'no stored material');
     if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
     if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
   }
@@ -1780,7 +1798,7 @@ function formatNodeInspector(node) {
       <div class="ws-ins-row"><b>Capacity:</b> ${details.capacityKg} kg</div>
       <div class="ws-ins-row"><b>Free:</b> <span data-live="free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
-      <div class="ws-ins-comp"><b>Composition</b><div data-live-section="components">${summaryRowsHtml(details.composition, 'no stored material')}</div></div>
+      <div class="ws-ins-comp"><b>Composition</b><div data-live-section="components">${compactCompositionSummaryHtml(details.composition, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="particle-size-distribution">${summaryRowsHtml(details.particleSizeDistribution, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="liberation-distribution">${summaryRowsHtml(details.liberationDistribution, 'no stored material')}</div></div>`;
   } else if (isFeature) {
@@ -1817,7 +1835,7 @@ function formatConnectionInspector(connection) {
     <div class="ws-ins-row"><b>To:</b> ${escHtml(details.targetNodeId)} / ${escHtml(details.targetPortId)}</div>
     <div class="ws-ins-row"><b>Total flow:</b> <span data-live="flow">${details.totalFlowKgPerSecond.toFixed(3)}</span> kg/s</div>
     <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
-    <div class="ws-ins-comp"><b>Composition</b><div data-live-section="stream-components">${summaryRowsHtml(details.composition, 'no flow', 'kg/s')}</div></div>
+    <div class="ws-ins-comp"><b>Composition</b><div data-live-section="stream-components">${compactCompositionSummaryHtml(details.composition, 'no flow', 'kg/s')}</div></div>
     <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="stream-size">${summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s')}</div></div>
     <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="stream-liberation">${summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s')}</div></div>
     <div class="ws-ins-action"><button class="ws-btn-disconnect" data-conn-id="${escHtml(connection.id)}">Disconnect</button></div>`;
@@ -1852,7 +1870,7 @@ function updateInspector(force = false) {
       const liberation = body.querySelector('[data-live-section="liberation-distribution"]');
       if (stored) stored.textContent = details.storedMassKg.toFixed(3);
       if (free) free.textContent = details.freeCapacityKg.toFixed(3);
-      if (components) components.innerHTML = summaryRowsHtml(details.composition, 'no stored material');
+      if (components) components.innerHTML = compactCompositionSummaryHtml(details.composition, 'no stored material');
       if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
       if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
     } else if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
@@ -1882,7 +1900,7 @@ function updateInspector(force = false) {
       const size = body.querySelector('[data-live-section="stream-size"]');
       const liberation = body.querySelector('[data-live-section="stream-liberation"]');
       if (flow) flow.textContent = details.totalFlowKgPerSecond.toFixed(3);
-      if (components) components.innerHTML = summaryRowsHtml(details.composition, 'no flow', 'kg/s');
+      if (components) components.innerHTML = compactCompositionSummaryHtml(details.composition, 'no flow', 'kg/s');
       if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s');
       if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s');
     }

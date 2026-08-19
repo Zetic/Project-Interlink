@@ -7,7 +7,7 @@
 import { particleSizeBinIdForMm } from '../core/materials/particleSizeBins.js';
 import {
   SOLID_PARTICULATE_FORM,
-  addSolidFraction,
+  addSolidFractionUnchecked,
   cloneSolidMaterialState,
   createSolidMaterialState,
   scaleSolidMaterialState,
@@ -35,7 +35,7 @@ function legacySolidFlow(componentMassFlowKgPerSecond, particleSizeMm, liberatio
   const solidState = createSolidMaterialState();
   const sizeBinId = particleSizeBinIdForMm(particleSizeMm);
   for (const [speciesId, rateKgPerSecond] of Object.entries(componentMassFlowKgPerSecond)) {
-    addSolidFraction(solidState, { speciesId, sizeBinId, liberationClassId, quantity: rateKgPerSecond });
+    addSolidFractionUnchecked(solidState, { speciesId, sizeBinId, liberationClassId, quantity: rateKgPerSecond });
   }
   return solidState;
 }

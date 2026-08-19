@@ -415,7 +415,7 @@ test('invalid process parameters and unsupported components are rejected clearly
 
   assert.throws(
     () => executeProcess(processDefinition, { feed: fakeBatch }, { fieldStrength: 0.5 }),
-    /does not support component/
+    /does not support species 'chalcopyrite' without magnetic response data/
   );
 });
 

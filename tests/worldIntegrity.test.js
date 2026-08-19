@@ -13,10 +13,10 @@ function buildWorld(seed = 'integrity-test') {
 
 test('world uses the Site/Feature resource schema and generator versions', () => {
   const world = buildWorld();
-  assert.equal(SCHEMA_VERSION, 7);
-  assert.equal(GENERATOR_VERSION, 4);
-  assert.equal(world.schemaVersion, 7);
-  assert.equal(world.generatorVersion, 4);
+  assert.equal(SCHEMA_VERSION, 8);
+  assert.equal(GENERATOR_VERSION, 5);
+  assert.equal(world.schemaVersion, 8);
+  assert.equal(world.generatorVersion, 5);
 });
 
 test('planetId and every planet region ID resolve', () => {
@@ -191,7 +191,7 @@ test('a localized Site can contain multiple distinct Features', () => {
   assert.ok(foundMultiFeatureSite, 'At least one localized Site should contain multiple Features across tested seeds');
 });
 
-test('deterministic generation: same seed produces identical worlds under generator v4', () => {
+test('deterministic generation: same seed produces identical worlds under generator v5', () => {
   const world1 = buildWorld('determinism-v4');
   const world2 = buildWorld('determinism-v4');
   assert.deepStrictEqual(

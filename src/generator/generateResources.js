@@ -1,23 +1,13 @@
 /** Resource-generation helpers. Resource distribution is a generator hint, not physical ownership. */
 
-import resources from '../data/raw-resources.js';
+import {
+  resources,
+  getLocalizedResources,
+  getRegionalResources,
+  getResourceDefinition,
+} from '../data/resourceDefinitions.js';
 
-export { resources };
-
-const REGIONAL_DISTRIBUTIONS = new Set(['regional', 'both']);
-const LOCALIZED_DISTRIBUTIONS = new Set(['localized', 'both']);
-
-export function getRegionalResources() {
-  return resources.filter(resource => REGIONAL_DISTRIBUTIONS.has(resource.distribution));
-}
-
-export function getLocalizedResources() {
-  return resources.filter(resource => LOCALIZED_DISTRIBUTIONS.has(resource.distribution));
-}
-
-export function getResourceDefinition(resourceId) {
-  return resources.find(resource => resource.id === resourceId) ?? null;
-}
+export { resources, getLocalizedResources, getRegionalResources, getResourceDefinition };
 
 /**
  * Pick resource definitions matching any supplied tag.
