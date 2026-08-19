@@ -253,7 +253,7 @@ export function navigationVisibilityState(open) {
   };
 }
 
-export function navigationFilterState(hiddenCategories = []) {
+export function navigationFilterState(hiddenCategories = new Set()) {
   const categories = navigationCategoryVocabulary();
   return {
     categories,
