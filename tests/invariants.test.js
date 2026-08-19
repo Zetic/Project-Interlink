@@ -5,6 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from '../src/core/world/worldState.js';
+import { resources } from '../src/generator/generateResources.js';
+import { FEATURE_ALLOWED_FAMILIES, OCCURRENCE_FAMILY_VALUES } from '../src/generator/generateFeatures.js';
 
 const TOLERANCE = 1.5; // percentage points for composition sums
 
@@ -111,10 +113,10 @@ const GAS_RESERVOIR_ALLOWED_STATES = new Set(['Gaseous', 'Mixed']);
 const MAGMA_CHAMBER_ALLOWED_STATES = new Set(['Liquid']);
 const ICE_BODY_ALLOWED_STATES = new Set(['Solid']);
 
-const AQUIFER_ALLOWED_RESOURCES = new Set(['groundwater', 'brine', 'fresh-water', 'saline-water', 'lithium-brine']);
-const GAS_RESERVOIR_ALLOWED_RESOURCES = new Set(['natural-gas', 'gas-clathrate', 'hydrocarbons']);
-const MAGMA_CHAMBER_ALLOWED_RESOURCES = new Set(['magma', 'geothermal-fluid']);
-const ICE_BODY_ALLOWED_RESOURCES = new Set(['water-ice', 'gas-clathrate', 'ammonia-water-solution', 'permafrost']);
+const AQUIFER_ALLOWED_RESOURCES = new Set(['groundwater', 'brine', 'fresh-water', 'saline-water', 'lithium-brine', 'ammonia-water-solution']);
+const GAS_RESERVOIR_ALLOWED_RESOURCES = new Set(['natural-gas']);
+const MAGMA_CHAMBER_ALLOWED_RESOURCES = new Set(['magma']);
+const ICE_BODY_ALLOWED_RESOURCES = new Set(['water-ice', 'gas-clathrate', 'permafrost']);
 
 const BIO_RESOURCE_IDS = new Set(['wood', 'plant-biomass', 'peat', 'organic-soil', 'coal', 'guano', 'latex', 'reef-material']);
 
@@ -232,4 +234,62 @@ test('biological resources do not appear without biosphere', () => {
       );
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Catalog-integrity tests — static checks on the resource/feature definitions
+// ---------------------------------------------------------------------------
+
+test('every ResourceDefinition has an occurrenceFamily field', () => {
+  for (const resource of resources) {
+    assert.ok(
+      typeof resource.occurrenceFamily === 'string' && resource.occurrenceFamily.length > 0,
+      `Resource '${resource.id}' is missing occurrenceFamily`
+    );
+  }
+});
+
+test('every ResourceDefinition occurrenceFamily is in the canonical registry', () => {
+  for (const resource of resources) {
+    assert.ok(
+      OCCURRENCE_FAMILY_VALUES.has(resource.occurrenceFamily),
+      `Resource '${resource.id}' has unregistered occurrenceFamily '${resource.occurrenceFamily}'`
+    );
+  }
+});
+
+test('every family referenced by FEATURE_ALLOWED_FAMILIES is in the canonical registry', () => {
+  for (const [featureType, familySet] of Object.entries(FEATURE_ALLOWED_FAMILIES)) {
+    for (const family of familySet) {
+      assert.ok(
+        OCCURRENCE_FAMILY_VALUES.has(family),
+        `FEATURE_ALLOWED_FAMILIES['${featureType}'] references unregistered family '${family}'`
+      );
+    }
+  }
+});
+
+test('every localized/both ResourceDefinition is reachable by at least one localized Feature type', () => {
+  // Build a map from family → set of Feature types that accept it.
+  const familyToFeatures = new Map();
+  for (const [featureType, familySet] of Object.entries(FEATURE_ALLOWED_FAMILIES)) {
+    for (const family of familySet) {
+      if (!familyToFeatures.has(family)) familyToFeatures.set(family, new Set());
+      familyToFeatures.get(family).add(featureType);
+    }
+  }
+
+  const LOCALIZED_DISTRIBUTIONS = new Set(['localized', 'both']);
+  const unreachable = [];
+  for (const resource of resources) {
+    if (!LOCALIZED_DISTRIBUTIONS.has(resource.distribution)) continue;
+    if (!familyToFeatures.has(resource.occurrenceFamily)) {
+      unreachable.push(`${resource.id} (family: ${resource.occurrenceFamily})`);
+    }
+  }
+  assert.deepEqual(
+    unreachable,
+    [],
+    `Localized resources with no compatible Feature type (silent orphans): ${unreachable.join(', ')}`
+  );
 });

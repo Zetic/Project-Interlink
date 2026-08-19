@@ -74,7 +74,7 @@ Current `main` after merged PR #24 uses:
 
 ```text
 schemaVersion: 7
-generatorVersion: 3
+generatorVersion: 4
 ```
 
 Established architecture includes:
@@ -106,54 +106,45 @@ Treat these as existing contracts to preserve.
 
 ---
 
-# ACTIVE PRIORITY — ISSUE #25
+# RESOLVED — ISSUE #25 ✓
 
-Before player-authored construction, correct Feature generation granularity.
+Issue #25 (split independently exploitable sources into distinct Features) is complete as of generator v4.
 
-Issue #25:
+## What was done
 
-> **Split independently exploitable sources into distinct Features and move mixtures toward chemical composition.**
+- Each generated localized Feature now has **exactly one ResourceOccurrence** (one physical source/body).
+- Resource variety at a Site manifests as multiple Features, not multiple unrelated occurrences on one Feature.
+- Resource–Feature compatibility uses a **scalable occurrence-family taxonomy** rather than per-Feature ID whitelists:
+  - Resources declare `occurrenceFamily` (e.g. `groundwater → aqueous-fluid`, `obsidian → rock-mass`).
+  - Feature types declare `FEATURE_ALLOWED_FAMILIES` (hard gate). Tags may only weight within the compatible pool.
+  - This ensures Groundwater is never a candidate for Outcrop regardless of planetary water content.
+- Iron ore remains one occurrence with its full mineral-mixture composition (hematite / magnetite / goethite / gangue).
+- Sites now have names independent of their Features.
+- Regression tests added: family-compatibility contract, Outcrop/Aquifer/Gas Reservoir isolation, determinism.
 
-The current merged generator may attach multiple unrelated ResourceOccurrences to one Feature simply to provide variety. That behavior is now considered semantically wrong for the normal generated case.
+## Generation invariant to preserve
 
-Do not build the player construction milestone on top of that ambiguity.
+> **Each generated localized Feature defaults to exactly one ResourceOccurrence.**
+> **Every occurrence's `occurrenceFamily` must be in the Feature type's `FEATURE_ALLOWED_FAMILIES`.**
 
-## Hard semantic rule
+Do not revert these invariants. Do not recreate per-ID whitelists.
 
-> **Multiple independently exploitable physical sources should be separate Features. Multiple constituents of the same physical source belong in one ResourceOccurrence composition.**
+---
 
-Correct:
+# ACTIVE PRIORITY — PLAYER-AUTHORED SITE CONSTRUCTION
 
-```text
-SITE: Ancientwell Rift
-│
-├── FEATURE: Ancientwell Aquifer
-│   └── ResourceOccurrence: groundwater body
-│
-└── FEATURE: Blackglass Outcrop
-    └── ResourceOccurrence: obsidian body
-```
+Issue #25 is resolved. The active milestone is now player-authored Site construction.
 
-Incorrect:
+Players should be able to:
 
-```text
-FEATURE: Outcrop
-├── Groundwater occurrence
-├── Fresh Water occurrence
-└── Obsidian occurrence
-```
+1. Enter a generated Site.
+2. Inspect the distinct physical Features present.
+3. Place compatible apparatus/storage nodes.
+4. Connect Feature resource-access and material ports.
+5. Configure and enable apparatus.
+6. Observe actual source mixture / extraction flow / blocking.
 
-unless a future physical model explicitly establishes that those are genuinely separate occurrences within one physical Feature.
-
-## Near-term generation invariant
-
-For Issue #25, default generated Features to:
-
-> **one ResourceOccurrence per Feature**
-
-Additional independent source variety at a Site should normally create another Feature.
-
-Do not permanently architect the schema so a Feature can never have multiple occurrences. The current schema-v7 array may remain plural. The generator simply must stop using multiple occurrences as a generic variety mechanism.
+Do not begin implementing power, logistics, sensors, or the chemistry engine before basic player construction is working.
 
 ---
 
@@ -716,55 +707,44 @@ Simulation runs by default, off-screen Sites continue running, and new active ap
 
 ---
 
-# Versioning Rule for Issue #25
+# Versioning — Completed (Issue #25)
 
-Issue #25 will materially change generated Site/Feature topology for the same seed.
-
-Therefore:
-
-- bump `GENERATOR_VERSION`
-- bump `SCHEMA_VERSION` **only if** the serialized World State contract changes beyond schema-v7 ownership semantics
-
-Do not bump schema solely because generation behavior changes.
+`GENERATOR_VERSION` was bumped to 4. `SCHEMA_VERSION` remains 7 (the ownership contract did not change).
 
 ---
 
-# Required Regression Expectations for Issue #25
+# Completed Regression Coverage (Issue #25)
 
-Before declaring the issue complete, prove:
+All of the following are verified by the test suite (148 tests pass):
 
-- same seed remains deterministic under the new generator version
-- Region contains Site references, not direct Feature/resource ownership
-- a Site may contain multiple Features
-- every Feature has exactly one Site owner
-- generated normal Features default to exactly one ResourceOccurrence
-- every ResourceOccurrence has exactly one Feature owner
-- distinct independent source categories become distinct Features
-- Feature type and occurrence are physically compatible
-- regional resource potential still produces physical `regional-access` Sites/Features
-- iron ore remains one occurrence with a mineral mixture
-- Feature → Extractor access creates no MaterialStream
-- Extractor cannot operate without valid Feature access
-- Extractor cannot use another Feature's occurrence
-- extraction preserves occurrence composition
-- material conservation/backpressure remains green
-- recursive boundary ownership remains green
-- shared graph/viewport regressions remain green
-
-Run the complete test suite, not only focused tests.
-
-For browser-heavy behavior, manually smoke-test when automation is unavailable and report the limitation rather than claiming verification.
+- same seed deterministic under generator v4 ✓
+- Region contains Site references only, no direct Feature/resource ownership ✓
+- a Site may contain multiple Features ✓
+- every Feature has exactly one Site owner ✓
+- generated localized Features default to exactly one ResourceOccurrence ✓
+- every ResourceOccurrence has exactly one Feature owner ✓
+- every occurrence's `occurrenceFamily` is compatible with its Feature's `FEATURE_ALLOWED_FAMILIES` ✓
+- Outcrop cannot receive aqueous-fluid occurrences even on water-rich planets ✓
+- Aquifer cannot receive solid/rock/ore occurrences ✓
+- Gas Reservoir cannot receive solids or aqueous fluids ✓
+- regional resource potential produces physical `regional-access` Sites/Features ✓
+- iron ore remains one occurrence with a mineral mixture ✓
+- Feature → Extractor access creates no MaterialStream ✓
+- Extractor cannot operate without valid Feature access ✓
+- extraction preserves occurrence composition ✓
+- material conservation/backpressure tests pass ✓
+- recursive boundary ownership tests pass ✓
 
 ---
 
 # Active Development Order
 
-Do **not** start the main player-authored construction milestone until Issue #25 is stable.
+Issue #25 is complete. The active milestone is player-authored Site construction.
 
 Current order:
 
-1. **Issue #25 — Feature granularity + composition/classification semantic correction**
-2. player-authored Site construction
+1. ~~**Issue #25 — Feature granularity + composition/classification semantic correction**~~ **Done (generator v4).**
+2. **player-authored Site construction** — active milestone
 3. remove automatic iron-chain placement from normal gameplay
 4. deepen reserve/depletion/extraction mechanics when needed
 5. additional Feature interaction families
@@ -774,7 +754,7 @@ Current order:
 9. sensors/controllers/Knowledge mechanics
 10. reusable composite systems and progressively deeper chemistry/thermo/fluids/gases
 
-Do not jump ahead into a full chemistry engine, power system, multiplayer, framework migration, or giant generator expansion while Feature semantics and construction remain unfinished.
+Do not jump ahead into a full chemistry engine, power system, multiplayer, framework migration, or giant generator expansion while player construction remains unfinished.
 
 ---
 

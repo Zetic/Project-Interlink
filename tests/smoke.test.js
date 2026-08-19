@@ -16,10 +16,10 @@ const GAS_RESERVOIR_STATES = new Set(['Gaseous', 'Mixed']);
 const MAGMA_CHAMBER_STATES = new Set(['Liquid']);
 const ICE_BODY_STATES = new Set(['Solid']);
 
-const AQUIFER_RESOURCES = new Set(['groundwater', 'brine', 'fresh-water', 'saline-water', 'lithium-brine']);
-const GAS_RESERVOIR_RESOURCES = new Set(['natural-gas', 'gas-clathrate', 'hydrocarbons']);
-const MAGMA_CHAMBER_RESOURCES = new Set(['magma', 'geothermal-fluid']);
-const ICE_BODY_RESOURCES = new Set(['water-ice', 'gas-clathrate', 'ammonia-water-solution', 'permafrost']);
+const AQUIFER_RESOURCES = new Set(['groundwater', 'brine', 'fresh-water', 'saline-water', 'lithium-brine', 'ammonia-water-solution']);
+const GAS_RESERVOIR_RESOURCES = new Set(['natural-gas']);
+const MAGMA_CHAMBER_RESOURCES = new Set(['magma']);
+const ICE_BODY_RESOURCES = new Set(['water-ice', 'gas-clathrate', 'permafrost']);
 const BIO_IDS = new Set(['wood', 'plant-biomass', 'peat', 'organic-soil', 'coal', 'guano', 'latex', 'reef-material']);
 
 function validateWorldInvariants(world, seed) {
