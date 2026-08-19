@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   createBlueprint,
+  blueprintAddFeatureSource,
+  blueprintAddExtractor,
   blueprintAddHopper,
   blueprintAddCrusher,
   blueprintAddMagSep,
@@ -12,7 +14,13 @@ import {
 } from '../src/simulation/simulationEngine.js';
 import { hopperReceiveInflow, createBoundaryBuffer } from '../src/simulation/hopperNode.js';
 import { createMaterialStream } from '../src/simulation/materialStream.js';
-import { hopperInspection, streamInspection, machineInspection } from '../src/workspace/inspectionViewModel.js';
+import {
+  hopperInspection,
+  streamInspection,
+  connectionInspection,
+  featureInspection,
+  machineInspection,
+} from '../src/workspace/inspectionViewModel.js';
 
 test('hopper and boundary inspection exposes composition and particle size', () => {
   const hopper = createBoundaryBuffer({
@@ -44,6 +52,70 @@ test('stream inspection exposes endpoints, particle size, and constituent rates'
   assert.equal(details.totalFlowKgPerSecond, 3);
   assert.equal(details.particleSizeMm, 8);
   assert.deepEqual(details.componentMassFlowKgPerSecond, { hematite: 2, magnetite: 1 });
+});
+
+test('Feature inspection emphasizes resources and connected extraction apparatus', () => {
+  const world = {
+    features: {
+      feature: {
+        id: 'feature',
+        name: 'Redfire Formation',
+        type: 'Mineral Deposit',
+        resourceOccurrences: ['iron'],
+      },
+    },
+    resourceOccurrences: {
+      iron: {
+        id: 'iron',
+        resourceId: 'iron-ore',
+        name: 'Iron Ore',
+        availabilityClass: 'Abundant',
+        descriptor: 'Hematite-rich',
+      },
+    },
+  };
+  const blueprint = createBlueprint();
+  const featureNode = blueprintAddFeatureSource(blueprint, {
+    featureId: 'feature',
+    displayName: 'Redfire Formation',
+    resourceOccurrenceIds: ['iron'],
+  });
+  const extractor = blueprintAddExtractor(blueprint, 'iron');
+  const access = blueprintConnect(
+    blueprint,
+    featureNode.id,
+    featureNode.resourceAccessPortId,
+    extractor.id,
+    extractor.sourceInputPortId,
+  );
+  assert.ok(access);
+
+  const details = featureInspection(world, blueprint, featureNode);
+  assert.equal(details.name, 'Redfire Formation');
+  assert.equal(details.featureType, 'Mineral Deposit');
+  assert.deepEqual(details.resources.map(item => [item.name, item.availabilityClass]), [['Iron Ore', 'Abundant']]);
+  assert.deepEqual(details.connectedExtractors, [{ id: extractor.id, occurrenceId: 'iron' }]);
+});
+
+test('resource-access inspection is a relationship and does not invent material flow', () => {
+  const blueprint = createBlueprint();
+  const featureNode = blueprintAddFeatureSource(blueprint, {
+    featureId: 'feature',
+    resourceOccurrenceIds: ['iron'],
+  });
+  const extractor = blueprintAddExtractor(blueprint, 'iron');
+  const access = blueprintConnect(
+    blueprint,
+    featureNode.id,
+    featureNode.resourceAccessPortId,
+    extractor.id,
+    extractor.sourceInputPortId,
+  );
+  const details = connectionInspection(blueprint, access);
+  assert.equal(details.kind, 'relationship');
+  assert.equal(details.connectionKind, 'resource-access');
+  assert.equal(details.totalFlowKgPerSecond, 0);
+  assert.deepEqual(details.componentMassFlowKgPerSecond, {});
 });
 
 test('crusher inspection reports configured and actual feed/product flow', () => {
