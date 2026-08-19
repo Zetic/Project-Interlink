@@ -87,6 +87,7 @@ const wsState = {
   navigationHiddenCategories: new Set(),
   navigationManualExpandedKeys: new Set(),
   navigationEventsInstalled: false,
+  navigationEventController: null,
   navigationIndexCache: null,
 };
 
@@ -354,6 +355,9 @@ function navigateNavigationEntry(key) {
 function installNavigationEvents() {
   if (wsState.navigationEventsInstalled) return;
   wsState.navigationEventsInstalled = true;
+  const controller = new AbortController();
+  wsState.navigationEventController = controller;
+  const eventOptions = { signal: controller.signal };
   document.addEventListener('click', event => {
     const toggle = event.target.closest('#ws-navigation-toggle');
     if (toggle) {
@@ -390,26 +394,25 @@ function installNavigationEvents() {
       navigateNavigationEntry(entry.dataset.navigationEntry);
       return;
     }
-  });
+  }, eventOptions);
   document.addEventListener('input', event => {
     if (!event.target.matches('#ws-navigation-search')) return;
     wsState.navigationQuery = event.target.value;
     renderNavigationDrawer();
-  });
+  }, eventOptions);
   document.addEventListener('change', event => {
     const input = event.target.closest('[data-navigation-filter]');
-    const drawer = el('ws-navigation-drawer');
-    if (!input || !drawer?.contains(input)) return;
+    if (!input || !event.target.closest('#ws-navigation-drawer')) return;
     if (input.checked) wsState.navigationHiddenCategories.delete(input.dataset.navigationFilter);
     else wsState.navigationHiddenCategories.add(input.dataset.navigationFilter);
     renderNavigationDrawer();
-  });
+  }, eventOptions);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && wsState.navigationOpen) {
       setNavigationOpen(false);
       el('ws-navigation-toggle')?.focus();
     }
-  });
+  }, eventOptions);
 }
 
 function createSiteSession(_occurrenceId, siteId) {
@@ -1570,6 +1573,9 @@ export function initWorkspace(world, knowledge) {
   if (wsState.world) stopSimulation();
   wsState.dragTrackingCleanup?.();
   wsState.dragTrackingCleanup = null;
+  wsState.navigationEventController?.abort();
+  wsState.navigationEventController = null;
+  wsState.navigationEventsInstalled = false;
   wsState.world = world;
   createWorldSimulation(world);
   wsState.knowledge = knowledge;
