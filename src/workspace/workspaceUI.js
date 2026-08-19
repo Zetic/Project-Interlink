@@ -44,6 +44,7 @@ import {
   disconnectGraphConnection,
 } from './workspaceGraph.js';
 import { clampZoom, screenToGraph, zoomAroundPoint, fitViewport, centerViewport } from './viewport.js';
+import { prototypeOccurrenceForSite } from './sitePrototype.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -175,37 +176,36 @@ function createSiteSession(occurrenceId, siteId) {
       enabled: false,
     };
   }
-  const extractor = occurrenceId ? blueprintAddExtractor(blueprint, occurrenceId, 5) : null;
-  const hopperA = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-  const crusher = blueprintAddCrusher(blueprint, {
+  const prototypeOccurrence = prototypeOccurrenceForSite(wsState.world, site);
+  const prototypeOccurrenceId = prototypeOccurrence?.id ?? null;
+  const extractor = prototypeOccurrenceId ? blueprintAddExtractor(blueprint, prototypeOccurrenceId, 5) : null;
+  const hopperA = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
+  const crusher = extractor ? blueprintAddCrusher(blueprint, {
     throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
     targetParticleSizeMm: DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
-  });
-  const hopperB = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-  const magSep = blueprintAddMagSep(blueprint, { fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH });
-  const concentrateHopper = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-  const tailingsHopper = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
+  }) : null;
+  const hopperB = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
+  const magSep = extractor ? blueprintAddMagSep(blueprint, { fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH }) : null;
+  const concentrateHopper = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
+  const tailingsHopper = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
 
   const positions = [
     [siteImport, 60, 300],
     ...featureIds.map((featureId, index) => [blueprint.nodes[`feature-node-${featureId}`], 60, 40 + index * 110]),
     ...(extractor ? [[extractor, 60, 140]] : []),
-    [hopperA, 260, 140],
-    [crusher, 460, 140],
-    [hopperB, 660, 140],
-    [magSep, 860, 140],
-    [concentrateHopper, 1060, 60],
-    [tailingsHopper, 1060, 220],
+    ...(extractor ? [[hopperA, 260, 140], [crusher, 460, 140], [hopperB, 660, 140], [magSep, 860, 140], [concentrateHopper, 1060, 60], [tailingsHopper, 1060, 220]] : []),
     [siteExport, 1260, 60],
   ];
   positions.forEach(([node, x, y]) => layoutMoveNode(blueprintLayout, node.id, x, y));
 
   if (extractor) blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
-  blueprintConnect(blueprint, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
-  blueprintConnect(blueprint, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
-  blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
-  blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
-  blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
+  if (extractor) {
+    blueprintConnect(blueprint, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
+    blueprintConnect(blueprint, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
+    blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
+    blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
+    blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
+  }
 
   const siteNode = wsState.world?.systemNodes?.[siteId];
   if (siteNode) {
@@ -349,6 +349,14 @@ function workspaceViewport(key) {
   return wsState.viewports[key] ??= { panX: 0, panY: 0, zoom: 1 };
 }
 
+function eventGraphPoint(event, surface, key) {
+  const rect = surface?.getBoundingClientRect() ?? { left: 0, top: 0 };
+  return screenToGraph(
+    { x: event.clientX - rect.left, y: event.clientY - rect.top },
+    workspaceViewport(key),
+  );
+}
+
 function installViewport(surface, canvas, svg, key, boundsProvider) {
   if (!surface || !canvas || !svg) return;
   const apply = () => {
@@ -479,8 +487,7 @@ function startSystemNodeDrag(nodeId, event) {
   const definition = systemWorkspaceDefinition();
   const layout = ensureSystemLayout(definition);
   const position = layout.nodePositions[nodeId] ?? { x: 0, y: 0 };
-  const rect = el('ws-system-canvas')?.parentElement?.getBoundingClientRect() ?? { left: 0, top: 0 };
-  const point = screenToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top }, workspaceViewport(definition.id));
+  const point = eventGraphPoint(event, el('ws-system-canvas')?.parentElement, definition.id);
   systemDragState = {
     definitionId: definition.id,
     nodeId,
@@ -497,8 +504,7 @@ function onSystemCanvasMove(event) {
   if (systemDragState) {
     if (definition.id !== systemDragState.definitionId) return;
     const layout = ensureSystemLayout(definition);
-    const rect = el('ws-system-canvas')?.parentElement?.getBoundingClientRect() ?? { left: 0, top: 0 };
-    const point = screenToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top }, workspaceViewport(definition.id));
+    const point = eventGraphPoint(event, el('ws-system-canvas')?.parentElement, definition.id);
     layout.nodePositions[systemDragState.nodeId] = {
       x: Math.max(0, systemDragState.startX + point.x - systemDragState.startMouseX),
       y: Math.max(0, systemDragState.startY + point.y - systemDragState.startMouseY),
@@ -510,9 +516,7 @@ function onSystemCanvasMove(event) {
     }
   }
   if (pendingGraphConnection.active) {
-    const canvas = el('ws-system-canvas');
-    const rect = canvas.getBoundingClientRect();
-    const point = screenToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top }, workspaceViewport(definition.id));
+    const point = eventGraphPoint(event, el('ws-system-canvas')?.parentElement, definition.id);
     pendingGraphConnection.x = point.x;
     pendingGraphConnection.y = point.y;
   }
@@ -582,9 +586,9 @@ function renderParentWorkspace(container) {
       pendingGraphConnection.source = { nodeId: endpoint.systemId, portId: endpoint.portId };
       pendingGraphConnection.scopeId = definition.scopeId;
       pendingGraphConnection.adapter = 'boundary-transfer';
-      const rect = canvas.getBoundingClientRect();
-      pendingGraphConnection.x = event.clientX - rect.left + (canvas.scrollLeft ?? 0);
-      pendingGraphConnection.y = event.clientY - rect.top + (canvas.scrollTop ?? 0);
+      const point = eventGraphPoint(event, canvas.parentElement, definition.id);
+      pendingGraphConnection.x = point.x;
+      pendingGraphConnection.y = point.y;
       inspector.message = 'Choose a compatible input port.';
       inspector.selectedTransferId = null;
       updateCompositeInspector(true);
@@ -810,6 +814,10 @@ function updateCompositeInspector(force = false) {
 }
 
 function nodeLabel(node) {
+  if (node.nodeType === 'feature') {
+    const feature = wsState.world?.features?.[node.featureId];
+    return `${feature?.name ?? node.displayName ?? node.featureId}\n${feature?.type ?? 'Feature'}`;
+  }
   if (node.nodeType === 'extractor') {
     return `Extractor [${getNodeOperatingState(node)}]\n${wsState.world?.resourceOccurrences?.[node.occurrenceId]?.name ?? node.occurrenceId}\n${node.prototypeRateKgPerSecond} kg/s`;
   }
@@ -962,8 +970,7 @@ function renderSiteWorkspace(container) {
 function startNodeDrag(nodeId, event) {
   const position = wsState.blueprintLayout.nodePositions[nodeId] ?? { x: 0, y: 0 };
   const surface = el('ws-site-canvas')?.parentElement;
-  const rect = surface?.getBoundingClientRect() ?? { left: 0, top: 0 };
-  const point = screenToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top }, workspaceViewport(`site:${wsState.selectedSiteId}`));
+  const point = eventGraphPoint(event, surface, `site:${wsState.selectedSiteId}`);
   dragState = {
     nodeId,
     startMouseX: point.x,
@@ -976,12 +983,12 @@ function startNodeDrag(nodeId, event) {
 
 function startPendingConnection(nodeId, portId, event) {
   const canvas = el('ws-site-canvas');
-  const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
+  const point = eventGraphPoint(event, canvas?.parentElement, `site:${wsState.selectedSiteId}`);
   Object.assign(pendingGraphConnection, {
     active: true,
     source: { nodeId, portId },
     adapter: 'blueprint',
-    ...screenToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top }, workspaceViewport(`site:${wsState.selectedSiteId}`)),
+    ...point,
   });
   event.preventDefault();
 }
@@ -1020,8 +1027,7 @@ function finishConnection(targetNodeId, targetPortId) {
 function onCanvasMouseMove(event) {
   if (dragState) {
     const surface = el('ws-site-canvas')?.parentElement;
-    const rect = surface?.getBoundingClientRect() ?? { left: 0, top: 0 };
-    const point = screenToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top }, workspaceViewport(`site:${wsState.selectedSiteId}`));
+    const point = eventGraphPoint(event, surface, `site:${wsState.selectedSiteId}`);
     layoutMoveNode(
       wsState.blueprintLayout,
       dragState.nodeId,
@@ -1031,9 +1037,7 @@ function onCanvasMouseMove(event) {
     renderSiteNodes();
   }
   if (pendingGraphConnection.active) {
-    const canvas = el('ws-site-canvas');
-    const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
-    const point = screenToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top }, workspaceViewport(`site:${wsState.selectedSiteId}`));
+    const point = eventGraphPoint(event, el('ws-site-canvas')?.parentElement, `site:${wsState.selectedSiteId}`);
     pendingGraphConnection.x = point.x;
     pendingGraphConnection.y = point.y;
     renderConnections(el('ws-site-svg'));

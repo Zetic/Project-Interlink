@@ -76,6 +76,15 @@ test('Site featureIds reference valid Features', () => {
   }
 });
 
+test('a zero-occurrence Feature retains its enterable Site association', () => {
+  const world = buildWorld('zero-occurrence-feature-site');
+  const feature = Object.values(world.features)[0];
+  feature.resourceOccurrences = [];
+  const site = Object.values(world.sites).find(candidate => candidate.featureIds.includes(feature.id));
+  assert.ok(site, `Feature '${feature.id}' must retain a Site without occurrences`);
+  assert.deepStrictEqual(site.featureIds, [feature.id]);
+});
+
 test('every region background resource-occurrence ID resolves', () => {
   const world = buildWorld();
   for (const [rid, region] of Object.entries(world.regions)) {
