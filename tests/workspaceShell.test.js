@@ -173,6 +173,6 @@ test('compact composition summaries group overflow species behind an explicit re
   ], 'no stored material');
 
   assert.match(html, /Other/);
-  assert.match(html, /Show all 6 species/);
+  assert.match(html, /Show 2 more species/);
   assert.equal((html.match(/ws-ins-comp-details/g) ?? []).length, 1);
 });

@@ -1353,7 +1353,7 @@ export function compactCompositionSummaryHtml(rows, emptyLabel, suffix = 'kg') {
   const otherPercentage = overflowRows.reduce((sum, row) => sum + row.percentage, 0);
   const otherHtml = summaryRowHtml({ label: 'Other', quantity: otherQuantity, percentage: otherPercentage }, suffix);
   const detailHtml = overflowRows.map(row => summaryRowHtml(row, suffix)).join('');
-  return `${primaryHtml}${otherHtml}<details class="ws-ins-comp-details"><summary>Show all ${rows.length} species</summary>${detailHtml}</details>`;
+  return `${primaryHtml}${otherHtml}<details class="ws-ins-comp-details"><summary>Show ${overflowRows.length} more species</summary>${detailHtml}</details>`;
 }
 
 function formatTransferInspector(transfer) {
