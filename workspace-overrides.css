@@ -11,6 +11,42 @@
 .ws-connection--selected { stroke: #ffcc44; }
 .ws-connection-preview { stroke: #88ccff; stroke-width: 1.5; stroke-dasharray: 5 4; }
 
+/* Node-recognition grammar: category is stable; subtype/state stay in the body. */
+.ws-node { flex-direction: column; align-items: stretch; justify-content: flex-start; }
+.ws-node-category {
+  box-sizing: border-box;
+  flex: 0 0 20px;
+  width: 100%;
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  border-bottom: 1px solid #ffffff22;
+  border-radius: 2px 2px 0 0;
+  color: #e7edf3;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  pointer-events: none;
+  position: relative;
+  z-index: 4;
+}
+.ws-node--composite .ws-node-category::after { content: '↗'; margin-left: auto; font-size: 11px; letter-spacing: 0; }
+.ws-node-label { flex: 1 1 auto; min-height: 0; }
+.ws-node-category--planet { background: #4d456f; }
+.ws-node-category--region { background: #294d73; }
+.ws-node-category--site { background: #245b55; }
+.ws-node-category--feature { background: #315a34; }
+.ws-node-category--apparatus { background: #6c4d24; }
+.ws-node-category--container { background: #324a66; }
+.ws-node-category--boundary { background: #355f64; }
+.ws-node-category--process { background: #583d69; }
+.ws-node-category--sensor { background: #5b3e5e; }
+.ws-node-category--controller { background: #65502c; }
+.ws-node-category--logistics { background: #4c4f58; }
+.ws-node-category--system { background: #3d4650; }
+
 .ws-world-controls { display: inline-flex; align-items: center; gap: 8px; margin-right: 14px; }
 .ws-world-controls button { padding: 3px 8px; font-size: 11px; }
 .ws-world-controls span { color: #888; font-size: 11px; }
