@@ -50,6 +50,11 @@ import {
 } from './viewport.js';
 import { siteResourceOccurrenceIds } from './sitePrototype.js';
 import { buildSiteSession } from './siteSession.js';
+import {
+  buildNavigationIndex,
+  getNavigationRows,
+  navigationEntryForTarget,
+} from './navigationProjection.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -73,6 +78,11 @@ const wsState = {
   connectionPreview: null,
   viewports: {},
   dragTrackingCleanup: null,
+  navigationOpen: false,
+  navigationQuery: '',
+  navigationFilters: null,
+  navigationManualExpandedKeys: new Set(),
+  navigationEventsInstalled: false,
 };
 
 const NODE_WIDTH = 160;
@@ -195,6 +205,169 @@ function renderBreadcrumbs() {
   updateWorldControls();
 }
 
+function navigationIndex() {
+  return buildNavigationIndex(wsState.world, { siteSessions: wsState.siteSessions });
+}
+
+function activeNavigationKey(index) {
+  const planet = currentPlanet();
+  if (!planet) return null;
+  if (wsState.currentLevel === 'site' && wsState.selectedSiteId) {
+    return index.byKey.has(`site:${wsState.selectedSiteId}`) ? `site:${wsState.selectedSiteId}` : null;
+  }
+  if (wsState.currentLevel === 'region' && wsState.selectedRegionId) {
+    return index.byKey.has(`region:${wsState.selectedRegionId}`) ? `region:${wsState.selectedRegionId}` : null;
+  }
+  return `planet:${planet.id}`;
+}
+
+function selectedNavigationKey(index) {
+  const selectedId = wsState.currentLevel === 'site'
+    ? inspector.selectedNodeId
+    : inspector.selectedSystemId;
+  return navigationEntryForTarget(index, selectedId)?.key ?? null;
+}
+
+function navigationCategoryLabel(index, category) {
+  return index.categoryLabels?.[category] ?? category.toUpperCase();
+}
+
+function setNavigationOpen(open) {
+  wsState.navigationOpen = Boolean(open);
+  const drawer = el('ws-navigation-drawer');
+  const toggle = el('ws-navigation-toggle');
+  if (drawer) {
+    drawer.hidden = !wsState.navigationOpen;
+    drawer.setAttribute('aria-hidden', String(!wsState.navigationOpen));
+  }
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', String(wsState.navigationOpen));
+    toggle.querySelector('.ws-visually-hidden')?.replaceChildren(
+      document.createTextNode(wsState.navigationOpen ? 'Close hierarchy navigation' : 'Open hierarchy navigation'),
+    );
+  }
+}
+
+function renderNavigationDrawer() {
+  const tree = el('ws-navigation-tree');
+  const drawer = el('ws-navigation-drawer');
+  if (!tree || !drawer || !wsState.world) return;
+
+  const index = navigationIndex();
+  if (!wsState.navigationFilters) {
+    wsState.navigationFilters = new Set(index.categories);
+  } else {
+    for (const category of index.categories) wsState.navigationFilters.add(category);
+  }
+
+  const filters = el('ws-navigation-filters')?.querySelector('.ws-navigation-filters');
+  if (filters) {
+    filters.innerHTML = index.categories.map(category => {
+      const id = `ws-navigation-filter-${category}`;
+      return `<label for="${id}"><input id="${id}" type="checkbox" data-navigation-filter="${escHtml(category)}"${wsState.navigationFilters.has(category) ? ' checked' : ''}>${escHtml(navigationCategoryLabel(index, category))}</label>`;
+    }).join('');
+  }
+
+  const projection = getNavigationRows(index, {
+    query: wsState.navigationQuery,
+    visibleCategories: wsState.navigationFilters,
+    manualExpandedKeys: wsState.navigationManualExpandedKeys,
+    activeKey: activeNavigationKey(index),
+    selectedKey: selectedNavigationKey(index),
+  });
+
+  tree.innerHTML = projection.rows.length
+    ? projection.rows.map(row => {
+      const expandButton = row.hasChildren
+        ? `<button class="ws-navigation-expand" type="button" data-navigation-expand="${escHtml(row.key)}" aria-label="${row.isExpanded ? 'Collapse' : 'Expand'} ${escHtml(row.label)}">${row.isExpanded ? '▾' : '▸'}</button>`
+        : '<span class="ws-navigation-expand-spacer" aria-hidden="true"></span>';
+      const stateLabel = row.isMatch ? 'match' : row.isContext ? 'context' : '';
+      return `<div class="ws-navigation-row-wrap" role="treeitem" aria-level="${row.depth + 1}" data-navigation-row-wrap="${escHtml(row.key)}"><div class="ws-navigation-row ${row.isActive ? 'ws-navigation-row--active' : ''} ${row.isSelected ? 'ws-navigation-row--selected' : ''} ${row.isMatch ? 'ws-navigation-row--match' : ''} ${row.isContext ? 'ws-navigation-row--context' : ''} ${row.isFiltered ? 'ws-navigation-row--filtered' : ''}" style="--ws-navigation-depth:${row.depth}">${expandButton}<button class="ws-navigation-entry" type="button" data-navigation-entry="${escHtml(row.key)}" aria-current="${row.isActive ? 'location' : 'false'}"><span class="ws-navigation-category ws-node-category--${escHtml(row.category)}" aria-hidden="true"></span><span class="ws-navigation-label">${escHtml(row.label)}</span>${stateLabel ? `<span class="ws-navigation-state">${stateLabel}</span>` : ''}</button></div></div>`;
+    }).join('')
+    : `<div class="ws-navigation-empty">${wsState.navigationQuery ? 'No matching entries.' : 'No indexed entries.'}</div>`;
+
+  const count = el('ws-navigation-match-count');
+  if (count) count.textContent = projection.query ? `${projection.matchCount} match${projection.matchCount === 1 ? '' : 'es'}` : '';
+  setNavigationOpen(wsState.navigationOpen);
+}
+
+function navigateNavigationEntry(key) {
+  const entry = navigationIndex().byKey.get(key);
+  if (!entry) return;
+
+  if (entry.isComposite && entry.category === 'planet') {
+    navigateTo('planet');
+    return;
+  }
+  if (entry.isComposite && entry.category === 'region') {
+    navigateTo('region', { regionId: entry.targetId });
+    return;
+  }
+  if (entry.isComposite && entry.category === 'site') {
+    navigateTo('site', { siteId: entry.targetId });
+    return;
+  }
+
+  const level = entry.workspaceLevel;
+  const targetId = entry.nodeId ?? entry.targetId;
+  if (level === 'site' && entry.workspaceId) {
+    const feature = entry.category === 'feature' ? wsState.world?.features?.[entry.targetId] : null;
+    const occurrenceId = feature?.resourceOccurrences?.[0] ?? null;
+    navigateTo('site', {
+      siteId: entry.workspaceId,
+      occurrenceId,
+      focusNodeId: targetId,
+    });
+  } else if (level === 'region' && entry.workspaceId) {
+    navigateTo('region', { regionId: entry.workspaceId, selectSystemId: targetId });
+  } else if (level === 'planet') {
+    navigateTo('planet', { selectSystemId: targetId });
+  }
+}
+
+function installNavigationEvents() {
+  if (wsState.navigationEventsInstalled) return;
+  const toggle = el('ws-navigation-toggle');
+  const close = el('ws-navigation-close');
+  const drawer = el('ws-navigation-drawer');
+  const search = el('ws-navigation-search');
+  const tree = el('ws-navigation-tree');
+  if (!toggle || !close || !drawer || !search || !tree) return;
+
+  wsState.navigationEventsInstalled = true;
+  toggle.addEventListener('click', () => setNavigationOpen(!wsState.navigationOpen));
+  close.addEventListener('click', () => setNavigationOpen(false));
+  search.addEventListener('input', event => {
+    wsState.navigationQuery = event.currentTarget.value;
+    renderNavigationDrawer();
+  });
+  drawer.addEventListener('change', event => {
+    const input = event.target.closest('[data-navigation-filter]');
+    if (!input) return;
+    if (input.checked) wsState.navigationFilters.add(input.dataset.navigationFilter);
+    else wsState.navigationFilters.delete(input.dataset.navigationFilter);
+    renderNavigationDrawer();
+  });
+  tree.addEventListener('click', event => {
+    const expand = event.target.closest('[data-navigation-expand]');
+    if (expand) {
+      const key = expand.dataset.navigationExpand;
+      if (wsState.navigationManualExpandedKeys.has(key)) wsState.navigationManualExpandedKeys.delete(key);
+      else wsState.navigationManualExpandedKeys.add(key);
+      renderNavigationDrawer();
+      return;
+    }
+    const entry = event.target.closest('[data-navigation-entry]');
+    if (entry) navigateNavigationEntry(entry.dataset.navigationEntry);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && wsState.navigationOpen) {
+      setNavigationOpen(false);
+      toggle.focus();
+    }
+  });
+}
+
 function createSiteSession(_occurrenceId, siteId) {
   const siteWorkspace = getSimulationWorkspace(wsState.world, `${siteId}-workspace`);
   return buildSiteSession(wsState.world, siteId, {
@@ -217,7 +390,21 @@ function activateSiteSession(occurrenceId, siteId) {
 }
 
 export function navigateTo(level, opts = {}) {
-  if (level === 'region' && opts.regionId) wsState.selectedRegionId = opts.regionId;
+  if (level === 'planet') {
+    wsState.selectedRegionId = null;
+    wsState.selectedSiteId = null;
+    wsState.selectedOccurrenceId = null;
+    wsState.blueprint = null;
+    wsState.blueprintLayout = null;
+  }
+
+  if (level === 'region') {
+    if (opts.regionId) wsState.selectedRegionId = opts.regionId;
+    wsState.selectedSiteId = null;
+    wsState.selectedOccurrenceId = null;
+    wsState.blueprint = null;
+    wsState.blueprintLayout = null;
+  }
 
   if (level === 'site') {
     const siteId = opts.siteId ?? wsState.selectedSiteId;
@@ -241,6 +428,19 @@ export function navigateTo(level, opts = {}) {
   inspector.message = '';
   inspector.renderKey = null;
   renderWorkspace();
+
+  if (level === 'site' && opts.focusNodeId) {
+    const nodeId = wsState.blueprint?.nodes?.[opts.focusNodeId]
+      ? opts.focusNodeId
+      : Object.values(wsState.blueprint?.nodes ?? {}).find(node => node.featureId === opts.focusNodeId)?.id;
+    if (nodeId) {
+      selectNode(nodeId);
+      focusSiteNode(nodeId);
+    }
+  } else if ((level === 'planet' || level === 'region') && opts.selectSystemId) {
+    selectSystem(opts.selectSystemId);
+    focusSystemNode(opts.selectSystemId);
+  }
 }
 
 function systemWorkspaceDefinition() {
@@ -335,19 +535,32 @@ function eventGraphPoint(event, surface, key) {
   );
 }
 
+function applyViewportTransform(key) {
+  const viewport = workspaceViewport(key);
+  const canvas = key.startsWith('site:')
+    ? el('ws-site-canvas')
+    : el('ws-system-canvas');
+  const svg = key.startsWith('site:')
+    ? el('ws-site-svg')
+    : el('ws-system-svg');
+  const transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
+  if (canvas) {
+    canvas.style.transformOrigin = '0 0';
+    canvas.style.transform = transform;
+  }
+  if (svg) {
+    svg.style.transformOrigin = '0 0';
+    svg.style.transform = transform;
+  }
+  const root = canvas?.closest('.ws-workspace');
+  root?.querySelectorAll('[data-zoom-label]').forEach(label => {
+    label.textContent = `${Math.round(viewport.zoom * 100)}%`;
+  });
+}
+
 function installViewport(surface, canvas, svg, key, boundsProvider, controlsRoot = null) {
   if (!surface || !canvas || !svg || !controlsRoot) return;
-  const apply = () => {
-    const viewport = workspaceViewport(key);
-    const transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
-    canvas.style.transformOrigin = '0 0';
-    svg.style.transformOrigin = '0 0';
-    canvas.style.transform = transform;
-    svg.style.transform = transform;
-    controlsRoot.querySelectorAll('[data-zoom-label]').forEach(label => {
-      label.textContent = `${Math.round(viewport.zoom * 100)}%`;
-    });
-  };
+  const apply = () => applyViewportTransform(key);
   controlsRoot.querySelectorAll('[data-viewport]').forEach(button => {
     button.addEventListener('click', () => {
       const viewport = workspaceViewport(key);
@@ -383,6 +596,32 @@ function installViewport(surface, canvas, svg, key, boundsProvider, controlsRoot
   });
   surface.addEventListener('mouseup', () => { panStart = null; });
   apply();
+}
+
+function focusGraphPosition(key, position) {
+  const surface = key.startsWith('site:')
+    ? el('ws-site-canvas')?.parentElement
+    : el('ws-system-canvas')?.parentElement;
+  if (!surface || !position) return;
+  const viewport = workspaceViewport(key);
+  const centerX = position.x + NODE_WIDTH / 2;
+  const centerY = position.y + NODE_HEIGHT / 2;
+  viewport.panX = surface.clientWidth / 2 - centerX * viewport.zoom;
+  viewport.panY = surface.clientHeight / 2 - centerY * viewport.zoom;
+  applyViewportTransform(key);
+}
+
+function focusSiteNode(nodeId) {
+  if (!wsState.blueprint?.nodes?.[nodeId]) return;
+  const position = wsState.blueprintLayout?.nodePositions?.[nodeId] ?? { x: 0, y: 0 };
+  focusGraphPosition(`site:${wsState.selectedSiteId}`, position);
+}
+
+function focusSystemNode(nodeId) {
+  const definition = systemWorkspaceDefinition();
+  if (!definition.nodes.some(node => node.id === nodeId)) return;
+  const position = ensureSystemLayout(definition).nodePositions[nodeId] ?? { x: 0, y: 0 };
+  focusGraphPosition(definition.id, position);
 }
 
 function portOffsetsForSize(port, index, count, width, height) {
@@ -1021,6 +1260,7 @@ function selectNode(nodeId) {
   inspector.message = '';
   inspector.renderKey = null;
   renderSiteNodes();
+  renderNavigationDrawer();
 }
 
 function selectConnection(connectionId) {
@@ -1261,6 +1501,7 @@ function onResetSite() {
   inspector.selectedConnId = null;
   inspector.renderKey = null;
   renderSiteWorkspace(el('ws-main'));
+  renderNavigationDrawer();
 }
 
 export function renderWorkspace() {
@@ -1270,6 +1511,7 @@ export function renderWorkspace() {
   if (wsState.currentLevel === 'region') renderRegionWorkspace(container);
   else if (wsState.currentLevel === 'site') renderSiteWorkspace(container);
   else renderPlanetWorkspace(container);
+  renderNavigationDrawer();
 }
 
 export function initWorkspace(world, knowledge) {
@@ -1292,12 +1534,19 @@ export function initWorkspace(world, knowledge) {
   wsState.connectionElements.clear();
   wsState.systemNodeElements.clear();
   wsState.systemConnectionElements.clear();
+  wsState.navigationOpen = false;
+  wsState.navigationQuery = '';
+  wsState.navigationFilters = null;
+  wsState.navigationManualExpandedKeys = new Set([`planet:${world.planetId}`]);
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.selectedSystemId = null;
   inspector.selectedTransferId = null;
   inspector.message = '';
   inspector.renderKey = null;
+  installNavigationEvents();
+  el('ws-navigation-search')?.setAttribute('value', '');
+  if (el('ws-navigation-search')) el('ws-navigation-search').value = '';
   renderWorkspace();
   startSimulation();
 }
@@ -1305,6 +1554,7 @@ export function initWorkspace(world, knowledge) {
 export function updateWorkspaceKnowledge(knowledge) {
   wsState.knowledge = knowledge;
   if (wsState.currentLevel !== 'site') renderWorkspace();
+  else renderNavigationDrawer();
 }
 
 if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', renderWorkspace);

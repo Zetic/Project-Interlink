@@ -163,6 +163,190 @@
 
 #ws-player-seed { display: block; width: min(420px, 100%); margin: 6px 0 10px; }
 
+/* The hierarchy index is an overlay so it never becomes a graph-layout column. */
+.ws-shell { position: relative; }
+.ws-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ws-navigation-tab {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  z-index: 40;
+  width: 28px;
+  min-height: 86px;
+  padding: 7px 3px;
+  transform: translateY(-50%);
+  background: #132238;
+  border-color: #4a7ab5;
+  color: #a0c8ff;
+  line-height: 1.15;
+}
+.ws-navigation-tab:hover,
+.ws-navigation-tab:focus-visible { background: #1d385b; }
+.ws-navigation-drawer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, 82vw);
+  min-width: 230px;
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #0c1521;
+  border: 1px solid #2c4c6d;
+  box-shadow: 8px 0 24px #0009;
+}
+.ws-navigation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  color: #a0c8ff;
+  border-bottom: 1px solid #1e3a5f;
+  letter-spacing: 0.1em;
+}
+.ws-navigation-close {
+  padding: 0 7px;
+  color: #a0c8ff;
+  font-size: 18px;
+  line-height: 1.2;
+}
+.ws-navigation-search-label {
+  flex: 0 0 auto;
+  padding: 9px 12px 3px;
+  color: #8195a8;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ws-navigation-search {
+  flex: 0 0 auto;
+  width: calc(100% - 24px);
+  margin: 0 12px 8px;
+  padding: 6px 8px;
+  background: #101e2d;
+  border: 1px solid #34516d;
+  color: #d4e2f0;
+  font-family: inherit;
+  font-size: 12px;
+}
+.ws-navigation-search:focus { outline: 1px solid #6699cc; }
+.ws-navigation-filters-panel {
+  flex: 0 0 auto;
+  margin: 0 12px 6px;
+  color: #9ab0c2;
+  font-size: 11px;
+}
+.ws-navigation-filters-panel summary {
+  cursor: pointer;
+  color: #8195a8;
+  user-select: none;
+}
+.ws-navigation-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 8px;
+  padding: 6px 0 2px 4px;
+}
+.ws-navigation-filters label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-navigation-filters input { accent-color: #6699cc; }
+.ws-navigation-match-count {
+  flex: 0 0 auto;
+  min-height: 17px;
+  padding: 0 12px;
+  color: #9ab0c2;
+  font-size: 10px;
+}
+.ws-navigation-tree {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 5px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.ws-navigation-row-wrap { min-width: 0; }
+.ws-navigation-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding-left: calc(2px + var(--ws-navigation-depth) * 16px);
+  border-left: 1px solid transparent;
+}
+.ws-navigation-row--active { border-left-color: #ffcc44; background: #263247; }
+.ws-navigation-row--selected { outline: 1px solid #ffcc4488; }
+.ws-navigation-row--context { opacity: 0.62; }
+.ws-navigation-row--filtered .ws-navigation-label { font-style: italic; }
+.ws-navigation-expand,
+.ws-navigation-expand-spacer {
+  flex: 0 0 17px;
+  width: 17px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #8195a8;
+  font-size: 13px;
+  line-height: 1;
+}
+.ws-navigation-expand:hover { background: #1c3048; }
+.ws-navigation-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 3px 4px;
+  border: 0;
+  background: transparent;
+  color: #c8d8e8;
+  font-size: 11px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ws-navigation-entry:hover,
+.ws-navigation-entry:focus-visible { background: #1b3048; color: #e8f1fa; }
+.ws-navigation-category {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.ws-navigation-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-navigation-state {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #a0c8ff;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.ws-navigation-row--match .ws-navigation-label { color: #d9f0c5; font-weight: bold; }
+.ws-navigation-empty { padding: 12px 8px; color: #6f8294; font-size: 11px; }
+
 @media (max-width: 720px) {
   .ws-toolbar {
     grid-template-columns: 1fr;
@@ -171,4 +355,5 @@
   .ws-viewport-controls {
     justify-content: flex-start;
   }
+  .ws-navigation-drawer { width: min(320px, 90vw); }
 }
