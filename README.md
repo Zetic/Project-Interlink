@@ -93,7 +93,7 @@ Current implemented behavior includes:
 The serialized versions are currently:
 
 ```text
-schemaVersion: 5
+schemaVersion: 6
 generatorVersion: 2
 ```
 
