@@ -1,6 +1,6 @@
 /** Schema and generator version constants. */
 
-// Schema v6: every generated Feature has an enterable Site with featureIds.
-// Generator v2: feature physical states and resources are constrained by feature type.
-export const SCHEMA_VERSION = 6;
-export const GENERATOR_VERSION = 2;
+// Schema v7: Regions own Sites, Sites own Features, and all ResourceOccurrences are Feature-owned.
+// Generator v3: regional resource potential materializes as access Sites/Features and every Feature has resources.
+export const SCHEMA_VERSION = 7;
+export const GENERATOR_VERSION = 3;
