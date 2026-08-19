@@ -1,0 +1,23 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { workspaceShellMarkup } from '../src/workspace/workspaceUI.js';
+
+test('workspace shell owns shared controls and reserves semantic content slots', () => {
+  const markup = workspaceShellMarkup({
+    title: 'Region <A>',
+    subtitle: 'Sites and Features',
+    contextControls: '<span data-context-control>Region action</span>',
+    canvasId: 'canvas',
+    svgId: 'svg',
+    inspectorBodyId: 'inspector-body',
+    inspectorInitial: 'Select a node.',
+  });
+
+  assert.match(markup, /class="ws-workspace-header"><div class="ws-workspace-title">Region &lt;A&gt;<\/div>/);
+  assert.match(markup, /class="ws-context-controls"><span data-context-control>Region action<\/span>/);
+  assert.match(markup, /class="ws-viewport-controls"><button data-viewport="out">Zoom Out<\/button>/);
+  assert.equal((markup.match(/data-viewport="/g) ?? []).length, 4);
+  assert.equal((markup.match(/data-zoom-label/g) ?? []).length, 1);
+  assert.ok(markup.indexOf('ws-context-controls') < markup.indexOf('data-viewport="out"'));
+  assert.match(markup, /class="ws-inspector".*class="ws-inspector-body"/);
+});

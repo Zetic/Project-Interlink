@@ -99,22 +99,29 @@ let dragState = null;
 let systemDragState = null;
 
 function el(id) { return document.getElementById(id); }
-function renderWorkspaceShell(container, {
-  header = '',
-  toolbarLeading = '',
+export function workspaceShellMarkup({
+  title = '',
+  subtitle = '',
+  contextControls = '',
   canvasId,
   svgId,
   inspectorBodyId,
   inspectorInitial = '',
 } = {}) {
-  container.innerHTML = `${header}<div class="ws-toolbar">${toolbarLeading}<button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div><div class="ws-layout"><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div>`;
+  return `<div class="ws-workspace"><div class="ws-workspace-header"><div class="ws-workspace-title">${escHtml(title)}</div>${subtitle ? `<div class="ws-workspace-subtitle">${escHtml(subtitle)}</div>` : ''}</div><div class="ws-toolbar"><div class="ws-context-controls">${contextControls}</div><div class="ws-viewport-controls"><button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div></div><div class="ws-layout"><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div></div>`;
+}
+function renderWorkspaceShell(container, options = {}) {
+  container.innerHTML = workspaceShellMarkup(options);
+  const root = container.querySelector('.ws-workspace');
   return {
-    toolbar: container.querySelector('.ws-toolbar'),
-    viewport: container.querySelector('.ws-viewport'),
-    canvas: el(canvasId),
-    svg: el(svgId),
-    inspector: container.querySelector('.ws-inspector'),
-    inspectorBody: el(inspectorBodyId),
+    root,
+    toolbar: root.querySelector('.ws-toolbar'),
+    viewportControls: root.querySelector('.ws-viewport-controls'),
+    viewport: root.querySelector('.ws-viewport'),
+    canvas: el(options.canvasId),
+    svg: el(options.svgId),
+    inspector: root.querySelector('.ws-inspector'),
+    inspectorBody: root.querySelector(`#${options.inspectorBodyId}`),
   };
 }
 function installWindowDragTracking(moveHandler, upHandler) {
@@ -494,12 +501,12 @@ function onSystemCanvasMove(event) {
 function renderParentWorkspace(container) {
   const definition = systemWorkspaceDefinition();
   ensureSystemLayout(definition);
-  const header = wsState.currentLevel === 'planet'
-    ? `<div class="ws-planet-header"><div class="ws-planet-name">${escHtml(definition.title)}</div><div class="ws-planet-meta">Draggable planetary system graph</div></div>`
-    : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Sites are the physical access points for all regional resources and Features.</div></div>`;
 
   const shell = renderWorkspaceShell(container, {
-    header,
+    title: definition.title,
+    subtitle: wsState.currentLevel === 'planet'
+      ? 'Draggable planetary system graph'
+      : 'Sites are the physical access points for all regional resources and Features.',
     canvasId: 'ws-system-canvas',
     svgId: 'ws-system-svg',
     inspectorBodyId: 'ws-composite-inspector-body',
@@ -605,7 +612,7 @@ function renderParentWorkspace(container) {
     svg,
     definition.id,
     () => boundsForNodePositions(ensureSystemLayout(definition).nodePositions, NODE_WIDTH, NODE_HEIGHT),
-    shell.toolbar,
+    shell.viewportControls,
   );
   updateCompositeInspector(true);
 }
@@ -900,7 +907,9 @@ function renderSiteWorkspace(container) {
   inspector.renderKey = null;
   const site = wsState.world?.sites?.[wsState.selectedSiteId];
   const shell = renderWorkspaceShell(container, {
-    toolbarLeading: `<span class="ws-site-title">Site — ${escHtml(site?.name ?? wsState.selectedSiteId)}</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span>`,
+    title: `Site — ${site?.name ?? wsState.selectedSiteId}`,
+    subtitle: 'Configure apparatus and observe live material flow.',
+    contextControls: `<button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span>`,
     canvasId: 'ws-site-canvas',
     svgId: 'ws-site-svg',
     inspectorBodyId: 'ws-inspector-body',
@@ -916,7 +925,7 @@ function renderSiteWorkspace(container) {
     shell.svg,
     `site:${wsState.selectedSiteId}`,
     () => boundsForNodePositions(wsState.blueprintLayout.nodePositions, NODE_WIDTH, NODE_HEIGHT),
-    shell.toolbar,
+    shell.viewportControls,
   );
 }
 
