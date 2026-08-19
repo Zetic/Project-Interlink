@@ -17,9 +17,7 @@ export function placementIsActive(state) {
 }
 
 export function armPlacement(state, definitionId) {
-  const previousPosition = state.graphPosition;
   state.definitionId = definitionId;
-  state.graphPosition = previousPosition;
   return state;
 }
 
