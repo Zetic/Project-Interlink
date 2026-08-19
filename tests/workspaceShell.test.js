@@ -94,8 +94,8 @@ test('hierarchy navigator is a shell overlay and does not become a graph column'
 
 test('navigation visibility state keeps drawer and toggle attributes synchronized', () => {
   const closed = navigationVisibilityState(false);
-  const open = navigationVisibilityState(!closed.visible);
-  const toggledClosed = navigationVisibilityState(!open.visible);
+  const open = navigationVisibilityState(true);
+  const toggledClosed = navigationVisibilityState(false);
 
   assert.deepEqual(closed, {
     visible: false,
