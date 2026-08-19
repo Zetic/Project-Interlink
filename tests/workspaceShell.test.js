@@ -28,8 +28,9 @@ test('workspace shell owns shared controls and reserves semantic content slots',
 test('player shell reserves a viewport-safe outer inset', () => {
   const playerViewRule = styles.match(/#player-view\s*\{([^}]*)\}/)?.[1] ?? '';
 
-  assert.match(playerViewRule, /width:\s*calc\(100%\s*-\s*16px\)/);
-  assert.match(playerViewRule, /height:\s*calc\(100vh\s*-\s*16px\)/);
-  assert.match(playerViewRule, /height:\s*calc\(100dvh\s*-\s*16px\)/);
-  assert.match(playerViewRule, /margin:\s*8px/);
+  assert.ok(playerViewRule.trim(), 'expected a #player-view style rule');
+  assert.match(playerViewRule, /^\s*width:\s*calc\(100%\s*-\s*16px\)\s*;/m);
+  assert.match(playerViewRule, /^\s*height:\s*calc\(100vh\s*-\s*16px\)\s*;/m);
+  assert.match(playerViewRule, /^\s*height:\s*calc\(100dvh\s*-\s*16px\)\s*;/m);
+  assert.match(playerViewRule, /^\s*margin:\s*8px\s*;/m);
 });
