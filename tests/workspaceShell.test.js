@@ -22,7 +22,7 @@ function cssRule(css, selector) {
     searchFrom = candidateIndex + selector.length;
   }
   if (selectorIndex < 0) return '';
-  const openIndex = css.indexOf('{', selectorIndex);
+  const openIndex = css.indexOf('{', selectorIndex + selector.length);
   if (openIndex < 0) return '';
 
   let depth = 0;
