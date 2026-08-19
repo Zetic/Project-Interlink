@@ -23,8 +23,8 @@
 .ws-toolbar [data-zoom-label] { color: #9ab0c2; min-width: 42px; text-align: center; font-size: 11px; }
 .ws-viewport { position: relative; min-height: 0; overflow: hidden; background: #0a0f16; border: 1px solid #1e2e3e; cursor: grab; }
 .ws-viewport:active { cursor: grabbing; }
-.ws-graph-canvas { position: absolute; inset: 0; min-width: 1600px; min-height: 900px; z-index: 2; }
-.ws-graph-svg { position: absolute; inset: 0; min-width: 1600px; min-height: 900px; z-index: 3; pointer-events: none; }
+.ws-graph-canvas { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 2; }
+.ws-graph-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 3; pointer-events: none; }
 .ws-graph-svg .ws-connection { pointer-events: stroke; cursor: pointer; }
 .ws-inspector { width: 280px; min-width: 280px; }
 .ws-system-svg .ws-system-connection { pointer-events: stroke; cursor: pointer; }
