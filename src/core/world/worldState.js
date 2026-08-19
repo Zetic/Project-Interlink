@@ -93,7 +93,6 @@ export function createWorld(seed) {
     const siteIds = [];
     for (const featureId of featureIds) {
       const feature = world.features[featureId];
-      if (!feature || feature.resourceOccurrences.length === 0) continue;
       const siteId = `site-${feature.id}`;
       const occurrenceIds = [...feature.resourceOccurrences];
       const siteNode = createCompositeNode({
@@ -112,7 +111,7 @@ export function createWorld(seed) {
         nodeType: 'site',
         systemType: 'site',
         regionId: region.id,
-        featureId,
+        featureIds: [featureId],
         resourceOccurrenceIds: occurrenceIds,
         childWorkspaceId: siteNode.childWorkspaceId,
         boundaryPorts: siteNode.ports,
@@ -241,6 +240,7 @@ export function validateWorld(world) {
   }
 
   for (const [siteId, site] of Object.entries(world.sites ?? {})) {
+    validateReferenceIdArray(site.featureIds, `Site '${siteId}' featureIds`, world.features, errors);
     for (const occurrenceId of site.resourceOccurrenceIds ?? []) {
       if (!world.resourceOccurrences[occurrenceId]) {
         errors.push(`Site '${siteId}' references unknown occurrence '${occurrenceId}'`);

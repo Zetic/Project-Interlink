@@ -1,4 +1,8 @@
-/* Player workspace review/foundation styles. */
+/* Shared recursive workspace shell. */
+#landing-screen { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; background: #0b1018; color: #d4e2f0; }
+#landing-screen h1 { letter-spacing: 0.16em; font-size: 1.5rem; }
+#landing-screen input { width: min(420px, 80vw); }
+#landing-screen button { padding: 8px 16px; }
 .ws-node--extractor { background: #1e3a2f; }
 .ws-node--hopper { background: #1e2a3a; }
 .ws-node--crusher { background: #3a2a1e; }
@@ -13,8 +17,8 @@
 .ws-system-selected { outline: 1px solid #ffcc44; }
 .ws-btn-enable, .ws-btn-remove-transfer { padding: 2px 8px; font-size: 11px; }
 
-.ws-parent-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
-.ws-system-canvas-wrap { position: relative; min-height: 560px; overflow: auto; background: #0a0f16; border: 1px solid #1e2e3e; }
+.ws-parent-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: stretch; height: calc(100vh - 150px); min-height: 420px; }
+.ws-system-canvas-wrap { position: relative; min-height: 0; overflow: auto; background: #0a0f16; border: 1px solid #1e2e3e; }
 .ws-system-canvas { position: relative; min-width: 1120px; min-height: 560px; z-index: 2; }
 .ws-system-svg { position: absolute; inset: 0; min-width: 1120px; min-height: 560px; z-index: 3; pointer-events: none; }
 .ws-system-svg .ws-system-connection { pointer-events: stroke; cursor: pointer; }
@@ -37,6 +41,13 @@
 .ws-system-port--output { cursor: crosshair; }
 .ws-system-port--input { cursor: copy; }
 .ws-composite-inspector { border: 1px solid #303840; background: #14181c; padding: 10px; min-height: 180px; position: sticky; top: 8px; }
+.ws-site-layout { display: flex; gap: 12px; height: calc(100vh - 150px); min-height: 420px; }
+.ws-site-canvas-wrap { flex: 1; min-width: 0; }
+.ws-site-inspector { width: 280px; flex-shrink: 0; }
+.ws-site-canvas { position: relative; min-width: 1400px; min-height: 560px; }
+.ws-site-svg { position: absolute; inset: 0; min-width: 1400px; min-height: 560px; pointer-events: none; }
+.ws-site-toolbar { display: flex; align-items: center; gap: 12px; padding: 8px 0 12px; }
+.ws-site-title { flex: 1; color: #c8d8e8; font-size: 13px; font-weight: bold; }
 .ws-site-boundary-label { color: #88b8cc; font-size: 11px; }
 .ws-prototype-survey { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; padding: 8px 10px; border: 1px dashed #496070; background: #101821; font-size: 11px; color: #aebdca; }
 .ws-prototype-survey strong { color: #8fc3df; }

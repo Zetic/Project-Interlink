@@ -57,6 +57,25 @@ test('every feature resource-occurrence ID resolves', () => {
   }
 });
 
+test('every generated feature belongs to an enterable Site', () => {
+  const world = buildWorld('feature-sites');
+  const featureIds = new Set(Object.values(world.sites).flatMap(site => site.featureIds));
+  assert.equal(featureIds.size, Object.keys(world.features).length);
+  for (const feature of Object.values(world.features)) {
+    const site = Object.values(world.sites).find(candidate => candidate.featureIds.includes(feature.id));
+    assert.ok(site, `Feature '${feature.id}' must have a Site`);
+    assert.equal(site.regionId, feature.regionId);
+  }
+});
+
+test('Site featureIds reference valid Features', () => {
+  const world = buildWorld('site-feature-references');
+  for (const site of Object.values(world.sites)) {
+    assert.ok(Array.isArray(site.featureIds));
+    for (const featureId of site.featureIds) assert.ok(world.features[featureId]);
+  }
+});
+
 test('every region background resource-occurrence ID resolves', () => {
   const world = buildWorld();
   for (const [rid, region] of Object.entries(world.regions)) {

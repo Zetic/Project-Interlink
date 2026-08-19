@@ -326,41 +326,6 @@ hr {
   margin-top: 10px;
 }
 
-/* ── Mode bar ─────────────────────────────────────────────────────────────── */
-
-#mode-bar {
-  background: #111;
-  border-bottom: 1px solid #333;
-  padding: 8px 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-
-#mode-label {
-  color: #a0c8ff;
-  font-size: 1rem;
-  letter-spacing: 0.15em;
-  font-weight: bold;
-  flex: 1;
-}
-
-#mode-toggle-btn {
-  font-size: 12px;
-  padding: 4px 12px;
-  background: #1a1a1a;
-  border: 1px solid #555;
-  color: #aaa;
-}
-
-#mode-toggle-btn:hover {
-  background: #2a2a2a;
-  color: #d4d4d4;
-}
-
 /* ── Player workspace shell ───────────────────────────────────────────────── */
 
 #player-view {
@@ -585,60 +550,6 @@ hr {
   font-style: italic;
   display: block;
   margin-top: 6px;
-}
-
-/* ── Engineering workspace ────────────────────────────────────────────────── */
-
-.ws-eng-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0 12px;
-  flex-shrink: 0;
-}
-
-.ws-eng-title {
-  flex: 1;
-  color: #c8d8e8;
-  font-size: 13px;
-  font-weight: bold;
-}
-
-.ws-sim-status {
-  color: #6aaa88;
-  font-size: 12px;
-  min-width: 200px;
-}
-
-.ws-eng-layout {
-  display: flex;
-  gap: 16px;
-  height: calc(100vh - 160px);
-  min-height: 400px;
-}
-
-.ws-canvas-wrap {
-  flex: 1;
-  overflow: auto;
-  background: #0a0f16;
-  border: 1px solid #1e2e3e;
-  position: relative;
-  cursor: default;
-}
-
-.ws-eng-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  min-width: 1200px;
-  min-height: 500px;
-}
-
-.ws-eng-svg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: all;
 }
 
 /* ── Engineering nodes ────────────────────────────────────────────────────── */

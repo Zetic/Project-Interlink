@@ -34,7 +34,6 @@ import {
 import { setBoundaryMapping, getSystemNodePort } from '../simulation/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
-import { isFeatureDiscovered, discoverFeature } from '../core/world/knowledgeState.js';
 import { hopperInspection, streamInspection, machineInspection } from './inspectionViewModel.js';
 import {
   projectBlueprintGraph,
@@ -54,7 +53,7 @@ const wsState = {
   knowledge: null,
   blueprint: null,
   blueprintLayout: null,
-  engineeringSessions: {},
+  siteSessions: {},
   workspaceLayouts: {},
   systemNodeElements: new Map(),
   systemConnectionElements: new Map(),
@@ -126,12 +125,12 @@ function renderBreadcrumbs() {
   const crumbs = [];
   if (planet) crumbs.push({ label: planet.name, level: 'planet', clickable: wsState.currentLevel !== 'planet' });
   if (region && wsState.currentLevel !== 'planet') {
-    crumbs.push({ label: region.name, level: 'region', clickable: wsState.currentLevel === 'engineering' });
+    crumbs.push({ label: region.name, level: 'region', clickable: wsState.currentLevel === 'site' });
   }
-  if (wsState.currentLevel === 'engineering') {
+  if (wsState.currentLevel === 'site') {
     const site = wsState.world?.sites?.[wsState.selectedSiteId];
-    const feature = site ? wsState.world?.features?.[site.featureId] : null;
-    crumbs.push({ label: feature?.name ?? wsState.selectedSiteId ?? 'Site', level: 'engineering', clickable: false });
+    const feature = site ? wsState.world?.features?.[site.featureIds?.[0]] : null;
+    crumbs.push({ label: feature?.name ?? wsState.selectedSiteId ?? 'Site', level: 'site', clickable: false });
   }
 
   container.innerHTML = `<span class="ws-world-controls"><button id="ws-world-toggle"></button><span id="ws-world-clock"></span></span>${crumbs.map(crumb => crumb.clickable
@@ -161,7 +160,7 @@ function compatibleOccurrenceForSite(site) {
   return null;
 }
 
-function createEngineeringSession(occurrenceId, siteId) {
+function createSiteSession(occurrenceId, siteId) {
   const blueprint = createBlueprint();
   const blueprintLayout = createBlueprintLayout();
   const siteWorkspace = getSimulationWorkspace(wsState.world, `${siteId}-workspace`);
@@ -179,7 +178,21 @@ function createEngineeringSession(occurrenceId, siteId) {
   blueprint.nodes[siteImport.id] = siteImport;
   blueprint.nodes[siteExport.id] = siteExport;
 
-  const extractor = blueprintAddExtractor(blueprint, occurrenceId, 5);
+  const site = wsState.world?.sites?.[siteId];
+  const featureIds = site?.featureIds ?? [];
+  for (const featureId of featureIds) {
+    const feature = wsState.world?.features?.[featureId];
+    blueprint.nodes[`feature-node-${featureId}`] = {
+      id: `feature-node-${featureId}`,
+      nodeType: 'feature',
+      systemType: 'feature',
+      displayName: feature?.name ?? featureId,
+      featureId,
+      ports: [],
+      enabled: false,
+    };
+  }
+  const extractor = occurrenceId ? blueprintAddExtractor(blueprint, occurrenceId, 5) : null;
   const hopperA = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
   const crusher = blueprintAddCrusher(blueprint, {
     throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
@@ -192,7 +205,8 @@ function createEngineeringSession(occurrenceId, siteId) {
 
   const positions = [
     [siteImport, 60, 300],
-    [extractor, 60, 140],
+    ...featureIds.map((featureId, index) => [blueprint.nodes[`feature-node-${featureId}`], 60, 40 + index * 110]),
+    ...(extractor ? [[extractor, 60, 140]] : []),
     [hopperA, 260, 140],
     [crusher, 460, 140],
     [hopperB, 660, 140],
@@ -203,7 +217,7 @@ function createEngineeringSession(occurrenceId, siteId) {
   ];
   positions.forEach(([node, x, y]) => layoutMoveNode(blueprintLayout, node.id, x, y));
 
-  blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
+  if (extractor) blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
   blueprintConnect(blueprint, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
   blueprintConnect(blueprint, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
   blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
@@ -220,12 +234,12 @@ function createEngineeringSession(occurrenceId, siteId) {
   return { id: siteId, siteId, occurrenceId, blueprint, blueprintLayout, boundaryNode: siteNode };
 }
 
-function activateEngineeringSession(occurrenceId, siteId) {
+function activateSiteSession(occurrenceId, siteId) {
   if (!siteId) return;
-  let session = wsState.engineeringSessions[siteId];
+  let session = wsState.siteSessions[siteId];
   if (!session) {
-    session = createEngineeringSession(occurrenceId, siteId);
-    wsState.engineeringSessions[siteId] = session;
+    session = createSiteSession(occurrenceId, siteId);
+    wsState.siteSessions[siteId] = session;
     registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
   }
   wsState.blueprint = session.blueprint;
@@ -241,19 +255,18 @@ export function navigateTo(level, opts = {}) {
     if (!site) return;
     const occurrenceId = opts.occurrenceId && site.resourceOccurrenceIds.includes(opts.occurrenceId)
       ? opts.occurrenceId
-      : compatibleOccurrenceForSite(site)?.id;
-    if (!occurrenceId) return;
+      : compatibleOccurrenceForSite(site)?.id ?? site.resourceOccurrenceIds[0] ?? null;
     wsState.selectedSiteId = site.id;
     wsState.selectedRegionId = site.regionId;
     wsState.selectedOccurrenceId = occurrenceId;
-    activateEngineeringSession(occurrenceId, site.id);
-    level = 'engineering';
-  } else if (level === 'engineering') {
-    const site = wsState.world?.sites?.[opts.siteId ?? wsState.selectedSiteId];
-    const occurrenceId = opts.occurrenceId ?? wsState.selectedOccurrenceId ?? compatibleOccurrenceForSite(site)?.id;
-    if (!site || !occurrenceId) return;
+    activateSiteSession(occurrenceId, site.id);
+    level = 'site';
+  } else if (level === 'site' && !opts.siteId) {
+    const site = wsState.world?.sites?.[wsState.selectedSiteId];
+    const occurrenceId = opts.occurrenceId ?? wsState.selectedOccurrenceId ?? compatibleOccurrenceForSite(site)?.id ?? site?.resourceOccurrenceIds?.[0] ?? null;
+    if (!site) return;
     wsState.selectedOccurrenceId = occurrenceId;
-    activateEngineeringSession(occurrenceId, site.id);
+    activateSiteSession(occurrenceId, site.id);
   }
 
   wsState.currentLevel = level;
@@ -266,21 +279,6 @@ export function navigateTo(level, opts = {}) {
   renderWorkspace();
 }
 
-function knownSiteIds(region) {
-  return (region?.siteIds ?? []).filter(siteId => {
-    const featureId = wsState.world?.sites?.[siteId]?.featureId;
-    return featureId && isFeatureDiscovered(wsState.knowledge, featureId);
-  });
-}
-
-function prototypeSurveyFeatureId(region) {
-  for (const featureId of region?.features ?? []) {
-    if (isFeatureDiscovered(wsState.knowledge, featureId)) continue;
-    if (compatibleOccurrenceForFeature(wsState.world?.features?.[featureId])) return featureId;
-  }
-  return null;
-}
-
 function systemWorkspaceDefinition() {
   const planet = currentPlanet();
   if (wsState.currentLevel === 'planet') {
@@ -291,7 +289,6 @@ function systemWorkspaceDefinition() {
       scopeId: planet?.id,
       level: 'planet',
       planetScopeId: planet?.id,
-      prototypeSurveyFeatureId: null,
     };
   }
 
@@ -299,9 +296,7 @@ function systemWorkspaceDefinition() {
   const runtime = region ? getSimulationWorkspace(wsState.world, `${region.id}-workspace`) : null;
   const nodes = Object.values(runtime?.nodes ?? {}).filter(node => node.boundaryRole);
 
-  // Every discovered Site remains a node, even if the current iron-processing
-  // prototype cannot drill into it yet.
-  for (const siteId of knownSiteIds(region)) {
+  for (const siteId of region?.siteIds ?? []) {
     const node = wsState.world.systemNodes?.[siteId];
     if (node) nodes.push(node);
   }
@@ -313,7 +308,6 @@ function systemWorkspaceDefinition() {
     scopeId: region?.id,
     level: 'region',
     planetScopeId: currentPlanet()?.id,
-    prototypeSurveyFeatureId: prototypeSurveyFeatureId(region),
   };
 }
 
@@ -325,7 +319,7 @@ function systemNodeTitle(node) {
   if (node.nodeType === 'region') return wsState.world.regions[node.id]?.name ?? node.id;
   if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
-    return wsState.world.features[site?.featureId]?.name ?? node.id;
+    return wsState.world.features[site?.featureIds?.[0]]?.name ?? node.id;
   }
   return node.systemType ?? node.nodeType;
 }
@@ -334,13 +328,13 @@ function systemNodeDescription(node) {
   if (node.boundaryRole) return `${node.boundaryRole} material boundary buffer`;
   if (node.nodeType === 'region') {
     const region = wsState.world.regions[node.id];
-    return `${region?.surfaceCover ?? 'Region'} · ${knownSiteIds(region).length} known sites`;
+    return `${region?.surfaceCover ?? 'Region'} · ${(region?.siteIds ?? []).length} sites`;
   }
   if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
-    const feature = wsState.world.features[site?.featureId];
+    const feature = wsState.world.features[site?.featureIds?.[0]];
     return compatibleOccurrenceForSite(site)
-      ? `${feature?.type ?? 'Site'} · engineering available`
+      ? `${feature?.type ?? 'Site'} · site available`
       : `${feature?.type ?? 'Site'} · inspectable site`;
   }
   return node.nodeType;
@@ -489,12 +483,9 @@ function onSystemCanvasMove(event) {
 function renderParentWorkspace(container) {
   const definition = systemWorkspaceDefinition();
   ensureSystemLayout(definition);
-  const survey = definition.prototypeSurveyFeatureId
-    ? `<div class="ws-prototype-survey"><strong>Prototype Survey Bootstrap</strong><span>Survey one compatible unknown Site so the current engineering prototype remains reachable.</span><button id="ws-prototype-survey" data-feature-id="${escHtml(definition.prototypeSurveyFeatureId)}">Survey One Compatible Site</button></div>`
-    : '';
   const header = wsState.currentLevel === 'planet'
     ? `<div class="ws-planet-header"><div class="ws-planet-name">${escHtml(definition.title)}</div><div class="ws-planet-meta">Draggable planetary system graph</div></div>`
-    : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Draggable region system graph · explicit import/export boundaries</div></div>${survey}`;
+    : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Draggable region system graph · explicit import/export boundaries</div></div>`;
 
   container.innerHTML = `${header}<div class="ws-parent-layout"><div class="ws-system-canvas-wrap"><svg id="ws-system-svg" class="ws-system-svg"></svg><div id="ws-system-canvas" class="ws-system-canvas"></div></div><div class="ws-composite-inspector"><div class="ws-inspector-title">Inspector</div><div id="ws-composite-inspector-body"></div></div></div>`;
   const canvas = el('ws-system-canvas');
@@ -523,8 +514,7 @@ function renderParentWorkspace(container) {
         element.appendChild(label);
       }
       label.innerHTML = `<strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span>`;
-      const canEnter = node.nodeType === 'region'
-        || (node.nodeType === 'site' && Boolean(compatibleOccurrenceForSite(wsState.world.sites[node.id])));
+      const canEnter = node.nodeType === 'region' || node.nodeType === 'site';
       const existingEnter = element.querySelector('.ws-system-enter');
       if (canEnter && !existingEnter) {
         const button = document.createElement('button');
@@ -597,11 +587,6 @@ function renderParentWorkspace(container) {
     }
   });
   canvas.addEventListener('mouseleave', () => { systemDragState = null; });
-  el('ws-prototype-survey')?.addEventListener('click', event => {
-    discoverFeature(wsState.knowledge, event.currentTarget.dataset.featureId);
-    document.dispatchEvent(new CustomEvent('interlink:knowledge-updated'));
-    renderWorkspace();
-  });
   renderSystemConnections(svg, definition);
   updateCompositeInspector(true);
 }
@@ -676,7 +661,7 @@ function formatCompositeInspector(node) {
       <div class="ws-ins-comp" data-live-section="boundary-components">${componentRowsHtml(details.components)}</div>`;
   } else if (node.nodeType === 'region') {
     const region = wsState.world.regions[node.id];
-    html += `<div class="ws-ins-row"><b>Known sites:</b> ${knownSiteIds(region).length}</div>`;
+    html += `<div class="ws-ins-row"><b>Sites:</b> ${(region?.siteIds ?? []).length}</div>`;
     const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
     const imported = workspace?.nodes?.[`${node.id}-import-hopper`];
     const exported = workspace?.nodes?.[`${node.id}-export-hopper`];
@@ -685,7 +670,7 @@ function formatCompositeInspector(node) {
   } else if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
     html += `<div class="ws-ins-row"><b>Region:</b> ${escHtml(site.regionId)}</div>
-      <div class="ws-ins-row"><b>Known occurrences:</b> ${isFeatureDiscovered(wsState.knowledge, site.featureId) ? site.resourceOccurrenceIds.length : 0}</div>`;
+      <div class="ws-ins-row"><b>Occurrences:</b> ${site.resourceOccurrenceIds.length}</div>`;
     const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
     const outputPort = getSystemNodePort(node, 'material-output');
     const output = workspace?.nodes?.[outputPort?.childNodeId];
@@ -833,9 +818,9 @@ function renderConnections(svg) {
   });
 }
 
-function renderEngineeringNodes() {
-  const canvas = el('ws-eng-canvas');
-  const svg = el('ws-eng-svg');
+function renderSiteNodes() {
+  const canvas = el('ws-site-canvas');
+  const svg = el('ws-site-svg');
   if (!canvas || !svg || !wsState.blueprint) return;
   const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout, {
     selectedNodeId: inspector.selectedNodeId,
@@ -886,26 +871,26 @@ function renderEngineeringNodes() {
   updateSimStatus();
 }
 
-function renderEngineeringWorkspace(container) {
-  if (!wsState.selectedOccurrenceId) {
+function renderSiteWorkspace(container) {
+  if (!wsState.selectedSiteId) {
     container.innerHTML = '<p class="ws-empty">No resource occurrence selected.</p>';
     return;
   }
-  activateEngineeringSession(wsState.selectedOccurrenceId, wsState.selectedSiteId);
+  activateSiteSession(wsState.selectedOccurrenceId, wsState.selectedSiteId);
   wsState.nodeElements.clear();
   wsState.connectionElements.clear();
   wsState.connectionPreview = null;
   inspector.renderKey = null;
   const site = wsState.world?.sites?.[wsState.selectedSiteId];
-  const feature = site ? wsState.world?.features?.[site.featureId] : null;
-  container.innerHTML = `<div class="ws-eng-toolbar"><span class="ws-eng-title">Site — ${escHtml(feature?.name ?? wsState.selectedSiteId)}</span><span class="ws-site-boundary-label">Explicit Site Import / Site Export buffers</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span></div><div class="ws-eng-layout"><div class="ws-canvas-wrap"><svg id="ws-eng-svg" class="ws-eng-svg"></svg><div id="ws-eng-canvas" class="ws-eng-canvas"></div></div><div id="ws-inspector" class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="ws-inspector-body" class="ws-inspector-body">Select a node or connection.</div></div></div>`;
-  el('ws-sim-reset')?.addEventListener('click', onResetEngineering);
+  const feature = site ? wsState.world?.features?.[site.featureIds?.[0]] : null;
+  container.innerHTML = `<div class="ws-site-toolbar"><span class="ws-site-title">Site — ${escHtml(feature?.name ?? wsState.selectedSiteId)}</span><span class="ws-site-boundary-label">Explicit Site Import / Site Export buffers</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span></div><div class="ws-site-layout"><div class="ws-canvas-wrap"><svg id="ws-site-svg" class="ws-site-svg"></svg><div id="ws-site-canvas" class="ws-site-canvas"></div></div><div id="ws-inspector" class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="ws-inspector-body" class="ws-inspector-body">Select a node or connection.</div></div></div>`;
+  el('ws-sim-reset')?.addEventListener('click', onResetSite);
   el('ws-inspector-body')?.addEventListener('click', onInspectorClick);
-  renderEngineeringNodes();
-  el('ws-eng-canvas')?.addEventListener('mousemove', onCanvasMouseMove);
-  el('ws-eng-canvas')?.addEventListener('mouseup', onCanvasMouseUp);
-  el('ws-eng-svg')?.addEventListener('mousemove', onCanvasMouseMove);
-  el('ws-eng-svg')?.addEventListener('mouseup', onCanvasMouseUp);
+  renderSiteNodes();
+  el('ws-site-canvas')?.addEventListener('mousemove', onCanvasMouseMove);
+  el('ws-site-canvas')?.addEventListener('mouseup', onCanvasMouseUp);
+  el('ws-site-svg')?.addEventListener('mousemove', onCanvasMouseMove);
+  el('ws-site-svg')?.addEventListener('mouseup', onCanvasMouseUp);
 }
 
 function startNodeDrag(nodeId, event) {
@@ -921,7 +906,7 @@ function startNodeDrag(nodeId, event) {
 }
 
 function startPendingConnection(nodeId, portId, event) {
-  const canvas = el('ws-eng-canvas');
+  const canvas = el('ws-site-canvas');
   const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
   Object.assign(pendingGraphConnection, {
     active: true,
@@ -961,7 +946,7 @@ function finishConnection(targetNodeId, targetPortId) {
     }
   }
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function onCanvasMouseMove(event) {
@@ -972,14 +957,14 @@ function onCanvasMouseMove(event) {
       Math.max(0, dragState.startX + event.clientX - dragState.startMouseX),
       Math.max(0, dragState.startY + event.clientY - dragState.startMouseY)
     );
-    renderEngineeringNodes();
+    renderSiteNodes();
   }
   if (pendingGraphConnection.active) {
-    const canvas = el('ws-eng-canvas');
+    const canvas = el('ws-site-canvas');
     const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
     pendingGraphConnection.x = event.clientX - rect.left + (canvas?.scrollLeft ?? 0);
     pendingGraphConnection.y = event.clientY - rect.top + (canvas?.scrollTop ?? 0);
-    renderConnections(el('ws-eng-svg'));
+    renderConnections(el('ws-site-svg'));
   }
 }
 
@@ -988,7 +973,7 @@ function onCanvasMouseUp() {
   if (pendingGraphConnection.active) {
     pendingGraphConnection.active = false;
     pendingGraphConnection.adapter = null;
-    renderConnections(el('ws-eng-svg'));
+    renderConnections(el('ws-site-svg'));
   }
 }
 
@@ -997,7 +982,7 @@ function selectNode(nodeId) {
   inspector.selectedConnId = null;
   inspector.message = '';
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function selectConnection(connectionId) {
@@ -1005,7 +990,7 @@ function selectConnection(connectionId) {
   inspector.selectedConnId = connectionId;
   inspector.message = '';
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function formatNodeInspector(node) {
@@ -1147,7 +1132,7 @@ function onInspectorClick(event) {
     }
   }
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function onToggleWorldSimulation() {
@@ -1184,8 +1169,8 @@ function simLoop(now) {
     wsState.simAccumulatedS -= SIMULATION_STEP_S;
   }
   updateWorldControls();
-  if (wsState.currentLevel === 'engineering') {
-    renderEngineeringNodes();
+  if (wsState.currentLevel === 'site') {
+    renderSiteNodes();
   } else {
     const definition = systemWorkspaceDefinition();
     renderSystemConnections(el('ws-system-svg'), definition);
@@ -1203,19 +1188,19 @@ function updateSimStatus() {
   status.textContent = `${wsState.world?.simulation?.running ? '● ' : ''}Stored ${stored.toFixed(2)} kg · Extracted ${(wsState.blueprint.simulationStats?.extractedKg ?? 0).toFixed(2)} kg`;
 }
 
-function onResetEngineering() {
+function onResetSite() {
   const occurrenceId = wsState.selectedOccurrenceId;
   const siteId = wsState.selectedSiteId;
-  if (!occurrenceId || !siteId) return;
-  const session = createEngineeringSession(occurrenceId, siteId);
-  wsState.engineeringSessions[siteId] = session;
+  if (!siteId) return;
+  const session = createSiteSession(occurrenceId, siteId);
+  wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.renderKey = null;
-  renderEngineeringWorkspace(el('ws-main'));
+  renderSiteWorkspace(el('ws-main'));
 }
 
 export function renderWorkspace() {
@@ -1223,7 +1208,7 @@ export function renderWorkspace() {
   if (!container) return;
   renderBreadcrumbs();
   if (wsState.currentLevel === 'region') renderRegionWorkspace(container);
-  else if (wsState.currentLevel === 'engineering') renderEngineeringWorkspace(container);
+  else if (wsState.currentLevel === 'site') renderSiteWorkspace(container);
   else renderPlanetWorkspace(container);
 }
 
@@ -1238,7 +1223,7 @@ export function initWorkspace(world, knowledge) {
   wsState.selectedOccurrenceId = null;
   wsState.blueprint = null;
   wsState.blueprintLayout = null;
-  wsState.engineeringSessions = {};
+  wsState.siteSessions = {};
   wsState.workspaceLayouts = {};
   wsState.nodeElements.clear();
   wsState.connectionElements.clear();
@@ -1256,7 +1241,7 @@ export function initWorkspace(world, knowledge) {
 
 export function updateWorkspaceKnowledge(knowledge) {
   wsState.knowledge = knowledge;
-  if (wsState.currentLevel !== 'engineering') renderWorkspace();
+  if (wsState.currentLevel !== 'site') renderWorkspace();
 }
 
 if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', renderWorkspace);
