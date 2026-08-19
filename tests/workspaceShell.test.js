@@ -6,7 +6,18 @@ import { workspaceShellMarkup } from '../src/workspace/workspaceUI.js';
 const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
 function cssRule(css, selector) {
-  const selectorIndex = css.indexOf(selector);
+  let selectorIndex = -1;
+  let searchFrom = 0;
+  while (searchFrom < css.length) {
+    const candidateIndex = css.indexOf(selector, searchFrom);
+    if (candidateIndex < 0) break;
+    const nextCharacter = css[candidateIndex + selector.length];
+    if (nextCharacter == null || /[\s{,]/.test(nextCharacter)) {
+      selectorIndex = candidateIndex;
+      break;
+    }
+    searchFrom = candidateIndex + selector.length;
+  }
   const openIndex = css.indexOf('{', selectorIndex);
   if (selectorIndex < 0 || openIndex < 0) return '';
 
