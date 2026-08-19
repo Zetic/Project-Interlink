@@ -143,7 +143,7 @@ function featureComposition(resource, rng) {
   // Detailed mixtures only exist where the current simulation has a useful template.
   // Other resources retain their coarse resource identity until deeper chemistry is implemented.
   const templates = {
-    'iron-ore': () => normalise({ hematite: rng.int(20,70), magnetite: rng.int(5,30), goethite: rng.int(2,15), quartzAndGangue: rng.int(5,25) }),
+    'iron-ore': () => normalise({ hematite: rng.int(20,70), magnetite: rng.int(5,30), goethite: rng.int(2,15), quartz: rng.int(5,25) }),
     'copper-ore': () => normalise({ chalcopyrite: rng.int(30,60), bornite: rng.int(5,20), pyrite: rng.int(5,15), quartzAndGangue: rng.int(10,30) }),
     'aluminum-ore': () => normalise({ gibbsite: rng.int(30,60), boehmite: rng.int(10,30), kaolinite: rng.int(5,20), ironOxides: rng.int(5,15) }),
     'zinc-ore': () => normalise({ sphalerite: rng.int(40,70), galena: rng.int(5,20), pyrite: rng.int(5,15), gangue: rng.int(5,20) }),

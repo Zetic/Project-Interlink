@@ -70,8 +70,8 @@ function graphNodeSearchTerms(world, node) {
     node?.resourceId,
     node?.occurrenceId,
     ...asArray(node?.resourceOccurrenceIds),
-    ...Object.keys(node?.storedComponentsKg ?? {}),
-    ...Object.keys(node?.componentMassFlowKgPerSecond ?? {}),
+    ...Object.keys(node?.materialBody?.solidState?.fractions ?? {}).map(key => key.split('|')[0]),
+    ...Object.keys(node?.solidState?.fractions ?? {}).map(key => key.split('|')[0]),
   ];
 
   if (node?.featureId) {

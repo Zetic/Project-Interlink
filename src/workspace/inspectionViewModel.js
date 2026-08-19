@@ -1,15 +1,45 @@
-import { hopperFreeCapacityKg, hopperStoredMassKg } from '../simulation/hopperNode.js';
+import {
+  hopperCompositionKg,
+  hopperFreeCapacityKg,
+  hopperLiberationDistributionKg,
+  hopperParticleSizeDistributionKg,
+  hopperStoredMassKg,
+} from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
+import { summarizeSolidMaterialByLiberationClass, summarizeSolidMaterialBySizeBin, summarizeSolidMaterialBySpecies } from '../core/materials/solidMaterialState.js';
+import { getParticleSizeBin } from '../core/materials/particleSizeBins.js';
+import { getLiberationClass } from '../core/materials/liberationClasses.js';
+import { getMaterialSpecies } from '../core/materials/materialSpecies.js';
 import { getNodeOperatingState } from '../simulation/simulationEngine.js';
 
-function componentRows(components, total) {
-  return Object.entries(components ?? {})
+function summaryRows(summary, total, labelFor) {
+  return Object.entries(summary ?? {})
     .filter(([, value]) => value > 0)
-    .map(([componentId, massKg]) => ({
-      componentId,
-      massKg,
-      percentage: total > 0 ? (massKg / total) * 100 : 0,
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, quantity]) => ({
+      id,
+      label: labelFor(id),
+      quantity,
+      massKg: quantity,
+      componentId: id,
+      percentage: total > 0 ? (quantity / total) * 100 : 0,
     }));
+}
+
+function summaryObject(summary) {
+  return { ...(summary ?? {}) };
+}
+
+function speciesLabel(speciesId) {
+  return getMaterialSpecies(speciesId)?.name ?? speciesId;
+}
+
+function sizeBinLabel(sizeBinId) {
+  return getParticleSizeBin(sizeBinId)?.name ?? sizeBinId;
+}
+
+function liberationLabel(liberationClassId) {
+  return getLiberationClass(liberationClassId)?.name ?? liberationClassId;
 }
 
 export function hopperInspection(hopper) {
@@ -20,13 +50,17 @@ export function hopperInspection(hopper) {
     storedMassKg,
     capacityKg: hopper?.capacityKg ?? 0,
     freeCapacityKg: hopperFreeCapacityKg(hopper),
-    particleSizeMm: hopper?.particleSizeMm ?? null,
-    components: componentRows(hopper?.storedComponentsKg, storedMassKg),
+    physicalForm: hopper?.materialBody?.physicalForm ?? null,
+    particleSizeMm: hopper?.nominalParticleSizeMm ?? null,
+    components: summaryRows(hopperCompositionKg(hopper), storedMassKg, speciesLabel),
+    composition: summaryRows(hopperCompositionKg(hopper), storedMassKg, speciesLabel),
+    particleSizeDistribution: summaryRows(hopperParticleSizeDistributionKg(hopper), storedMassKg, sizeBinLabel),
+    liberationDistribution: summaryRows(hopperLiberationDistributionKg(hopper), storedMassKg, liberationLabel),
   };
 }
 
 export function streamInspection(stream) {
-  const componentMassFlowKgPerSecond = { ...(stream?.componentMassFlowKgPerSecond ?? {}) };
+  const totalFlowKgPerSecond = totalMassFlowKgPerSecond(stream?.solidState ?? { fractions: {} });
   return {
     kind: 'stream',
     id: stream?.id ?? null,
@@ -34,9 +68,13 @@ export function streamInspection(stream) {
     sourcePortId: stream?.sourcePortId ?? null,
     targetNodeId: stream?.targetNodeId ?? null,
     targetPortId: stream?.targetPortId ?? null,
-    totalFlowKgPerSecond: totalMassFlowKgPerSecond(componentMassFlowKgPerSecond),
-    particleSizeMm: stream?.particleSizeMm ?? null,
-    componentMassFlowKgPerSecond,
+    totalFlowKgPerSecond,
+    physicalForm: stream?.physicalForm ?? null,
+    particleSizeMm: stream?.nominalParticleSizeMm ?? null,
+    componentMassFlowKgPerSecond: summaryObject(summarizeSolidMaterialBySpecies(stream?.solidState ?? { fractions: {} })),
+    composition: summaryRows(summarizeSolidMaterialBySpecies(stream?.solidState ?? { fractions: {} }), totalFlowKgPerSecond, speciesLabel),
+    particleSizeDistribution: summaryRows(summarizeSolidMaterialBySizeBin(stream?.solidState ?? { fractions: {} }), totalFlowKgPerSecond, sizeBinLabel),
+    liberationDistribution: summaryRows(summarizeSolidMaterialByLiberationClass(stream?.solidState ?? { fractions: {} }), totalFlowKgPerSecond, liberationLabel),
   };
 }
 
@@ -53,8 +91,11 @@ export function connectionInspection(blueprint, connection) {
     targetNodeId: connection.targetNodeId,
     targetPortId: connection.targetPortId,
     totalFlowKgPerSecond: 0,
-    particleSizeMm: null,
+    physicalForm: null,
     componentMassFlowKgPerSecond: {},
+    composition: [],
+    particleSizeDistribution: [],
+    liberationDistribution: [],
   };
 }
 

@@ -11,6 +11,7 @@ import { SCHEMA_VERSION, GENERATOR_VERSION } from './versions.js';
 import { generatePlanet } from '../../generator/generatePlanet.js';
 import { getProcessDefinition } from '../processes/processDefinitions.js';
 import { createCompositeNode, createSystemPort } from '../../simulation/systemNode.js';
+import { summarizeSolidMaterialBySpecies, totalSolidQuantity, validateSolidMaterialBody } from '../materials/solidMaterialState.js';
 
 export function createWorld(seed) {
   const seedStr = String(seed ?? 'default-seed');
@@ -275,13 +276,11 @@ export function validateWorld(world) {
       }
     }
 
-    if (
-      typeof batch.particleSizeMm !== 'number' ||
-      Number.isNaN(batch.particleSizeMm) ||
-      !Number.isFinite(batch.particleSizeMm) ||
-      batch.particleSizeMm <= 0
-    ) {
-      errors.push(`Material batch '${bid}' has invalid particleSizeMm '${batch.particleSizeMm}'`);
+    try {
+      validateSolidMaterialBody(batch.materialBody);
+    } catch (error) {
+      errors.push(`Material batch '${bid}' has invalid materialBody: ${error.message}`);
+      continue;
     }
 
     if (!batch.componentsKg || typeof batch.componentsKg !== 'object' || Array.isArray(batch.componentsKg)) {
@@ -302,14 +301,20 @@ export function validateWorld(world) {
 
     if (componentEntries.length === 0) errors.push(`Material batch '${bid}' has no components`);
 
+    const derivedComponents = summarizeSolidMaterialBySpecies(batch.materialBody.solidState);
+    const derivedMassSum = totalSolidQuantity(batch.materialBody.solidState);
+    if (JSON.stringify(batch.componentsKg) !== JSON.stringify(derivedComponents)) {
+      errors.push(`Material batch '${bid}' componentsKg does not match derived material-body species summary`);
+    }
+
     if (
       typeof batch.totalMassKg !== 'number' ||
       Number.isNaN(batch.totalMassKg) ||
       !Number.isFinite(batch.totalMassKg)
     ) {
       errors.push(`Material batch '${bid}' has invalid totalMassKg '${batch.totalMassKg}'`);
-    } else if (Math.abs(batch.totalMassKg - massSum) > 1e-6) {
-      errors.push(`Material batch '${bid}' totalMassKg '${batch.totalMassKg}' does not match component sum '${massSum}'`);
+    } else if (Math.abs(batch.totalMassKg - derivedMassSum) > 1e-6 || Math.abs(batch.totalMassKg - massSum) > 1e-6) {
+      errors.push(`Material batch '${bid}' totalMassKg '${batch.totalMassKg}' does not match component/material-body sum '${derivedMassSum}'`);
     }
   }
 

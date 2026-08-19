@@ -12,6 +12,7 @@ import {
   createBlueprintLayout,
 } from '../src/simulation/simulationEngine.js';
 import { HOPPER_TOLERANCE_KG, hopperReceiveInflow } from '../src/simulation/hopperNode.js';
+import { createSolidMaterialStateFromSpeciesQuantities } from '../src/core/materials/solidMaterialState.js';
 import {
   canRemoveNode,
   nodeOwnedMatterKg,
@@ -54,7 +55,7 @@ test('hopper matter blocks removal above the physical tolerance', () => {
   assert.ok(blueprint.nodes[hopper.id]);
   assert.equal(Object.keys(blueprint.connections).length, 0);
 
-  hopper.storedComponentsKg.hematite = HOPPER_TOLERANCE_KG / 2;
+  hopper.materialBody.solidState = createSolidMaterialStateFromSpeciesQuantities({ hematite: HOPPER_TOLERANCE_KG / 2 }, 10);
   assert.equal(canRemoveNode(blueprint, hopper.id), true);
 });
 

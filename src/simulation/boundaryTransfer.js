@@ -1,23 +1,17 @@
 /** Explicit, conserved material transfer across recursive system boundaries. */
 
 import {
+  cloneHopperMaterialState,
+  commitHopperMaterialState,
   hopperStoredMassKg,
   hopperFreeCapacityKg,
   hopperWithdraw,
   hopperReceiveInflow,
 } from './hopperNode.js';
 import { resolveBoundaryChain, assertSystemConnectionCompatible } from './systemNode.js';
+import { createSolidMaterialState, multiplySolidMaterialState } from '../core/materials/solidMaterialState.js';
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
-
-function cloneHopper(hopper) {
-  return { ...hopper, storedComponentsKg: { ...hopper.storedComponentsKg } };
-}
-
-function commitHopper(target, staged) {
-  target.storedComponentsKg = { ...staged.storedComponentsKg };
-  target.particleSizeMm = staged.particleSizeMm;
-}
 
 function resolveHopperEndpoint(composite, portId, workspaces, direction) {
   const resolved = resolveBoundaryChain(composite, portId, workspaces);
@@ -70,42 +64,32 @@ export function transferBoundaryMaterial({
   };
   const source = resolveHopperEndpoint(sourceComposite, sourcePortId, workspaceMap, 'output');
   const target = resolveHopperEndpoint(targetComposite, targetPortId, workspaceMap, 'input');
-  if (!source || !target) return { movedKg: 0, componentMassKg: {} };
+  if (!source || !target) return { movedKg: 0, materialKg: createSolidMaterialState() };
   if (source === target) throw new Error('Boundary transfer source and target cannot resolve to the same physical owner');
 
   const availableKg = hopperStoredMassKg(source);
   const freeKg = hopperFreeCapacityKg(target);
   if (availableKg <= TRANSFER_TOLERANCE_KG || freeKg <= TRANSFER_TOLERANCE_KG) {
-    return { movedKg: 0, componentMassKg: {} };
+    return { movedKg: 0, materialKg: createSolidMaterialState() };
   }
 
   const maxRate = Math.min(availableKg / dt, freeKg / dt);
   const rate = requestedRateKgPerSecond == null ? maxRate : Math.min(requestedRateKgPerSecond, maxRate);
-  if (rate <= 0) return { movedKg: 0, componentMassKg: {} };
+  if (rate <= 0) return { movedKg: 0, materialKg: createSolidMaterialState() };
 
-  const requestedRates = Object.fromEntries(
-    Object.entries(source.storedComponentsKg).map(([componentId, kg]) => [componentId, (kg / availableKg) * rate])
-  );
-
-  const stagedSource = cloneHopper(source);
-  const stagedTarget = cloneHopper(target);
-  const withdrawal = hopperWithdraw(stagedSource, requestedRates, dt);
-  const acceptedKg = hopperReceiveInflow(
-    stagedTarget,
-    withdrawal.actualRates,
-    source.particleSizeMm,
-    dt
-  );
+  const stagedSource = cloneHopperMaterialState(source);
+  const stagedTarget = cloneHopperMaterialState(target);
+  const withdrawal = hopperWithdraw(stagedSource, rate, dt);
+  const acceptedFlow = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
+  const acceptedKg = hopperReceiveInflow(stagedTarget, acceptedFlow, dt);
   if (Math.abs(acceptedKg - withdrawal.actualTotalKg) > TRANSFER_TOLERANCE_KG * Math.max(1, acceptedKg)) {
     throw new Error('Boundary transfer could not commit atomically');
   }
 
-  commitHopper(source, stagedSource);
-  commitHopper(target, stagedTarget);
+  commitHopperMaterialState(source, stagedSource);
+  commitHopperMaterialState(target, stagedTarget);
   return {
     movedKg: acceptedKg,
-    componentMassKg: Object.fromEntries(
-      Object.entries(withdrawal.actualRates).map(([componentId, rateKgPerSecond]) => [componentId, rateKgPerSecond * dt])
-    ),
+    materialKg: withdrawal.actualSolidState,
   };
 }

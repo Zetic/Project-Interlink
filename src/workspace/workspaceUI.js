@@ -1333,18 +1333,11 @@ function selectSystem(systemId) {
   renderWorkspace();
 }
 
-function componentRowsHtml(components, attributeName = null, suffix = 'kg') {
-  if (!components?.length) return '<span>no stored constituents</span>';
-  return components.map(component => {
-    const attr = attributeName ? ` ${attributeName}="${escHtml(component.componentId)}"` : '';
-    return `<div class="ws-ins-comp-row"><span>${escHtml(component.componentId)}</span><span${attr}>${component.massKg.toFixed(3)} ${suffix} (${component.percentage.toFixed(1)}%)</span></div>`;
-  }).join('');
-}
-
-function streamComponentRowsHtml(rates) {
-  const entries = Object.entries(rates ?? {}).filter(([, rate]) => rate > 0);
-  if (!entries.length) return '<span>no flow</span>';
-  return entries.map(([id, rate]) => `<div class="ws-ins-comp-row"><span>${escHtml(id)}</span><span>${rate.toFixed(3)} kg/s</span></div>`).join('');
+function summaryRowsHtml(rows, emptyLabel, suffix = 'kg') {
+  if (!rows?.length) return `<span>${escHtml(emptyLabel)}</span>`;
+  return rows.map(row => (
+    `<div class="ws-ins-comp-row"><span>${escHtml(row.label ?? row.id)}</span><span>${row.quantity.toFixed(3)} ${suffix} (${row.percentage.toFixed(1)}%)</span></div>`
+  )).join('');
 }
 
 function formatTransferInspector(transfer) {
@@ -1367,8 +1360,10 @@ function formatCompositeInspector(node) {
     html += `<div class="ws-ins-row"><b>Stored:</b> <span data-live="boundary-stored">${details.storedMassKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Capacity:</b> ${details.capacityKg} kg</div>
       <div class="ws-ins-row"><b>Free:</b> <span data-live="boundary-free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
-      <div class="ws-ins-row"><b>Particle size:</b> <span data-live="boundary-particle-size">${details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`}</span></div>
-      <div class="ws-ins-comp" data-live-section="boundary-components">${componentRowsHtml(details.components)}</div>`;
+      <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
+      <div class="ws-ins-comp"><b>Composition</b>${summaryRowsHtml(details.composition, 'no stored material')}</div>
+      <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="boundary-size">${summaryRowsHtml(details.particleSizeDistribution, 'no stored material')}</div></div>
+      <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="boundary-liberation">${summaryRowsHtml(details.liberationDistribution, 'no stored material')}</div></div>`;
   } else if (node.nodeType === 'region') {
     const region = wsState.world.regions[node.id];
     html += `<div class="ws-ins-row"><b>Sites:</b> ${(region?.siteIds ?? []).length}</div>`;
@@ -1451,12 +1446,12 @@ function updateCompositeInspector(force = false) {
     const details = hopperInspection(node);
     const stored = body.querySelector('[data-live="boundary-stored"]');
     const free = body.querySelector('[data-live="boundary-free"]');
-    const particle = body.querySelector('[data-live="boundary-particle-size"]');
-    const components = body.querySelector('[data-live-section="boundary-components"]');
+    const size = body.querySelector('[data-live-section="boundary-size"]');
+    const liberation = body.querySelector('[data-live-section="boundary-liberation"]');
     if (stored) stored.textContent = details.storedMassKg.toFixed(3);
     if (free) free.textContent = details.freeCapacityKg.toFixed(3);
-    if (particle) particle.textContent = details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`;
-    if (components) components.innerHTML = componentRowsHtml(details.components);
+    if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
+    if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
   }
   if (node?.nodeType === 'site') {
     const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
@@ -1511,7 +1506,7 @@ function renderConnections(svg) {
     endpointPosition: endpoint => portCanvasPosition(endpoint.nodeId, endpoint.portId),
     flow: connection => {
       const stream = getStreamForConnection(wsState.blueprint, connection.id);
-      return stream ? totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond) : 0;
+      return stream ? totalMassFlowKgPerSecond(stream.solidState) : 0;
     },
     selectedId: inspector.selectedConnId,
     onSelect: selectConnection,
@@ -1784,8 +1779,10 @@ function formatNodeInspector(node) {
     html += `<div class="ws-ins-row"><b>Stored:</b> <span data-live="stored">${details.storedMassKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Capacity:</b> ${details.capacityKg} kg</div>
       <div class="ws-ins-row"><b>Free:</b> <span data-live="free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
-      <div class="ws-ins-row"><b>Particle size:</b> <span data-live="particle-size">${details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`}</span></div>
-      <div class="ws-ins-comp" data-live-section="components">${componentRowsHtml(details.components)}</div>`;
+      <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
+      <div class="ws-ins-comp"><b>Composition</b><div data-live-section="components">${summaryRowsHtml(details.composition, 'no stored material')}</div></div>
+      <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="particle-size-distribution">${summaryRowsHtml(details.particleSizeDistribution, 'no stored material')}</div></div>
+      <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="liberation-distribution">${summaryRowsHtml(details.liberationDistribution, 'no stored material')}</div></div>`;
   } else if (isFeature) {
     const details = featureInspection(wsState.world, wsState.blueprint, node);
     html += `<div class="ws-ins-row"><b>Name:</b> ${escHtml(details.name)}</div>
@@ -1819,8 +1816,10 @@ function formatConnectionInspector(connection) {
     <div class="ws-ins-row"><b>From:</b> ${escHtml(details.sourceNodeId)} / ${escHtml(details.sourcePortId)}</div>
     <div class="ws-ins-row"><b>To:</b> ${escHtml(details.targetNodeId)} / ${escHtml(details.targetPortId)}</div>
     <div class="ws-ins-row"><b>Total flow:</b> <span data-live="flow">${details.totalFlowKgPerSecond.toFixed(3)}</span> kg/s</div>
-    <div class="ws-ins-row"><b>Particle size:</b> <span data-live="stream-particle-size">${details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`}</span></div>
-    <div class="ws-ins-comp" data-live-section="stream-components">${streamComponentRowsHtml(details.componentMassFlowKgPerSecond)}</div>
+    <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
+    <div class="ws-ins-comp"><b>Composition</b><div data-live-section="stream-components">${summaryRowsHtml(details.composition, 'no flow', 'kg/s')}</div></div>
+    <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="stream-size">${summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s')}</div></div>
+    <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="stream-liberation">${summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s')}</div></div>
     <div class="ws-ins-action"><button class="ws-btn-disconnect" data-conn-id="${escHtml(connection.id)}">Disconnect</button></div>`;
 }
 
@@ -1848,12 +1847,14 @@ function updateInspector(force = false) {
       const details = hopperInspection(node);
       const stored = body.querySelector('[data-live="stored"]');
       const free = body.querySelector('[data-live="free"]');
-      const particle = body.querySelector('[data-live="particle-size"]');
       const components = body.querySelector('[data-live-section="components"]');
+      const size = body.querySelector('[data-live-section="particle-size-distribution"]');
+      const liberation = body.querySelector('[data-live-section="liberation-distribution"]');
       if (stored) stored.textContent = details.storedMassKg.toFixed(3);
       if (free) free.textContent = details.freeCapacityKg.toFixed(3);
-      if (particle) particle.textContent = details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`;
-      if (components) components.innerHTML = componentRowsHtml(details.components);
+      if (components) components.innerHTML = summaryRowsHtml(details.composition, 'no stored material');
+      if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
+      if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
     } else if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
       const details = machineInspection(wsState.blueprint, node);
       const feed = body.querySelector('[data-live="machine-feed"]');
@@ -1877,11 +1878,13 @@ function updateInspector(force = false) {
     if (connection?.kind === 'material') {
       const details = streamInspection(getStreamForConnection(wsState.blueprint, inspector.selectedConnId));
       const flow = body.querySelector('[data-live="flow"]');
-      const particle = body.querySelector('[data-live="stream-particle-size"]');
       const components = body.querySelector('[data-live-section="stream-components"]');
+      const size = body.querySelector('[data-live-section="stream-size"]');
+      const liberation = body.querySelector('[data-live-section="stream-liberation"]');
       if (flow) flow.textContent = details.totalFlowKgPerSecond.toFixed(3);
-      if (particle) particle.textContent = details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`;
-      if (components) components.innerHTML = streamComponentRowsHtml(details.componentMassFlowKgPerSecond);
+      if (components) components.innerHTML = summaryRowsHtml(details.composition, 'no flow', 'kg/s');
+      if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s');
+      if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s');
     }
   }
 }

@@ -2,25 +2,54 @@
 
 import { MAGNETIC_SEPARATION_PROCESS_ID, CRUSHING_PROCESS_ID } from '../core/processes/processDefinitions.js';
 import {
-  MAGNETIC_RESPONSE_BY_COMPONENT,
   assertCrushingTarget,
-  splitMagneticComponents,
+  crushSolidMaterialState,
+  magneticRecoveryForFraction,
+  splitMagneticSolidState,
 } from '../core/processes/processPhysics.js';
-import { validateComponentMassFlowRates, totalMassFlowKgPerSecond } from './materialStream.js';
+import {
+  createSolidMaterialStateFromSpeciesQuantities,
+  scaleSolidMaterialState,
+  summarizeSolidMaterialBySpecies,
+  totalSolidQuantity,
+  validateSolidMaterialState,
+} from '../core/materials/solidMaterialState.js';
 
 const STREAM_FLOW_TOLERANCE = 1e-9;
 
-function validateFeed(feedRates) {
-  if (!feedRates || typeof feedRates !== 'object') throw new Error('Process feed must be an object');
-  validateComponentMassFlowRates(feedRates.componentMassFlowKgPerSecond);
-  if (typeof feedRates.particleSizeMm !== 'number' || !Number.isFinite(feedRates.particleSizeMm) || feedRates.particleSizeMm <= 0) {
-    throw new Error('Process feed particleSizeMm must be a finite positive number');
+function normalizeFeed(feed) {
+  if (feed?.fractions) return { solidState: feed, nominalParticleSizeMm: null };
+  if (feed?.solidState) return { solidState: feed.solidState, nominalParticleSizeMm: feed.nominalParticleSizeMm ?? null };
+  if (feed?.componentMassFlowKgPerSecond) {
+    return {
+      solidState: createSolidMaterialStateFromSpeciesQuantities(
+        feed.componentMassFlowKgPerSecond,
+        feed.particleSizeMm,
+      ),
+      nominalParticleSizeMm: feed.particleSizeMm,
+    };
   }
+  throw new Error('Process feed must be a solid material state');
 }
 
-export function applyContinuousCrushing(feedRates, targetParticleSizeMm, throughputCapacityKgPerSecond) {
-  validateFeed(feedRates);
-  assertCrushingTarget(feedRates.particleSizeMm, targetParticleSizeMm);
+function validateFeed(feed) {
+  validateSolidMaterialState(normalizeFeed(feed).solidState);
+}
+
+function legacyFlowView(solidState, particleSizeMm) {
+  const summary = summarizeSolidMaterialBySpecies(solidState);
+  for (const key of Object.keys(summary)) summary[key] = Number(summary[key].toFixed(12));
+  return {
+    componentMassFlowKgPerSecond: summary,
+    particleSizeMm,
+  };
+}
+
+export function applyContinuousCrushing(feed, targetParticleSizeMm, throughputCapacityKgPerSecond) {
+  validateFeed(feed);
+  const normalizedFeed = normalizeFeed(feed);
+  const feedSolidState = normalizedFeed.solidState;
+  assertCrushingTarget(feedSolidState, targetParticleSizeMm);
   if (
     typeof throughputCapacityKgPerSecond !== 'number' ||
     !Number.isFinite(throughputCapacityKgPerSecond) ||
@@ -29,62 +58,42 @@ export function applyContinuousCrushing(feedRates, targetParticleSizeMm, through
     throw new Error('Crusher throughputCapacityKgPerSecond must be a finite positive number');
   }
 
-  const feedTotalRate = totalMassFlowKgPerSecond(feedRates.componentMassFlowKgPerSecond);
+  const feedTotalRate = totalSolidQuantity(feedSolidState);
   const factor = feedTotalRate > 0 ? Math.min(1, throughputCapacityKgPerSecond / feedTotalRate) : 1;
-  const actualFeedComponents = Object.fromEntries(
-    Object.entries(feedRates.componentMassFlowKgPerSecond).map(([cid, rate]) => [cid, rate * factor])
-  );
+  const actualFeedSolidState = scaleSolidMaterialState(feedSolidState, factor);
+  const productSolidState = crushSolidMaterialState(actualFeedSolidState, targetParticleSizeMm);
 
   return {
-    actualFeedRates: {
-      componentMassFlowKgPerSecond: actualFeedComponents,
-      particleSizeMm: feedRates.particleSizeMm,
-    },
-    productRates: {
-      componentMassFlowKgPerSecond: { ...actualFeedComponents },
-      particleSizeMm: targetParticleSizeMm,
-    },
+    actualFeedSolidState,
+    productSolidState,
+    actualFeedRates: legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
+    productRates: legacyFlowView(productSolidState, targetParticleSizeMm),
   };
 }
 
-export function applyContinuousMagneticSeparation(feedRates, fieldStrength, maxFeedParticleSizeMm = 25) {
-  validateFeed(feedRates);
-  if (feedRates.particleSizeMm > maxFeedParticleSizeMm) {
-    throw new Error(
-      `Magnetic Separator requires feed particle size <= ${maxFeedParticleSizeMm} mm (got ${feedRates.particleSizeMm} mm)`
-    );
-  }
+export function applyContinuousMagneticSeparation(feed, fieldStrength, maxFeedParticleSizeMm = 25) {
+  validateFeed(feed);
+  const normalizedFeed = normalizeFeed(feed);
+  const feedSolidState = normalizedFeed.solidState;
+  const { concentrate, tailings } = splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedParticleSizeMm);
 
-  const { concentrate, tailings } = splitMagneticComponents(
-    feedRates.componentMassFlowKgPerSecond,
-    fieldStrength
-  );
-
-  for (const cid of Object.keys(feedRates.componentMassFlowKgPerSecond)) {
-    const inputRate = feedRates.componentMassFlowKgPerSecond[cid] ?? 0;
-    const outputRate = (concentrate[cid] ?? 0) + (tailings[cid] ?? 0);
-    if (Math.abs(inputRate - outputRate) > STREAM_FLOW_TOLERANCE * Math.max(1, inputRate)) {
-      throw new Error(`Magnetic Separator violated constituent conservation for '${cid}'`);
-    }
+  const inputRate = totalSolidQuantity(feedSolidState);
+  const outputRate = totalSolidQuantity(concentrate) + totalSolidQuantity(tailings);
+  if (Math.abs(inputRate - outputRate) > STREAM_FLOW_TOLERANCE * Math.max(1, inputRate)) {
+    throw new Error('Magnetic Separator violated constituent conservation');
   }
 
   return {
-    actualFeedRates: {
-      componentMassFlowKgPerSecond: { ...feedRates.componentMassFlowKgPerSecond },
-      particleSizeMm: feedRates.particleSizeMm,
-    },
-    concentrateRates: {
-      componentMassFlowKgPerSecond: concentrate,
-      particleSizeMm: feedRates.particleSizeMm,
-    },
-    tailingsRates: {
-      componentMassFlowKgPerSecond: tailings,
-      particleSizeMm: feedRates.particleSizeMm,
-    },
+    actualFeedSolidState: scaleSolidMaterialState(feedSolidState, 1),
+    concentrateSolidState: concentrate,
+    tailingsSolidState: tailings,
+    actualFeedRates: legacyFlowView(feedSolidState, normalizedFeed.nominalParticleSizeMm),
+    concentrateRates: legacyFlowView(concentrate, normalizedFeed.nominalParticleSizeMm),
+    tailingsRates: legacyFlowView(tailings, normalizedFeed.nominalParticleSizeMm),
   };
 }
 
-export { STREAM_FLOW_TOLERANCE, MAGNETIC_RESPONSE_BY_COMPONENT };
+export { STREAM_FLOW_TOLERANCE, magneticRecoveryForFraction };
 export const CONTINUOUS_PROCESS_IDS = {
   CRUSHER: CRUSHING_PROCESS_ID,
   MAGNETIC_SEPARATOR: MAGNETIC_SEPARATION_PROCESS_ID,

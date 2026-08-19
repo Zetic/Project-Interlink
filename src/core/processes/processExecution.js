@@ -7,11 +7,18 @@ import {
   isMaterialBatchAvailable,
 } from '../materials/materialBatches.js';
 import {
+  createSolidMaterialBody,
+  createSolidMaterialStateFromSpeciesQuantities,
+  summarizeSolidMaterialBySpecies,
+  totalSolidQuantity,
+  validateSolidMaterialBody,
+} from '../materials/solidMaterialState.js';
+import {
   CRUSHING_PROCESS_ID,
   getProcessDefinition,
   MAGNETIC_SEPARATION_PROCESS_ID,
 } from './processDefinitions.js';
-import { assertCrushingTarget, splitMagneticComponents } from './processPhysics.js';
+import { assertCrushingTarget, crushSolidMaterialState, splitMagneticSolidState } from './processPhysics.js';
 
 function assertWorldOrdinals(world) {
   if (!Number.isInteger(world.nextMaterialBatchOrdinal) || world.nextMaterialBatchOrdinal < 1) {
@@ -82,6 +89,22 @@ function validateInputBindings(processDefinition, inputBindings) {
   }
 }
 
+function materialBodyForBatchLike(batch) {
+  if (batch?.materialBody) return batch.materialBody;
+  if (batch?.componentsKg && batch?.particleSizeMm) {
+    try {
+      return createSolidMaterialBody(createSolidMaterialStateFromSpeciesQuantities(batch.componentsKg, batch.particleSizeMm));
+    } catch (error) {
+      if (error.message.startsWith('Unsupported material species')) {
+        const speciesId = error.message.match(/'([^']+)'/)?.[1] ?? 'unknown';
+        throw new Error(`Magnetic Separator does not support component '${speciesId}'`);
+      }
+      throw error;
+    }
+  }
+  throw new Error(`Input batch '${batch?.id ?? 'unknown'}' is missing materialBody`);
+}
+
 function resolveInputBatches(world, processDefinition, inputBindings) {
   validateInputBindings(processDefinition, inputBindings);
 
@@ -95,14 +118,9 @@ function resolveInputBatches(world, processDefinition, inputBindings) {
     if (!isMaterialBatchAvailable(inputBatch)) {
       throw new Error(`Input batch '${inputBatch.id}' is not available for processing`);
     }
+    validateSolidMaterialBody(materialBodyForBatchLike(inputBatch));
+    if (!inputBatch.materialBody) inputBatch.materialBody = materialBodyForBatchLike(inputBatch);
     validateComponentsKg(inputBatch.componentsKg);
-    if (
-      typeof inputBatch.particleSizeMm !== 'number' ||
-      !Number.isFinite(inputBatch.particleSizeMm) ||
-      inputBatch.particleSizeMm <= 0
-    ) {
-      throw new Error(`Input batch '${inputBatch.id}' has invalid particle size`);
-    }
     resolved[input.id] = inputBatch;
   }
 
@@ -132,15 +150,7 @@ function validateOutputPortBatches(processDefinition, outputPortBatches) {
       throw new Error(`Process '${processDefinition.id}' returned duplicate output port '${output.outputId}'`);
     }
     seenOutputIds.add(output.outputId);
-
-    validateComponentsKg(output.componentsKg);
-    if (
-      typeof output.particleSizeMm !== 'number' ||
-      !Number.isFinite(output.particleSizeMm) ||
-      output.particleSizeMm <= 0
-    ) {
-      throw new Error(`Process '${processDefinition.id}' output '${output.outputId}' has invalid particle size`);
-    }
+    validateSolidMaterialBody(output.materialBody);
   }
 
   for (const expectedOutputId of expectedOutputIds) {
@@ -152,28 +162,26 @@ function validateOutputPortBatches(processDefinition, outputPortBatches) {
 
 function runMagneticSeparation(processDefinition, inputBatchesByPort, normalizedParameters) {
   const inputBatch = inputBatchesByPort.feed;
-  const maxFeedParticleSizeMm = processDefinition.maxFeedParticleSizeMm ?? Infinity;
-  if (inputBatch.particleSizeMm > maxFeedParticleSizeMm) {
-    throw new Error(
-      `Process '${processDefinition.id}' requires feed particle size <= ${maxFeedParticleSizeMm} mm (got ${inputBatch.particleSizeMm} mm)`
-    );
-  }
-
+  const inputMaterialBody = materialBodyForBatchLike(inputBatch);
   const { fieldStrength } = normalizedParameters;
-  const { concentrate, tailings } = splitMagneticComponents(inputBatch.componentsKg, fieldStrength, roundKg);
+  const { concentrate, tailings } = splitMagneticSolidState(
+    inputMaterialBody.solidState,
+    fieldStrength,
+    processDefinition.maxFeedParticleSizeMm ?? 25,
+  );
 
   return {
     outputPortBatches: [
       {
         outputId: 'concentrate',
-        componentsKg: concentrate,
-        particleSizeMm: inputBatch.particleSizeMm,
+        materialBody: { physicalForm: inputMaterialBody.physicalForm, solidState: concentrate },
+        particleSizeMm: inputBatch.particleSizeMm ?? null,
         resourceId: null,
       },
       {
         outputId: 'tailings',
-        componentsKg: tailings,
-        particleSizeMm: inputBatch.particleSizeMm,
+        materialBody: { physicalForm: inputMaterialBody.physicalForm, solidState: tailings },
+        particleSizeMm: inputBatch.particleSizeMm ?? null,
         resourceId: null,
       },
     ],
@@ -182,14 +190,18 @@ function runMagneticSeparation(processDefinition, inputBatchesByPort, normalized
 
 function runCrushing(processDefinition, inputBatchesByPort, normalizedParameters) {
   const inputBatch = inputBatchesByPort.feed;
+  const inputMaterialBody = materialBodyForBatchLike(inputBatch);
   const { targetParticleSizeMm } = normalizedParameters;
-  assertCrushingTarget(inputBatch.particleSizeMm, targetParticleSizeMm);
+  assertCrushingTarget(inputMaterialBody.solidState, targetParticleSizeMm);
 
   return {
     outputPortBatches: [
       {
         outputId: 'product',
-        componentsKg: { ...inputBatch.componentsKg },
+        materialBody: {
+          physicalForm: inputMaterialBody.physicalForm,
+          solidState: crushSolidMaterialState(inputMaterialBody.solidState, targetParticleSizeMm),
+        },
         particleSizeMm: targetParticleSizeMm,
         resourceId: null,
       },
@@ -202,10 +214,11 @@ const PROCESS_EXECUTORS = {
   [CRUSHING_PROCESS_ID]: runCrushing,
 };
 
-function aggregateComponents(batches) {
+function aggregateComponentsFromBodies(bodies) {
   const aggregated = {};
-  for (const batch of batches) {
-    for (const [componentId, massKg] of Object.entries(batch.componentsKg)) {
+  for (const body of bodies) {
+    const summary = summarizeSolidMaterialBySpecies(body.solidState);
+    for (const [componentId, massKg] of Object.entries(summary)) {
       aggregated[componentId] = roundKg((aggregated[componentId] ?? 0) + massKg);
     }
   }
@@ -213,8 +226,8 @@ function aggregateComponents(batches) {
 }
 
 function validateConservation(inputBatches, outputPortBatches, processId) {
-  const inputComponents = aggregateComponents(inputBatches);
-  const outputComponents = aggregateComponents(outputPortBatches);
+  const inputComponents = aggregateComponentsFromBodies(inputBatches.map(batch => batch.materialBody));
+  const outputComponents = aggregateComponentsFromBodies(outputPortBatches.map(batch => batch.materialBody));
 
   const allComponentIds = new Set([...Object.keys(inputComponents), ...Object.keys(outputComponents)]);
   for (const componentId of allComponentIds) {
@@ -225,12 +238,8 @@ function validateConservation(inputBatches, outputPortBatches, processId) {
     }
   }
 
-  const massInKg = roundKg(
-    inputBatches.reduce((sum, batch) => sum + sumComponentMassKg(batch.componentsKg), 0)
-  );
-  const massOutKg = roundKg(
-    outputPortBatches.reduce((sum, batch) => sum + sumComponentMassKg(batch.componentsKg), 0)
-  );
+  const massInKg = roundKg(inputBatches.reduce((sum, batch) => sum + totalSolidQuantity(batch.materialBody.solidState), 0));
+  const massOutKg = roundKg(outputPortBatches.reduce((sum, batch) => sum + totalSolidQuantity(batch.materialBody.solidState), 0));
 
   return {
     massInKg,
@@ -321,10 +330,10 @@ export function runProcessAndCommit(world, processId, inputBindings, parameters 
     const batch = createMaterialBatch({
       id: batchId,
       resourceId: output.resourceId ?? null,
-      particleSizeMm: output.particleSizeMm,
+      materialBody: output.materialBody,
+      particleSizeMm: output.particleSizeMm ?? null,
       provenance: outputProvenance,
       status: 'available',
-      componentsKg: output.componentsKg,
     });
 
     return {
