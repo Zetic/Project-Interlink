@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, validateWorld } from '../src/core/world/worldState.js';
 import { SCHEMA_VERSION, GENERATOR_VERSION } from '../src/core/world/versions.js';
+import { FEATURE_ALLOWED_FAMILIES } from '../src/generator/generateFeatures.js';
+import { getResourceDefinition } from '../src/generator/generateResources.js';
 
 function buildWorld(seed = 'integrity-test') {
   return createWorld(seed);
@@ -202,4 +204,123 @@ test('deterministic generation: same seed produces identical worlds under genera
     Object.keys(world2.resourceOccurrences).sort(),
     'Same seed must produce identical ResourceOccurrence IDs',
   );
+});
+
+test('every occurrence occurrenceFamily is physically compatible with its owning Feature type', () => {
+  // Validate the family-based hard gate across many seeds.
+  const seeds = ['compat-a', 'compat-b', 'compat-c', 'compat-d', 'compat-e'];
+  for (const seed of seeds) {
+    const world = buildWorld(seed);
+    for (const [featureId, feature] of Object.entries(world.features)) {
+      const allowedFamilies = FEATURE_ALLOWED_FAMILIES[feature.type];
+      if (!allowedFamilies) continue; // regional-access or unknown type — skip
+      for (const occurrenceId of feature.resourceOccurrences) {
+        const occ = world.resourceOccurrences[occurrenceId];
+        const resourceDef = getResourceDefinition(occ.resourceId);
+        assert.ok(
+          resourceDef,
+          `Occurrence '${occurrenceId}' references unknown resource '${occ.resourceId}'`,
+        );
+        assert.ok(
+          allowedFamilies.has(resourceDef.occurrenceFamily),
+          `Feature '${featureId}' (${feature.type}) has incompatible occurrence '${occ.resourceId}' ` +
+          `(family '${resourceDef.occurrenceFamily}' not in allowed families: ${[...allowedFamilies].join(', ')})`,
+        );
+      }
+    }
+  }
+});
+
+test('Outcrop features never receive aqueous-fluid occurrences regardless of planet moisture', () => {
+  // Specifically prove that a water-rich planet does not bleed groundwater into Outcrops.
+  const AQUEOUS_FAMILIES = new Set(['aqueous-fluid', 'hydrothermal-fluid']);
+  const seeds = ['outcrop-aqueous-a', 'outcrop-aqueous-b', 'outcrop-aqueous-c',
+                 'outcrop-aqueous-d', 'outcrop-aqueous-e', 'outcrop-aqueous-f'];
+  for (const seed of seeds) {
+    const world = buildWorld(seed);
+    for (const [featureId, feature] of Object.entries(world.features)) {
+      if (feature.type !== 'Outcrop') continue;
+      for (const occurrenceId of feature.resourceOccurrences) {
+        const occ = world.resourceOccurrences[occurrenceId];
+        const resourceDef = getResourceDefinition(occ.resourceId);
+        assert.ok(
+          resourceDef && !AQUEOUS_FAMILIES.has(resourceDef.occurrenceFamily),
+          `Outcrop '${featureId}' received aqueous resource '${occ.resourceId}' ` +
+          `(family '${resourceDef?.occurrenceFamily}') — water-rich planet must not override family compatibility`,
+        );
+      }
+    }
+  }
+});
+
+test('Aquifer features never receive solid rock or ore occurrences', () => {
+  const SOLID_FAMILIES = new Set(['rock-mass', 'ore-body', 'mineral-body', 'sediment', 'evaporite', 'ice-body']);
+  const seeds = ['aquifer-solid-a', 'aquifer-solid-b', 'aquifer-solid-c'];
+  for (const seed of seeds) {
+    const world = buildWorld(seed);
+    for (const [featureId, feature] of Object.entries(world.features)) {
+      if (feature.type !== 'Aquifer') continue;
+      for (const occurrenceId of feature.resourceOccurrences) {
+        const occ = world.resourceOccurrences[occurrenceId];
+        const resourceDef = getResourceDefinition(occ.resourceId);
+        assert.ok(
+          resourceDef && !SOLID_FAMILIES.has(resourceDef.occurrenceFamily),
+          `Aquifer '${featureId}' received solid/non-fluid resource '${occ.resourceId}' ` +
+          `(family '${resourceDef?.occurrenceFamily}')`,
+        );
+      }
+    }
+  }
+});
+
+test('Gas Reservoir features never receive solid or aqueous-fluid occurrences', () => {
+  const NON_GAS_FAMILIES = new Set(['rock-mass', 'ore-body', 'mineral-body', 'sediment', 'evaporite',
+                                    'ice-body', 'aqueous-fluid', 'hydrothermal-fluid', 'magma',
+                                    'vegetation', 'organic-soil', 'atmosphere']);
+  const seeds = ['gasreservoir-solid-a', 'gasreservoir-solid-b', 'gasreservoir-solid-c'];
+  for (const seed of seeds) {
+    const world = buildWorld(seed);
+    for (const [featureId, feature] of Object.entries(world.features)) {
+      if (feature.type !== 'Gas Reservoir') continue;
+      for (const occurrenceId of feature.resourceOccurrences) {
+        const occ = world.resourceOccurrences[occurrenceId];
+        const resourceDef = getResourceDefinition(occ.resourceId);
+        assert.ok(
+          resourceDef && !NON_GAS_FAMILIES.has(resourceDef.occurrenceFamily),
+          `Gas Reservoir '${featureId}' received non-gas resource '${occ.resourceId}' ` +
+          `(family '${resourceDef?.occurrenceFamily}')`,
+        );
+      }
+    }
+  }
+});
+
+test('iron ore occurrence remains a single mixed-composition source body', () => {
+  // Find an iron ore occurrence and verify it has mineral-mixture composition.
+  let foundIronOre = false;
+  for (let i = 0; i < 20 && !foundIronOre; i++) {
+    const world = buildWorld(`iron-composition-${i}`);
+    for (const occ of Object.values(world.resourceOccurrences)) {
+      if (occ.resourceId !== 'iron-ore') continue;
+      foundIronOre = true;
+      // Must be exactly one occurrence per Feature (checked elsewhere); verify composition.
+      assert.ok(
+        occ.composition && typeof occ.composition === 'object',
+        `iron-ore occurrence '${occ.id}' missing composition (should have mineral mixture)`,
+      );
+      const totalPercent = Object.values(occ.composition).reduce((a, b) => a + b, 0);
+      assert.ok(
+        Math.abs(totalPercent - 100) < 2,
+        `iron-ore occurrence '${occ.id}' composition sums to ${totalPercent}% (expected ~100%)`,
+      );
+      // The source Feature should own exactly this one occurrence.
+      const feature = world.features[occ.sourceId];
+      assert.equal(
+        feature.resourceOccurrences.length,
+        1,
+        `Iron ore Feature '${occ.sourceId}' must have exactly one occurrence`,
+      );
+    }
+  }
+  assert.ok(foundIronOre, 'No iron-ore occurrence found across 20 seeds — cannot verify composition invariant');
 });

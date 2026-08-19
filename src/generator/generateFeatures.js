@@ -9,7 +9,7 @@
 import {
   getResourceDefinition,
   makeFeatureResource,
-  resourcesByTags,
+  resourcesByFamilies,
 } from './generateResources.js';
 import { rngFor } from './random.js';
 
@@ -103,13 +103,42 @@ function weightedFeatureTypes(region) {
   return pool;
 }
 
-function featureResourceTags(featureType, region, planetComposition) {
+/**
+ * Physical occurrence-family taxonomy.
+ * A Feature type maps to allowed families — this is a hard physical compatibility gate.
+ * Tags are then used only for weighting/probability within the compatible pool.
+ *
+ * Families:
+ *   solid: rock-mass, ore-body, mineral-body, sediment, evaporite, ice-body
+ *   fluid: aqueous-fluid, hydrothermal-fluid, magma, reservoir-gas, atmosphere
+ *   organic: vegetation, organic-soil
+ *
+ * Exported for test coverage of the compatibility contract.
+ */
+export const FEATURE_ALLOWED_FAMILIES = Object.freeze({
+  'Mineral Deposit':      new Set(['ore-body', 'mineral-body']),
+  'Geological Formation': new Set(['rock-mass', 'sediment', 'mineral-body']),
+  'Aquifer':              new Set(['aqueous-fluid']),
+  'Gas Reservoir':        new Set(['reservoir-gas']),
+  'Cave / Cavern':        new Set(['rock-mass', 'sediment', 'mineral-body']),
+  'Ravine':               new Set(['rock-mass', 'sediment']),
+  'Fault':                new Set(['rock-mass', 'ore-body', 'mineral-body']),
+  'Crater':               new Set(['rock-mass', 'sediment', 'ore-body']),
+  'Volcanic Vent':        new Set(['mineral-body', 'rock-mass']),
+  'Hydrothermal System':  new Set(['aqueous-fluid', 'hydrothermal-fluid', 'ore-body', 'mineral-body']),
+  'Magma Chamber':        new Set(['magma', 'hydrothermal-fluid']),
+  'Ice Body':             new Set(['ice-body']),
+  'Salt Basin':           new Set(['evaporite', 'aqueous-fluid']),
+  'Outcrop':              new Set(['rock-mass', 'ore-body', 'mineral-body']),
+});
+
+function featureAffinityTags(featureType, region, planetComposition) {
   const { heat, moisture } = region;
   const tags = [];
 
   switch (featureType) {
     case 'Mineral Deposit':
-      tags.push('metallic', 'ore', 'mineral');
+      tags.push('metallic', 'ore');
       if (heat > 0.5) tags.push('volcanic');
       break;
     case 'Geological Formation': tags.push('rock', 'igneous', 'sedimentary'); break;
@@ -131,10 +160,41 @@ function featureResourceTags(featureType, region, planetComposition) {
     default: tags.push('rock', 'mineral');
   }
 
+  // Planet-wide context influences tag affinity only — it never overrides family compatibility.
   if (planetComposition?.ironMetals > 20) tags.push('metallic');
   if (planetComposition?.waterVolatiles > 15) tags.push('wet', 'icy');
   if (planetComposition?.carbonCompounds > 5) tags.push('carbonRich');
   return tags;
+}
+
+/**
+ * Select a ResourceDefinition for a Feature in two stages:
+ *   1. Hard gate: only resources whose occurrenceFamily is physically compatible are eligible.
+ *   2. Soft weighting: among eligible resources, those matching affinity tags are preferred.
+ * This ensures e.g. Groundwater never appears in an Outcrop even on a water-rich planet.
+ */
+function selectFeatureResource(featureType, affinityTags, distribution, planet) {
+  const allowedFamilies = FEATURE_ALLOWED_FAMILIES[featureType];
+  // Stage 1: family-compatible pool (hard gate).
+  let compatible = resourcesByFamilies(allowedFamilies, distribution);
+  if (!planet.biospherePresent) compatible = compatible.filter(r => !r.tags.includes('biological'));
+
+  if (!compatible.length) {
+    // Fallback to the known-safe fallback resource for this feature type; wrap in array for uniform API.
+    const fallback = getResourceDefinition(FEATURE_FALLBACK_RESOURCE[featureType] ?? 'mixed-sediment');
+    return fallback ? [fallback] : [];
+  }
+
+  // Stage 2: weight by tag affinity — matching resources appear multiple times in the pool.
+  const affinitySet = new Set(affinityTags);
+  const weighted = [];
+  for (const resource of compatible) {
+    const matches = resource.tags.filter(t => affinitySet.has(t)).length;
+    // Base weight 1 + 2 per matching affinity tag.
+    const weight = 1 + matches * 2;
+    for (let w = 0; w < weight; w++) weighted.push(resource);
+  }
+  return weighted;
 }
 
 function allowedPhysicalStates(featureType) {
@@ -146,25 +206,6 @@ function allowedPhysicalStates(featureType) {
     case 'Hydrothermal System': return ['Liquid', 'Mixed'];
     default: return null;
   }
-}
-
-function applyResourceCompatibility(featureType, candidates) {
-  const allowedByType = {
-    'Aquifer': new Set(['groundwater', 'brine', 'fresh-water', 'saline-water', 'lithium-brine']),
-    'Gas Reservoir': new Set(['natural-gas', 'gas-clathrate', 'hydrocarbons']),
-    'Magma Chamber': new Set(['magma', 'geothermal-fluid']),
-    'Ice Body': new Set(['water-ice', 'gas-clathrate', 'ammonia-water-solution', 'permafrost']),
-  };
-  const allowed = allowedByType[featureType];
-  const filtered = allowed ? candidates.filter(resource => allowed.has(resource.id)) : candidates;
-  if (filtered.length) return filtered;
-  return [getResourceDefinition(FEATURE_FALLBACK_RESOURCE[featureType])].filter(Boolean);
-}
-
-function ensureFeatureResources(featureType, candidates) {
-  if (candidates.length) return candidates;
-  const fallback = getResourceDefinition(FEATURE_FALLBACK_RESOURCE[featureType] ?? 'mixed-sediment');
-  return fallback ? [fallback] : [];
 }
 
 function siteForFeature(feature, siteName = feature.name, siteKind = 'localized') {
@@ -216,17 +257,17 @@ function generateLocalizedSite(region, planet, rootSeed, siteIndex) {
       resourceOccurrences: [],
     };
 
+    // Stage 1 (hard gate) + Stage 2 (tag-weighted selection). Always returns an array.
     const resourceRng = rngFor(rootSeed, `feature:${featureId}:resources`);
-    const tags = featureResourceTags(featureType, region, planet.bulkComposition);
-    let candidates = resourcesByTags(tags, 'localized');
-    if (!planet.biospherePresent) candidates = candidates.filter(resource => !resource.tags.includes('biological'));
-    candidates = ensureFeatureResources(featureType, applyResourceCompatibility(featureType, candidates));
+    const affinityTags = featureAffinityTags(featureType, region, planet.bulkComposition);
+    const weightedPool = selectFeatureResource(featureType, affinityTags, 'localized', planet);
 
-    const shuffled = [...candidates];
-    resourceRng.shuffle(shuffled);
-    if (!shuffled.length) {
-      throw new Error(`Feature '${featureId}' (${featureType}) generated without any candidate ResourceDefinitions`);
+    if (!weightedPool.length) {
+      throw new Error(`Feature '${featureId}' (${featureType}) generated without any compatible ResourceDefinitions`);
     }
+    const shuffled = [...weightedPool];
+    resourceRng.shuffle(shuffled);
+
     // Exactly one ResourceOccurrence per Feature: one physical source/body per independently exploitable source.
     feature.resourceOccurrences = [
       makeFeatureResource(shuffled[0], resourceRng, `${featureId}-occ-0`, featureId, { accessScope: 'localized' }),

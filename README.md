@@ -58,7 +58,7 @@ Current serialized versions on `main` are:
 
 ```text
 schemaVersion: 7
-generatorVersion: 3
+generatorVersion: 4
 ```
 
 ## Implemented foundation
@@ -213,52 +213,30 @@ Raw-resource `distribution` (`localized`, `regional`, `both`) is only generation
 
 ---
 
-# Active Pre-Construction Correction — Issue #25
+# Completed Correction — Issue #25 ✓
 
-PR #24 correctly established the ownership hierarchy and physical Feature → Extractor access relationship, but manual testing exposed a remaining generator-semantic problem.
+PR #24 established the ownership hierarchy and physical Feature → Extractor access relationship. Issue #25 corrected the remaining generator-semantic problem: a generated Feature could receive several unrelated ResourceOccurrences as a variety mechanism.
 
-A generated Feature can currently receive several unrelated ResourceOccurrences simply to add variety. For example, one `Outcrop` may list:
+This is now resolved. As of generator v4:
 
-```text
-Groundwater
-Fresh Water
-Obsidian
-```
+- Each generated Feature has **exactly one ResourceOccurrence** (one physical source/body).
+- Resource variety at a Site manifests as additional Features, not additional occurrences on one Feature.
+- Resource–Feature compatibility is enforced by a **scalable occurrence-family taxonomy** rather than per-Feature ID whitelists. A `groundwater` resource has `occurrenceFamily: 'aqueous-fluid'`, so it is never a candidate for an `Outcrop` (which accepts `rock-mass`, `ore-body`, `mineral-body` only) even on a water-rich planet.
+- Occurrence families used: `rock-mass`, `ore-body`, `mineral-body`, `sediment`, `evaporite`, `ice-body`, `aqueous-fluid`, `hydrothermal-fluid`, `magma`, `reservoir-gas`, `atmosphere`, `vegetation`, `organic-soil`.
 
-That is usually not one physical source. It is several independently exploitable things incorrectly grouped into one Feature.
-
-Issue #25 corrects this before player construction begins:
-
-> **Multiple independently exploitable physical sources should be separate Features. Multiple constituents of the same physical source belong in one ResourceOccurrence composition.**
-
-Target example:
+Example output topology:
 
 ```text
 SITE: Ancientwell Rift
 │
 ├── FEATURE: Ancientwell Aquifer
-│   └── ResourceOccurrence: groundwater body
+│   └── ResourceOccurrence: groundwater body  (family: aqueous-fluid)
 │
 └── FEATURE: Blackglass Outcrop
-    └── ResourceOccurrence: obsidian body
+    └── ResourceOccurrence: obsidian body  (family: rock-mass)
 ```
 
-rather than:
-
-```text
-FEATURE: Outcrop
-├── Groundwater
-├── Fresh Water
-└── Obsidian
-```
-
-For the current stage, generation should default to:
-
-> **One ResourceOccurrence per generated Feature.**
-
-This is a near-term generation rule, not a declaration that one Feature can never contain multiple physical occurrences in a future, more detailed model. Multiple occurrences should require an actual physical reason rather than being used as a generic variety mechanism.
-
-Issue: [`#25 — Split independently exploitable sources into distinct Features and move mixtures toward chemical composition`](https://github.com/Zetic/Project-Interlink/issues/25)
+Iron ore remains one occurrence containing its full mineral mixture (hematite / magnetite / goethite / quartz-gangue), preserving extraction composition fidelity.
 
 ---
 
@@ -564,14 +542,12 @@ Persistent graph edges must correspond to real underlying relationships. Materia
 
 # Immediate Development Direction
 
-**Issue #25 is the active pre-construction correction.**
-
-Do not begin the main player-authored construction milestone on top of ambiguous Feature semantics.
+**Issue #25 is resolved.** The active milestone is now player-authored Site construction.
 
 Current order:
 
-1. **Issue #25 — split independently exploitable sources into distinct Features and establish composition/classification direction.**
-2. Player-authored Site construction.
+1. ~~Issue #25 — split independently exploitable sources into distinct Features and establish composition/classification direction.~~ **Done (generator v4).**
+2. **Player-authored Site construction** — active milestone.
 3. Remove automatic iron-chain placement from normal gameplay.
 4. Deepen extraction/reserve/depletion mechanics when useful.
 5. Add additional Feature interaction families incrementally.
@@ -581,7 +557,7 @@ Current order:
 9. Add sensors/controllers and deeper Knowledge mechanics.
 10. Expand reusable composite systems, chemistry, thermodynamics, fluids/gases, and larger-scale industry iteratively.
 
-The construction loop after Issue #25 should be:
+The construction loop now available:
 
 ```text
 Enter Site

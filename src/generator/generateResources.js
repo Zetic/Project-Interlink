@@ -30,6 +30,16 @@ export function resourcesByTags(tags, distribution = 'localized') {
   return pool.filter(resource => resource.tags.some(tag => tagSet.has(tag)));
 }
 
+/**
+ * Pick resource definitions whose `occurrenceFamily` is in the supplied set.
+ * This is the hard physical compatibility gate: only resources from valid families
+ * are eligible regardless of environmental tags.
+ */
+export function resourcesByFamilies(familySet, distribution = 'localized') {
+  const pool = distribution === 'regional' ? getRegionalResources() : getLocalizedResources();
+  return pool.filter(resource => familySet.has(resource.occurrenceFamily));
+}
+
 const QUANTITY_CLASSES = ['Tiny', 'Small', 'Moderate', 'Large', 'Massive'];
 const AVAILABILITY_CLASSES = ['Sparse', 'Limited', 'Moderate', 'Common', 'Abundant', 'Very Abundant'];
 
