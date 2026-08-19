@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { workspaceShellMarkup } from '../src/workspace/workspaceUI.js';
+import {
+  navigationVisibilityState,
+  workspaceShellMarkup,
+} from '../src/workspace/workspaceUI.js';
 
 const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const workspaceOverrides = readFileSync(new URL('../workspace-overrides.css', import.meta.url), 'utf8');
@@ -73,13 +76,38 @@ test('player shell reserves a viewport-safe outer inset', () => {
 test('hierarchy navigator is a shell overlay and does not become a graph column', () => {
   assert.match(indexMarkup, /id="ws-navigation-toggle"/);
   assert.match(indexMarkup, /id="ws-navigation-drawer"/);
+  assert.match(indexMarkup, /id="ws-navigation-drawer"[^>]*aria-hidden="true"[^>]*hidden/);
+  assert.match(indexMarkup, /id="ws-navigation-collapse-all"/);
+  assert.match(indexMarkup, /id="ws-navigation-expand-all"/);
   assert.match(indexMarkup, /id="ws-navigation-search"/);
   assert.match(indexMarkup, /id="ws-navigation-tree"/);
 
   const drawerRule = cssRule(workspaceOverrides, '.ws-navigation-drawer');
   assert.match(drawerRule, /position:\s*absolute/);
   assert.match(drawerRule, /inset:\s*0 auto 0 0/);
+  assert.match(drawerRule, /border-right:\s*1px solid/);
+  assert.match(cssRule(workspaceOverrides, '.ws-navigation-drawer[hidden]'), /display:\s*none !important/);
 
   const layoutRule = cssRule(workspaceOverrides, '.ws-layout');
   assert.match(layoutRule, /grid-template-columns:\s*minmax\(0, 1fr\) clamp\(180px, 24vw, 280px\)/);
+});
+
+test('navigation visibility state keeps drawer and toggle attributes synchronized', () => {
+  const closed = navigationVisibilityState(false);
+  const open = navigationVisibilityState(!closed.visible);
+  const toggledClosed = navigationVisibilityState(!open.visible);
+
+  assert.deepEqual(closed, {
+    visible: false,
+    hidden: true,
+    ariaHidden: 'true',
+    ariaExpanded: 'false',
+  });
+  assert.deepEqual(open, {
+    visible: true,
+    hidden: false,
+    ariaHidden: 'false',
+    ariaExpanded: 'true',
+  });
+  assert.deepEqual(toggledClosed, closed);
 });

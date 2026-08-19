@@ -52,7 +52,10 @@ import { siteResourceOccurrenceIds } from './sitePrototype.js';
 import { buildSiteSession } from './siteSession.js';
 import {
   buildNavigationIndex,
+  expandNavigationPath,
   getNavigationRows,
+  navigationExpandableKeys,
+  navigationVisibleCategories,
   navigationEntryForTarget,
 } from './navigationProjection.js';
 
@@ -80,7 +83,7 @@ const wsState = {
   dragTrackingCleanup: null,
   navigationOpen: false,
   navigationQuery: '',
-  navigationFilters: null,
+  navigationHiddenCategories: new Set(),
   navigationManualExpandedKeys: new Set(),
   navigationEventsInstalled: false,
   navigationIndexCache: null,
@@ -239,16 +242,27 @@ function navigationCategoryLabel(index, category) {
   return index.categoryLabels?.[category] ?? category.toUpperCase();
 }
 
+export function navigationVisibilityState(open) {
+  const visible = Boolean(open);
+  return {
+    visible,
+    hidden: !visible,
+    ariaHidden: String(!visible),
+    ariaExpanded: String(visible),
+  };
+}
+
 function setNavigationOpen(open) {
-  wsState.navigationOpen = Boolean(open);
+  const visibility = navigationVisibilityState(open);
+  wsState.navigationOpen = visibility.visible;
   const drawer = el('ws-navigation-drawer');
   const toggle = el('ws-navigation-toggle');
   if (drawer) {
-    drawer.hidden = !wsState.navigationOpen;
-    drawer.setAttribute('aria-hidden', String(!wsState.navigationOpen));
+    drawer.hidden = visibility.hidden;
+    drawer.setAttribute('aria-hidden', visibility.ariaHidden);
   }
   if (toggle) {
-    toggle.setAttribute('aria-expanded', String(wsState.navigationOpen));
+    toggle.setAttribute('aria-expanded', visibility.ariaExpanded);
     toggle.querySelector('.ws-visually-hidden')?.replaceChildren(
       document.createTextNode(wsState.navigationOpen ? 'Close hierarchy navigation' : 'Open hierarchy navigation'),
     );
@@ -261,23 +275,19 @@ function renderNavigationDrawer() {
   if (!tree || !drawer || !wsState.world) return;
 
   const index = navigationIndex();
-  if (!wsState.navigationFilters) {
-    wsState.navigationFilters = new Set(index.categories);
-  } else {
-    for (const category of index.categories) wsState.navigationFilters.add(category);
-  }
+  const visibleCategories = navigationVisibleCategories(index.categories, wsState.navigationHiddenCategories);
 
   const filters = el('ws-navigation-filters')?.querySelector('.ws-navigation-filters');
   if (filters) {
     filters.innerHTML = index.categories.map(category => {
       const id = `ws-navigation-filter-${category}`;
-      return `<label for="${id}"><input id="${id}" type="checkbox" data-navigation-filter="${escHtml(category)}"${wsState.navigationFilters.has(category) ? ' checked' : ''}>${escHtml(navigationCategoryLabel(index, category))}</label>`;
+      return `<label for="${id}"><input id="${id}" type="checkbox" data-navigation-filter="${escHtml(category)}"${visibleCategories.has(category) ? ' checked' : ''}>${escHtml(navigationCategoryLabel(index, category))}</label>`;
     }).join('');
   }
 
   const projection = getNavigationRows(index, {
     query: wsState.navigationQuery,
-    visibleCategories: wsState.navigationFilters,
+    visibleCategories,
     manualExpandedKeys: wsState.navigationManualExpandedKeys,
     activeKey: activeNavigationKey(index),
     selectedKey: selectedNavigationKey(index),
@@ -339,11 +349,21 @@ function installNavigationEvents() {
   const drawer = el('ws-navigation-drawer');
   const search = el('ws-navigation-search');
   const tree = el('ws-navigation-tree');
+  const collapse = el('ws-navigation-collapse-all');
+  const expand = el('ws-navigation-expand-all');
   if (!toggle || !close || !drawer || !search || !tree) return;
 
   wsState.navigationEventsInstalled = true;
   toggle.addEventListener('click', () => setNavigationOpen(!wsState.navigationOpen));
   close.addEventListener('click', () => setNavigationOpen(false));
+  collapse?.addEventListener('click', () => {
+    wsState.navigationManualExpandedKeys = new Set();
+    renderNavigationDrawer();
+  });
+  expand?.addEventListener('click', () => {
+    wsState.navigationManualExpandedKeys = navigationExpandableKeys(navigationIndex());
+    renderNavigationDrawer();
+  });
   search.addEventListener('input', event => {
     wsState.navigationQuery = event.currentTarget.value;
     renderNavigationDrawer();
@@ -351,8 +371,8 @@ function installNavigationEvents() {
   drawer.addEventListener('change', event => {
     const input = event.target.closest('[data-navigation-filter]');
     if (!input) return;
-    if (input.checked) wsState.navigationFilters.add(input.dataset.navigationFilter);
-    else wsState.navigationFilters.delete(input.dataset.navigationFilter);
+    if (input.checked) wsState.navigationHiddenCategories.delete(input.dataset.navigationFilter);
+    else wsState.navigationHiddenCategories.add(input.dataset.navigationFilter);
     renderNavigationDrawer();
   });
   tree.addEventListener('click', event => {
@@ -429,6 +449,12 @@ export function navigateTo(level, opts = {}) {
   }
 
   wsState.currentLevel = level;
+  const index = navigationIndex();
+  wsState.navigationManualExpandedKeys = expandNavigationPath(
+    index,
+    activeNavigationKey(index),
+    wsState.navigationManualExpandedKeys,
+  );
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.selectedSystemId = null;
@@ -1545,7 +1571,7 @@ export function initWorkspace(world, knowledge) {
   wsState.systemConnectionElements.clear();
   wsState.navigationOpen = false;
   wsState.navigationQuery = '';
-  wsState.navigationFilters = null;
+  wsState.navigationHiddenCategories = new Set();
   wsState.navigationManualExpandedKeys = new Set([`planet:${world.planetId}`]);
   wsState.navigationIndexCache = null;
   inspector.selectedNodeId = null;

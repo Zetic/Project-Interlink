@@ -6,7 +6,10 @@ import { buildSiteSession } from '../src/workspace/siteSession.js';
 import { createWorldSimulation } from '../src/simulation/worldSimulation.js';
 import {
   buildNavigationIndex,
+  expandNavigationPath,
   getNavigationRows,
+  navigationExpandableKeys,
+  navigationVisibleCategories,
 } from '../src/workspace/navigationProjection.js';
 
 function findWorldWithIron() {
@@ -123,6 +126,7 @@ test('filters hide normal rows but search reveals filtered ancestors without cha
   const filtered = getNavigationRows(index, {
     visibleCategories: new Set(['planet', 'feature']),
     activeKey: `site:${site.id}`,
+    manualExpandedKeys: [`planet:${world.planetId}`, `region:${site.regionId}`, `site:${site.id}`],
   });
   const filteredKeys = new Set(filtered.rows.map(row => row.key));
   assert.equal(filteredKeys.has(`region:${site.regionId}`), false);
@@ -153,6 +157,55 @@ test('search-derived expansion does not mutate manual expansion state', () => {
   assert.deepEqual(manual, before);
   assert.ok(search.searchRevealedKeys.has(`region:${site.regionId}`));
   assert.ok(search.requiredExpandedKeys.has(`region:${site.regionId}`));
+});
+
+test('active paths can be manually collapsed after navigation reveals them', () => {
+  const { world, site } = findWorldWithIron();
+  const index = buildNavigationIndex(world);
+  const activeKey = `site:${site.id}`;
+  const revealed = expandNavigationPath(index, activeKey, []);
+  const expanded = getNavigationRows(index, {
+    activeKey,
+    manualExpandedKeys: revealed,
+  });
+  const collapsed = getNavigationRows(index, {
+    activeKey,
+    manualExpandedKeys: [`planet:${world.planetId}`],
+  });
+
+  assert.ok(expanded.rows.some(row => row.key === activeKey && row.isActive));
+  assert.equal(collapsed.requiredExpandedKeys.has(`region:${site.regionId}`), false);
+  assert.equal(collapsed.rows.find(row => row.key === `region:${site.regionId}`).isExpanded, false);
+  assert.equal(collapsed.rows.some(row => row.key === activeKey), false);
+});
+
+test('Collapse All and Expand All operate on manual expansion state', () => {
+  const { world } = findWorldWithIron();
+  const index = buildNavigationIndex(world);
+  const expandedKeys = navigationExpandableKeys(index);
+  const collapsed = getNavigationRows(index, {
+    manualExpandedKeys: [],
+  });
+  const expanded = getNavigationRows(index, {
+    manualExpandedKeys: expandedKeys,
+  });
+
+  assert.equal(collapsed.rows.length, 1);
+  assert.equal(expanded.rows.length, index.entries.length);
+  assert.equal(expandNavigationPath(index, `planet:${world.planetId}`, []).size, 0);
+});
+
+test('hidden category state persists across visible-category projections', () => {
+  const { world } = findWorldWithIron();
+  const index = buildNavigationIndex(world);
+  const hidden = new Set(['region']);
+  const first = navigationVisibleCategories(index.categories, hidden);
+  const rerender = navigationVisibleCategories(index.categories, hidden);
+  const restored = navigationVisibleCategories(index.categories, new Set());
+
+  assert.equal(first.has('region'), false);
+  assert.deepEqual(rerender, first);
+  assert.equal(restored.has('region'), true);
 });
 
 test('active workspace path remains visible while searching another branch', () => {

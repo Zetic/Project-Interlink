@@ -388,6 +388,23 @@ export function navigationAncestorKeys(index, key) {
   return ancestors;
 }
 
+export function navigationExpandableKeys(index) {
+  return new Set([...index?.childrenByKey?.entries() ?? []]
+    .filter(([, children]) => children.length > 0)
+    .map(([key]) => key));
+}
+
+export function expandNavigationPath(index, key, expandedKeys = []) {
+  const expanded = new Set(expandedKeys);
+  for (const ancestorKey of navigationAncestorKeys(index, key)) expanded.add(ancestorKey);
+  return expanded;
+}
+
+export function navigationVisibleCategories(categories, hiddenCategories = []) {
+  const hidden = new Set(hiddenCategories);
+  return new Set(asArray(categories).filter(category => !hidden.has(category)));
+}
+
 function pathKeys(index, key) {
   return [...navigationAncestorKeys(index, key), key];
 }
@@ -442,10 +459,10 @@ export function getNavigationRows(index, {
       if (!search.matchKeys.has(key)) contextKeys.add(key);
     }
   }
-  const requiredExpandedKeys = new Set([
-    ...navigationAncestorKeys(index, activeKey),
-    ...search.contextKeys,
-  ]);
+  const requiredExpandedKeys = new Set(search.contextKeys);
+  if (search.query) {
+    for (const key of navigationAncestorKeys(index, activeKey)) requiredExpandedKeys.add(key);
+  }
   const expandedKeys = new Set([...manual, ...requiredExpandedKeys]);
   const rows = [];
 

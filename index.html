@@ -25,7 +25,11 @@
       <aside id="ws-navigation-drawer" class="ws-navigation-drawer" aria-label="Hierarchy navigation" aria-hidden="true" hidden>
         <div class="ws-navigation-header">
           <strong>NAVIGATION</strong>
-          <button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close hierarchy navigation">×</button>
+          <div class="ws-navigation-actions">
+            <button id="ws-navigation-collapse-all" class="ws-navigation-action" type="button" aria-label="Collapse all hierarchy entries" title="Collapse all">−</button>
+            <button id="ws-navigation-expand-all" class="ws-navigation-action" type="button" aria-label="Expand all hierarchy entries" title="Expand all">+</button>
+            <button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close hierarchy navigation" title="Close">×</button>
+          </div>
         </div>
         <label class="ws-navigation-search-label" for="ws-navigation-search">Search hierarchy</label>
         <input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search hierarchy…" autocomplete="off">

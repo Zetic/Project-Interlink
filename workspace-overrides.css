@@ -204,9 +204,10 @@
   min-height: 0;
   overflow: hidden;
   background: #0c1521;
-  border: 1px solid #2c4c6d;
+  border-right: 1px solid #2c4c6d;
   box-shadow: 8px 0 24px #0009;
 }
+.ws-navigation-drawer[hidden] { display: none !important; }
 .ws-navigation-header {
   display: flex;
   align-items: center;
@@ -216,6 +217,14 @@
   color: #a0c8ff;
   border-bottom: 1px solid #1e3a5f;
   letter-spacing: 0.1em;
+}
+.ws-navigation-actions { display: flex; align-items: center; gap: 3px; }
+.ws-navigation-action {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
 }
 .ws-navigation-close {
   padding: 0 7px;
