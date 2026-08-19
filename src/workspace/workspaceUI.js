@@ -398,7 +398,8 @@ function installNavigationEvents() {
   });
   document.addEventListener('change', event => {
     const input = event.target.closest('[data-navigation-filter]');
-    if (!input) return;
+    const drawer = el('ws-navigation-drawer');
+    if (!input || !drawer?.contains(input)) return;
     if (input.checked) wsState.navigationHiddenCategories.delete(input.dataset.navigationFilter);
     else wsState.navigationHiddenCategories.add(input.dataset.navigationFilter);
     renderNavigationDrawer();
