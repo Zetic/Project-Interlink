@@ -8,7 +8,7 @@ The long-term goal is to turn the matter and energy available in an unfamiliar w
 
 > **Yesterday's factory becomes today's machine.**
 
-The canonical long-term game design lives in [`DESIGN.md`](DESIGN.md). This README records the current implementation state and the architectural contracts that already exist in code.
+The canonical long-term game design lives in [`DESIGN.md`](DESIGN.md). This README records the current implementation state, established architectural contracts, and the active near-term correction before player-authored construction.
 
 ---
 
@@ -52,9 +52,9 @@ World generation exists to create meaningful physical starting conditions for ga
 
 # Current Project State
 
-Interlink now has a coherent vertical architecture from deterministic planet generation to player-visible Features, continuous material extraction/processing, recursive hierarchy boundaries, and a shared graph interface.
+The project now has a coherent vertical architecture from deterministic planet generation to player-visible Sites/Features, continuous extraction/processing, recursive hierarchy boundaries, and a shared graph interface.
 
-The serialized versions are currently:
+Current serialized versions on `main` are:
 
 ```text
 schemaVersion: 7
@@ -68,21 +68,20 @@ generatorVersion: 3
 - deterministic seeded causal planet generation
 - deterministic namespaced RNG streams
 - World / Knowledge / UI state separation
-- Regions, Sites, Features, and normalized `ResourceOccurrence` entities
+- normalized Region, Site, Feature, and `ResourceOccurrence` entities
 - every generated Feature belongs to one enterable Site
-- every generated Feature currently has at least one resource/opportunity association
-- broad regional resource potential is materialized as physical access Sites/Features
-- structural Region/Site/Feature visibility does not depend on Knowledge State
+- broad regional resource potential becomes physical access Sites/Features rather than Region inventory
+- structural Region/Site/Feature visibility is independent from Knowledge State
 
 ### Matter and processing
 
 - `MaterialBatch` for meaningful discrete lots/samples
 - provenance separated from current material identity
 - particle size as a modeled material property
-- reusable `ProcessDefinition` metadata with explicit ports/parameters
+- reusable `ProcessDefinition` metadata
 - Crushing and Magnetic Separation
 - shared discrete/continuous transformation physics
-- `MaterialStream` as rate + physical state, not batches-per-tick
+- `MaterialStream` as constituent mass-flow state, not batches-per-tick
 - finite-capacity Hopper storage
 - constituent and total-mass conservation
 - transactional backpressure / atomic process behavior
@@ -92,36 +91,25 @@ generatorVersion: 3
 
 - fixed-step world simulation independent from render FPS
 - continuous Extractor, Crusher, and Magnetic Separator execution
-- global world Pause/Resume
+- global Pause/Resume
 - active-machine `enabled` command state
 - derived `off / idle / running / blocked` operating state
 - persistent Site sessions while navigating elsewhere
-- automated systems continue running when another workspace is visible
 
-### Recursive systems
+### Recursive systems and graph UI
 
 - Planet → Region → Site navigation
-- explicit Site Import / Site Export boundary buffers
-- explicit Region Import / Region Export boundary buffers
-- parent-facing ports alias the same physical child boundary state
-- conserved cross-boundary `BoundaryTransfer` behavior
-- no implicit Site → Region or Region → Planet movement
-
-### Shared graph interface
-
-- one `GraphNode` / `GraphPort` / `GraphConnection` projection layer
-- shared node/edge rendering across Planet, Region, and Site
+- explicit Site and Region Import/Export boundary buffers
+- conserved cross-boundary transfer behavior
+- no implicit cross-boundary logistics
+- one shared `GraphNode` / `GraphPort` / `GraphConnection` projection layer
 - shared selection, Inspector, connection preview, and disconnect behavior
 - one common workspace shell
-- per-workspace pan/zoom state
-- pointer-centered wheel zoom
-- Zoom Out / Zoom In / Fit / Center controls
-- signed effectively unbounded logical graph coordinates
-- drag tracking independent of transformed DOM-layer bounds
+- per-workspace pan/zoom
+- signed effectively unbounded graph coordinates
+- persistent semantic node-category headers
 
-### Node recognition
-
-Every graph node has a persistent semantic category header:
+Node categories currently include:
 
 ```text
 PLANET
@@ -139,15 +127,13 @@ LOGISTICS
 SYSTEM
 ```
 
-The header answers **what kind of thing is this?** The body identifies the instance/subtype and live state.
-
-A Crusher is an **APPARATUS** executing a crushing process; it is not itself an abstract PROCESS node.
+The category answers **what kind of thing is this?** The node body identifies the specific instance/subtype and live state.
 
 ---
 
-# Canonical Natural-Resource Hierarchy
+# Canonical Physical Hierarchy
 
-The physical hierarchy is now:
+The current hard ownership hierarchy is:
 
 ```text
 Planet
@@ -161,17 +147,13 @@ Feature
 ResourceOccurrence
 ```
 
-This is a hard world-model contract.
-
 ## Region
 
-A Region is geographic and logistical context. It groups Sites.
+A Region is geographic/logistical context. It groups Sites.
 
-A Region does **not** physically own Features or ResourceOccurrences.
+A Region does **not** physically own Features or ResourceOccurrences. Regional climate, geology, moisture, biosphere conditions, surface cover, etc. may influence generation, but they are generation causes rather than resource inventory.
 
-Regional climate, geology, surface cover, bulk composition, moisture, biosphere conditions, etc. may influence what resources are broadly available, but that information is a **generation cause**, not a resource inventory.
-
-Canonical Region state therefore contains Site references, not:
+Do not reintroduce canonical fields such as:
 
 ```text
 region.features
@@ -181,60 +163,168 @@ region.resources
 
 ## Site
 
-A Site is a player-addressable place inside a Region.
+A Site is a player-addressable geographic place in a Region.
 
-A Site owns/references one or more Features:
+A Site may contain one or more Features:
 
 ```text
 Site
-├── Feature(s)
+├── Feature
+├── Feature
 ├── Site Import
 ├── Site Export
 └── player systems later
 ```
 
-A Site does not duplicate its Features' ResourceOccurrence IDs as a second ownership list.
+`site.featureIds` is intentionally plural.
+
+A Site must not duplicate its Features' ResourceOccurrence IDs as a second ownership list.
 
 ## Feature
 
-A Feature is a physical source, opportunity, constraint, or environment located at a Site.
+A Feature is one distinct physical system/body/opportunity at a Site that can meaningfully be interacted with or exploited.
 
-Examples:
+Examples include:
 
 ```text
-Mineral Deposit
+Iron Vein
 Aquifer
 Gas Reservoir
+Obsidian Outcrop
 Volcanic Vent
-Hydrothermal System
 Forest
 Ice Field
 Surface Deposit
-Rock Field
+Cavern
 ```
-
-A Feature should exist because it creates some meaningful physical opportunity or constraint, not as decorative world-generation metadata.
 
 ## ResourceOccurrence
 
-A `ResourceOccurrence` is actual natural material/resource state associated with exactly one Feature.
+A `ResourceOccurrence` is the actual physical source/feedstock body exposed through one Feature.
 
-Every current ResourceOccurrence has:
+Every natural occurrence is Feature-owned:
 
 ```text
 sourceType: "feature"
 sourceId: <owning Feature id>
 ```
 
-The `distribution` property on raw resource definitions is only a generator hint (`localized`, `regional`, or `both`). It must never become physical Region ownership.
+Raw-resource `distribution` (`localized`, `regional`, `both`) is only generation metadata. It must never become Region ownership.
+
+---
+
+# Active Pre-Construction Correction — Issue #25
+
+PR #24 correctly established the ownership hierarchy and physical Feature → Extractor access relationship, but manual testing exposed a remaining generator-semantic problem.
+
+A generated Feature can currently receive several unrelated ResourceOccurrences simply to add variety. For example, one `Outcrop` may list:
+
+```text
+Groundwater
+Fresh Water
+Obsidian
+```
+
+That is usually not one physical source. It is several independently exploitable things incorrectly grouped into one Feature.
+
+Issue #25 corrects this before player construction begins:
+
+> **Multiple independently exploitable physical sources should be separate Features. Multiple constituents of the same physical source belong in one ResourceOccurrence composition.**
+
+Target example:
+
+```text
+SITE: Ancientwell Rift
+│
+├── FEATURE: Ancientwell Aquifer
+│   └── ResourceOccurrence: groundwater body
+│
+└── FEATURE: Blackglass Outcrop
+    └── ResourceOccurrence: obsidian body
+```
+
+rather than:
+
+```text
+FEATURE: Outcrop
+├── Groundwater
+├── Fresh Water
+└── Obsidian
+```
+
+For the current stage, generation should default to:
+
+> **One ResourceOccurrence per generated Feature.**
+
+This is a near-term generation rule, not a declaration that one Feature can never contain multiple physical occurrences in a future, more detailed model. Multiple occurrences should require an actual physical reason rather than being used as a generic variety mechanism.
+
+Issue: [`#25 — Split independently exploitable sources into distinct Features and move mixtures toward chemical composition`](https://github.com/Zetic/Project-Interlink/issues/25)
+
+---
+
+# Composition vs Resource Classification
+
+Interlink's long-term physical truth should trend toward chemical/mineral constituents rather than commodity-token identities.
+
+A resource label is useful for generation, UI, classification, and player language, but it should not become a substitute for physical composition when composition matters.
+
+## One source, many constituents
+
+An iron-bearing vein is one physical source:
+
+```text
+FEATURE: Iron Vein
+└── ResourceOccurrence: iron-bearing ore body
+    ├── hematite
+    ├── magnetite
+    ├── goethite
+    └── quartz/gangue
+```
+
+Extraction should preserve that mixture.
+
+Likewise, an aquifer should eventually be modeled closer to:
+
+```text
+FEATURE: Aquifer
+└── ResourceOccurrence: groundwater body
+    ├── H2O
+    ├── Na+
+    ├── Cl-
+    ├── Ca2+
+    ├── HCO3-
+    └── other dissolved species/minerals
+```
+
+with classifications such as:
+
+```text
+fresh water
+saline water
+brine
+```
+
+derived from or descriptive of the underlying mixture rather than being separate primitive matter types whenever they refer to the same physical body.
+
+The same principle applies to reservoir gases:
+
+```text
+CH4
+C2H6
+CO2
+N2
+...
+```
+
+A complete chemistry/speciation system is **not** the current milestone. Coarse ResourceDefinitions remain acceptable where deeper chemistry is not yet implemented. The architectural direction is simply:
+
+> **Prefer constituent/species truth over proliferating commodity tokens.**
 
 ---
 
 # Regional / Broad Resources Become Sites
 
-Some resources are not naturally represented as a single small localized deposit. Wood, regolith, surface rock, common water, ice, atmosphere, clay, sand, etc. may be broadly available across suitable Regions.
-
-Interlink represents those conditions as physical access places rather than abstract Region inventory.
+Broad availability remains represented through Sites and Features rather than Region inventory.
 
 Example:
 
@@ -242,38 +332,34 @@ Example:
 Kharon Plain
 │
 ├── Great Forest of Kharon
-│   └── Forest
-│       └── Wood occurrence
+│   └── Kharon Forest Feature
+│       └── wood/biomass source body
 │
 ├── Kharon Clay Fields
-│   └── Surface Deposit
-│       └── Clay occurrence
+│   └── Clay Deposit Feature
+│       └── clay-bearing material body
 │
 └── Open Atmosphere of Kharon
-    └── Atmospheric Zone
-        └── Atmospheric Gas occurrence
+    └── Atmospheric Zone Feature
+        └── atmospheric mixture
 ```
 
-These are `regional-access` Sites generated from regional conditions.
+The Region itself owns no resource quantity.
 
-The Region itself still owns no resource quantity.
-
-For now, broad availability remains qualitative. Do not invent precise reserve tonnage until depletion/reserve mechanics exist.
+For now, broad availability remains qualitative. Do not invent precise reserve tonnage until reserve/depletion mechanics need it.
 
 ---
 
 # Feature Access and Extraction
 
-Features are now active participants in the graph rather than informational boxes.
-
-The key relationship is:
+Features participate directly in the graph.
 
 ```text
 Feature
   RESOURCE ACCESS
         │
         ▼
-Extractor / Miner
+Extractor / compatible apparatus
         │
         │ material output
         ▼
@@ -285,30 +371,24 @@ Container / downstream process
 
 ## Resource access is not matter flow
 
-`Feature → Extractor` is a typed `resource-access` connection.
+`Feature → Extractor` is a typed `resource-access` relationship.
 
-It means the apparatus is physically attached to / exploiting that Feature. It does **not** transfer kilograms and it does not create a `MaterialStream`.
+It represents physical access/attachment to the source. It does **not** transfer kilograms, does not create a `MaterialStream`, and does not duplicate matter ownership.
 
-The actual material stream begins at the Extractor material-output port.
+The material stream begins at the apparatus material-output port.
 
-This distinction prevents the Feature access relationship from duplicating matter ownership.
+## Extraction preserves source matter
 
-## Extractors cannot magically bind to occurrences
-
-An Extractor may be configured for a ResourceOccurrence, but it can only operate if:
+An Extractor may operate only when:
 
 1. it has a valid `resource-access` connection from a Feature;
-2. that Feature owns the configured occurrence;
-3. the Extractor has a valid material-output connection;
-4. downstream storage/processing has capacity.
+2. that Feature owns the configured ResourceOccurrence;
+3. it has a valid material output;
+4. downstream capacity permits transfer.
 
-Without Feature access, an enabled Extractor does not produce material.
+Extraction does not purify the source.
 
-## Extraction preserves actual source matter
-
-Extraction does not output a purified commodity token.
-
-If a natural iron-bearing occurrence is:
+If the occurrence is:
 
 ```text
 hematite          62%
@@ -317,44 +397,42 @@ quartz/gangue     21%
 other              4%
 ```
 
-then the Extractor's output stream preserves that mixture in the same proportions at the actual extraction rate.
+then the Extractor output preserves that mixture at the actual extraction rate.
 
-Downstream crushing, separation, concentration, smelting, and chemistry are what transform natural matter into useful products.
-
-For resources that do not yet have a detailed constituent model, the current coarse resource itself may be represented as the stream constituent until deeper composition mechanics are introduced.
+Downstream crushing, separation, concentration, smelting, chemistry, etc. produce progressively refined matter.
 
 ---
 
 # Feature Inspector Direction
 
-The primary Feature Inspector should emphasize information that currently creates decisions:
+The primary Feature Inspector should emphasize information that creates current decisions:
 
 ```text
 FEATURE
 Name
 Feature type
 
-RESOURCES
-- resource name
-- availability / qualitative quantity
-- known composition where relevant
+SOURCE / RESOURCE BODY
+- useful classification/name
+- qualitative availability
+- known composition where modeled
 
 ACCESS
 - resource-access interface
 - connected apparatus
 ```
 
-Generated detail such as depth, geometry, accessibility, temperature, pressure, or other metadata may remain in World State for future mechanics, but it should not dominate the current player-facing Inspector until it affects gameplay.
+Generated metadata such as depth, geometry, accessibility, pressure, temperature, etc. may remain in World State, but should not dominate the player-facing Inspector until active mechanics use it.
 
-> Generated detail may exist before it becomes player-facing. The Inspector should emphasize properties that currently matter.
+For Sites with multiple physical sources, show multiple Feature nodes rather than one Feature containing an arbitrary resource list.
 
 ---
 
 # Temporary Iron Processing Prototype
 
-The current automatic iron chain remains a temporary validation scaffold, not the intended final construction experience.
+The automatic iron chain remains a temporary validation scaffold.
 
-At a compatible iron Site, the prototype now behaves physically as:
+At a compatible iron Site:
 
 ```text
 Iron-bearing Feature
@@ -374,34 +452,28 @@ Magnetic Separator
        └────────→ Tailings Hopper
 ```
 
-At non-iron Sites, the iron apparatus chain is not instantiated merely because the Site is enterable.
+Non-iron Sites must not receive the iron chain merely because they are enterable.
 
-The next construction milestone should eventually replace automatic apparatus placement with player-authored placement/configuration while preserving this physical Feature-access contract.
+Issue #25 must preserve the iron case as **one physical ore occurrence containing a mineral mixture**, while splitting unrelated physical sources into separate Features.
 
 ---
 
-# Foundational State Architecture
+# Foundational State and Matter Ownership
 
-Interlink preserves three distinct kinds of state:
+Interlink keeps three kinds of state separate:
 
 ```text
 WORLD / SIMULATION STATE
 objective physical truth
         ↓
 PLAYER KNOWLEDGE STATE
-measurements, analyses, estimates, confidence
+measurements / analyses / estimates / confidence
         ↓
 APPLICATION / UI STATE
-selection, graph layout, pan/zoom, panels, temporary gestures
+selection / graph layout / pan+zoom / panels / temporary gestures
 ```
 
-Physical truth must not migrate into DOM/UI state merely because it is convenient to render there.
-
-Structural world entities are immediately visible. Knowledge State remains for meaningful analysis, measurements, uncertainty, sensor data, and future scientific characterization.
-
----
-
-# Matter Ownership
+Structural world entities are visible immediately. Knowledge State is for meaningful analysis, uncertainty, measurements, and sensor data—not basic structural visibility.
 
 > **Abstract the history. Preserve the resulting matter.**
 
@@ -414,40 +486,13 @@ Every modeled unit of matter has exactly one physical owner/location at a time, 
 - explicit transport inventory when transit is modeled
 - discrete package/sample
 
-A stream describes transfer between owners. It must not duplicate source/destination matter.
+A `MaterialStream` describes transfer between owners and must not duplicate source/destination matter.
 
-## MaterialBatch
-
-Use `MaterialBatch` for meaningful discrete lots such as samples, packages, shipments, or isolated charges.
-
-Never allocate one batch per continuous-simulation tick.
-
-## MaterialStream
-
-A continuous stream carries constituent mass-flow rates and physical state:
-
-```text
-MaterialStream
-├── constituent mass-flow rates (kg/s)
-├── total flow (derived)
-├── particle size
-└── additional state later when gameplay requires it
-```
-
-## Containers
-
-Containers integrate streams over time:
-
-```text
-stored += inflow × dt
-stored -= outflow × dt
-```
-
-If contents physically mix, aggregate the resulting physical state rather than keeping arbitrary historical transfer objects.
+`MaterialBatch` is for meaningful discrete lots; never allocate one batch per continuous-simulation tick.
 
 ---
 
-# Throughput, Backpressure, and Conservation
+# Throughput, Backpressure, and Boundaries
 
 Feasible process throughput is constrained by:
 
@@ -458,17 +503,11 @@ required output free capacity
 connectivity / operating constraints
 ```
 
-Processes and transfers are staged/committed coherently. They must not consume input and later discover an output cannot accept the result.
+Processes/transfers must not consume input and later discover that output cannot be accepted.
 
-Until an explicit splitter exists, one material output port cannot fan out to multiple material destinations and duplicate matter.
+Until an explicit splitter exists, one material output cannot fan out to multiple material destinations and duplicate matter.
 
-`resource-access` is different: one physical Feature may eventually support multiple attached apparatus, so its access relationship is not governed by the material-stream fan-out rule.
-
----
-
-# Recursive Boundary Contract
-
-Every composite system that exchanges matter with its parent uses explicit physical boundary buffers.
+Every composite system exchanging matter with its parent uses explicit physical boundaries:
 
 ```text
 Site Import
@@ -477,15 +516,13 @@ Region Import
 Region Export
 ```
 
-The parent-facing port and child-visible boundary are two views of the same physical owner, not duplicate inventories.
-
-A boundary existing does not imply movement. Matter moves only through explicit connections/transfers.
+Parent-facing ports and child-visible boundaries are views of the same physical ownership state. A boundary existing does not imply movement.
 
 ---
 
 # World Time and Machine Control
 
-Keep these separate:
+Keep separate:
 
 ```text
 WORLD TIME
@@ -498,7 +535,7 @@ MACHINE OPERATING STATE
 off / idle / running / blocked / faulted later
 ```
 
-World simulation runs by default. Pausing does not change machine commands. Navigating away from a Site does not stop its automated systems.
+World simulation runs by default. Pausing does not alter machine commands. Navigating away does not stop automated Site systems.
 
 New active apparatus defaults disabled/off.
 
@@ -519,56 +556,56 @@ select
 → observe live state
 ```
 
-The graph viewport is finite; logical graph space is not. Signed node coordinates are valid and pan/zoom/layout are application state only.
+The viewport is finite; logical graph space is not. Signed node coordinates are valid.
 
-Persistent graph edges must correspond to real underlying relationships. Material edges represent material-flow relationships; `resource-access` edges represent physical source access and are visually distinguishable.
+Persistent graph edges must correspond to real underlying relationships. Material edges represent matter flow; `resource-access` edges represent source access and are visually distinguishable.
 
 ---
 
 # Immediate Development Direction
 
-The Site/Feature resource-access architecture is the final world-to-industry contract needed before player-authored construction.
+**Issue #25 is the active pre-construction correction.**
 
-The next major gameplay milestone is:
+Do not begin the main player-authored construction milestone on top of ambiguous Feature semantics.
+
+Current order:
+
+1. **Issue #25 — split independently exploitable sources into distinct Features and establish composition/classification direction.**
+2. Player-authored Site construction.
+3. Remove automatic iron-chain placement from normal gameplay.
+4. Deepen extraction/reserve/depletion mechanics when useful.
+5. Add additional Feature interaction families incrementally.
+6. Add splitter/merger when real branching requires it.
+7. Add logistics.
+8. Add power/energy.
+9. Add sensors/controllers and deeper Knowledge mechanics.
+10. Expand reusable composite systems, chemistry, thermodynamics, fluids/gases, and larger-scale industry iteratively.
+
+The construction loop after Issue #25 should be:
 
 ```text
 Enter Site
     ↓
-Inspect Feature/resources
+Inspect distinct physical Features
     ↓
-Choose apparatus/storage
+Choose compatible apparatus/storage
     ↓
 Place nodes
     ↓
 Connect Feature access + material ports
     ↓
-Configure machinery
+Configure / enable
     ↓
-Enable machinery
-    ↓
-Observe flow / blocking / constraints
+Observe real source mixture / flow / blocking
     ↓
 Iterate
 ```
-
-Near-term roadmap:
-
-1. Player-authored Site construction.
-2. Remove automatic iron-chain placement from normal gameplay.
-3. Deepen reserve/depletion/extraction mechanics when useful.
-4. Add additional Feature interaction families incrementally.
-5. Add explicit splitter/merger mechanics when branching requires them.
-6. Add logistics apparatus/capacity.
-7. Add power/energy requirements.
-8. Add sensors/controllers and deeper Knowledge mechanics.
-9. Allow solved systems to become reusable composite nodes.
-10. Expand chemistry, thermodynamics, fluids/gases, pressure, and larger-scale industry iteratively.
 
 ---
 
 # Running the Project
 
-Run the web app through a local HTTP server from repository root:
+From repository root:
 
 ```bash
 python -m http.server 8000
@@ -586,13 +623,11 @@ Then open:
 http://localhost:8000
 ```
 
-Run automated tests with:
+Run tests with:
 
 ```bash
 npm test
 ```
-
-The repository layout remains compatible with GitHub Pages from `main` / repository root.
 
 ---
 
@@ -600,7 +635,7 @@ The repository layout remains compatible with GitHub Pages from `main` / reposit
 
 - [`DESIGN.md`](DESIGN.md) — canonical long-term game design
 - `README.md` — current implementation state and roadmap
-- [`.github/copilot-instructions.md`](.github/copilot-instructions.md) — coding-agent implementation guardrails
+- [`.github/copilot-instructions.md`](.github/copilot-instructions.md) — implementation guardrails and active coding priority
 - [`PATCH_NOTES.md`](PATCH_NOTES.md) — historical development record
 
 Long-term design, current implementation, implementation rules, and historical notes should remain distinct.
