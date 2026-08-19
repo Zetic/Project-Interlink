@@ -187,11 +187,10 @@ export function assertCrushingTarget(feedSolidState, targetParticleSizeMm) {
 export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm) {
   validateSolidMaterialState(feedSolidState);
   const targetIndex = particleSizeBinIndex(requireCrusherTargetSizeBinId(targetParticleSizeMm));
-  let hasCrushable = false;
-  forEachSolidFraction(feedSolidState, (fraction) => {
-    if (particleSizeBinIndex(fraction.sizeBinId) > targetIndex) hasCrushable = true;
+  return Object.keys(feedSolidState.fractions).some((key) => {
+    const [, sizeBinId] = key.split('|');
+    return particleSizeBinIndex(sizeBinId) > targetIndex;
   });
-  return hasCrushable;
 }
 
 export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {

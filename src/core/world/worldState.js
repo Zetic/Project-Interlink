@@ -287,7 +287,7 @@ export function validateWorld(world) {
         batch.provenance.sourceBatchIds,
         `Material batch '${bid}' provenance.sourceBatchIds`,
       materialBatches,
-        errors
+      errors,
       );
 
       const createdByProcessRunId = batch.provenance.createdByProcessRunId;
