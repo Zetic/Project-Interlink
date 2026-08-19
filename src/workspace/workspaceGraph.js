@@ -1,6 +1,7 @@
 /** Shared player-facing graph projection for primitive and composite workspaces. */
 
 import { getNodePortDefinitions } from '../simulation/simulationEngine.js';
+import { nodeCategory } from './nodePresentation.js';
 
 function graphPorts(node, ports = getNodePortDefinitions(node)) {
   return ports.map(port => ({
@@ -16,6 +17,7 @@ function graphNode(node, position = { x: 0, y: 0 }, ports, selected = false) {
     id: node.id,
     label: node.displayName ?? node.systemType ?? node.nodeType ?? node.id,
     type: node.nodeType ?? node.systemType,
+    category: nodeCategory(node),
     position: { x: position.x, y: position.y },
     ports: graphPorts(node, ports),
     source: node,
@@ -146,12 +148,24 @@ export function renderGraphNodes({
     }
 
     element.className = `ws-node ${className} ${nodeClass(node)}`;
+    element.classList.toggle('ws-node--composite', node.composite === true);
     Object.assign(element.style, {
       left: `${node.position.x}px`,
       top: `${node.position.y}px`,
       width: `${width}px`,
       height: `${height}px`,
     });
+
+    let categoryBar = element.querySelector('.ws-node-category');
+    if (!categoryBar) {
+      categoryBar = document.createElement('div');
+      element.appendChild(categoryBar);
+    }
+    const category = node.category ?? nodeCategory(node.source);
+    categoryBar.className = `ws-node-category ws-node-category--${category.key}`;
+    categoryBar.textContent = category.label;
+    element.setAttribute('data-node-category', category.key);
+
     nodeContent?.(element, node, isNew);
     if (!nodeContent) {
       const nodeLabel = element.querySelector('.ws-node-label') ?? document.createElement('div');
