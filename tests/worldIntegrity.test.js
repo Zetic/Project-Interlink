@@ -192,8 +192,8 @@ test('a localized Site can contain multiple distinct Features', () => {
 });
 
 test('deterministic generation: same seed produces identical worlds under generator v5', () => {
-  const world1 = buildWorld('determinism-v4');
-  const world2 = buildWorld('determinism-v4');
+  const world1 = buildWorld('determinism-v5');
+  const world2 = buildWorld('determinism-v5');
   assert.deepStrictEqual(
     Object.keys(world1.features).sort(),
     Object.keys(world2.features).sort(),

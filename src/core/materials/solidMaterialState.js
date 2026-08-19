@@ -61,7 +61,7 @@ export function roundSolidQuantity(value) {
 
 export function createSolidMaterialState(fractions = []) {
   const state = { fractions: {} };
-  for (const fraction of fractions) addSolidFractionUnchecked(state, fraction);
+  for (const fraction of fractions) addSolidFractionDirect(state, fraction);
   pruneSolidMaterialStateUnchecked(state);
   validateSolidMaterialState(state);
   return state;
@@ -74,7 +74,7 @@ export function createSolidMaterialStateFromSpeciesQuantities(speciesQuantities,
   const sizeBinId = particleSizeBinIdForMm(particleSizeMm);
   const state = createSolidMaterialState();
   for (const [speciesId, quantity] of Object.entries(speciesQuantities ?? {})) {
-    addSolidFractionUnchecked(state, { speciesId, sizeBinId, liberationClassId, quantity });
+    addSolidFractionDirect(state, { speciesId, sizeBinId, liberationClassId, quantity });
   }
   pruneSolidMaterialStateUnchecked(state);
   validateSolidMaterialState(state);
@@ -147,7 +147,8 @@ export function forEachSolidFraction(state, callback) {
   for (const fraction of iterateSolidFractionsUnchecked(state)) callback(fraction);
 }
 
-export function addSolidFractionUnchecked(state, {
+// Validates the incoming fraction descriptor once, but skips whole-state validation and pruning.
+export function addSolidFractionDirect(state, {
   speciesId,
   sizeBinId,
   liberationClassId,
@@ -169,7 +170,7 @@ export function addSolidFraction(state, {
   rateKgPerSecond,
 }) {
   validateSolidMaterialState(state);
-  addSolidFractionUnchecked(state, { speciesId, sizeBinId, liberationClassId, quantity, massKg, rateKgPerSecond });
+  addSolidFractionDirect(state, { speciesId, sizeBinId, liberationClassId, quantity, massKg, rateKgPerSecond });
   return pruneSolidMaterialStateUnchecked(state);
 }
 

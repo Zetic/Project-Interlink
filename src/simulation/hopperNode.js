@@ -4,7 +4,7 @@ import { particleSizeBinIdForMm } from '../core/materials/particleSizeBins.js';
 import {
   SOLID_MATERIAL_TOLERANCE as HOPPER_TOLERANCE_KG,
   SOLID_PARTICULATE_FORM,
-  addSolidFractionUnchecked,
+  addSolidFractionDirect,
   addSolidMaterialState,
   cloneSolidMaterialBody,
   createSolidMaterialBody,
@@ -33,7 +33,7 @@ function legacyMaterialBody(initialComponentsKg, initialParticleSizeMm, initialL
     if (typeof kg !== 'number' || !Number.isFinite(kg) || kg < 0) {
       throw new Error(`Hopper initial component '${speciesId}' must be a finite non-negative number`);
     }
-    addSolidFractionUnchecked(solidState, {
+    addSolidFractionDirect(solidState, {
       speciesId,
       sizeBinId,
       liberationClassId: initialLiberationClassId,

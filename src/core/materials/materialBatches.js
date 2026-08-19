@@ -1,7 +1,7 @@
 import { particleSizeBinIdForMm } from './particleSizeBins.js';
 import {
   SOLID_MATERIAL_TOLERANCE as MASS_TOLERANCE_KG,
-  addSolidFractionUnchecked,
+  addSolidFractionDirect,
   cloneSolidMaterialBody,
   createSolidMaterialBody,
   createSolidMaterialState,
@@ -94,7 +94,7 @@ function legacyMaterialBodyFromComponents(componentsKg, particleSizeMm, liberati
   const solidState = createSolidMaterialState();
   const sizeBinId = particleSizeBinIdForMm(particleSizeMm);
   for (const [speciesId, massKg] of Object.entries(componentsKg)) {
-    addSolidFractionUnchecked(solidState, { speciesId, sizeBinId, liberationClassId, quantity: roundKg(massKg) });
+    addSolidFractionDirect(solidState, { speciesId, sizeBinId, liberationClassId, quantity: roundKg(massKg) });
   }
   return createSolidMaterialBody(solidState);
 }

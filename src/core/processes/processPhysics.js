@@ -8,7 +8,7 @@ import {
   representativeParticleSizeMm,
 } from '../materials/particleSizeBins.js';
 import {
-  addSolidFractionUnchecked,
+  addSolidFractionDirect,
   createSolidMaterialState,
   forEachSolidFraction,
   totalSolidQuantity,
@@ -64,7 +64,7 @@ function distributeLiberationMass(outputState, speciesId, inputLiberationClassId
   const maxLift = Math.min(maxIndex - inputIndex, sizeImprovement >= 2 ? 2 : sizeImprovement >= 1 ? 1 : 0);
 
   if (maxLift <= 0 || inputIndex >= maxIndex) {
-    addSolidFractionUnchecked(outputState, {
+    addSolidFractionDirect(outputState, {
       speciesId,
       sizeBinId: outputSizeBinId,
       liberationClassId: inputLiberationClassId,
@@ -76,7 +76,7 @@ function distributeLiberationMass(outputState, speciesId, inputLiberationClassId
   const improvedShare = clamp(0.2 + 0.2 * sizeImprovement, 0, maxLift >= 2 ? 0.8 : 0.65);
   const sameShare = 1 - improvedShare;
   if (sameShare > 0) {
-    addSolidFractionUnchecked(outputState, {
+    addSolidFractionDirect(outputState, {
       speciesId,
       sizeBinId: outputSizeBinId,
       liberationClassId: liberationClasses[inputIndex].id,
@@ -84,7 +84,7 @@ function distributeLiberationMass(outputState, speciesId, inputLiberationClassId
     });
   }
   if (maxLift === 1) {
-    addSolidFractionUnchecked(outputState, {
+    addSolidFractionDirect(outputState, {
       speciesId,
       sizeBinId: outputSizeBinId,
       liberationClassId: liberationClasses[inputIndex + 1].id,
@@ -92,13 +92,13 @@ function distributeLiberationMass(outputState, speciesId, inputLiberationClassId
     });
     return;
   }
-  addSolidFractionUnchecked(outputState, {
+  addSolidFractionDirect(outputState, {
     speciesId,
     sizeBinId: outputSizeBinId,
     liberationClassId: liberationClasses[inputIndex + 1].id,
     quantity: massKg * improvedShare * 0.65,
   });
-  addSolidFractionUnchecked(outputState, {
+  addSolidFractionDirect(outputState, {
     speciesId,
     sizeBinId: outputSizeBinId,
     liberationClassId: liberationClasses[inputIndex + 2].id,
@@ -156,8 +156,8 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
       fraction.liberationClassId,
       fieldStrength,
     );
-    addSolidFractionUnchecked(concentrate, { ...fraction, quantity: fraction.quantity * recovery });
-    addSolidFractionUnchecked(tailings, { ...fraction, quantity: fraction.quantity - (fraction.quantity * recovery) });
+    addSolidFractionDirect(concentrate, { ...fraction, quantity: fraction.quantity * recovery });
+    addSolidFractionDirect(tailings, { ...fraction, quantity: fraction.quantity - (fraction.quantity * recovery) });
   });
 
   return { concentrate, tailings };

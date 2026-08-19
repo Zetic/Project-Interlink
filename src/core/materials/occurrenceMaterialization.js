@@ -1,5 +1,5 @@
 import { MATERIAL_FORMS, physicalFormForOccurrence } from './materialForms.js';
-import { addSolidFractionUnchecked, createSolidMaterialBody, createSolidMaterialState } from './solidMaterialState.js';
+import { addSolidFractionDirect, createSolidMaterialBody, createSolidMaterialState } from './solidMaterialState.js';
 
 const RUN_OF_OCCURRENCE_TEMPLATE = Object.freeze([
   Object.freeze({ sizeBinId: '60-120mm', liberationShares: Object.freeze({ locked: 0.75, partial: 0.25 }), massShare: 0.65 }),
@@ -30,7 +30,7 @@ export function createSolidMaterialBodyFromOccurrence(occurrence, quantity) {
     for (const sizeTemplate of RUN_OF_OCCURRENCE_TEMPLATE) {
       const sizeMass = quantity * share * sizeTemplate.massShare;
       for (const [liberationClassId, liberationShare] of Object.entries(sizeTemplate.liberationShares)) {
-        addSolidFractionUnchecked(solidState, {
+        addSolidFractionDirect(solidState, {
           speciesId,
           sizeBinId: sizeTemplate.sizeBinId,
           liberationClassId,
