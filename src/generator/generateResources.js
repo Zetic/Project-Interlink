@@ -1,93 +1,69 @@
-/**
- * Resource generation helpers.
- * Selects appropriate resources from the catalog based on tags/pools.
- */
+/** Resource-generation helpers. Resource distribution is a generator hint, not physical ownership. */
 
 import resources from '../data/raw-resources.js';
 
 export { resources };
 
-const REGION_SOURCES = new Set(['Region', 'Both', 'Region / Feature']);
-const FEATURE_SOURCES = new Set(['Feature', 'Both', 'Region / Feature']);
+const REGIONAL_DISTRIBUTIONS = new Set(['regional', 'both']);
+const LOCALIZED_DISTRIBUTIONS = new Set(['localized', 'both']);
 
-export function getRegionResources() {
-  return resources.filter(r => REGION_SOURCES.has(r.source));
+export function getRegionalResources() {
+  return resources.filter(resource => REGIONAL_DISTRIBUTIONS.has(resource.distribution));
 }
 
-export function getFeatureResources() {
-  return resources.filter(r => FEATURE_SOURCES.has(r.source));
+export function getLocalizedResources() {
+  return resources.filter(resource => LOCALIZED_DISTRIBUTIONS.has(resource.distribution));
+}
+
+export function getResourceDefinition(resourceId) {
+  return resources.find(resource => resource.id === resourceId) ?? null;
 }
 
 /**
- * Pick resources matching any of the given tags.
- * @param {string[]} tags
- * @param {'region'|'feature'} sourceType
+ * Pick resource definitions matching any supplied tag.
+ * `distribution` controls generation propensity only. Every generated occurrence
+ * is ultimately owned by a physical Feature.
  */
-export function resourcesByTags(tags, sourceType = 'region') {
-  const pool = sourceType === 'feature' ? getFeatureResources() : getRegionResources();
+export function resourcesByTags(tags, distribution = 'localized') {
+  const pool = distribution === 'regional' ? getRegionalResources() : getLocalizedResources();
   const tagSet = new Set(tags);
-  return pool.filter(r => r.tags.some(t => tagSet.has(t)));
-}
-
-const ABUNDANCE_CLASSES = [
-  'Trace',
-  'Scarce',
-  'Uncommon',
-  'Common',
-  'Abundant',
-  'Extremely Abundant',
-];
-
-export function abundanceClass(value) {
-  // value 0..1
-  const idx = Math.min(Math.floor(value * ABUNDANCE_CLASSES.length), ABUNDANCE_CLASSES.length - 1);
-  return ABUNDANCE_CLASSES[idx];
+  return pool.filter(resource => resource.tags.some(tag => tagSet.has(tag)));
 }
 
 const QUANTITY_CLASSES = ['Tiny', 'Small', 'Moderate', 'Large', 'Massive'];
+const AVAILABILITY_CLASSES = ['Sparse', 'Limited', 'Moderate', 'Common', 'Abundant', 'Very Abundant'];
 
 export function quantityClass(value) {
   const idx = Math.min(Math.floor(value * QUANTITY_CLASSES.length), QUANTITY_CLASSES.length - 1);
   return QUANTITY_CLASSES[idx];
 }
 
-/**
- * Generate a regional resource occurrence with a stable ID.
- * @param {object} resource - ResourceDefinition from the catalog.
- * @param {object} rng
- * @param {string} occurrenceId - Stable ID assigned by the caller.
- * @param {string} regionId - Source region ID for back-reference.
- */
-export function makeRegionResource(resource, rng, occurrenceId, regionId) {
-  const abundance = rng.range(0.3, 1.0);
-  return {
-    id: occurrenceId,
-    resourceId: resource.id,
-    name: resource.name,
-    abundance: parseFloat(abundance.toFixed(2)),
-    quantityEstimate: abundanceClass(abundance),
-    compositionNotes: compositionNote(resource, rng),
-    sourceType: 'region',
-    sourceId: regionId,
-  };
+export function availabilityClass(value) {
+  const clamped = Math.max(0, Math.min(0.999999, value));
+  const idx = Math.min(Math.floor(clamped * AVAILABILITY_CLASSES.length), AVAILABILITY_CLASSES.length - 1);
+  return AVAILABILITY_CLASSES[idx];
 }
 
 /**
- * Generate a feature resource occurrence.
- * @param {object} resource  - ResourceDefinition from the catalog.
- * @param {object} rng
- * @param {string} occurrenceId - Stable ID assigned by the caller.
- * @param {string} featureId - Source feature ID for back-reference.
+ * Generate a Feature-owned ResourceOccurrence. There are no Region-owned
+ * occurrences: regional abundance is represented by access Sites/Features.
  */
-export function makeFeatureResource(resource, rng, occurrenceId, featureId) {
+export function makeFeatureResource(resource, rng, occurrenceId, featureId, {
+  accessScope = 'localized',
+  availabilityBias = 0,
+} = {}) {
+  if (!resource) throw new Error('Feature resource generation requires a ResourceDefinition');
   const concentration = parseFloat(rng.range(1, 80).toFixed(1));
   const qv = rng.random();
+  const availabilityRoll = Math.max(0, Math.min(0.999999, rng.random() + availabilityBias));
   return {
     id: occurrenceId,
     resourceId: resource.id,
     name: resource.name,
     concentrationPercent: concentration,
     quantityClass: quantityClass(qv),
+    availabilityClass: availabilityClass(availabilityRoll),
+    accessScope,
     descriptor: featureDescriptor(resource, rng),
     composition: featureComposition(resource, rng),
     sourceType: 'feature',
@@ -95,7 +71,7 @@ export function makeFeatureResource(resource, rng, occurrenceId, featureId) {
   };
 }
 
-function compositionNote(resource, rng) {
+function compositionNote(resource) {
   const notes = {
     'basalt': 'Plagioclase + pyroxene ± olivine',
     'granite': 'Quartz + feldspar + mica',
@@ -103,25 +79,25 @@ function compositionNote(resource, rng) {
     'limestone': 'Calcite matrix with shell fragments',
     'shale': 'Fine clay minerals and silica',
     'clay': 'Kaolinite / illite mix',
-    'sand': 'Quartz-dominated fine particles',
+    'sand': 'Quartz-dominated granular material',
     'regolith': 'Pulverised surface rock and dust',
     'water-ice': 'H2O ice with minor impurities',
-    'saline-water': 'NaCl-dominated brine solution',
+    'saline-water': 'NaCl-dominated saline water',
     'fresh-water': 'Low-mineral liquid water',
-    'atmospheric-gas': 'Ambient atmospheric composition',
-    'wood': 'Cellulose and lignin fibres',
+    'atmospheric-gas': 'Ambient atmospheric mixture',
+    'wood': 'Cellulose and lignin-rich plant material',
     'plant-biomass': 'Mixed organic plant matter',
     'peat': 'Partially decomposed organic material',
     'organic-soil': 'Humus-rich mineral soil',
-    'carbon-rich-rock': 'Carbonaceous chondrite-like material',
+    'carbon-rich-rock': 'Carbonaceous rock material',
     'permafrost': 'Ice-cemented soil and rock',
     'mixed-sediment': 'Heterogeneous detrital mix',
     'carbonate-rock': 'Calcite / dolomite matrix',
     'gypsum': 'CaSO4·2H2O evaporite',
     'obsidian': 'Rhyolitic volcanic glass',
-    'pumice': 'Vesicular volcanic froth',
+    'pumice': 'Vesicular volcanic material',
   };
-  return notes[resource.id] || `${resource.name} deposit`;
+  return notes[resource.id] || resource.name;
 }
 
 function featureDescriptor(resource, rng) {
@@ -150,11 +126,12 @@ function featureDescriptor(resource, rng) {
     'lithium-brine': rng.pick(['Li-Cl dominant', 'Li-B-rich', 'Evaporite-hosted']),
     'rare-earth-ore': rng.pick(['Monazite-rich', 'Bastnäsite', 'Xenotime-bearing', 'Ion-adsorption']),
   };
-  return descriptors[resource.id] || `${resource.name}`;
+  return descriptors[resource.id] || compositionNote(resource);
 }
 
 function featureComposition(resource, rng) {
-  // Only generate detail for ore/fluid types
+  // Detailed mixtures only exist where the current simulation has a useful template.
+  // Other resources retain their coarse resource identity until deeper chemistry is implemented.
   const templates = {
     'iron-ore': () => normalise({ hematite: rng.int(20,70), magnetite: rng.int(5,30), goethite: rng.int(2,15), quartzAndGangue: rng.int(5,25) }),
     'copper-ore': () => normalise({ chalcopyrite: rng.int(30,60), bornite: rng.int(5,20), pyrite: rng.int(5,15), quartzAndGangue: rng.int(10,30) }),
@@ -171,8 +148,8 @@ function featureComposition(resource, rng) {
 function normalise(obj) {
   const total = Object.values(obj).reduce((a, b) => a + b, 0);
   const result = {};
-  for (const [k, v] of Object.entries(obj)) {
-    result[k] = parseFloat(((v / total) * 100).toFixed(1));
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = parseFloat(((value / total) * 100).toFixed(1));
   }
   return result;
 }

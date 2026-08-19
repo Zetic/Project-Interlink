@@ -182,10 +182,12 @@ export function renderGraphNodes({
         portsByDirection[direction].forEach((port, index) => {
           const step = height / (portsByDirection[direction].length + 1);
           const dot = document.createElement('div');
-          dot.className = `ws-port ws-port--${direction} ${portClass(node, port, direction)}`;
+          const kindClass = `ws-port--kind-${String(port.kind ?? 'material').replace(/[^a-z0-9_-]/gi, '-')}`;
+          dot.className = `ws-port ws-port--${direction} ${kindClass} ${portClass(node, port, direction)}`;
           dot.title = port.label ?? port.id;
           dot.dataset.nodeId = node.id;
           dot.dataset.portId = port.id;
+          dot.dataset.portKind = port.kind ?? 'material';
           dot.style.left = `${(direction === 'input' ? 0 : width) - portRadius}px`;
           dot.style.top = `${step * (index + 1) - portRadius}px`;
           element.appendChild(dot);
@@ -204,7 +206,6 @@ export function renderGraphNodes({
       elements.delete(id);
     }
   }
-
 }
 
 /** Render the common cursor-following edge preview for any workspace adapter. */
@@ -295,11 +296,13 @@ export function renderGraphConnections({
       svg.appendChild(path);
       elements.set(connection.id, path);
     }
+    path.classList.toggle('ws-connection--material', connection.kind === 'material');
+    path.classList.toggle('ws-connection--resource-access', connection.kind === 'resource-access');
     const source = endpointPosition(graphConnectionEndpoint(connection, 'source'));
     const target = endpointPosition(graphConnectionEndpoint(connection, 'target'));
     const midX = (source.x + target.x) / 2;
     path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
-    // Keep low-flow edges visible while scaling active flow within a readable range.
+    // Keep low-flow edges visible while scaling active material flow within a readable range.
     path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + flow(connection) * 0.5)));
     path.classList.toggle('ws-connection--selected', selectedId === connection.id);
   }

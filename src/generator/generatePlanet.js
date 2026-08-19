@@ -360,14 +360,12 @@ export function generatePlanet(seedInput) {
 
   planet.planetType = classifyPlanetType(planet);
 
-  // Generate regions — pass the root seed so region/feature sub-systems can
+  // Generate regions — pass the root seed so region/site/feature sub-systems can
   // derive independent namespaced RNG streams.
   const regionRng = rngFor(seedStr, 'planet:regions');
   planet.regions = generateRegions(planet, regionRng, seedStr);
 
-  // Validate before returning
   validatePlanet(planet);
-
   return planet;
 }
 
@@ -402,13 +400,12 @@ function canHaveBiosphere(tempK, volatileInventory, atmosphere) {
 function validatePlanet(planet) {
   const errors = [];
 
-  // Check for NaN / Infinity in numeric fields
   function checkNumeric(obj, path) {
     for (const [k, v] of Object.entries(obj)) {
       const fullPath = `${path}.${k}`;
       if (typeof v === 'number') {
-        if (isNaN(v)) errors.push(`NaN at ${fullPath}`);
-        if (!isFinite(v)) errors.push(`Infinity at ${fullPath}`);
+        if (Number.isNaN(v)) errors.push(`NaN at ${fullPath}`);
+        if (!Number.isFinite(v)) errors.push(`Infinity at ${fullPath}`);
       } else if (v && typeof v === 'object' && !Array.isArray(v)) {
         checkNumeric(v, fullPath);
       }
@@ -416,21 +413,17 @@ function validatePlanet(planet) {
   }
   checkNumeric(planet, 'planet');
 
-  // Non-negative
   const nonNeg = ['massEarth', 'radiusEarth', 'gravityG', 'escapeVelocityKmS', 'meanDensity', 'equilibriumTemperatureK', 'meanTemperatureK'];
-  for (const f of nonNeg) {
-    if (planet[f] < 0) errors.push(`Negative ${f}: ${planet[f]}`);
+  for (const field of nonNeg) {
+    if (planet[field] < 0) errors.push(`Negative ${field}: ${planet[field]}`);
   }
 
-  // Fractions sum to ~1
   const fracSum = planet.coreMassFraction + planet.deepInteriorMassFraction + planet.envelopeMassFraction;
   if (Math.abs(fracSum - 1) > 0.01) errors.push(`Fractions sum to ${fracSum}, expected 1`);
 
-  // Bulk composition ~100
   const compSum = Object.values(planet.bulkComposition).reduce((a, b) => a + b, 0);
   if (Math.abs(compSum - 100) > 1) errors.push(`Bulk composition sums to ${compSum}`);
 
-  // Atmosphere composition ~100
   if (planet.atmosphere) {
     const atmoComp = planet.atmosphere.composition || {};
     const atmoSum = Object.values(atmoComp).reduce((a, b) => a + b, 0);
@@ -442,50 +435,72 @@ function validatePlanet(planet) {
     }
   }
 
-  // Region areas ~100
-  const areaSum = planet.regions.reduce((a, r) => a + r.areaPercent, 0);
+  const areaSum = planet.regions.reduce((a, region) => a + region.areaPercent, 0);
   if (Math.abs(areaSum - 100) > 1.5) errors.push(`Region areas sum to ${areaSum}`);
 
-  // Feature invariants
-  for (const region of planet.regions) {
-    for (const feature of region.features) {
-      // Feature ID must belong to this region
-      if (!feature.id.startsWith(`feature-${region.id}`)) {
-        errors.push(`Feature ${feature.id} in wrong region ${region.id}`);
-      }
-      // Physical features must not carry player-discovery state
-      if ('discovered' in feature) {
-        errors.push(`Feature ${feature.id} contains 'discovered' — move to knowledgeState`);
-      }
-      // Feature must carry regionId back-reference
-      if (feature.regionId !== region.id) {
-        errors.push(`Feature ${feature.id} has wrong regionId '${feature.regionId}', expected '${region.id}'`);
-      }
-      // Resource occurrences should be an array
-      if (!Array.isArray(feature.resourceOccurrences)) {
-        errors.push(`Feature ${feature.id} missing resourceOccurrences array`);
-      }
-    }
-  }
+  const seenSiteIds = new Set();
+  const seenFeatureIds = new Set();
+  const seenOccurrenceIds = new Set();
+  const bioIds = new Set(['wood', 'plant-biomass', 'peat', 'organic-soil', 'coal', 'guano', 'latex', 'reef-material']);
 
-  // Biological resources only when biosphere exists
-  if (!planet.biospherePresent) {
-    const bioIds = new Set(['wood', 'plant-biomass', 'peat', 'organic-soil', 'coal', 'guano', 'latex', 'reef-material']);
-    for (const region of planet.regions) {
-      for (const r of region.backgroundResourceOccurrences) {
-        if (bioIds.has(r.resourceId)) errors.push(`Biological resource ${r.resourceId} in region without biosphere`);
+  for (const region of planet.regions) {
+    if ('features' in region) errors.push(`Region ${region.id} directly owns features; expected Sites`);
+    if ('backgroundResourceOccurrences' in region) {
+      errors.push(`Region ${region.id} directly owns resources; expected Site/Feature access`);
+    }
+    if (!Array.isArray(region.sites) || region.sites.length === 0) {
+      errors.push(`Region ${region.id} must contain Sites`);
+      continue;
+    }
+
+    for (const site of region.sites) {
+      if (!site?.id || seenSiteIds.has(site.id)) errors.push(`Invalid or duplicate Site id '${site?.id}'`);
+      else seenSiteIds.add(site.id);
+      if (site.regionId !== region.id) {
+        errors.push(`Site ${site.id} has wrong regionId '${site.regionId}', expected '${region.id}'`);
       }
-      for (const feature of region.features) {
-        for (const r of feature.resourceOccurrences) {
-          if (bioIds.has(r.resourceId)) errors.push(`Biological resource ${r.resourceId} in feature without biosphere`);
+      if (!Array.isArray(site.features) || site.features.length === 0) {
+        errors.push(`Site ${site.id} must contain at least one Feature`);
+        continue;
+      }
+
+      for (const feature of site.features) {
+        if (!feature?.id || seenFeatureIds.has(feature.id)) errors.push(`Invalid or duplicate Feature id '${feature?.id}'`);
+        else seenFeatureIds.add(feature.id);
+        if (!feature.id.startsWith(`feature-${region.id}`)) {
+          errors.push(`Feature ${feature.id} in wrong region ${region.id}`);
+        }
+        if ('discovered' in feature || 'discoveryState' in feature) {
+          errors.push(`Feature ${feature.id} contains player-discovery state`);
+        }
+        if (feature.regionId !== region.id) {
+          errors.push(`Feature ${feature.id} has wrong regionId '${feature.regionId}', expected '${region.id}'`);
+        }
+        if (feature.siteId !== site.id) {
+          errors.push(`Feature ${feature.id} has wrong siteId '${feature.siteId}', expected '${site.id}'`);
+        }
+        if (!Array.isArray(feature.resourceOccurrences) || feature.resourceOccurrences.length === 0) {
+          errors.push(`Feature ${feature.id} must contain at least one ResourceOccurrence`);
+          continue;
+        }
+
+        for (const occurrence of feature.resourceOccurrences) {
+          if (!occurrence?.id || seenOccurrenceIds.has(occurrence.id)) {
+            errors.push(`Invalid or duplicate ResourceOccurrence id '${occurrence?.id}'`);
+          } else {
+            seenOccurrenceIds.add(occurrence.id);
+          }
+          if (occurrence.sourceType !== 'feature' || occurrence.sourceId !== feature.id) {
+            errors.push(`ResourceOccurrence ${occurrence.id} is not owned by Feature ${feature.id}`);
+          }
+          if (!planet.biospherePresent && bioIds.has(occurrence.resourceId)) {
+            errors.push(`Biological resource ${occurrence.resourceId} generated without a biosphere`);
+          }
         }
       }
     }
   }
 
-  if (errors.length > 0) {
-    console.error('[Planet Generator] Validation errors:', errors);
-  }
-
+  if (errors.length > 0) console.error('[Planet Generator] Validation errors:', errors);
   return errors;
 }

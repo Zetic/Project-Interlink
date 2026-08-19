@@ -40,21 +40,69 @@ export function streamInspection(stream) {
   };
 }
 
-function connectionInspection(blueprint, connection) {
+export function connectionInspection(blueprint, connection) {
   if (!connection) return null;
   const stream = Object.values(blueprint?.streams ?? {}).find(item => item.connectionId === connection.id);
-  return streamInspection(stream);
+  if (stream) return { ...streamInspection(stream), connectionKind: connection.kind ?? 'material' };
+  return {
+    kind: 'relationship',
+    connectionKind: connection.kind ?? 'unknown',
+    id: connection.id,
+    sourceNodeId: connection.sourceNodeId,
+    sourcePortId: connection.sourcePortId,
+    targetNodeId: connection.targetNodeId,
+    targetPortId: connection.targetPortId,
+    totalFlowKgPerSecond: 0,
+    particleSizeMm: null,
+    componentMassFlowKgPerSecond: {},
+  };
+}
+
+export function featureInspection(world, blueprint, node) {
+  const feature = world?.features?.[node?.featureId];
+  const resources = (feature?.resourceOccurrences ?? []).map(occurrenceId => {
+    const occurrence = world?.resourceOccurrences?.[occurrenceId];
+    return {
+      id: occurrenceId,
+      name: occurrence?.name ?? occurrence?.resourceId ?? occurrenceId,
+      resourceId: occurrence?.resourceId ?? null,
+      availabilityClass: occurrence?.availabilityClass ?? occurrence?.quantityClass ?? 'Available',
+      descriptor: occurrence?.descriptor ?? null,
+      accessScope: occurrence?.accessScope ?? 'localized',
+    };
+  });
+  const connections = Object.values(blueprint?.connections ?? {}).filter(connection =>
+    connection.kind === 'resource-access' && connection.sourceNodeId === node?.id
+  );
+  const connectedExtractors = connections.map(connection => blueprint.nodes?.[connection.targetNodeId])
+    .filter(target => target?.nodeType === 'extractor')
+    .map(target => ({ id: target.id, occurrenceId: target.occurrenceId }));
+  return {
+    kind: 'feature',
+    id: node?.id ?? null,
+    featureId: feature?.id ?? node?.featureId ?? null,
+    name: feature?.name ?? node?.displayName ?? node?.featureId ?? 'Feature',
+    featureType: feature?.type ?? 'Feature',
+    resources,
+    resourceAccessAvailable: resources.length > 0,
+    connectedExtractors,
+  };
 }
 
 export function machineInspection(blueprint, node) {
   const connections = Object.values(blueprint?.connections ?? {});
-  const input = connections.find(connection => connection.targetNodeId === node?.id);
+  const materialInput = connections.find(connection =>
+    connection.kind === 'material' && connection.targetNodeId === node?.id
+  );
+  const resourceAccessInput = connections.find(connection =>
+    connection.kind === 'resource-access' && connection.targetNodeId === node?.id
+  );
   const outputs = connections.filter(connection => connection.sourceNodeId === node?.id);
   const outputByPort = Object.fromEntries(outputs.map(connection => [
     connection.sourcePortId,
     connectionInspection(blueprint, connection),
   ]));
-  const inputInspection = connectionInspection(blueprint, input);
+  const inputInspection = connectionInspection(blueprint, materialInput);
   const configuredThroughputKgPerSecond = node?.throughputKgPerSecond ?? node?.prototypeRateKgPerSecond ?? 0;
 
   let actualProductKgPerSecond = outputByPort[node?.outputPortId]?.totalFlowKgPerSecond ?? 0;
@@ -74,6 +122,7 @@ export function machineInspection(blueprint, node) {
     actualProductKgPerSecond,
     lastError: node?.lastError ?? null,
     input: inputInspection,
+    resourceAccess: connectionInspection(blueprint, resourceAccessInput),
     outputs: outputByPort,
   };
 

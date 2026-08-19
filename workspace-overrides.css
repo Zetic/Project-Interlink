@@ -8,6 +8,7 @@
 .ws-node--crusher { background: #3a2a1e; }
 .ws-node--magSep { background: #2a1e3a; }
 .ws-connection { stroke: #5599cc; }
+.ws-connection--resource-access { stroke: #7aa879; stroke-dasharray: 6 4; }
 .ws-connection--selected { stroke: #ffcc44; }
 .ws-connection-preview { stroke: #88ccff; stroke-width: 1.5; stroke-dasharray: 5 4; }
 
@@ -47,6 +48,7 @@
 .ws-node-category--controller { background: #65502c; }
 .ws-node-category--logistics { background: #4c4f58; }
 .ws-node-category--system { background: #3d4650; }
+.ws-port--kind-resource-access { border-color: #7aa879; background: #1f3823; }
 
 .ws-world-controls { display: inline-flex; align-items: center; gap: 8px; margin-right: 14px; }
 .ws-world-controls button { padding: 3px 8px; font-size: 11px; }
@@ -64,6 +66,8 @@
 .ws-graph-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 3; pointer-events: none; }
 .ws-graph-svg .ws-connection { pointer-events: stroke; cursor: pointer; }
 .ws-inspector { width: 280px; min-width: 280px; }
+.ws-ins-section-title { margin-top: 14px; padding-top: 8px; border-top: 1px solid #243443; color: #8eb0ca; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.ws-ins-resource-note { margin: -2px 0 7px; color: #7f919f; font-size: 10px; line-height: 1.35; }
 .ws-system-svg .ws-system-connection { pointer-events: stroke; cursor: pointer; }
 .ws-system-node { z-index: 2; background: #151d27; }
 .ws-system-node .ws-node-label { gap: 2px; }

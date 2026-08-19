@@ -1,23 +1,10 @@
 /**
  * World State — the root serialisable simulation object.
  *
- * createWorld(seed) returns a plain JS object that owns all generated
- * simulation entities. It is the single source of physical truth;
- * player knowledge and UI state are kept separately.
- *
- * Shape:
- * {
- *   schemaVersion,
- *   generatorVersion,
- *   seed,
- *   planetId,          // convenience reference to the single active planet
- *   planets: {},
- *   regions: {},       // keyed by regionId
- *   features: {},      // keyed by featureId
- *   resourceOccurrences: {},  // keyed by occurrenceId
- *   materialBatches: {},       // keyed by batchId
- *   processResults: {},        // keyed by processRunId
- * }
+ * Canonical physical hierarchy:
+ * Planet → Region → Site → Feature → ResourceOccurrence.
+ * Regions group Sites; Sites own Features; Features own all natural-resource
+ * occurrences. Player knowledge and UI/layout state are kept separately.
  */
 
 import { SCHEMA_VERSION, GENERATOR_VERSION } from './versions.js';
@@ -25,27 +12,18 @@ import { generatePlanet } from '../../generator/generatePlanet.js';
 import { getProcessDefinition } from '../processes/processDefinitions.js';
 import { createCompositeNode, createSystemPort } from '../../simulation/systemNode.js';
 
-/**
- * Generate and return a new world state from the given seed string.
- *
- * @param {string} seed
- * @returns {object} world
- */
 export function createWorld(seed) {
   const seedStr = String(seed ?? 'default-seed');
-
-  // generatePlanet returns a self-contained planet object; we then lift its
-  // nested regions, features, and resource occurrences into flat maps.
   const planet = generatePlanet(seedStr);
 
   const world = {
     schemaVersion: SCHEMA_VERSION,
     generatorVersion: GENERATOR_VERSION,
     seed: seedStr,
-
     planetId: planet.id,
     planets: {},
     regions: {},
+    sites: {},
     features: {},
     resourceOccurrences: {},
     materialBatches: {},
@@ -57,92 +35,80 @@ export function createWorld(seed) {
       elapsedSeconds: 0,
       sessions: {},
     },
-    sites: {},
     systemNodes: {},
   };
 
-  // Lift regions out of the planet array into the flat map
   const regionIds = [];
-  for (const region of planet.regions) {
-    const featureIds = [];
+  for (const generatedRegion of planet.regions) {
+    const siteIds = [];
 
-    for (const feature of region.features) {
-      // Lift resource occurrences from the feature into the flat map
-      const occurrenceIds = [];
-      for (const occ of feature.resourceOccurrences) {
-        world.resourceOccurrences[occ.id] = occ;
-        occurrenceIds.push(occ.id);
+    for (const generatedSite of generatedRegion.sites ?? []) {
+      const featureIds = [];
+      for (const generatedFeature of generatedSite.features ?? []) {
+        const occurrenceIds = [];
+        for (const occurrence of generatedFeature.resourceOccurrences ?? []) {
+          world.resourceOccurrences[occurrence.id] = occurrence;
+          occurrenceIds.push(occurrence.id);
+        }
+
+        world.features[generatedFeature.id] = {
+          ...generatedFeature,
+          siteId: generatedSite.id,
+          regionId: generatedRegion.id,
+          resourceOccurrences: occurrenceIds,
+        };
+        featureIds.push(generatedFeature.id);
       }
 
-      // Store a flat feature (without the nested occurrences array; reference by IDs)
-      world.features[feature.id] = {
-        ...feature,
-        resourceOccurrences: occurrenceIds,
-      };
-      featureIds.push(feature.id);
-    }
-
-    // Lift background resource occurrences into the flat map
-    const bgOccurrenceIds = [];
-    for (const occ of region.backgroundResourceOccurrences) {
-      world.resourceOccurrences[occ.id] = occ;
-      bgOccurrenceIds.push(occ.id);
-    }
-
-    // Store a flat region (without nested features/occurrence arrays; reference by IDs)
-    const siteIds = [];
-    for (const featureId of featureIds) {
-      const feature = world.features[featureId];
-      const siteId = `site-${feature.id}`;
-      const occurrenceIds = [...feature.resourceOccurrences];
       const siteNode = createCompositeNode({
-        id: siteId,
+        id: generatedSite.id,
         nodeType: 'site',
         systemType: 'site',
-        childWorkspaceId: `${siteId}-workspace`,
+        childWorkspaceId: `${generatedSite.id}-workspace`,
         ports: [
           createSystemPort({ id: 'material-input', direction: 'input', kind: 'material', label: 'material in' }),
           createSystemPort({ id: 'material-output', direction: 'output', kind: 'material', label: 'material out' }),
         ],
-        inspectableState: { regionId: region.id, occurrenceIds },
+        inspectableState: { regionId: generatedRegion.id, featureIds },
       });
-      world.sites[siteId] = {
-        id: siteId,
+
+      world.sites[generatedSite.id] = {
+        id: generatedSite.id,
+        name: generatedSite.name ?? world.features[featureIds[0]]?.name ?? generatedSite.id,
+        siteKind: generatedSite.siteKind ?? 'localized',
         nodeType: 'site',
         systemType: 'site',
-        regionId: region.id,
-        featureIds: [featureId],
-        resourceOccurrenceIds: occurrenceIds,
+        regionId: generatedRegion.id,
+        featureIds,
         childWorkspaceId: siteNode.childWorkspaceId,
         boundaryPorts: siteNode.ports,
       };
-      world.systemNodes[siteId] = siteNode;
-      siteIds.push(siteId);
+      world.systemNodes[generatedSite.id] = siteNode;
+      siteIds.push(generatedSite.id);
     }
 
     const regionNode = createCompositeNode({
-      id: region.id,
+      id: generatedRegion.id,
       nodeType: 'region',
       systemType: 'region',
-      childWorkspaceId: `${region.id}-workspace`,
+      childWorkspaceId: `${generatedRegion.id}-workspace`,
       ports: [
         createSystemPort({ id: 'material-input', direction: 'input', kind: 'material', label: 'material in' }),
         createSystemPort({ id: 'material-output', direction: 'output', kind: 'material', label: 'material out' }),
       ],
-      inspectableState: { regionId: region.id, siteIds },
+      inspectableState: { regionId: generatedRegion.id, siteIds },
     });
-    world.systemNodes[region.id] = regionNode;
-    world.regions[region.id] = {
-      ...region,
-      features: featureIds,
-      backgroundResourceOccurrences: bgOccurrenceIds,
+    world.systemNodes[generatedRegion.id] = regionNode;
+
+    const { sites: _generatedSites, ...regionState } = generatedRegion;
+    world.regions[generatedRegion.id] = {
+      ...regionState,
       siteIds,
       boundaryPorts: regionNode.ports,
     };
-    regionIds.push(region.id);
+    regionIds.push(generatedRegion.id);
   }
 
-  // Store a flat planet (without nested regions array)
   world.planets[planet.id] = {
     ...planet,
     regions: regionIds,
@@ -181,88 +147,99 @@ function validateReferenceIdArray(value, label, referenceMap, errors) {
       continue;
     }
     seen.add(id);
-
-    if (!referenceMap[id]) {
-      errors.push(`${label} references unknown id '${id}'`);
-    }
+    if (!referenceMap[id]) errors.push(`${label} references unknown id '${id}'`);
   }
 }
 
-/**
- * Validate cross-references and invariants within a world state.
- * Logs errors to the console during development.
- *
- * @param {object} world
- * @returns {string[]} list of error messages (empty if valid)
- */
+/** Validate cross-references and physical ownership invariants within a world. */
 export function validateWorld(world) {
   const errors = [];
 
-  // planetId must exist
-  if (!world.planets[world.planetId]) {
-    errors.push(`planetId '${world.planetId}' not in planets map`);
-  }
+  if (!world.planets[world.planetId]) errors.push(`planetId '${world.planetId}' not in planets map`);
 
-  // Region references from planet
   const planet = world.planets[world.planetId];
   if (planet) {
-    for (const rid of planet.regions) {
-      if (!world.regions[rid]) {
-        errors.push(`Planet references unknown region '${rid}'`);
-      }
-    }
+    validateReferenceIdArray(planet.regions, `Planet '${planet.id}' regions`, world.regions, errors);
   }
 
-  // Feature references from regions + back-reference regionId
-  for (const [rid, region] of Object.entries(world.regions)) {
-    for (const fid of region.features) {
-      if (!world.features[fid]) {
-        errors.push(`Region '${rid}' references unknown feature '${fid}'`);
-      } else {
-        const f = world.features[fid];
-        if (f.regionId !== rid) {
-          errors.push(`Feature '${fid}' regionId '${f.regionId}' does not match parent region '${rid}'`);
-        }
-        // Physical features must not carry player-discovery state
-        if ('discovered' in f) {
-          errors.push(`Feature '${fid}' contains 'discovered' — move to knowledgeState`);
-        }
-      }
+  const siteFeatureOwners = new Map();
+  const featureOccurrenceOwners = new Map();
+
+  for (const [regionId, region] of Object.entries(world.regions ?? {})) {
+    if ('features' in region) errors.push(`Region '${regionId}' must not own a features collection; use siteIds`);
+    if ('backgroundResourceOccurrences' in region) {
+      errors.push(`Region '${regionId}' must not own ResourceOccurrences; materialize them through Site Features`);
     }
-    for (const siteId of (region.siteIds ?? [])) {
+    validateReferenceIdArray(region.siteIds, `Region '${regionId}' siteIds`, world.sites ?? {}, errors);
+    for (const siteId of region.siteIds ?? []) {
       const site = world.sites?.[siteId];
-      if (!site) {
-        errors.push(`Region '${rid}' references unknown site '${siteId}'`);
-      } else if (site.regionId !== rid) {
-        errors.push(`Site '${siteId}' regionId '${site.regionId}' does not match parent region '${rid}'`);
+      if (site && site.regionId !== regionId) {
+        errors.push(`Site '${siteId}' regionId '${site.regionId}' does not match parent region '${regionId}'`);
       }
     }
   }
 
   for (const [siteId, site] of Object.entries(world.sites ?? {})) {
-    validateReferenceIdArray(site.featureIds, `Site '${siteId}' featureIds`, world.features, errors);
-    for (const occurrenceId of site.resourceOccurrenceIds ?? []) {
-      if (!world.resourceOccurrences[occurrenceId]) {
-        errors.push(`Site '${siteId}' references unknown occurrence '${occurrenceId}'`);
+    if (!isNonEmptyString(site.name)) errors.push(`Site '${siteId}' must have a player-facing name`);
+    if ('resourceOccurrenceIds' in site) {
+      errors.push(`Site '${siteId}' must not duplicate ResourceOccurrence ownership; resources belong to Features`);
+    }
+    validateReferenceIdArray(site.featureIds, `Site '${siteId}' featureIds`, world.features ?? {}, errors);
+    for (const featureId of site.featureIds ?? []) {
+      const owners = siteFeatureOwners.get(featureId) ?? [];
+      owners.push(siteId);
+      siteFeatureOwners.set(featureId, owners);
+      const feature = world.features?.[featureId];
+      if (!feature) continue;
+      if (feature.siteId !== siteId) {
+        errors.push(`Feature '${featureId}' siteId '${feature.siteId}' does not match parent Site '${siteId}'`);
+      }
+      if (feature.regionId !== site.regionId) {
+        errors.push(`Feature '${featureId}' regionId '${feature.regionId}' does not match Site region '${site.regionId}'`);
       }
     }
   }
 
-  // Occurrence references from features
-  for (const [fid, feature] of Object.entries(world.features)) {
-    for (const oid of feature.resourceOccurrences) {
-      if (!world.resourceOccurrences[oid]) {
-        errors.push(`Feature '${fid}' references unknown occurrence '${oid}'`);
+  for (const [featureId, feature] of Object.entries(world.features ?? {})) {
+    const owners = siteFeatureOwners.get(featureId) ?? [];
+    if (owners.length !== 1) {
+      errors.push(`Feature '${featureId}' must belong to exactly one Site; found ${owners.length}`);
+    }
+    if ('discovered' in feature || 'discoveryState' in feature) {
+      errors.push(`Feature '${featureId}' contains player-discovery state — move it to Knowledge State`);
+    }
+    if (!Array.isArray(feature.resourceOccurrences) || feature.resourceOccurrences.length === 0) {
+      errors.push(`Feature '${featureId}' must expose at least one ResourceOccurrence`);
+      continue;
+    }
+    validateReferenceIdArray(
+      feature.resourceOccurrences,
+      `Feature '${featureId}' resourceOccurrences`,
+      world.resourceOccurrences ?? {},
+      errors,
+    );
+    for (const occurrenceId of feature.resourceOccurrences) {
+      const ownersForOccurrence = featureOccurrenceOwners.get(occurrenceId) ?? [];
+      ownersForOccurrence.push(featureId);
+      featureOccurrenceOwners.set(occurrenceId, ownersForOccurrence);
+      const occurrence = world.resourceOccurrences?.[occurrenceId];
+      if (!occurrence) continue;
+      if (occurrence.sourceType !== 'feature') {
+        errors.push(`ResourceOccurrence '${occurrenceId}' must have sourceType 'feature', got '${occurrence.sourceType}'`);
+      }
+      if (occurrence.sourceId !== featureId) {
+        errors.push(`ResourceOccurrence '${occurrenceId}' sourceId '${occurrence.sourceId}' does not match Feature '${featureId}'`);
       }
     }
   }
 
-  // Background occurrence references from regions
-  for (const [rid, region] of Object.entries(world.regions)) {
-    for (const oid of (region.backgroundResourceOccurrences ?? [])) {
-      if (!world.resourceOccurrences[oid]) {
-        errors.push(`Region '${rid}' references unknown background occurrence '${oid}'`);
-      }
+  for (const [occurrenceId, occurrence] of Object.entries(world.resourceOccurrences ?? {})) {
+    const owners = featureOccurrenceOwners.get(occurrenceId) ?? [];
+    if (owners.length !== 1) {
+      errors.push(`ResourceOccurrence '${occurrenceId}' must belong to exactly one Feature; found ${owners.length}`);
+    }
+    if (occurrence.sourceType !== 'feature') {
+      errors.push(`ResourceOccurrence '${occurrenceId}' cannot be owned by '${occurrence.sourceType}'`);
     }
   }
 
@@ -293,9 +270,7 @@ export function validateWorld(world) {
         if (!isNonEmptyString(createdByProcessRunId)) {
           errors.push(`Material batch '${bid}' provenance.createdByProcessRunId must be a non-empty string or null`);
         } else if (!world.processResults?.[createdByProcessRunId]) {
-          errors.push(
-            `Material batch '${bid}' provenance references unknown process run '${createdByProcessRunId}'`
-          );
+          errors.push(`Material batch '${bid}' provenance references unknown process run '${createdByProcessRunId}'`);
         }
       }
     }
@@ -321,15 +296,11 @@ export function validateWorld(world) {
         errors.push(`Material batch '${bid}' component '${componentId}' has invalid mass '${massKg}'`);
         continue;
       }
-      if (massKg < 0) {
-        errors.push(`Material batch '${bid}' component '${componentId}' has negative mass '${massKg}'`);
-      }
+      if (massKg < 0) errors.push(`Material batch '${bid}' component '${componentId}' has negative mass '${massKg}'`);
       massSum += massKg;
     }
 
-    if (componentEntries.length === 0) {
-      errors.push(`Material batch '${bid}' has no components`);
-    }
+    if (componentEntries.length === 0) errors.push(`Material batch '${bid}' has no components`);
 
     if (
       typeof batch.totalMassKg !== 'number' ||
@@ -338,9 +309,7 @@ export function validateWorld(world) {
     ) {
       errors.push(`Material batch '${bid}' has invalid totalMassKg '${batch.totalMassKg}'`);
     } else if (Math.abs(batch.totalMassKg - massSum) > 1e-6) {
-      errors.push(
-        `Material batch '${bid}' totalMassKg '${batch.totalMassKg}' does not match component sum '${massSum}'`
-      );
+      errors.push(`Material batch '${bid}' totalMassKg '${batch.totalMassKg}' does not match component sum '${massSum}'`);
     }
   }
 
@@ -351,14 +320,9 @@ export function validateWorld(world) {
       continue;
     }
 
-    const processDefinition = isNonEmptyString(result.processId)
-      ? getProcessDefinition(result.processId)
-      : null;
-    if (!isNonEmptyString(result.processId)) {
-      errors.push(`Process result '${runId}' has invalid processId`);
-    } else if (!processDefinition) {
-      errors.push(`Process result '${runId}' references unknown process '${result.processId}'`);
-    }
+    const processDefinition = isNonEmptyString(result.processId) ? getProcessDefinition(result.processId) : null;
+    if (!isNonEmptyString(result.processId)) errors.push(`Process result '${runId}' has invalid processId`);
+    else if (!processDefinition) errors.push(`Process result '${runId}' references unknown process '${result.processId}'`);
 
     const expectedInputIds = new Set((processDefinition?.inputs ?? []).map(input => input.id));
     const seenInputIds = new Set();
@@ -372,39 +336,29 @@ export function validateWorld(world) {
           errors.push(`Process result '${runId}' has invalid input binding`);
           continue;
         }
-
         const { inputId, batchId } = inputBinding;
         if (!isNonEmptyString(inputId)) {
           errors.push(`Process result '${runId}' has invalid input binding id`);
         } else {
-          if (seenInputIds.has(inputId)) {
-            errors.push(`Process result '${runId}' has duplicate input binding '${inputId}'`);
-          }
+          if (seenInputIds.has(inputId)) errors.push(`Process result '${runId}' has duplicate input binding '${inputId}'`);
           seenInputIds.add(inputId);
           if (processDefinition && !expectedInputIds.has(inputId)) {
             errors.push(`Process result '${runId}' has unexpected input binding '${inputId}'`);
           }
         }
-
         if (!isNonEmptyString(batchId)) {
           errors.push(`Process result '${runId}' has invalid input batch id`);
         } else {
-          if (seenInputBatchIds.has(batchId)) {
-            errors.push(`Process result '${runId}' binds input batch '${batchId}' more than once`);
-          }
+          if (seenInputBatchIds.has(batchId)) errors.push(`Process result '${runId}' binds input batch '${batchId}' more than once`);
           seenInputBatchIds.add(batchId);
-          if (!world.materialBatches[batchId]) {
-            errors.push(`Process result '${runId}' references unknown input batch '${batchId}'`);
-          }
+          if (!world.materialBatches[batchId]) errors.push(`Process result '${runId}' references unknown input batch '${batchId}'`);
         }
       }
     }
 
     if (processDefinition) {
       for (const expectedInputId of expectedInputIds) {
-        if (!seenInputIds.has(expectedInputId)) {
-          errors.push(`Process result '${runId}' is missing required input binding '${expectedInputId}'`);
-        }
+        if (!seenInputIds.has(expectedInputId)) errors.push(`Process result '${runId}' is missing required input binding '${expectedInputId}'`);
       }
     }
 
@@ -420,46 +374,33 @@ export function validateWorld(world) {
           errors.push(`Process result '${runId}' has invalid output binding`);
           continue;
         }
-
         const { outputId, batchId } = output;
         if (!isNonEmptyString(outputId)) {
           errors.push(`Process result '${runId}' has invalid output binding id`);
         } else {
-          if (seenOutputIds.has(outputId)) {
-            errors.push(`Process result '${runId}' has duplicate output binding '${outputId}'`);
-          }
+          if (seenOutputIds.has(outputId)) errors.push(`Process result '${runId}' has duplicate output binding '${outputId}'`);
           seenOutputIds.add(outputId);
           if (processDefinition && !expectedOutputIds.has(outputId)) {
             errors.push(`Process result '${runId}' has unexpected output binding '${outputId}'`);
           }
         }
-
         if (!isNonEmptyString(batchId)) {
           errors.push(`Process result '${runId}' has invalid output batch id`);
         } else {
-          if (seenOutputBatchIds.has(batchId)) {
-            errors.push(`Process result '${runId}' references output batch '${batchId}' more than once`);
-          }
+          if (seenOutputBatchIds.has(batchId)) errors.push(`Process result '${runId}' references output batch '${batchId}' more than once`);
           seenOutputBatchIds.add(batchId);
-          if (!world.materialBatches[batchId]) {
-            errors.push(`Process result '${runId}' references unknown output batch '${batchId}'`);
-          }
+          if (!world.materialBatches[batchId]) errors.push(`Process result '${runId}' references unknown output batch '${batchId}'`);
         }
       }
     }
 
     if (processDefinition) {
       for (const expectedOutputId of expectedOutputIds) {
-        if (!seenOutputIds.has(expectedOutputId)) {
-          errors.push(`Process result '${runId}' is missing required output binding '${expectedOutputId}'`);
-        }
+        if (!seenOutputIds.has(expectedOutputId)) errors.push(`Process result '${runId}' is missing required output binding '${expectedOutputId}'`);
       }
     }
   }
 
-  if (errors.length > 0) {
-    console.error('[Interlink] World validation errors:', errors);
-  }
-
+  if (errors.length > 0) console.error('[Interlink] World validation errors:', errors);
   return errors;
 }

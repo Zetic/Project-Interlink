@@ -1,11 +1,6 @@
 /** Player-facing recursive workspace and live simulation UI. */
 
 import {
-  createBlueprint,
-  blueprintAddExtractor,
-  blueprintAddHopper,
-  blueprintAddCrusher,
-  blueprintAddMagSep,
   blueprintConnect,
   blueprintDisconnect,
   checkBlueprintConnection,
@@ -13,13 +8,8 @@ import {
   getStreamForConnection,
   setNodeEnabled,
   getNodeOperatingState,
-  createBlueprintLayout,
   layoutMoveNode,
   SIMULATION_STEP_S,
-  DEFAULT_HOPPER_CAPACITY_KG,
-  DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
-  DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
-  DEFAULT_MAG_SEP_FIELD_STRENGTH,
 } from '../simulation/simulationEngine.js';
 import {
   createWorldSimulation,
@@ -31,10 +21,16 @@ import {
   resumeWorldSimulation,
   worldSimulationTick,
 } from '../simulation/worldSimulation.js';
-import { setBoundaryMapping, getSystemNodePort } from '../simulation/systemNode.js';
+import { getSystemNodePort } from '../simulation/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
-import { hopperInspection, streamInspection, machineInspection } from './inspectionViewModel.js';
+import {
+  hopperInspection,
+  streamInspection,
+  machineInspection,
+  featureInspection,
+  connectionInspection,
+} from './inspectionViewModel.js';
 import {
   projectBlueprintGraph,
   projectBoundaryGraph,
@@ -52,7 +48,8 @@ import {
   translateGraphPosition,
   zoomAroundPoint,
 } from './viewport.js';
-import { prototypeNodeTypesForSite, prototypeOccurrenceForSite } from './sitePrototype.js';
+import { siteResourceOccurrenceIds } from './sitePrototype.js';
+import { buildSiteSession } from './siteSession.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -178,8 +175,7 @@ function renderBreadcrumbs() {
   }
   if (wsState.currentLevel === 'site') {
     const site = wsState.world?.sites?.[wsState.selectedSiteId];
-    const feature = site ? wsState.world?.features?.[site.featureIds?.[0]] : null;
-    crumbs.push({ label: feature?.name ?? wsState.selectedSiteId ?? 'Site', level: 'site', clickable: false });
+    crumbs.push({ label: site?.name ?? wsState.selectedSiteId ?? 'Site', level: 'site', clickable: false });
   }
 
   container.innerHTML = `<span class="ws-world-controls"><button id="ws-world-toggle"></button><span id="ws-world-clock"></span></span>${crumbs.map(crumb => crumb.clickable
@@ -192,80 +188,12 @@ function renderBreadcrumbs() {
   updateWorldControls();
 }
 
-function createSiteSession(occurrenceId, siteId) {
-  const blueprint = createBlueprint();
-  const blueprintLayout = createBlueprintLayout();
+function createSiteSession(_occurrenceId, siteId) {
   const siteWorkspace = getSimulationWorkspace(wsState.world, `${siteId}-workspace`);
-  const siteImport = siteWorkspace?.nodes?.[`${siteId}-import-boundary`]
-    ?? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-  const siteExport = siteWorkspace?.nodes?.[`${siteId}-export-boundary`]
-    ?? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-
-  siteImport.boundaryRole = 'import';
-  siteImport.systemType = 'boundary-buffer';
-  siteImport.displayName = 'Site Import';
-  siteExport.boundaryRole = 'export';
-  siteExport.systemType = 'boundary-buffer';
-  siteExport.displayName = 'Site Export';
-  blueprint.nodes[siteImport.id] = siteImport;
-  blueprint.nodes[siteExport.id] = siteExport;
-
-  const site = wsState.world?.sites?.[siteId];
-  const featureIds = site?.featureIds ?? [];
-  for (const featureId of featureIds) {
-    const feature = wsState.world?.features?.[featureId];
-    blueprint.nodes[`feature-node-${featureId}`] = {
-      id: `feature-node-${featureId}`,
-      nodeType: 'feature',
-      systemType: 'feature',
-      displayName: feature?.name ?? featureId,
-      featureId,
-      ports: [],
-      enabled: false,
-    };
-  }
-  const prototypeOccurrence = prototypeOccurrenceForSite(wsState.world, site);
-  const prototypeOccurrenceId = prototypeOccurrence?.id ?? null;
-  const prototypeNodeTypes = prototypeNodeTypesForSite(wsState.world, site);
-  const extractor = prototypeNodeTypes.includes('extractor')
-    ? blueprintAddExtractor(blueprint, prototypeOccurrenceId, 5)
-    : null;
-  const hopperA = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
-  const crusher = extractor ? blueprintAddCrusher(blueprint, {
-    throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
-    targetParticleSizeMm: DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
-  }) : null;
-  const hopperB = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
-  const magSep = extractor ? blueprintAddMagSep(blueprint, { fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH }) : null;
-  const concentrateHopper = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
-  const tailingsHopper = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
-
-  const positions = [
-    [siteImport, 60, 300],
-    ...featureIds.map((featureId, index) => [blueprint.nodes[`feature-node-${featureId}`], 60, 40 + index * 110]),
-    ...(extractor ? [[extractor, 60, 140]] : []),
-    ...(extractor ? [[hopperA, 260, 140], [crusher, 460, 140], [hopperB, 660, 140], [magSep, 860, 140], [concentrateHopper, 1060, 60], [tailingsHopper, 1060, 220]] : []),
-    [siteExport, 1260, 60],
-  ];
-  positions.forEach(([node, x, y]) => layoutMoveNode(blueprintLayout, node.id, x, y));
-
-  if (extractor) blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
-  if (extractor) {
-    blueprintConnect(blueprint, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
-    blueprintConnect(blueprint, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
-    blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
-    blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
-    blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
-  }
-
-  const siteNode = wsState.world?.systemNodes?.[siteId];
-  if (siteNode) {
-    // Parent-facing ports map to the opposite physical side of the same boundary buffers.
-    setBoundaryMapping(siteNode, 'material-input', siteImport.id, siteImport.inputPortId, blueprint);
-    setBoundaryMapping(siteNode, 'material-output', siteExport.id, siteExport.outputPortId, blueprint);
-  }
-
-  return { id: siteId, siteId, occurrenceId, blueprint, blueprintLayout, boundaryNode: siteNode };
+  return buildSiteSession(wsState.world, siteId, {
+    siteImport: siteWorkspace?.nodes?.[`${siteId}-import-boundary`] ?? null,
+    siteExport: siteWorkspace?.nodes?.[`${siteId}-export-boundary`] ?? null,
+  });
 }
 
 function activateSiteSession(occurrenceId, siteId) {
@@ -285,20 +213,15 @@ export function navigateTo(level, opts = {}) {
   if (level === 'region' && opts.regionId) wsState.selectedRegionId = opts.regionId;
 
   if (level === 'site') {
-    const site = wsState.world?.sites?.[opts.siteId];
+    const siteId = opts.siteId ?? wsState.selectedSiteId;
+    const site = wsState.world?.sites?.[siteId];
     if (!site) return;
-    const occurrenceId = opts.occurrenceId && site.resourceOccurrenceIds.includes(opts.occurrenceId)
+    const occurrenceIds = siteResourceOccurrenceIds(wsState.world, site);
+    const occurrenceId = opts.occurrenceId && occurrenceIds.includes(opts.occurrenceId)
       ? opts.occurrenceId
-      : site.resourceOccurrenceIds[0] ?? null;
+      : occurrenceIds[0] ?? null;
     wsState.selectedSiteId = site.id;
     wsState.selectedRegionId = site.regionId;
-    wsState.selectedOccurrenceId = occurrenceId;
-    activateSiteSession(occurrenceId, site.id);
-    level = 'site';
-  } else if (level === 'site' && !opts.siteId) {
-    const site = wsState.world?.sites?.[wsState.selectedSiteId];
-    const occurrenceId = opts.occurrenceId ?? wsState.selectedOccurrenceId ?? site?.resourceOccurrenceIds?.[0] ?? null;
-    if (!site) return;
     wsState.selectedOccurrenceId = occurrenceId;
     activateSiteSession(occurrenceId, site.id);
   }
@@ -351,10 +274,7 @@ function systemNodeTitle(node) {
     return node.displayName?.includes('Region') ? node.displayName : `${prefix} ${node.boundaryRole === 'import' ? 'Import' : 'Export'}`.trim();
   }
   if (node.nodeType === 'region') return wsState.world.regions[node.id]?.name ?? node.id;
-  if (node.nodeType === 'site') {
-    const site = wsState.world.sites[node.id];
-    return wsState.world.features[site?.featureIds?.[0]]?.name ?? node.id;
-  }
+  if (node.nodeType === 'site') return wsState.world.sites[node.id]?.name ?? node.id;
   return node.systemType ?? node.nodeType;
 }
 
@@ -367,7 +287,7 @@ function systemNodeDescription(node) {
   if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
     const feature = wsState.world.features[site?.featureIds?.[0]];
-    return `${feature?.type ?? 'Site'} · enterable site`;
+    return `${feature?.type ?? 'Site'} · ${site?.siteKind === 'regional-access' ? 'broad resource access' : 'physical site'}`;
   }
   return node.nodeType;
 }
@@ -409,7 +329,7 @@ function eventGraphPoint(event, surface, key) {
 }
 
 function installViewport(surface, canvas, svg, key, boundsProvider, controlsRoot = null) {
-  if (!surface || !canvas || !svg) return;
+  if (!surface || !canvas || !svg || !controlsRoot) return;
   const apply = () => {
     const viewport = workspaceViewport(key);
     const transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
@@ -466,12 +386,8 @@ function portOffsets(port, index, count) { return portOffsetsForSize(port, index
 
 function visibleEndpointForTransfer(systemId, portId) {
   const regionId = wsState.selectedRegionId;
-  if (systemId === `${regionId}-import-terminal`) {
-    return { nodeId: `${regionId}-import-hopper`, portId: 'output' };
-  }
-  if (systemId === `${regionId}-export-terminal`) {
-    return { nodeId: `${regionId}-export-hopper`, portId: 'input' };
-  }
+  if (systemId === `${regionId}-import-terminal`) return { nodeId: `${regionId}-import-hopper`, portId: 'output' };
+  if (systemId === `${regionId}-export-terminal`) return { nodeId: `${regionId}-export-hopper`, portId: 'input' };
   return { nodeId: systemId, portId };
 }
 
@@ -480,8 +396,7 @@ function systemEndpointPosition(definition, systemId, portId) {
   const layout = ensureSystemLayout(definition);
   const position = layout.nodePositions[visible.nodeId] ?? { x: 0, y: 0 };
   const graph = projectBoundaryGraph(
-    { ...definition, layout },
-    {},
+    { ...definition, layout }, {},
     (nodeId, endpointPortId) => visibleEndpointForTransfer(nodeId, endpointPortId),
   );
   const node = graph.nodes.find(item => item.id === visible.nodeId);
@@ -581,7 +496,7 @@ function renderParentWorkspace(container) {
   ensureSystemLayout(definition);
   const header = wsState.currentLevel === 'planet'
     ? `<div class="ws-planet-header"><div class="ws-planet-name">${escHtml(definition.title)}</div><div class="ws-planet-meta">Draggable planetary system graph</div></div>`
-    : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Draggable region system graph · explicit import/export boundaries</div></div>`;
+    : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Sites are the physical access points for all regional resources and Features.</div></div>`;
 
   const shell = renderWorkspaceShell(container, {
     header,
@@ -623,15 +538,13 @@ function renderParentWorkspace(container) {
         button.addEventListener('click', event => {
           event.stopPropagation();
           if (node.nodeType === 'region') navigateTo('region', { regionId: node.id });
-          else navigateTo('site', {
-            siteId: node.id,
-            occurrenceId: wsState.world.sites[node.id]?.resourceOccurrenceIds?.[0],
-          });
+          else {
+            const site = wsState.world.sites[node.id];
+            navigateTo('site', { siteId: node.id, occurrenceId: siteResourceOccurrenceIds(wsState.world, site)[0] });
+          }
         });
         element.appendChild(button);
-      } else if (!canEnter) {
-        existingEnter?.remove();
-      }
+      } else if (!canEnter) existingEnter?.remove();
     },
     onNodePointerDown: (node, event) => startSystemNodeDrag(node.id, event),
     onNodeSelect: selectSystem,
@@ -700,7 +613,7 @@ function renderParentWorkspace(container) {
 function renderPlanetWorkspace(container) {
   const planet = currentPlanet();
   if (!planet) {
-    container.innerHTML = `<div class="ws-site-card"><div class="ws-site-name">Create Prototype World</div><div class="ws-site-type">Generate a deterministic planet without leaving Player View.</div><label for="ws-player-seed">Seed</label><input id="ws-player-seed" type="text" placeholder="Enter seed or leave blank for random"><button id="ws-player-generate">Generate World</button></div>`;
+    container.innerHTML = `<div class="ws-site-card"><div class="ws-site-name">Create World</div><div class="ws-site-type">Generate a deterministic planet.</div><label for="ws-player-seed">Seed</label><input id="ws-player-seed" type="text" placeholder="Enter seed or leave blank for random"><button id="ws-player-generate">Generate World</button></div>`;
     el('ws-player-generate')?.addEventListener('click', () => requestPlayerWorldGeneration(el('ws-player-seed')?.value ?? ''));
     el('ws-player-seed')?.addEventListener('keydown', event => {
       if (event.key === 'Enter') requestPlayerWorldGeneration(event.currentTarget.value ?? '');
@@ -775,8 +688,10 @@ function formatCompositeInspector(node) {
       <div class="ws-ins-row"><b>Export buffer:</b> <span data-live="region-export">${(exported ? hopperStoredMassKg(exported) : 0).toFixed(2)}</span> kg</div>`;
   } else if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
-    html += `<div class="ws-ins-row"><b>Region:</b> ${escHtml(site.regionId)}</div>
-      <div class="ws-ins-row"><b>Occurrences:</b> ${site.resourceOccurrenceIds.length}</div>`;
+    html += `<div class="ws-ins-row"><b>Name:</b> ${escHtml(site?.name ?? node.id)}</div>
+      <div class="ws-ins-row"><b>Region:</b> ${escHtml(site?.regionId)}</div>
+      <div class="ws-ins-row"><b>Features:</b> ${(site?.featureIds ?? []).length}</div>
+      <div class="ws-ins-row"><b>Accessible resources:</b> ${siteResourceOccurrenceIds(wsState.world, site).length}</div>`;
     const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
     const outputPort = getSystemNodePort(node, 'material-output');
     const output = workspace?.nodes?.[outputPort?.childNodeId];
@@ -864,7 +779,11 @@ function updateCompositeInspector(force = false) {
 function nodeLabel(node) {
   if (node.nodeType === 'feature') {
     const feature = wsState.world?.features?.[node.featureId];
-    return `${feature?.name ?? node.displayName ?? node.featureId}\n${feature?.type ?? 'Feature'}`;
+    const resources = (feature?.resourceOccurrences ?? [])
+      .map(id => wsState.world?.resourceOccurrences?.[id]?.name)
+      .filter(Boolean);
+    const resourceSummary = resources.length > 1 ? `${resources[0]} +${resources.length - 1}` : (resources[0] ?? 'No resources');
+    return `${feature?.name ?? node.displayName ?? node.featureId}\n${feature?.type ?? 'Feature'}\n${resourceSummary}`;
   }
   if (node.nodeType === 'extractor') {
     return `Extractor [${getNodeOperatingState(node)}]\n${wsState.world?.resourceOccurrences?.[node.occurrenceId]?.name ?? node.occurrenceId}\n${node.prototypeRateKgPerSecond} kg/s`;
@@ -944,8 +863,7 @@ function renderSiteNodes() {
         label.className = 'ws-node-label';
         element.appendChild(label);
       }
-      label.innerHTML = nodeLabel(node).split('\n')
-        .map(line => `<span>${escHtml(line)}</span>`).join('');
+      label.innerHTML = nodeLabel(node).split('\n').map(line => `<span>${escHtml(line)}</span>`).join('');
       const fill = element.querySelector('.ws-hopper-fill');
       if (fill && node.nodeType === 'hopper') {
         fill.style.height = `${Math.min(100, hopperStoredMassKg(node) / node.capacityKg * 100).toFixed(1)}%`;
@@ -972,7 +890,7 @@ function renderSiteNodes() {
 
 function renderSiteWorkspace(container) {
   if (!wsState.selectedSiteId) {
-    container.innerHTML = '<p class="ws-empty">No resource occurrence selected.</p>';
+    container.innerHTML = '<p class="ws-empty">No Site selected.</p>';
     return;
   }
   activateSiteSession(wsState.selectedOccurrenceId, wsState.selectedSiteId);
@@ -981,9 +899,8 @@ function renderSiteWorkspace(container) {
   wsState.connectionPreview = null;
   inspector.renderKey = null;
   const site = wsState.world?.sites?.[wsState.selectedSiteId];
-  const feature = site ? wsState.world?.features?.[site.featureIds?.[0]] : null;
   const shell = renderWorkspaceShell(container, {
-    toolbarLeading: `<span class="ws-site-title">Site — ${escHtml(feature?.name ?? wsState.selectedSiteId)}</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span>`,
+    toolbarLeading: `<span class="ws-site-title">Site — ${escHtml(site?.name ?? wsState.selectedSiteId)}</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span>`,
     canvasId: 'ws-site-canvas',
     svgId: 'ws-site-svg',
     inspectorBodyId: 'ws-inspector-body',
@@ -1105,24 +1022,33 @@ function selectConnection(connectionId) {
   renderSiteNodes();
 }
 
+function featureResourcesHtml(details) {
+  if (!details.resources.length) return '<div class="ws-ins-note">No resource access is currently exposed.</div>';
+  return details.resources.map(resource => `<div class="ws-ins-comp-row"><span>${escHtml(resource.name)}</span><span>${escHtml(resource.availabilityClass)}</span></div>${resource.descriptor ? `<div class="ws-ins-resource-note">${escHtml(resource.descriptor)}</div>` : ''}`).join('');
+}
+
 function formatNodeInspector(node) {
   const hopper = ['hopper', 'boundary-buffer'].includes(node.systemType) || node.nodeType === 'hopper';
   const typeLabel = node.systemType === 'boundary-buffer' ? node.displayName : node.nodeType;
-  let html = `<div class="ws-ins-type">${escHtml(typeLabel.toUpperCase())}</div><div class="ws-ins-row"><b>ID:</b> ${escHtml(node.id)}</div>`;
+  const isFeature = node.nodeType === 'feature';
+  let html = `<div class="ws-ins-type">${escHtml(typeLabel.toUpperCase())}</div>`;
+  if (!isFeature) html += `<div class="ws-ins-row"><b>ID:</b> ${escHtml(node.id)}</div>`;
 
   if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
     const details = machineInspection(wsState.blueprint, node);
     html += `<div class="ws-ins-row"><b>State:</b> <span data-live="state">${escHtml(details.operatingState)}</span></div>
       <div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${details.enabled ? 'On' : 'Off'}</button></div>
-      <div class="ws-ins-row"><b>Configured throughput:</b> ${details.configuredThroughputKgPerSecond} kg/s</div>
-      <div class="ws-ins-row"><b>Actual feed:</b> <span data-live="machine-feed">${details.actualFeedKgPerSecond.toFixed(3)}</span> kg/s</div>
-      <div class="ws-ins-row"><b>Actual product:</b> <span data-live="machine-product">${details.actualProductKgPerSecond.toFixed(3)}</span> kg/s</div>`;
+      <div class="ws-ins-row"><b>Configured throughput:</b> ${details.configuredThroughputKgPerSecond} kg/s</div>`;
     if (node.nodeType === 'extractor') {
-      html += `<div class="ws-ins-row"><b>Occurrence:</b> ${escHtml(wsState.world?.resourceOccurrences?.[node.occurrenceId]?.name ?? node.occurrenceId)}</div>`;
+      const sourceNode = details.resourceAccess ? wsState.blueprint.nodes[details.resourceAccess.sourceNodeId] : null;
+      const sourceFeature = sourceNode ? wsState.world?.features?.[sourceNode.featureId] : null;
+      html += `<div class="ws-ins-row"><b>Resource source:</b> ${escHtml(sourceFeature?.name ?? 'Not connected')}</div>
+        <div class="ws-ins-row"><b>Target material:</b> ${escHtml(wsState.world?.resourceOccurrences?.[node.occurrenceId]?.name ?? node.occurrenceId)}</div>`;
+    } else {
+      html += `<div class="ws-ins-row"><b>Actual feed:</b> <span data-live="machine-feed">${details.actualFeedKgPerSecond.toFixed(3)}</span> kg/s</div>`;
     }
-    if (node.nodeType === 'crusher') {
-      html += `<div class="ws-ins-row"><b>Target size:</b> ${node.targetParticleSizeMm} mm</div>`;
-    }
+    html += `<div class="ws-ins-row"><b>Actual product:</b> <span data-live="machine-product">${details.actualProductKgPerSecond.toFixed(3)}</span> kg/s</div>`;
+    if (node.nodeType === 'crusher') html += `<div class="ws-ins-row"><b>Target size:</b> ${node.targetParticleSizeMm} mm</div>`;
     if (node.nodeType === 'magSep') {
       html += `<div class="ws-ins-row"><b>Field strength:</b> ${node.fieldStrength}</div>
         <div class="ws-ins-row"><b>Max feed size:</b> ${node.maxFeedParticleSizeMm} mm</div>
@@ -1138,17 +1064,15 @@ function formatNodeInspector(node) {
       <div class="ws-ins-row"><b>Free:</b> <span data-live="free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Particle size:</b> <span data-live="particle-size">${details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`}</span></div>
       <div class="ws-ins-comp" data-live-section="components">${componentRowsHtml(details.components)}</div>`;
-  } else if (node.nodeType === 'feature') {
-    const feature = wsState.world?.features?.[node.featureId];
-    const occurrences = feature?.resourceOccurrences ?? [];
-    html += `<div class="ws-ins-row"><b>Name:</b> ${escHtml(feature?.name ?? node.displayName)}</div>
-      <div class="ws-ins-row"><b>Feature type:</b> ${escHtml(feature?.type ?? 'Feature')}</div>
-      <div class="ws-ins-row"><b>Depth:</b> ${feature?.depthM ?? '—'} m</div>
-      <div class="ws-ins-row"><b>Geometry:</b> ${escHtml(feature?.geometry ?? '—')}</div>
-      <div class="ws-ins-row"><b>Accessibility:</b> ${escHtml(feature?.accessibility ?? '—')}</div>
-      <div class="ws-ins-row"><b>Physical state:</b> ${escHtml(feature?.physicalState ?? '—')}</div>
-      <div class="ws-ins-row"><b>Quantity class:</b> ${escHtml(feature?.quantityClass ?? '—')}</div>
-      <div class="ws-ins-row"><b>Resource occurrences:</b> ${occurrences.length}</div>`;
+  } else if (isFeature) {
+    const details = featureInspection(wsState.world, wsState.blueprint, node);
+    html += `<div class="ws-ins-row"><b>Name:</b> ${escHtml(details.name)}</div>
+      <div class="ws-ins-row"><b>Feature type:</b> ${escHtml(details.featureType)}</div>
+      <div class="ws-ins-section-title">Resources</div>
+      <div class="ws-ins-comp">${featureResourcesHtml(details)}</div>
+      <div class="ws-ins-section-title">Access</div>
+      <div class="ws-ins-row"><b>Resource access:</b> ${details.resourceAccessAvailable ? 'Available' : 'Unavailable'}</div>
+      <div class="ws-ins-row"><b>Connected extraction apparatus:</b> ${details.connectedExtractors.length ? details.connectedExtractors.map(item => escHtml(item.id)).join(', ') : 'None'}</div>`;
   }
 
   html += `<div class="ws-ins-action"><button class="ws-btn-disconnect" data-node-id="${escHtml(node.id)}">Remove all connections</button></div>`;
@@ -1156,7 +1080,14 @@ function formatNodeInspector(node) {
 }
 
 function formatConnectionInspector(connection) {
-  const details = streamInspection(getStreamForConnection(wsState.blueprint, connection.id));
+  const details = connectionInspection(wsState.blueprint, connection);
+  if (connection.kind === 'resource-access') {
+    return `<div class="ws-ins-type">RESOURCE ACCESS</div>
+      <div class="ws-ins-row"><b>From:</b> ${escHtml(details.sourceNodeId)} / ${escHtml(details.sourcePortId)}</div>
+      <div class="ws-ins-row"><b>To:</b> ${escHtml(details.targetNodeId)} / ${escHtml(details.targetPortId)}</div>
+      <div class="ws-ins-note">This edge grants access to a physical source. Matter begins flowing only from the Extractor's material output.</div>
+      <div class="ws-ins-action"><button class="ws-btn-disconnect" data-conn-id="${escHtml(connection.id)}">Disconnect</button></div>`;
+  }
   return `<div class="ws-ins-type">CONNECTION</div>
     <div class="ws-ins-row"><b>From:</b> ${escHtml(details.sourceNodeId)} / ${escHtml(details.sourcePortId)}</div>
     <div class="ws-ins-row"><b>To:</b> ${escHtml(details.targetNodeId)} / ${escHtml(details.targetPortId)}</div>
@@ -1194,17 +1125,13 @@ function updateInspector(force = false) {
       if (free) free.textContent = details.freeCapacityKg.toFixed(3);
       if (particle) particle.textContent = details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`;
       if (components) components.innerHTML = componentRowsHtml(details.components);
-    } else {
+    } else if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
       const details = machineInspection(wsState.blueprint, node);
       const feed = body.querySelector('[data-live="machine-feed"]');
       const product = body.querySelector('[data-live="machine-product"]');
       if (feed) feed.textContent = details.actualFeedKgPerSecond.toFixed(3);
       if (product) product.textContent = details.actualProductKgPerSecond.toFixed(3);
-      for (const [name, stream] of [
-        ['feed', details.feed],
-        ['concentrate', details.concentrate],
-        ['tailings', details.tailings],
-      ]) {
+      for (const [name, stream] of [['feed', details.feed], ['concentrate', details.concentrate], ['tailings', details.tailings]]) {
         const span = body.querySelector(`[data-live="${name}-flow"]`);
         if (span) span.textContent = (stream?.totalFlowKgPerSecond ?? 0).toFixed(3);
       }
@@ -1217,13 +1144,16 @@ function updateInspector(force = false) {
   }
 
   if (inspector.selectedConnId) {
-    const details = streamInspection(getStreamForConnection(wsState.blueprint, inspector.selectedConnId));
-    const flow = body.querySelector('[data-live="flow"]');
-    const particle = body.querySelector('[data-live="stream-particle-size"]');
-    const components = body.querySelector('[data-live-section="stream-components"]');
-    if (flow) flow.textContent = details.totalFlowKgPerSecond.toFixed(3);
-    if (particle) particle.textContent = details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`;
-    if (components) components.innerHTML = streamComponentRowsHtml(details.componentMassFlowKgPerSecond);
+    const connection = wsState.blueprint.connections[inspector.selectedConnId];
+    if (connection?.kind === 'material') {
+      const details = streamInspection(getStreamForConnection(wsState.blueprint, inspector.selectedConnId));
+      const flow = body.querySelector('[data-live="flow"]');
+      const particle = body.querySelector('[data-live="stream-particle-size"]');
+      const components = body.querySelector('[data-live-section="stream-components"]');
+      if (flow) flow.textContent = details.totalFlowKgPerSecond.toFixed(3);
+      if (particle) particle.textContent = details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`;
+      if (components) components.innerHTML = streamComponentRowsHtml(details.componentMassFlowKgPerSecond);
+    }
   }
 }
 
@@ -1292,9 +1222,8 @@ function simLoop(now) {
     wsState.simAccumulatedS -= SIMULATION_STEP_S;
   }
   updateWorldControls();
-  if (wsState.currentLevel === 'site') {
-    renderSiteNodes();
-  } else {
+  if (wsState.currentLevel === 'site') renderSiteNodes();
+  else {
     const definition = systemWorkspaceDefinition();
     renderSystemConnections(el('ws-system-svg'), definition);
     updateCompositeInspector();
@@ -1312,10 +1241,9 @@ function updateSimStatus() {
 }
 
 function onResetSite() {
-  const occurrenceId = wsState.selectedOccurrenceId;
   const siteId = wsState.selectedSiteId;
   if (!siteId) return;
-  const session = createSiteSession(occurrenceId, siteId);
+  const session = createSiteSession(wsState.selectedOccurrenceId, siteId);
   wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
   wsState.blueprint = session.blueprint;

@@ -1,29 +1,51 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { prototypeNodeTypesForSite, prototypeOccurrenceForSite } from '../src/workspace/sitePrototype.js';
+import {
+  siteResourceOccurrenceIds,
+  featureForOccurrence,
+  prototypeNodeTypesForSite,
+  prototypeOccurrenceForSite,
+  prototypeFeatureForSite,
+} from '../src/workspace/sitePrototype.js';
 
-function worldWithOccurrences(occurrences) {
-  return { resourceOccurrences: Object.fromEntries(occurrences.map(occurrence => [occurrence.id, occurrence])) };
+function fixture() {
+  const iron = { id: 'iron', resourceId: 'iron-ore', composition: { hematite: 80 }, sourceType: 'feature', sourceId: 'f-iron' };
+  const copper = { id: 'copper', resourceId: 'copper-ore', composition: { chalcopyrite: 80 }, sourceType: 'feature', sourceId: 'f-copper' };
+  return {
+    world: {
+      resourceOccurrences: { iron, copper },
+      features: {
+        'f-iron': { id: 'f-iron', resourceOccurrences: ['iron'] },
+        'f-copper': { id: 'f-copper', resourceOccurrences: ['copper'] },
+        'f-empty': { id: 'f-empty', resourceOccurrences: [] },
+      },
+    },
+    ironSite: { featureIds: ['f-iron'] },
+    copperSite: { featureIds: ['f-copper'] },
+    emptySite: { featureIds: ['f-empty'] },
+  };
 }
 
-test('temporary prototype eligibility is limited to composed iron-ore occurrences', () => {
-  const iron = { id: 'iron', resourceId: 'iron-ore', composition: { hematite: 80 } };
-  const copper = { id: 'copper', resourceId: 'copper-ore', composition: { chalcopyrite: 80 } };
-  const world = worldWithOccurrences([iron, copper]);
-
-  assert.equal(prototypeOccurrenceForSite(world, { resourceOccurrenceIds: ['iron'] })?.id, 'iron');
-  assert.equal(prototypeOccurrenceForSite(world, { resourceOccurrenceIds: ['copper'] }), null);
-  assert.equal(prototypeOccurrenceForSite(world, { resourceOccurrenceIds: [] }), null);
+test('Site resource IDs are derived through Feature ownership', () => {
+  const { world, ironSite } = fixture();
+  assert.deepEqual(siteResourceOccurrenceIds(world, ironSite), ['iron']);
+  assert.equal(featureForOccurrence(world, ironSite, 'iron')?.id, 'f-iron');
+  assert.equal(featureForOccurrence(world, ironSite, 'copper'), null);
 });
 
-test('temporary prototype node set is absent for empty/non-iron Sites and present for iron Sites', () => {
-  const iron = { id: 'iron', resourceId: 'iron-ore', composition: { hematite: 80 } };
-  const copper = { id: 'copper', resourceId: 'copper-ore', composition: { chalcopyrite: 80 } };
-  const world = worldWithOccurrences([iron, copper]);
+test('temporary prototype eligibility is limited to composed iron-ore Feature occurrences', () => {
+  const { world, ironSite, copperSite, emptySite } = fixture();
+  assert.equal(prototypeOccurrenceForSite(world, ironSite)?.id, 'iron');
+  assert.equal(prototypeFeatureForSite(world, ironSite)?.id, 'f-iron');
+  assert.equal(prototypeOccurrenceForSite(world, copperSite), null);
+  assert.equal(prototypeOccurrenceForSite(world, emptySite), null);
+});
 
-  assert.deepEqual(prototypeNodeTypesForSite(world, { resourceOccurrenceIds: [] }), []);
-  assert.deepEqual(prototypeNodeTypesForSite(world, { resourceOccurrenceIds: ['copper'] }), []);
-  assert.deepEqual(prototypeNodeTypesForSite(world, { resourceOccurrenceIds: ['iron'] }), [
-    'extractor', 'hopper', 'crusher', 'hopper', 'magSep', 'hopper', 'hopper',
+test('temporary prototype node set is absent for non-iron Sites and includes Feature access for iron Sites', () => {
+  const { world, ironSite, copperSite, emptySite } = fixture();
+  assert.deepEqual(prototypeNodeTypesForSite(world, emptySite), []);
+  assert.deepEqual(prototypeNodeTypesForSite(world, copperSite), []);
+  assert.deepEqual(prototypeNodeTypesForSite(world, ironSite), [
+    'feature', 'extractor', 'hopper', 'crusher', 'hopper', 'magSep', 'hopper', 'hopper',
   ]);
 });

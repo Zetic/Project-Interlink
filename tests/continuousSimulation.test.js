@@ -19,6 +19,7 @@ import {
 } from '../src/simulation/continuousProcessing.js';
 import {
   createBlueprint,
+  blueprintAddFeatureSource,
   blueprintAddExtractor,
   blueprintAddHopper,
   blueprintAddCrusher,
@@ -64,6 +65,28 @@ function buildTestWorld() {
   throw new Error('Could not find iron-ore occurrence with composition in test seed range');
 }
 
+function addFeatureAccess(blueprint, world, occurrence, extractor) {
+  const feature = world.features[occurrence.sourceId];
+  assert.ok(feature, `Occurrence '${occurrence.id}' must have a Feature owner`);
+  let featureNode = Object.values(blueprint.nodes).find(node => node.featureId === feature.id);
+  if (!featureNode) {
+    featureNode = blueprintAddFeatureSource(blueprint, {
+      featureId: feature.id,
+      displayName: feature.name,
+      resourceOccurrenceIds: feature.resourceOccurrences,
+    });
+  }
+  const access = blueprintConnect(
+    blueprint,
+    featureNode.id,
+    featureNode.resourceAccessPortId,
+    extractor.id,
+    extractor.sourceInputPortId,
+  );
+  assert.ok(access, 'Feature resource-access connection should be valid');
+  return { feature, featureNode, access };
+}
+
 function sumHopperComponents(...hoppers) {
   const totals = {};
   for (const hopper of hoppers) {
@@ -78,6 +101,7 @@ function buildFullChain(world, occ, capacities = {}) {
   _resetOrdinals();
   const blueprint = createBlueprint();
   const extractor = blueprintAddExtractor(blueprint, occ.id, 5);
+  const { featureNode, access } = addFeatureAccess(blueprint, world, occ, extractor);
   const hopperA = blueprintAddHopper(blueprint, capacities.feed ?? 1000);
   const crusher = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
   const hopperB = blueprintAddHopper(blueprint, capacities.crushed ?? 1000);
@@ -93,7 +117,7 @@ function buildFullChain(world, occ, capacities = {}) {
   blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
   for (const node of [extractor, crusher, magSep]) setNodeEnabled(blueprint, node.id, true);
 
-  return { blueprint, extractor, hopperA, crusher, hopperB, magSep, concentrateHopper, tailingsHopper };
+  return { blueprint, featureNode, access, extractor, hopperA, crusher, hopperB, magSep, concentrateHopper, tailingsHopper };
 }
 
 test('stream: total flow is derived from constituent rates', () => {
@@ -188,9 +212,74 @@ test('magnetic separator: retains particle-size applicability rule', () => {
   }, 0.6, 25), /particle size/);
 });
 
-test('connections: solver rejects visually connectable but unsupported node transitions', () => {
+test('resource access: relationship creates no MaterialStream', () => {
   _resetOrdinals();
   const { world, occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractor = blueprintAddExtractor(blueprint, occ.id);
+  const { access } = addFeatureAccess(blueprint, world, occ, extractor);
+  assert.equal(access.kind, 'resource-access');
+  assert.equal(getStreamForConnection(blueprint, access.id), null);
+  assert.equal(Object.keys(blueprint.streams).length, 0);
+});
+
+test('resource access: enabled Extractor cannot operate without a connected Feature', () => {
+  _resetOrdinals();
+  const { world, occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const extractor = blueprintAddExtractor(blueprint, occ.id, 5);
+  const hopper = blueprintAddHopper(blueprint, 100);
+  blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopper.id, hopper.inputPortId);
+  setNodeEnabled(blueprint, extractor.id, true);
+  simulationTick(blueprint, world, SIMULATION_STEP_S);
+  assert.equal(blueprint.simulationStats.extractedKg, 0);
+  assert.equal(extractor.operatingState, 'blocked');
+  assert.match(extractor.lastError, /Feature resource source/);
+});
+
+test('resource access: a Feature can serve multiple Extractors because the edge does not move matter', () => {
+  _resetOrdinals();
+  const { world, occ } = buildTestWorld();
+  const blueprint = createBlueprint();
+  const feature = world.features[occ.sourceId];
+  const featureNode = blueprintAddFeatureSource(blueprint, {
+    featureId: feature.id,
+    displayName: feature.name,
+    resourceOccurrenceIds: feature.resourceOccurrences,
+  });
+  const extractorA = blueprintAddExtractor(blueprint, occ.id);
+  const extractorB = blueprintAddExtractor(blueprint, occ.id);
+  assert.ok(blueprintConnect(blueprint, featureNode.id, featureNode.resourceAccessPortId, extractorA.id, extractorA.sourceInputPortId));
+  assert.ok(blueprintConnect(blueprint, featureNode.id, featureNode.resourceAccessPortId, extractorB.id, extractorB.sourceInputPortId));
+  assert.equal(Object.keys(blueprint.streams).length, 0);
+});
+
+test('resource access: Feature cannot authorize an occurrence it does not own', () => {
+  _resetOrdinals();
+  const { world, occ } = buildTestWorld();
+  const otherFeature = Object.values(world.features).find(feature => feature.id !== occ.sourceId);
+  assert.ok(otherFeature);
+  const blueprint = createBlueprint();
+  const featureNode = blueprintAddFeatureSource(blueprint, {
+    featureId: otherFeature.id,
+    displayName: otherFeature.name,
+    resourceOccurrenceIds: otherFeature.resourceOccurrences,
+  });
+  const extractor = blueprintAddExtractor(blueprint, occ.id);
+  const check = checkBlueprintConnection(
+    blueprint,
+    featureNode.id,
+    featureNode.resourceAccessPortId,
+    extractor.id,
+    extractor.sourceInputPortId,
+  );
+  assert.equal(check.ok, false);
+  assert.match(check.reason, /not available from this Feature/);
+});
+
+test('connections: solver rejects visually connectable but unsupported node transitions', () => {
+  _resetOrdinals();
+  const { occ } = buildTestWorld();
   const blueprint = createBlueprint();
   const extractor = blueprintAddExtractor(blueprint, occ.id);
   const crusher = blueprintAddCrusher(blueprint);
@@ -198,7 +287,6 @@ test('connections: solver rejects visually connectable but unsupported node tran
   assert.equal(check.ok, false);
   assert.match(check.reason, /not supported/);
   assert.equal(blueprintConnect(blueprint, extractor.id, extractor.outputPortId, crusher.id, crusher.inputPortId), null);
-  assert.ok(world);
 });
 
 test('connections: one material output cannot fan out and duplicate matter', () => {
@@ -315,7 +403,7 @@ test('magnetic separator: disconnected required output does not consume feed', (
   assert.ok(Math.abs(hopperStoredMassKg(feed) - before) < MASS_TOL);
 });
 
-test('chain: automated extractor → crusher → separator conserves total sourced matter exactly', () => {
+test('chain: Feature → Extractor → Crusher → Separator conserves total sourced matter exactly', () => {
   const { world, occ } = buildTestWorld();
   const chain = buildFullChain(world, occ);
   simulationAdvance(chain.blueprint, world, 10, SIMULATION_STEP_S);
@@ -326,7 +414,7 @@ test('chain: automated extractor → crusher → separator conserves total sourc
   assert.ok(Math.abs(chain.blueprint.simulationStats.extractedKg - 50) < 1e-5);
 });
 
-test('chain: constituent totals match the composition of actually extracted matter', () => {
+test('chain: extracted constituent totals match the actual source occurrence mixture', () => {
   const { world, occ } = buildTestWorld();
   const chain = buildFullChain(world, occ);
   simulationAdvance(chain.blueprint, world, 10, SIMULATION_STEP_S);
@@ -339,11 +427,12 @@ test('chain: constituent totals match the composition of actually extracted matt
   }
 });
 
-test('chain: extractor respects full storage and stats track actual rather than theoretical extraction', () => {
+test('chain: Extractor respects full storage and stats track actual extraction', () => {
   _resetOrdinals();
   const { world, occ } = buildTestWorld();
   const blueprint = createBlueprint();
   const extractor = blueprintAddExtractor(blueprint, occ.id, 5);
+  addFeatureAccess(blueprint, world, occ, extractor);
   const hopper = blueprintAddHopper(blueprint, 10);
   blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopper.id, hopper.inputPortId);
   setNodeEnabled(blueprint, extractor.id, true);
@@ -379,7 +468,7 @@ test('chain: same world state and timestep produce deterministic continuous simu
   assert.deepEqual(secondChain.blueprint, firstSnapshot);
 });
 
-test('connections: disconnect removes its associated stream', () => {
+test('connections: disconnect removes an associated material stream', () => {
   _resetOrdinals();
   const { occ } = buildTestWorld();
   const blueprint = createBlueprint();
@@ -409,4 +498,5 @@ test('existing world generation remains stable', () => {
   const world = createWorld('stability-check');
   assert.ok(world.planetId);
   assert.ok(Object.keys(world.regions).length > 0);
+  assert.ok(Object.keys(world.sites).length > 0);
 });
