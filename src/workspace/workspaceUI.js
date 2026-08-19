@@ -34,7 +34,6 @@ import {
 import { setBoundaryMapping, getSystemNodePort } from '../simulation/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
-import { isFeatureDiscovered, discoverFeature } from '../core/world/knowledgeState.js';
 import { hopperInspection, streamInspection, machineInspection } from './inspectionViewModel.js';
 import {
   projectBlueprintGraph,
@@ -44,6 +43,8 @@ import {
   renderGraphConnectionPreview,
   disconnectGraphConnection,
 } from './workspaceGraph.js';
+import { clampZoom, screenToGraph, zoomAroundPoint, fitViewport, centerViewport } from './viewport.js';
+import { prototypeNodeTypesForSite, prototypeOccurrenceForSite } from './sitePrototype.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -54,7 +55,7 @@ const wsState = {
   knowledge: null,
   blueprint: null,
   blueprintLayout: null,
-  engineeringSessions: {},
+  siteSessions: {},
   workspaceLayouts: {},
   systemNodeElements: new Map(),
   systemConnectionElements: new Map(),
@@ -65,12 +66,11 @@ const wsState = {
   nodeElements: new Map(),
   connectionElements: new Map(),
   connectionPreview: null,
+  viewports: {},
 };
 
 const NODE_WIDTH = 160;
 const NODE_HEIGHT = 100;
-const PARENT_NODE_WIDTH = 180;
-const PARENT_NODE_HEIGHT = 110;
 const PORT_RADIUS = 7;
 
 const pendingGraphConnection = {
@@ -93,6 +93,24 @@ let dragState = null;
 let systemDragState = null;
 
 function el(id) { return document.getElementById(id); }
+function renderWorkspaceShell(container, {
+  header = '',
+  toolbarLeading = '',
+  canvasId,
+  svgId,
+  inspectorBodyId,
+  inspectorInitial = '',
+} = {}) {
+  container.innerHTML = `${header}<div class="ws-toolbar">${toolbarLeading}<button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div><div class="ws-layout"><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div>`;
+  return {
+    toolbar: container.querySelector('.ws-toolbar'),
+    viewport: container.querySelector('.ws-viewport'),
+    canvas: el(canvasId),
+    svg: el(svgId),
+    inspector: container.querySelector('.ws-inspector'),
+    inspectorBody: el(inspectorBodyId),
+  };
+}
 function escHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -126,12 +144,12 @@ function renderBreadcrumbs() {
   const crumbs = [];
   if (planet) crumbs.push({ label: planet.name, level: 'planet', clickable: wsState.currentLevel !== 'planet' });
   if (region && wsState.currentLevel !== 'planet') {
-    crumbs.push({ label: region.name, level: 'region', clickable: wsState.currentLevel === 'engineering' });
+    crumbs.push({ label: region.name, level: 'region', clickable: wsState.currentLevel === 'site' });
   }
-  if (wsState.currentLevel === 'engineering') {
+  if (wsState.currentLevel === 'site') {
     const site = wsState.world?.sites?.[wsState.selectedSiteId];
-    const feature = site ? wsState.world?.features?.[site.featureId] : null;
-    crumbs.push({ label: feature?.name ?? wsState.selectedSiteId ?? 'Site', level: 'engineering', clickable: false });
+    const feature = site ? wsState.world?.features?.[site.featureIds?.[0]] : null;
+    crumbs.push({ label: feature?.name ?? wsState.selectedSiteId ?? 'Site', level: 'site', clickable: false });
   }
 
   container.innerHTML = `<span class="ws-world-controls"><button id="ws-world-toggle"></button><span id="ws-world-clock"></span></span>${crumbs.map(crumb => crumb.clickable
@@ -144,24 +162,7 @@ function renderBreadcrumbs() {
   updateWorldControls();
 }
 
-function compatibleOccurrenceForFeature(feature) {
-  if (!feature) return null;
-  for (const occurrenceId of feature.resourceOccurrences ?? []) {
-    const occurrence = wsState.world?.resourceOccurrences?.[occurrenceId];
-    if (occurrence?.resourceId === 'iron-ore' && occurrence?.composition) return occurrence;
-  }
-  return null;
-}
-
-function compatibleOccurrenceForSite(site) {
-  for (const occurrenceId of site?.resourceOccurrenceIds ?? []) {
-    const occurrence = wsState.world?.resourceOccurrences?.[occurrenceId];
-    if (occurrence?.resourceId === 'iron-ore' && occurrence?.composition) return occurrence;
-  }
-  return null;
-}
-
-function createEngineeringSession(occurrenceId, siteId) {
+function createSiteSession(occurrenceId, siteId) {
   const blueprint = createBlueprint();
   const blueprintLayout = createBlueprintLayout();
   const siteWorkspace = getSimulationWorkspace(wsState.world, `${siteId}-workspace`);
@@ -179,36 +180,53 @@ function createEngineeringSession(occurrenceId, siteId) {
   blueprint.nodes[siteImport.id] = siteImport;
   blueprint.nodes[siteExport.id] = siteExport;
 
-  const extractor = blueprintAddExtractor(blueprint, occurrenceId, 5);
-  const hopperA = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-  const crusher = blueprintAddCrusher(blueprint, {
+  const site = wsState.world?.sites?.[siteId];
+  const featureIds = site?.featureIds ?? [];
+  for (const featureId of featureIds) {
+    const feature = wsState.world?.features?.[featureId];
+    blueprint.nodes[`feature-node-${featureId}`] = {
+      id: `feature-node-${featureId}`,
+      nodeType: 'feature',
+      systemType: 'feature',
+      displayName: feature?.name ?? featureId,
+      featureId,
+      ports: [],
+      enabled: false,
+    };
+  }
+  const prototypeOccurrence = prototypeOccurrenceForSite(wsState.world, site);
+  const prototypeOccurrenceId = prototypeOccurrence?.id ?? null;
+  const prototypeNodeTypes = prototypeNodeTypesForSite(wsState.world, site);
+  const extractor = prototypeNodeTypes.includes('extractor')
+    ? blueprintAddExtractor(blueprint, prototypeOccurrenceId, 5)
+    : null;
+  const hopperA = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
+  const crusher = extractor ? blueprintAddCrusher(blueprint, {
     throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
     targetParticleSizeMm: DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
-  });
-  const hopperB = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-  const magSep = blueprintAddMagSep(blueprint, { fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH });
-  const concentrateHopper = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
-  const tailingsHopper = blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG);
+  }) : null;
+  const hopperB = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
+  const magSep = extractor ? blueprintAddMagSep(blueprint, { fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH }) : null;
+  const concentrateHopper = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
+  const tailingsHopper = extractor ? blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG) : null;
 
   const positions = [
     [siteImport, 60, 300],
-    [extractor, 60, 140],
-    [hopperA, 260, 140],
-    [crusher, 460, 140],
-    [hopperB, 660, 140],
-    [magSep, 860, 140],
-    [concentrateHopper, 1060, 60],
-    [tailingsHopper, 1060, 220],
+    ...featureIds.map((featureId, index) => [blueprint.nodes[`feature-node-${featureId}`], 60, 40 + index * 110]),
+    ...(extractor ? [[extractor, 60, 140]] : []),
+    ...(extractor ? [[hopperA, 260, 140], [crusher, 460, 140], [hopperB, 660, 140], [magSep, 860, 140], [concentrateHopper, 1060, 60], [tailingsHopper, 1060, 220]] : []),
     [siteExport, 1260, 60],
   ];
   positions.forEach(([node, x, y]) => layoutMoveNode(blueprintLayout, node.id, x, y));
 
-  blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
-  blueprintConnect(blueprint, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
-  blueprintConnect(blueprint, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
-  blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
-  blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
-  blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
+  if (extractor) blueprintConnect(blueprint, extractor.id, extractor.outputPortId, hopperA.id, hopperA.inputPortId);
+  if (extractor) {
+    blueprintConnect(blueprint, hopperA.id, hopperA.outputPortId, crusher.id, crusher.inputPortId);
+    blueprintConnect(blueprint, crusher.id, crusher.outputPortId, hopperB.id, hopperB.inputPortId);
+    blueprintConnect(blueprint, hopperB.id, hopperB.outputPortId, magSep.id, magSep.inputPortId);
+    blueprintConnect(blueprint, magSep.id, magSep.concentratePortId, concentrateHopper.id, concentrateHopper.inputPortId);
+    blueprintConnect(blueprint, magSep.id, magSep.tailingsPortId, tailingsHopper.id, tailingsHopper.inputPortId);
+  }
 
   const siteNode = wsState.world?.systemNodes?.[siteId];
   if (siteNode) {
@@ -220,12 +238,12 @@ function createEngineeringSession(occurrenceId, siteId) {
   return { id: siteId, siteId, occurrenceId, blueprint, blueprintLayout, boundaryNode: siteNode };
 }
 
-function activateEngineeringSession(occurrenceId, siteId) {
+function activateSiteSession(occurrenceId, siteId) {
   if (!siteId) return;
-  let session = wsState.engineeringSessions[siteId];
+  let session = wsState.siteSessions[siteId];
   if (!session) {
-    session = createEngineeringSession(occurrenceId, siteId);
-    wsState.engineeringSessions[siteId] = session;
+    session = createSiteSession(occurrenceId, siteId);
+    wsState.siteSessions[siteId] = session;
     registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
   }
   wsState.blueprint = session.blueprint;
@@ -241,19 +259,18 @@ export function navigateTo(level, opts = {}) {
     if (!site) return;
     const occurrenceId = opts.occurrenceId && site.resourceOccurrenceIds.includes(opts.occurrenceId)
       ? opts.occurrenceId
-      : compatibleOccurrenceForSite(site)?.id;
-    if (!occurrenceId) return;
+      : site.resourceOccurrenceIds[0] ?? null;
     wsState.selectedSiteId = site.id;
     wsState.selectedRegionId = site.regionId;
     wsState.selectedOccurrenceId = occurrenceId;
-    activateEngineeringSession(occurrenceId, site.id);
-    level = 'engineering';
-  } else if (level === 'engineering') {
-    const site = wsState.world?.sites?.[opts.siteId ?? wsState.selectedSiteId];
-    const occurrenceId = opts.occurrenceId ?? wsState.selectedOccurrenceId ?? compatibleOccurrenceForSite(site)?.id;
-    if (!site || !occurrenceId) return;
+    activateSiteSession(occurrenceId, site.id);
+    level = 'site';
+  } else if (level === 'site' && !opts.siteId) {
+    const site = wsState.world?.sites?.[wsState.selectedSiteId];
+    const occurrenceId = opts.occurrenceId ?? wsState.selectedOccurrenceId ?? site?.resourceOccurrenceIds?.[0] ?? null;
+    if (!site) return;
     wsState.selectedOccurrenceId = occurrenceId;
-    activateEngineeringSession(occurrenceId, site.id);
+    activateSiteSession(occurrenceId, site.id);
   }
 
   wsState.currentLevel = level;
@@ -266,21 +283,6 @@ export function navigateTo(level, opts = {}) {
   renderWorkspace();
 }
 
-function knownSiteIds(region) {
-  return (region?.siteIds ?? []).filter(siteId => {
-    const featureId = wsState.world?.sites?.[siteId]?.featureId;
-    return featureId && isFeatureDiscovered(wsState.knowledge, featureId);
-  });
-}
-
-function prototypeSurveyFeatureId(region) {
-  for (const featureId of region?.features ?? []) {
-    if (isFeatureDiscovered(wsState.knowledge, featureId)) continue;
-    if (compatibleOccurrenceForFeature(wsState.world?.features?.[featureId])) return featureId;
-  }
-  return null;
-}
-
 function systemWorkspaceDefinition() {
   const planet = currentPlanet();
   if (wsState.currentLevel === 'planet') {
@@ -291,7 +293,6 @@ function systemWorkspaceDefinition() {
       scopeId: planet?.id,
       level: 'planet',
       planetScopeId: planet?.id,
-      prototypeSurveyFeatureId: null,
     };
   }
 
@@ -299,9 +300,7 @@ function systemWorkspaceDefinition() {
   const runtime = region ? getSimulationWorkspace(wsState.world, `${region.id}-workspace`) : null;
   const nodes = Object.values(runtime?.nodes ?? {}).filter(node => node.boundaryRole);
 
-  // Every discovered Site remains a node, even if the current iron-processing
-  // prototype cannot drill into it yet.
-  for (const siteId of knownSiteIds(region)) {
+  for (const siteId of region?.siteIds ?? []) {
     const node = wsState.world.systemNodes?.[siteId];
     if (node) nodes.push(node);
   }
@@ -313,7 +312,6 @@ function systemWorkspaceDefinition() {
     scopeId: region?.id,
     level: 'region',
     planetScopeId: currentPlanet()?.id,
-    prototypeSurveyFeatureId: prototypeSurveyFeatureId(region),
   };
 }
 
@@ -325,7 +323,7 @@ function systemNodeTitle(node) {
   if (node.nodeType === 'region') return wsState.world.regions[node.id]?.name ?? node.id;
   if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
-    return wsState.world.features[site?.featureId]?.name ?? node.id;
+    return wsState.world.features[site?.featureIds?.[0]]?.name ?? node.id;
   }
   return node.systemType ?? node.nodeType;
 }
@@ -334,14 +332,12 @@ function systemNodeDescription(node) {
   if (node.boundaryRole) return `${node.boundaryRole} material boundary buffer`;
   if (node.nodeType === 'region') {
     const region = wsState.world.regions[node.id];
-    return `${region?.surfaceCover ?? 'Region'} · ${knownSiteIds(region).length} known sites`;
+    return `${region?.surfaceCover ?? 'Region'} · ${(region?.siteIds ?? []).length} sites`;
   }
   if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
-    const feature = wsState.world.features[site?.featureId];
-    return compatibleOccurrenceForSite(site)
-      ? `${feature?.type ?? 'Site'} · engineering available`
-      : `${feature?.type ?? 'Site'} · inspectable site`;
+    const feature = wsState.world.features[site?.featureIds?.[0]];
+    return `${feature?.type ?? 'Site'} · enterable site`;
   }
   return node.nodeType;
 }
@@ -370,12 +366,73 @@ function ensureSystemLayout(definition) {
   return layout;
 }
 
+function workspaceViewport(key) {
+  return wsState.viewports[key] ??= { panX: 0, panY: 0, zoom: 1 };
+}
+
+function eventGraphPoint(event, surface, key) {
+  const rect = surface?.getBoundingClientRect() ?? { left: 0, top: 0 };
+  return screenToGraph(
+    { x: event.clientX - rect.left, y: event.clientY - rect.top },
+    workspaceViewport(key),
+  );
+}
+
+function installViewport(surface, canvas, svg, key, boundsProvider, controlsRoot = null) {
+  if (!surface || !canvas || !svg) return;
+  const apply = () => {
+    const viewport = workspaceViewport(key);
+    const transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
+    canvas.style.transformOrigin = '0 0';
+    svg.style.transformOrigin = '0 0';
+    canvas.style.transform = transform;
+    svg.style.transform = transform;
+    controlsRoot.querySelectorAll('[data-zoom-label]').forEach(label => {
+      label.textContent = `${Math.round(viewport.zoom * 100)}%`;
+    });
+  };
+  controlsRoot.querySelectorAll('[data-viewport]').forEach(button => {
+    button.addEventListener('click', () => {
+      const viewport = workspaceViewport(key);
+      if (button.dataset.viewport === 'in') viewport.zoom = clampZoom(viewport.zoom + 0.1);
+      if (button.dataset.viewport === 'out') viewport.zoom = clampZoom(viewport.zoom - 0.1);
+      if (button.dataset.viewport === 'fit') Object.assign(viewport, fitViewport(viewport, boundsProvider(), { width: surface.clientWidth, height: surface.clientHeight }));
+      if (button.dataset.viewport === 'center') Object.assign(viewport, centerViewport(viewport, boundsProvider(), { width: surface.clientWidth, height: surface.clientHeight }));
+      apply();
+    });
+  });
+  let panStart = null;
+  surface.addEventListener('wheel', event => {
+    event.preventDefault();
+    const rect = surface.getBoundingClientRect();
+    Object.assign(workspaceViewport(key), zoomAroundPoint(
+      workspaceViewport(key),
+      workspaceViewport(key).zoom * (event.deltaY < 0 ? 1.1 : 0.9),
+      { x: event.clientX - rect.left, y: event.clientY - rect.top },
+    ));
+    apply();
+  }, { passive: false });
+  surface.addEventListener('mousedown', event => {
+    if (event.button !== 1 && !(event.button === 0 && event.getModifierState('Space'))) return;
+    panStart = { x: event.clientX, y: event.clientY, ...workspaceViewport(key) };
+    event.preventDefault();
+  });
+  surface.addEventListener('mousemove', event => {
+    if (!panStart) return;
+    const viewport = workspaceViewport(key);
+    viewport.panX = panStart.panX + event.clientX - panStart.x;
+    viewport.panY = panStart.panY + event.clientY - panStart.y;
+    apply();
+  });
+  surface.addEventListener('mouseup', () => { panStart = null; });
+  apply();
+}
+
 function portOffsetsForSize(port, index, count, width, height) {
   const step = height / (count + 1);
   return { dx: port.direction === 'input' ? 0 : width, dy: step * (index + 1) };
 }
 function portOffsets(port, index, count) { return portOffsetsForSize(port, index, count, NODE_WIDTH, NODE_HEIGHT); }
-function parentPortOffsets(port, index, count) { return portOffsetsForSize(port, index, count, PARENT_NODE_WIDTH, PARENT_NODE_HEIGHT); }
 
 function visibleEndpointForTransfer(systemId, portId) {
   const regionId = wsState.selectedRegionId;
@@ -400,9 +457,9 @@ function systemEndpointPosition(definition, systemId, portId) {
   const node = graph.nodes.find(item => item.id === visible.nodeId);
   const ports = node?.ports ?? [];
   const port = ports.find(item => item.id === visible.portId);
-  if (!port) return { x: position.x, y: position.y + PARENT_NODE_HEIGHT / 2 };
+  if (!port) return { x: position.x, y: position.y + NODE_HEIGHT / 2 };
   const side = ports.filter(item => item.direction === port.direction);
-  const offset = parentPortOffsets(port, side.indexOf(port), side.length);
+  const offset = portOffsets(port, side.indexOf(port), side.length);
   return { x: position.x + offset.dx, y: position.y + offset.dy };
 }
 
@@ -451,11 +508,12 @@ function startSystemNodeDrag(nodeId, event) {
   const definition = systemWorkspaceDefinition();
   const layout = ensureSystemLayout(definition);
   const position = layout.nodePositions[nodeId] ?? { x: 0, y: 0 };
+  const point = eventGraphPoint(event, el('ws-system-canvas')?.parentElement, definition.id);
   systemDragState = {
     definitionId: definition.id,
     nodeId,
-    startMouseX: event.clientX,
-    startMouseY: event.clientY,
+    startMouseX: point.x,
+    startMouseY: point.y,
     startX: position.x,
     startY: position.y,
   };
@@ -467,9 +525,10 @@ function onSystemCanvasMove(event) {
   if (systemDragState) {
     if (definition.id !== systemDragState.definitionId) return;
     const layout = ensureSystemLayout(definition);
+    const point = eventGraphPoint(event, el('ws-system-canvas')?.parentElement, definition.id);
     layout.nodePositions[systemDragState.nodeId] = {
-      x: Math.max(0, systemDragState.startX + event.clientX - systemDragState.startMouseX),
-      y: Math.max(0, systemDragState.startY + event.clientY - systemDragState.startMouseY),
+      x: Math.max(0, systemDragState.startX + point.x - systemDragState.startMouseX),
+      y: Math.max(0, systemDragState.startY + point.y - systemDragState.startMouseY),
     };
     const element = wsState.systemNodeElements.get(systemDragState.nodeId);
     if (element) {
@@ -478,10 +537,9 @@ function onSystemCanvasMove(event) {
     }
   }
   if (pendingGraphConnection.active) {
-    const canvas = el('ws-system-canvas');
-    const rect = canvas.getBoundingClientRect();
-    pendingGraphConnection.x = event.clientX - rect.left + (canvas.scrollLeft ?? 0);
-    pendingGraphConnection.y = event.clientY - rect.top + (canvas.scrollTop ?? 0);
+    const point = eventGraphPoint(event, el('ws-system-canvas')?.parentElement, definition.id);
+    pendingGraphConnection.x = point.x;
+    pendingGraphConnection.y = point.y;
   }
   renderSystemConnections(el('ws-system-svg'), definition);
 }
@@ -489,16 +547,17 @@ function onSystemCanvasMove(event) {
 function renderParentWorkspace(container) {
   const definition = systemWorkspaceDefinition();
   ensureSystemLayout(definition);
-  const survey = definition.prototypeSurveyFeatureId
-    ? `<div class="ws-prototype-survey"><strong>Prototype Survey Bootstrap</strong><span>Survey one compatible unknown Site so the current engineering prototype remains reachable.</span><button id="ws-prototype-survey" data-feature-id="${escHtml(definition.prototypeSurveyFeatureId)}">Survey One Compatible Site</button></div>`
-    : '';
   const header = wsState.currentLevel === 'planet'
     ? `<div class="ws-planet-header"><div class="ws-planet-name">${escHtml(definition.title)}</div><div class="ws-planet-meta">Draggable planetary system graph</div></div>`
-    : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Draggable region system graph · explicit import/export boundaries</div></div>${survey}`;
+    : `<div class="ws-region-header"><div class="ws-region-heading">${escHtml(definition.title)}</div><div class="ws-region-desc">Draggable region system graph · explicit import/export boundaries</div></div>`;
 
-  container.innerHTML = `${header}<div class="ws-parent-layout"><div class="ws-system-canvas-wrap"><svg id="ws-system-svg" class="ws-system-svg"></svg><div id="ws-system-canvas" class="ws-system-canvas"></div></div><div class="ws-composite-inspector"><div class="ws-inspector-title">Inspector</div><div id="ws-composite-inspector-body"></div></div></div>`;
-  const canvas = el('ws-system-canvas');
-  const svg = el('ws-system-svg');
+  const shell = renderWorkspaceShell(container, {
+    header,
+    canvasId: 'ws-system-canvas',
+    svgId: 'ws-system-svg',
+    inspectorBodyId: 'ws-composite-inspector-body',
+  });
+  const { canvas, svg } = shell;
   const layout = ensureSystemLayout(definition);
   const graph = projectBoundaryGraph(
     { ...definition, layout },
@@ -510,8 +569,8 @@ function renderParentWorkspace(container) {
     canvas,
     graph,
     elements: wsState.systemNodeElements,
-    width: PARENT_NODE_WIDTH,
-    height: PARENT_NODE_HEIGHT,
+    width: NODE_WIDTH,
+    height: NODE_HEIGHT,
     className: 'ws-system-node',
     nodeClass: node => `ws-node--${node.type}${node.source.boundaryRole ? ' ws-node--boundary' : ''}`,
     portClass: (_node, _port, direction) => `ws-system-port ws-system-port--${direction}`,
@@ -523,8 +582,7 @@ function renderParentWorkspace(container) {
         element.appendChild(label);
       }
       label.innerHTML = `<strong>${escHtml(systemNodeTitle(node))}</strong><span>${escHtml(systemNodeDescription(node))}</span>`;
-      const canEnter = node.nodeType === 'region'
-        || (node.nodeType === 'site' && Boolean(compatibleOccurrenceForSite(wsState.world.sites[node.id])));
+      const canEnter = node.nodeType === 'region' || node.nodeType === 'site';
       const existingEnter = element.querySelector('.ws-system-enter');
       if (canEnter && !existingEnter) {
         const button = document.createElement('button');
@@ -535,7 +593,7 @@ function renderParentWorkspace(container) {
           if (node.nodeType === 'region') navigateTo('region', { regionId: node.id });
           else navigateTo('site', {
             siteId: node.id,
-            occurrenceId: compatibleOccurrenceForSite(wsState.world.sites[node.id])?.id,
+            occurrenceId: wsState.world.sites[node.id]?.resourceOccurrenceIds?.[0],
           });
         });
         element.appendChild(button);
@@ -553,9 +611,9 @@ function renderParentWorkspace(container) {
       pendingGraphConnection.source = { nodeId: endpoint.systemId, portId: endpoint.portId };
       pendingGraphConnection.scopeId = definition.scopeId;
       pendingGraphConnection.adapter = 'boundary-transfer';
-      const rect = canvas.getBoundingClientRect();
-      pendingGraphConnection.x = event.clientX - rect.left + (canvas.scrollLeft ?? 0);
-      pendingGraphConnection.y = event.clientY - rect.top + (canvas.scrollTop ?? 0);
+      const point = eventGraphPoint(event, canvas.parentElement, definition.id);
+      pendingGraphConnection.x = point.x;
+      pendingGraphConnection.y = point.y;
       inspector.message = 'Choose a compatible input port.';
       inspector.selectedTransferId = null;
       updateCompositeInspector(true);
@@ -597,12 +655,23 @@ function renderParentWorkspace(container) {
     }
   });
   canvas.addEventListener('mouseleave', () => { systemDragState = null; });
-  el('ws-prototype-survey')?.addEventListener('click', event => {
-    discoverFeature(wsState.knowledge, event.currentTarget.dataset.featureId);
-    document.dispatchEvent(new CustomEvent('interlink:knowledge-updated'));
-    renderWorkspace();
-  });
   renderSystemConnections(svg, definition);
+  installViewport(
+    shell.viewport,
+    canvas,
+    svg,
+    definition.id,
+    () => {
+      const positions = Object.values(ensureSystemLayout(definition).nodePositions);
+      return positions.reduce((bounds, position) => ({
+        minX: Math.min(bounds.minX, position.x),
+        minY: Math.min(bounds.minY, position.y),
+        maxX: Math.max(bounds.maxX, position.x + NODE_WIDTH),
+        maxY: Math.max(bounds.maxY, position.y + NODE_HEIGHT),
+      }), { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT });
+    },
+    shell.toolbar,
+  );
   updateCompositeInspector(true);
 }
 
@@ -676,7 +745,7 @@ function formatCompositeInspector(node) {
       <div class="ws-ins-comp" data-live-section="boundary-components">${componentRowsHtml(details.components)}</div>`;
   } else if (node.nodeType === 'region') {
     const region = wsState.world.regions[node.id];
-    html += `<div class="ws-ins-row"><b>Known sites:</b> ${knownSiteIds(region).length}</div>`;
+    html += `<div class="ws-ins-row"><b>Sites:</b> ${(region?.siteIds ?? []).length}</div>`;
     const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
     const imported = workspace?.nodes?.[`${node.id}-import-hopper`];
     const exported = workspace?.nodes?.[`${node.id}-export-hopper`];
@@ -685,7 +754,7 @@ function formatCompositeInspector(node) {
   } else if (node.nodeType === 'site') {
     const site = wsState.world.sites[node.id];
     html += `<div class="ws-ins-row"><b>Region:</b> ${escHtml(site.regionId)}</div>
-      <div class="ws-ins-row"><b>Known occurrences:</b> ${isFeatureDiscovered(wsState.knowledge, site.featureId) ? site.resourceOccurrenceIds.length : 0}</div>`;
+      <div class="ws-ins-row"><b>Occurrences:</b> ${site.resourceOccurrenceIds.length}</div>`;
     const workspace = getSimulationWorkspace(wsState.world, node.childWorkspaceId);
     const outputPort = getSystemNodePort(node, 'material-output');
     const output = workspace?.nodes?.[outputPort?.childNodeId];
@@ -771,6 +840,10 @@ function updateCompositeInspector(force = false) {
 }
 
 function nodeLabel(node) {
+  if (node.nodeType === 'feature') {
+    const feature = wsState.world?.features?.[node.featureId];
+    return `${feature?.name ?? node.displayName ?? node.featureId}\n${feature?.type ?? 'Feature'}`;
+  }
   if (node.nodeType === 'extractor') {
     return `Extractor [${getNodeOperatingState(node)}]\n${wsState.world?.resourceOccurrences?.[node.occurrenceId]?.name ?? node.occurrenceId}\n${node.prototypeRateKgPerSecond} kg/s`;
   }
@@ -833,9 +906,9 @@ function renderConnections(svg) {
   });
 }
 
-function renderEngineeringNodes() {
-  const canvas = el('ws-eng-canvas');
-  const svg = el('ws-eng-svg');
+function renderSiteNodes() {
+  const canvas = el('ws-site-canvas');
+  const svg = el('ws-site-svg');
   if (!canvas || !svg || !wsState.blueprint) return;
   const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout, {
     selectedNodeId: inspector.selectedNodeId,
@@ -886,34 +959,55 @@ function renderEngineeringNodes() {
   updateSimStatus();
 }
 
-function renderEngineeringWorkspace(container) {
-  if (!wsState.selectedOccurrenceId) {
+function renderSiteWorkspace(container) {
+  if (!wsState.selectedSiteId) {
     container.innerHTML = '<p class="ws-empty">No resource occurrence selected.</p>';
     return;
   }
-  activateEngineeringSession(wsState.selectedOccurrenceId, wsState.selectedSiteId);
+  activateSiteSession(wsState.selectedOccurrenceId, wsState.selectedSiteId);
   wsState.nodeElements.clear();
   wsState.connectionElements.clear();
   wsState.connectionPreview = null;
   inspector.renderKey = null;
   const site = wsState.world?.sites?.[wsState.selectedSiteId];
-  const feature = site ? wsState.world?.features?.[site.featureId] : null;
-  container.innerHTML = `<div class="ws-eng-toolbar"><span class="ws-eng-title">Site — ${escHtml(feature?.name ?? wsState.selectedSiteId)}</span><span class="ws-site-boundary-label">Explicit Site Import / Site Export buffers</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span></div><div class="ws-eng-layout"><div class="ws-canvas-wrap"><svg id="ws-eng-svg" class="ws-eng-svg"></svg><div id="ws-eng-canvas" class="ws-eng-canvas"></div></div><div id="ws-inspector" class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="ws-inspector-body" class="ws-inspector-body">Select a node or connection.</div></div></div>`;
-  el('ws-sim-reset')?.addEventListener('click', onResetEngineering);
+  const feature = site ? wsState.world?.features?.[site.featureIds?.[0]] : null;
+  const shell = renderWorkspaceShell(container, {
+    toolbarLeading: `<span class="ws-site-title">Site — ${escHtml(feature?.name ?? wsState.selectedSiteId)}</span><button id="ws-sim-reset">↺ Reset Site</button><span id="ws-sim-status" class="ws-sim-status"></span>`,
+    canvasId: 'ws-site-canvas',
+    svgId: 'ws-site-svg',
+    inspectorBodyId: 'ws-inspector-body',
+    inspectorInitial: 'Select a node or connection.',
+  });
+  el('ws-sim-reset')?.addEventListener('click', onResetSite);
   el('ws-inspector-body')?.addEventListener('click', onInspectorClick);
-  renderEngineeringNodes();
-  el('ws-eng-canvas')?.addEventListener('mousemove', onCanvasMouseMove);
-  el('ws-eng-canvas')?.addEventListener('mouseup', onCanvasMouseUp);
-  el('ws-eng-svg')?.addEventListener('mousemove', onCanvasMouseMove);
-  el('ws-eng-svg')?.addEventListener('mouseup', onCanvasMouseUp);
+  renderSiteNodes();
+  el('ws-site-canvas')?.addEventListener('mousemove', onCanvasMouseMove);
+  el('ws-site-canvas')?.addEventListener('mouseup', onCanvasMouseUp);
+  el('ws-site-svg')?.addEventListener('mousemove', onCanvasMouseMove);
+  el('ws-site-svg')?.addEventListener('mouseup', onCanvasMouseUp);
+  installViewport(
+    shell.viewport,
+    shell.canvas,
+    shell.svg,
+    `site:${wsState.selectedSiteId}`,
+    () => Object.values(wsState.blueprintLayout.nodePositions).reduce((bounds, position) => ({
+      minX: Math.min(bounds.minX, position.x),
+      minY: Math.min(bounds.minY, position.y),
+      maxX: Math.max(bounds.maxX, position.x + NODE_WIDTH),
+      maxY: Math.max(bounds.maxY, position.y + NODE_HEIGHT),
+    }), { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT }),
+    shell.toolbar,
+  );
 }
 
 function startNodeDrag(nodeId, event) {
   const position = wsState.blueprintLayout.nodePositions[nodeId] ?? { x: 0, y: 0 };
+  const surface = el('ws-site-canvas')?.parentElement;
+  const point = eventGraphPoint(event, surface, `site:${wsState.selectedSiteId}`);
   dragState = {
     nodeId,
-    startMouseX: event.clientX,
-    startMouseY: event.clientY,
+    startMouseX: point.x,
+    startMouseY: point.y,
     startX: position.x,
     startY: position.y,
   };
@@ -921,14 +1015,13 @@ function startNodeDrag(nodeId, event) {
 }
 
 function startPendingConnection(nodeId, portId, event) {
-  const canvas = el('ws-eng-canvas');
-  const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
+  const canvas = el('ws-site-canvas');
+  const point = eventGraphPoint(event, canvas?.parentElement, `site:${wsState.selectedSiteId}`);
   Object.assign(pendingGraphConnection, {
     active: true,
     source: { nodeId, portId },
     adapter: 'blueprint',
-    x: event.clientX - rect.left + (canvas?.scrollLeft ?? 0),
-    y: event.clientY - rect.top + (canvas?.scrollTop ?? 0),
+    ...point,
   });
   event.preventDefault();
 }
@@ -961,25 +1054,26 @@ function finishConnection(targetNodeId, targetPortId) {
     }
   }
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function onCanvasMouseMove(event) {
   if (dragState) {
+    const surface = el('ws-site-canvas')?.parentElement;
+    const point = eventGraphPoint(event, surface, `site:${wsState.selectedSiteId}`);
     layoutMoveNode(
       wsState.blueprintLayout,
       dragState.nodeId,
-      Math.max(0, dragState.startX + event.clientX - dragState.startMouseX),
-      Math.max(0, dragState.startY + event.clientY - dragState.startMouseY)
+      Math.max(0, dragState.startX + point.x - dragState.startMouseX),
+      Math.max(0, dragState.startY + point.y - dragState.startMouseY)
     );
-    renderEngineeringNodes();
+    renderSiteNodes();
   }
   if (pendingGraphConnection.active) {
-    const canvas = el('ws-eng-canvas');
-    const rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
-    pendingGraphConnection.x = event.clientX - rect.left + (canvas?.scrollLeft ?? 0);
-    pendingGraphConnection.y = event.clientY - rect.top + (canvas?.scrollTop ?? 0);
-    renderConnections(el('ws-eng-svg'));
+    const point = eventGraphPoint(event, el('ws-site-canvas')?.parentElement, `site:${wsState.selectedSiteId}`);
+    pendingGraphConnection.x = point.x;
+    pendingGraphConnection.y = point.y;
+    renderConnections(el('ws-site-svg'));
   }
 }
 
@@ -988,7 +1082,7 @@ function onCanvasMouseUp() {
   if (pendingGraphConnection.active) {
     pendingGraphConnection.active = false;
     pendingGraphConnection.adapter = null;
-    renderConnections(el('ws-eng-svg'));
+    renderConnections(el('ws-site-svg'));
   }
 }
 
@@ -997,7 +1091,7 @@ function selectNode(nodeId) {
   inspector.selectedConnId = null;
   inspector.message = '';
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function selectConnection(connectionId) {
@@ -1005,7 +1099,7 @@ function selectConnection(connectionId) {
   inspector.selectedConnId = connectionId;
   inspector.message = '';
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function formatNodeInspector(node) {
@@ -1041,6 +1135,17 @@ function formatNodeInspector(node) {
       <div class="ws-ins-row"><b>Free:</b> <span data-live="free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Particle size:</b> <span data-live="particle-size">${details.particleSizeMm == null ? '—' : `${details.particleSizeMm.toFixed(3)} mm`}</span></div>
       <div class="ws-ins-comp" data-live-section="components">${componentRowsHtml(details.components)}</div>`;
+  } else if (node.nodeType === 'feature') {
+    const feature = wsState.world?.features?.[node.featureId];
+    const occurrences = feature?.resourceOccurrences ?? [];
+    html += `<div class="ws-ins-row"><b>Name:</b> ${escHtml(feature?.name ?? node.displayName)}</div>
+      <div class="ws-ins-row"><b>Feature type:</b> ${escHtml(feature?.type ?? 'Feature')}</div>
+      <div class="ws-ins-row"><b>Depth:</b> ${feature?.depthM ?? '—'} m</div>
+      <div class="ws-ins-row"><b>Geometry:</b> ${escHtml(feature?.geometry ?? '—')}</div>
+      <div class="ws-ins-row"><b>Accessibility:</b> ${escHtml(feature?.accessibility ?? '—')}</div>
+      <div class="ws-ins-row"><b>Physical state:</b> ${escHtml(feature?.physicalState ?? '—')}</div>
+      <div class="ws-ins-row"><b>Quantity class:</b> ${escHtml(feature?.quantityClass ?? '—')}</div>
+      <div class="ws-ins-row"><b>Resource occurrences:</b> ${occurrences.length}</div>`;
   }
 
   html += `<div class="ws-ins-action"><button class="ws-btn-disconnect" data-node-id="${escHtml(node.id)}">Remove all connections</button></div>`;
@@ -1147,7 +1252,7 @@ function onInspectorClick(event) {
     }
   }
   inspector.renderKey = null;
-  renderEngineeringNodes();
+  renderSiteNodes();
 }
 
 function onToggleWorldSimulation() {
@@ -1184,8 +1289,8 @@ function simLoop(now) {
     wsState.simAccumulatedS -= SIMULATION_STEP_S;
   }
   updateWorldControls();
-  if (wsState.currentLevel === 'engineering') {
-    renderEngineeringNodes();
+  if (wsState.currentLevel === 'site') {
+    renderSiteNodes();
   } else {
     const definition = systemWorkspaceDefinition();
     renderSystemConnections(el('ws-system-svg'), definition);
@@ -1203,19 +1308,19 @@ function updateSimStatus() {
   status.textContent = `${wsState.world?.simulation?.running ? '● ' : ''}Stored ${stored.toFixed(2)} kg · Extracted ${(wsState.blueprint.simulationStats?.extractedKg ?? 0).toFixed(2)} kg`;
 }
 
-function onResetEngineering() {
+function onResetSite() {
   const occurrenceId = wsState.selectedOccurrenceId;
   const siteId = wsState.selectedSiteId;
-  if (!occurrenceId || !siteId) return;
-  const session = createEngineeringSession(occurrenceId, siteId);
-  wsState.engineeringSessions[siteId] = session;
+  if (!siteId) return;
+  const session = createSiteSession(occurrenceId, siteId);
+  wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.renderKey = null;
-  renderEngineeringWorkspace(el('ws-main'));
+  renderSiteWorkspace(el('ws-main'));
 }
 
 export function renderWorkspace() {
@@ -1223,7 +1328,7 @@ export function renderWorkspace() {
   if (!container) return;
   renderBreadcrumbs();
   if (wsState.currentLevel === 'region') renderRegionWorkspace(container);
-  else if (wsState.currentLevel === 'engineering') renderEngineeringWorkspace(container);
+  else if (wsState.currentLevel === 'site') renderSiteWorkspace(container);
   else renderPlanetWorkspace(container);
 }
 
@@ -1238,8 +1343,9 @@ export function initWorkspace(world, knowledge) {
   wsState.selectedOccurrenceId = null;
   wsState.blueprint = null;
   wsState.blueprintLayout = null;
-  wsState.engineeringSessions = {};
+  wsState.siteSessions = {};
   wsState.workspaceLayouts = {};
+  wsState.viewports = {};
   wsState.nodeElements.clear();
   wsState.connectionElements.clear();
   wsState.systemNodeElements.clear();
@@ -1256,7 +1362,7 @@ export function initWorkspace(world, knowledge) {
 
 export function updateWorkspaceKnowledge(knowledge) {
   wsState.knowledge = knowledge;
-  if (wsState.currentLevel !== 'engineering') renderWorkspace();
+  if (wsState.currentLevel !== 'site') renderWorkspace();
 }
 
 if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', renderWorkspace);

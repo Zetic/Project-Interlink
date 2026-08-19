@@ -43,9 +43,9 @@ function testWorld() {
   return { resourceOccurrences: { occ: { id: 'occ', resourceId: 'iron-ore', composition: { hematite: 100 } } } };
 }
 
-test('schema v5 records recursive/world-simulation state shape change', () => {
-  assert.equal(SCHEMA_VERSION, 5);
-  assert.equal(createWorld('schema-five').schemaVersion, 5);
+test('schema v6 records enterable Feature Site state shape change', () => {
+  assert.equal(SCHEMA_VERSION, 6);
+  assert.equal(createWorld('schema-six').schemaVersion, 6);
 });
 
 test('active machinery starts disabled and reports off', () => {

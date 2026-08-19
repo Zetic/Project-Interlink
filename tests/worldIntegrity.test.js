@@ -57,6 +57,34 @@ test('every feature resource-occurrence ID resolves', () => {
   }
 });
 
+test('every generated feature belongs to an enterable Site', () => {
+  const world = buildWorld('feature-sites');
+  const featureIds = new Set(Object.values(world.sites).flatMap(site => site.featureIds));
+  assert.equal(featureIds.size, Object.keys(world.features).length);
+  for (const feature of Object.values(world.features)) {
+    const site = Object.values(world.sites).find(candidate => candidate.featureIds.includes(feature.id));
+    assert.ok(site, `Feature '${feature.id}' must have a Site`);
+    assert.equal(site.regionId, feature.regionId);
+  }
+});
+
+test('Site featureIds reference valid Features', () => {
+  const world = buildWorld('site-feature-references');
+  for (const site of Object.values(world.sites)) {
+    assert.ok(Array.isArray(site.featureIds));
+    for (const featureId of site.featureIds) assert.ok(world.features[featureId]);
+  }
+});
+
+test('a zero-occurrence Feature retains its enterable Site association', () => {
+  const world = buildWorld('zero-occurrence-feature-site');
+  const feature = Object.values(world.features)[0];
+  feature.resourceOccurrences = [];
+  const site = Object.values(world.sites).find(candidate => candidate.featureIds.includes(feature.id));
+  assert.ok(site, `Feature '${feature.id}' must retain a Site without occurrences`);
+  assert.deepStrictEqual(site.featureIds, [feature.id]);
+});
+
 test('every region background resource-occurrence ID resolves', () => {
   const world = buildWorld();
   for (const [rid, region] of Object.entries(world.regions)) {

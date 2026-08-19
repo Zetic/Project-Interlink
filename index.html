@@ -8,14 +8,15 @@
   <link rel="stylesheet" href="workspace-overrides.css">
 </head>
 <body>
-  <!-- Mode toggle -->
-  <div id="mode-bar">
-    <span id="mode-label">PROJECT INTERLINK</span>
-    <button id="mode-toggle-btn" title="Switch between Player and Debug views">Debug View</button>
+  <div id="landing-screen">
+    <h1>PROJECT INTERLINK</h1>
+    <label for="seed-input">Seed</label>
+    <input type="text" id="seed-input" placeholder="Enter seed or leave blank for random">
+    <button id="generate-btn">Generate World</button>
   </div>
 
   <!-- ── Player workspace ──────────────────────────────────────────────────── -->
-  <div id="player-view">
+  <div id="player-view" style="display:none">
     <div class="ws-shell">
       <div class="ws-header">
         <nav id="ws-breadcrumbs" class="ws-breadcrumbs" aria-label="Workspace navigation"></nav>
@@ -24,52 +25,6 @@
         <p class="ws-empty">Loading player workspace…</p>
       </div>
     </div>
-  </div>
-
-  <!-- ── Debug / prototype view (original UI) ─────────────────────────────── -->
-  <div id="debug-view" style="display:none">
-    <header>
-      <h1>DEBUG — PLANET GENERATOR</h1>
-      <div class="controls">
-        <label for="seed-input">Seed:</label>
-        <input type="text" id="seed-input" placeholder="Enter seed or leave blank for random">
-        <button id="generate-btn">Generate Planet</button>
-      </div>
-    </header>
-
-    <main>
-      <section id="planet-section" style="display:none">
-        <h2>PLANET SUMMARY</h2>
-        <div id="planet-summary"></div>
-      </section>
-
-      <section id="regions-section" style="display:none">
-        <h2>REGIONS</h2>
-        <div id="regions-list"></div>
-      </section>
-
-      <section id="discovery-section" style="display:none">
-        <hr>
-        <div id="discovery-counter">Features Discovered: 0 / 0</div>
-        <button id="discover-btn">Discover Feature</button>
-        <div id="all-discovered" style="display:none">All features discovered.</div>
-      </section>
-
-      <section id="processing-section" style="display:none">
-        <h2>MATTER PROCESSING PROTOTYPE</h2>
-        <div id="processing-controls"></div>
-        <div id="processing-message" class="status-message"></div>
-
-        <h3>Sample Batches</h3>
-        <div id="processing-batches"></div>
-
-        <h3>Sample Analysis</h3>
-        <div id="analysis-result"></div>
-
-        <h3>Latest Process Result</h3>
-        <div id="process-result"></div>
-      </section>
-    </main>
   </div>
 
   <script type="module" src="src/app.js"></script>
