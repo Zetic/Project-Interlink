@@ -253,6 +253,14 @@ export function navigationVisibilityState(open) {
   };
 }
 
+export function navigationFilterState(hiddenCategories = []) {
+  const categories = navigationCategoryVocabulary();
+  return {
+    categories,
+    visibleCategories: navigationVisibleCategories(categories, hiddenCategories),
+  };
+}
+
 function setNavigationOpen(open) {
   const visibility = navigationVisibilityState(open);
   wsState.navigationOpen = visibility.visible;
@@ -276,8 +284,7 @@ function renderNavigationDrawer() {
   if (!tree || !drawer || !wsState.world) return;
 
   const index = navigationIndex();
-  const filterCategories = navigationCategoryVocabulary();
-  const visibleCategories = navigationVisibleCategories(filterCategories, wsState.navigationHiddenCategories);
+  const { categories: filterCategories, visibleCategories } = navigationFilterState(wsState.navigationHiddenCategories);
 
   const filters = el('ws-navigation-filters')?.querySelector('.ws-navigation-filters');
   if (filters) {

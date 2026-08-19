@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  navigationFilterState,
   navigationVisibilityState,
   workspaceShellMarkup,
 } from '../src/workspace/workspaceUI.js';
@@ -118,4 +119,26 @@ test('navigation visibility state keeps drawer and toggle attributes synchronize
     ariaExpanded: 'true',
   });
   assert.deepEqual(toggledClosed, closed);
+});
+
+test('navigation filter UI retains the canonical vocabulary while honoring hidden state', () => {
+  const state = navigationFilterState(new Set(['apparatus']));
+
+  assert.deepEqual(state.categories, [
+    'planet',
+    'region',
+    'site',
+    'facility',
+    'feature',
+    'apparatus',
+    'container',
+    'boundary',
+    'process',
+    'sensor',
+    'controller',
+    'logistics',
+    'system',
+  ]);
+  assert.equal(state.visibleCategories.has('apparatus'), false);
+  assert.equal(state.visibleCategories.has('container'), true);
 });
