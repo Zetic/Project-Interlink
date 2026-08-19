@@ -53,8 +53,17 @@ const FEATURE_NAME_PARTS = {
   suffixes: ['Deposit', 'Formation', 'Chamber', 'Pocket', 'Seam', 'Rift', 'Hollow', 'Basin', 'Core', 'Lens', 'Body', 'System'],
 };
 
+const SITE_NAME_PARTS = {
+  adjectives: ['Ancientwell', 'Blackglass', 'Clearwater', 'Deepstone', 'Ironfall', 'Saltmere', 'Ashfield', 'Greyspine', 'Redvault', 'Frostbreak', 'Darkcleft', 'Highreach', 'Stonewatch', 'Coldseam'],
+  nouns: ['Rift', 'Outcrop', 'Basin', 'Hollow', 'Gorge', 'Shelf', 'Ridge', 'Cleft', 'Run', 'Cut', 'Spur', 'Sink', 'Reach', 'Draw'],
+};
+
 function generateFeatureName(rng) {
   return `${rng.pick(FEATURE_NAME_PARTS.prefixes)}${rng.pick(FEATURE_NAME_PARTS.middles)} ${rng.pick(FEATURE_NAME_PARTS.suffixes)}`;
+}
+
+function generateSiteName(rng) {
+  return `${rng.pick(SITE_NAME_PARTS.adjectives)} ${rng.pick(SITE_NAME_PARTS.nouns)}`;
 }
 
 function weightedFeatureTypes(region) {
@@ -170,24 +179,32 @@ function siteForFeature(feature, siteName = feature.name, siteKind = 'localized'
   };
 }
 
-/** Generate the ordinary localized physical Features for a Region as Sites. */
-export function generateLocalizedSites(region, planet, rootSeed) {
-  const countRng = rngFor(rootSeed, `region:${region.id}:featureCount`);
-  const count = countRng.int(2, 4);
+/**
+ * Generate one localized Site containing 1–3 distinct physical Features.
+ * Each Feature has exactly one ResourceOccurrence (one physical source/body).
+ * Multiple independent source types at a Site become separate Features.
+ */
+function generateLocalizedSite(region, planet, rootSeed, siteIndex) {
+  const siteId = `site-${region.id}-${siteIndex}`;
+  const siteRng = rngFor(rootSeed, `site:${siteId}`);
+  const siteName = generateSiteName(siteRng);
   const pool = weightedFeatureTypes(region);
-  const sites = [];
 
-  for (let i = 0; i < count; i++) {
-    const featureId = `feature-${region.id}-${i}`;
+  const featureCount = siteRng.int(1, 3);
+  const features = [];
+
+  for (let fi = 0; fi < featureCount; fi++) {
+    const featureId = `feature-${region.id}-${siteIndex}-${fi}`;
     const featureRng = rngFor(rootSeed, `feature:${featureId}`);
     const featureType = featureRng.pick(pool);
-    const name = generateFeatureName(featureRng);
+    const featureName = generateFeatureName(featureRng);
     const stateOptions = allowedPhysicalStates(featureType) ?? ['Solid', 'Liquid', 'Mixed', 'Gaseous', 'Plastic'];
 
     const feature = {
       id: featureId,
+      siteId,
       regionId: region.id,
-      name,
+      name: featureName,
       type: featureType,
       depthM: parseFloat(featureRng.range(10, 4000).toFixed(0)),
       geometry: featureRng.pick(['Tabular', 'Lenticular', 'Nodular', 'Vein', 'Massive', 'Layered', 'Irregular', 'Pipe-like']),
@@ -207,15 +224,33 @@ export function generateLocalizedSites(region, planet, rootSeed) {
 
     const shuffled = [...candidates];
     resourceRng.shuffle(shuffled);
-    const resourceCount = Math.max(1, Math.min(resourceRng.int(1, Math.min(3, shuffled.length)), shuffled.length));
-    feature.resourceOccurrences = shuffled.slice(0, resourceCount).map((resource, index) =>
-      makeFeatureResource(resource, resourceRng, `${featureId}-occ-${index}`, featureId, { accessScope: 'localized' })
-    );
-
-    if (!feature.resourceOccurrences.length) {
-      throw new Error(`Feature '${featureId}' generated without a ResourceOccurrence`);
+    if (!shuffled.length) {
+      throw new Error(`Feature '${featureId}' (${featureType}) generated without any candidate ResourceDefinitions`);
     }
-    sites.push(siteForFeature(feature));
+    // Exactly one ResourceOccurrence per Feature: one physical source/body per independently exploitable source.
+    feature.resourceOccurrences = [
+      makeFeatureResource(shuffled[0], resourceRng, `${featureId}-occ-0`, featureId, { accessScope: 'localized' }),
+    ];
+    features.push(feature);
+  }
+
+  return {
+    id: siteId,
+    name: siteName,
+    regionId: region.id,
+    siteKind: 'localized',
+    features,
+  };
+}
+
+/** Generate the ordinary localized physical Features for a Region as Sites. */
+export function generateLocalizedSites(region, planet, rootSeed) {
+  const countRng = rngFor(rootSeed, `region:${region.id}:siteCount`);
+  const count = countRng.int(2, 4);
+  const sites = [];
+
+  for (let i = 0; i < count; i++) {
+    sites.push(generateLocalizedSite(region, planet, rootSeed, i));
   }
 
   return sites;

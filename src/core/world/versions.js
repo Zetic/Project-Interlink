@@ -1,6 +1,6 @@
 /** Schema and generator version constants. */
 
 // Schema v7: Regions own Sites, Sites own Features, and all ResourceOccurrences are Feature-owned.
-// Generator v3: regional resource potential materializes as access Sites/Features and every Feature has resources.
+// Generator v4: each localized Feature defaults to exactly one ResourceOccurrence; independent sources at a Site become distinct Features.
 export const SCHEMA_VERSION = 7;
-export const GENERATOR_VERSION = 3;
+export const GENERATOR_VERSION = 4;

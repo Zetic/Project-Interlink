@@ -12,9 +12,9 @@ function buildWorld(seed = 'integrity-test') {
 test('world uses the Site/Feature resource schema and generator versions', () => {
   const world = buildWorld();
   assert.equal(SCHEMA_VERSION, 7);
-  assert.equal(GENERATOR_VERSION, 3);
+  assert.equal(GENERATOR_VERSION, 4);
   assert.equal(world.schemaVersion, 7);
-  assert.equal(world.generatorVersion, 3);
+  assert.equal(world.generatorVersion, 4);
 });
 
 test('planetId and every planet region ID resolve', () => {
@@ -159,4 +159,47 @@ test('validateWorld rejects legacy Region or Site resource ownership shapes', ()
 test('validateWorld returns no errors for a freshly generated world', () => {
   const world = buildWorld('validate-world-test');
   assert.deepStrictEqual(validateWorld(world), []);
+});
+
+test('generated localized Features each have exactly one ResourceOccurrence', () => {
+  const world = buildWorld('one-occ-per-feature');
+  const localizedFeatures = Object.values(world.features).filter(feature => !feature.regionalAccess);
+  assert.ok(localizedFeatures.length > 0, 'World must contain localized Features');
+  for (const feature of localizedFeatures) {
+    assert.equal(
+      feature.resourceOccurrences.length,
+      1,
+      `Localized Feature '${feature.id}' must have exactly one ResourceOccurrence, got ${feature.resourceOccurrences.length}`,
+    );
+  }
+});
+
+test('a localized Site can contain multiple distinct Features', () => {
+  // Run several seeds to find at least one Site with multiple Features.
+  const seeds = ['multi-feature-a', 'multi-feature-b', 'multi-feature-c', 'multi-feature-d', 'multi-feature-e'];
+  let foundMultiFeatureSite = false;
+  for (const seed of seeds) {
+    const world = buildWorld(seed);
+    const localizedSites = Object.values(world.sites).filter(site => site.siteKind === 'localized');
+    if (localizedSites.some(site => site.featureIds.length > 1)) {
+      foundMultiFeatureSite = true;
+      break;
+    }
+  }
+  assert.ok(foundMultiFeatureSite, 'At least one localized Site should contain multiple Features across tested seeds');
+});
+
+test('deterministic generation: same seed produces identical worlds under generator v4', () => {
+  const world1 = buildWorld('determinism-v4');
+  const world2 = buildWorld('determinism-v4');
+  assert.deepStrictEqual(
+    Object.keys(world1.features).sort(),
+    Object.keys(world2.features).sort(),
+    'Same seed must produce identical Feature IDs',
+  );
+  assert.deepStrictEqual(
+    Object.keys(world1.resourceOccurrences).sort(),
+    Object.keys(world2.resourceOccurrences).sort(),
+    'Same seed must produce identical ResourceOccurrence IDs',
+  );
 });
