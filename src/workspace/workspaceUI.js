@@ -43,7 +43,15 @@ import {
   renderGraphConnectionPreview,
   disconnectGraphConnection,
 } from './workspaceGraph.js';
-import { clampZoom, screenToGraph, zoomAroundPoint, fitViewport, centerViewport } from './viewport.js';
+import {
+  boundsForNodePositions,
+  clampZoom,
+  centerViewport,
+  fitViewport,
+  screenToGraph,
+  translateGraphPosition,
+  zoomAroundPoint,
+} from './viewport.js';
 import { prototypeNodeTypesForSite, prototypeOccurrenceForSite } from './sitePrototype.js';
 
 const wsState = {
@@ -67,6 +75,7 @@ const wsState = {
   connectionElements: new Map(),
   connectionPreview: null,
   viewports: {},
+  dragTrackingCleanup: null,
 };
 
 const NODE_WIDTH = 160;
@@ -109,6 +118,27 @@ function renderWorkspaceShell(container, {
     svg: el(svgId),
     inspector: container.querySelector('.ws-inspector'),
     inspectorBody: el(inspectorBodyId),
+  };
+}
+function installWindowDragTracking(moveHandler, upHandler) {
+  wsState.dragTrackingCleanup?.();
+  wsState.dragTrackingCleanup = null;
+  if (typeof window === 'undefined') return;
+
+  const onMove = event => {
+    if (!dragState && !systemDragState && !pendingGraphConnection.active) return;
+    moveHandler(event);
+  };
+  const onUp = event => {
+    if (!dragState && !systemDragState && !pendingGraphConnection.active) return;
+    upHandler(event);
+  };
+
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  wsState.dragTrackingCleanup = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
   };
 }
 function escHtml(value) {
@@ -526,14 +556,16 @@ function onSystemCanvasMove(event) {
     if (definition.id !== systemDragState.definitionId) return;
     const layout = ensureSystemLayout(definition);
     const point = eventGraphPoint(event, el('ws-system-canvas')?.parentElement, definition.id);
-    layout.nodePositions[systemDragState.nodeId] = {
-      x: Math.max(0, systemDragState.startX + point.x - systemDragState.startMouseX),
-      y: Math.max(0, systemDragState.startY + point.y - systemDragState.startMouseY),
-    };
+    const nextPosition = translateGraphPosition(
+      { x: systemDragState.startX, y: systemDragState.startY },
+      { x: systemDragState.startMouseX, y: systemDragState.startMouseY },
+      point,
+    );
+    layout.nodePositions[systemDragState.nodeId] = nextPosition;
     const element = wsState.systemNodeElements.get(systemDragState.nodeId);
     if (element) {
-      element.style.left = `${layout.nodePositions[systemDragState.nodeId].x}px`;
-      element.style.top = `${layout.nodePositions[systemDragState.nodeId].y}px`;
+      element.style.left = `${nextPosition.x}px`;
+      element.style.top = `${nextPosition.y}px`;
     }
   }
   if (pendingGraphConnection.active) {
@@ -645,8 +677,7 @@ function renderParentWorkspace(container) {
       renderWorkspace();
     },
   });
-  canvas.addEventListener('mousemove', onSystemCanvasMove);
-  canvas.addEventListener('mouseup', () => {
+  installWindowDragTracking(onSystemCanvasMove, () => {
     systemDragState = null;
     if (pendingGraphConnection.active) {
       pendingGraphConnection.active = false;
@@ -654,22 +685,13 @@ function renderParentWorkspace(container) {
       renderSystemConnections(el('ws-system-svg'), definition);
     }
   });
-  canvas.addEventListener('mouseleave', () => { systemDragState = null; });
   renderSystemConnections(svg, definition);
   installViewport(
     shell.viewport,
     canvas,
     svg,
     definition.id,
-    () => {
-      const positions = Object.values(ensureSystemLayout(definition).nodePositions);
-      return positions.reduce((bounds, position) => ({
-        minX: Math.min(bounds.minX, position.x),
-        minY: Math.min(bounds.minY, position.y),
-        maxX: Math.max(bounds.maxX, position.x + NODE_WIDTH),
-        maxY: Math.max(bounds.maxY, position.y + NODE_HEIGHT),
-      }), { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT });
-    },
+    () => boundsForNodePositions(ensureSystemLayout(definition).nodePositions, NODE_WIDTH, NODE_HEIGHT),
     shell.toolbar,
   );
   updateCompositeInspector(true);
@@ -869,17 +891,6 @@ function portCanvasPosition(nodeId, portId) {
 }
 
 function renderConnections(svg) {
-  let maxX = 800;
-  let maxY = 400;
-  for (const position of Object.values(wsState.blueprintLayout.nodePositions)) {
-    maxX = Math.max(maxX, position.x + NODE_WIDTH + 40);
-    maxY = Math.max(maxY, position.y + NODE_HEIGHT + 40);
-  }
-  svg.setAttribute('width', maxX);
-  svg.setAttribute('height', maxY);
-  svg.style.width = `${maxX}px`;
-  svg.style.height = `${maxY}px`;
-
   const graph = projectBlueprintGraph(wsState.blueprint, wsState.blueprintLayout, {
     selectedNodeId: inspector.selectedNodeId,
   });
@@ -981,21 +992,13 @@ function renderSiteWorkspace(container) {
   el('ws-sim-reset')?.addEventListener('click', onResetSite);
   el('ws-inspector-body')?.addEventListener('click', onInspectorClick);
   renderSiteNodes();
-  el('ws-site-canvas')?.addEventListener('mousemove', onCanvasMouseMove);
-  el('ws-site-canvas')?.addEventListener('mouseup', onCanvasMouseUp);
-  el('ws-site-svg')?.addEventListener('mousemove', onCanvasMouseMove);
-  el('ws-site-svg')?.addEventListener('mouseup', onCanvasMouseUp);
+  installWindowDragTracking(onCanvasMouseMove, onCanvasMouseUp);
   installViewport(
     shell.viewport,
     shell.canvas,
     shell.svg,
     `site:${wsState.selectedSiteId}`,
-    () => Object.values(wsState.blueprintLayout.nodePositions).reduce((bounds, position) => ({
-      minX: Math.min(bounds.minX, position.x),
-      minY: Math.min(bounds.minY, position.y),
-      maxX: Math.max(bounds.maxX, position.x + NODE_WIDTH),
-      maxY: Math.max(bounds.maxY, position.y + NODE_HEIGHT),
-    }), { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT }),
+    () => boundsForNodePositions(wsState.blueprintLayout.nodePositions, NODE_WIDTH, NODE_HEIGHT),
     shell.toolbar,
   );
 }
@@ -1061,12 +1064,12 @@ function onCanvasMouseMove(event) {
   if (dragState) {
     const surface = el('ws-site-canvas')?.parentElement;
     const point = eventGraphPoint(event, surface, `site:${wsState.selectedSiteId}`);
-    layoutMoveNode(
-      wsState.blueprintLayout,
-      dragState.nodeId,
-      Math.max(0, dragState.startX + point.x - dragState.startMouseX),
-      Math.max(0, dragState.startY + point.y - dragState.startMouseY)
+    const nextPosition = translateGraphPosition(
+      { x: dragState.startX, y: dragState.startY },
+      { x: dragState.startMouseX, y: dragState.startMouseY },
+      point,
     );
+    layoutMoveNode(wsState.blueprintLayout, dragState.nodeId, nextPosition.x, nextPosition.y);
     renderSiteNodes();
   }
   if (pendingGraphConnection.active) {
@@ -1334,6 +1337,8 @@ export function renderWorkspace() {
 
 export function initWorkspace(world, knowledge) {
   if (wsState.world) stopSimulation();
+  wsState.dragTrackingCleanup?.();
+  wsState.dragTrackingCleanup = null;
   wsState.world = world;
   createWorldSimulation(world);
   wsState.knowledge = knowledge;

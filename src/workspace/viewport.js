@@ -12,6 +12,32 @@ export function screenToGraph(point, viewport) {
   };
 }
 
+export function translateGraphPosition(startPosition, startPointer, currentPointer) {
+  return {
+    x: startPosition.x + currentPointer.x - startPointer.x,
+    y: startPosition.y + currentPointer.y - startPointer.y,
+  };
+}
+
+export function boundsForNodePositions(nodePositions, nodeWidth = 0, nodeHeight = 0) {
+  const positions = Object.values(nodePositions ?? {});
+  if (!positions.length) {
+    return { minX: 0, minY: 0, maxX: nodeWidth, maxY: nodeHeight };
+  }
+
+  return positions.reduce((bounds, position) => ({
+    minX: Math.min(bounds.minX, position.x),
+    minY: Math.min(bounds.minY, position.y),
+    maxX: Math.max(bounds.maxX, position.x + nodeWidth),
+    maxY: Math.max(bounds.maxY, position.y + nodeHeight),
+  }), {
+    minX: positions[0].x,
+    minY: positions[0].y,
+    maxX: positions[0].x + nodeWidth,
+    maxY: positions[0].y + nodeHeight,
+  });
+}
+
 export function zoomAroundPoint(viewport, zoom, point) {
   const nextZoom = clampZoom(zoom);
   const graphPoint = screenToGraph(point, viewport);
