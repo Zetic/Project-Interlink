@@ -12,6 +12,9 @@ import {
   resourcesByFamilies,
 } from './generateResources.js';
 import { rngFor } from './random.js';
+import { OCCURRENCE_FAMILIES, OCCURRENCE_FAMILY_VALUES } from '../data/occurrence-families.js';
+
+export { OCCURRENCE_FAMILIES, OCCURRENCE_FAMILY_VALUES };
 
 const FEATURE_TYPES = [
   'Mineral Deposit',
@@ -116,20 +119,20 @@ function weightedFeatureTypes(region) {
  * Exported for test coverage of the compatibility contract.
  */
 export const FEATURE_ALLOWED_FAMILIES = Object.freeze({
-  'Mineral Deposit':      new Set(['ore-body', 'mineral-body']),
-  'Geological Formation': new Set(['rock-mass', 'sediment', 'mineral-body']),
-  'Aquifer':              new Set(['aqueous-fluid']),
-  'Gas Reservoir':        new Set(['reservoir-gas']),
-  'Cave / Cavern':        new Set(['rock-mass', 'sediment', 'mineral-body']),
-  'Ravine':               new Set(['rock-mass', 'sediment']),
-  'Fault':                new Set(['rock-mass', 'ore-body', 'mineral-body']),
-  'Crater':               new Set(['rock-mass', 'sediment', 'ore-body']),
-  'Volcanic Vent':        new Set(['mineral-body', 'rock-mass']),
-  'Hydrothermal System':  new Set(['aqueous-fluid', 'hydrothermal-fluid', 'ore-body', 'mineral-body']),
-  'Magma Chamber':        new Set(['magma', 'hydrothermal-fluid']),
-  'Ice Body':             new Set(['ice-body']),
-  'Salt Basin':           new Set(['evaporite', 'aqueous-fluid']),
-  'Outcrop':              new Set(['rock-mass', 'ore-body', 'mineral-body']),
+  'Mineral Deposit':      new Set([OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
+  'Geological Formation': new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT, OCCURRENCE_FAMILIES.MINERAL_BODY, OCCURRENCE_FAMILIES.HYDROCARBON_LIQUID]),
+  'Aquifer':              new Set([OCCURRENCE_FAMILIES.AQUEOUS_FLUID]),
+  'Gas Reservoir':        new Set([OCCURRENCE_FAMILIES.RESERVOIR_GAS]),
+  'Cave / Cavern':        new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT, OCCURRENCE_FAMILIES.MINERAL_BODY]),
+  'Ravine':               new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT]),
+  'Fault':                new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
+  'Crater':               new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT, OCCURRENCE_FAMILIES.ORE_BODY]),
+  'Volcanic Vent':        new Set([OCCURRENCE_FAMILIES.MINERAL_BODY, OCCURRENCE_FAMILIES.ROCK_MASS]),
+  'Hydrothermal System':  new Set([OCCURRENCE_FAMILIES.AQUEOUS_FLUID, OCCURRENCE_FAMILIES.HYDROTHERMAL_FLUID, OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
+  'Magma Chamber':        new Set([OCCURRENCE_FAMILIES.MAGMA]),
+  'Ice Body':             new Set([OCCURRENCE_FAMILIES.ICE_BODY]),
+  'Salt Basin':           new Set([OCCURRENCE_FAMILIES.EVAPORITE, OCCURRENCE_FAMILIES.AQUEOUS_FLUID]),
+  'Outcrop':              new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
 });
 
 function featureAffinityTags(featureType, region, planetComposition) {
