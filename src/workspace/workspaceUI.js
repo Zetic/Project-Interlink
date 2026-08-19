@@ -358,7 +358,7 @@ function installNavigationEvents() {
   const controller = new AbortController();
   wsState.navigationEventController = controller;
   const eventOptions = { signal: controller.signal };
-  const navigationEventRoot = el('player-view') ?? document;
+  const navigationEventRoot = el('ws-main') ?? el('player-view') ?? document;
   navigationEventRoot.addEventListener('click', event => {
     const toggle = event.target.closest('#ws-navigation-toggle');
     if (toggle) {
