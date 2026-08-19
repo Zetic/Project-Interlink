@@ -24,7 +24,7 @@ export const OCCURRENCE_FAMILIES = Object.freeze({
   RESERVOIR_GAS:      'reservoir-gas',
   ATMOSPHERE:         'atmosphere',
   VEGETATION:         'vegetation',
-  ORGANIC_SOIL:       'organic-soil',
+  ORGANIC_SOIL:       'organic-soil',   // regional resources only; no localized Feature currently accepts this family
 });
 
 /** Set of all valid family string values, for catalog-integrity validation. */
