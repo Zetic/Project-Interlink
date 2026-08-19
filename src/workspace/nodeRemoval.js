@@ -36,6 +36,11 @@ export function nodeOwnedMatterKg(node) {
   return 0;
 }
 
+export function nodeRemovalMatterToleranceKg(node) {
+  if (node?.nodeType === 'hopper') return HOPPER_TOLERANCE_KG;
+  return 0;
+}
+
 export function nodeRemovalEligibility(blueprint, nodeOrId) {
   const node = resolveNode(blueprint, nodeOrId);
   if (!node) {
@@ -47,7 +52,7 @@ export function nodeRemovalEligibility(blueprint, nodeOrId) {
   }
 
   const ownedMatterKg = nodeOwnedMatterKg(node);
-  if (ownedMatterKg > HOPPER_TOLERANCE_KG) {
+  if (ownedMatterKg > nodeRemovalMatterToleranceKg(node)) {
     return { ok: false, removable, node, ownedMatterKg, reason: 'Cannot delete node while it contains material.' };
   }
 
