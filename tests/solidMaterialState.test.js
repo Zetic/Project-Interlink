@@ -10,6 +10,7 @@ import {
 } from '../src/core/materials/occurrenceMaterialization.js';
 import {
   crushSolidMaterialState,
+  hasCrushableSolidFractions,
   magneticRecoveryForFraction,
   splitMagneticSolidState,
 } from '../src/core/processes/processPhysics.js';
@@ -23,8 +24,10 @@ import {
   totalSolidQuantity,
   withdrawSolidMaterialState,
   SOLID_MATERIAL_TOLERANCE,
+  validateSolidMaterialState,
 } from '../src/core/materials/solidMaterialState.js';
 import { getMaterialSpecies } from '../src/core/materials/materialSpecies.js';
+import { particleSizeBinIdForMm } from '../src/core/materials/particleSizeBins.js';
 import {
   createHopper,
   hopperReceiveInflow,
@@ -45,14 +48,19 @@ import {
 const MASS_TOL = 1e-9;
 
 function findOccurrence(resourceId) {
+  return findOccurrenceMatching(
+    `resource '${resourceId}' with structured composition`,
+    item => item.resourceId === resourceId && item.composition && typeof item.composition === 'object'
+  );
+}
+
+function findOccurrenceMatching(label, predicate) {
   for (let i = 0; i < 200; i += 1) {
-    const world = createWorld(`solid-material-${resourceId}-${i}`);
-    const occurrence = Object.values(world.resourceOccurrences).find(item =>
-      item.resourceId === resourceId && item.composition && typeof item.composition === 'object'
-    );
+    const world = createWorld(`solid-material-${label}-${i}`);
+    const occurrence = Object.values(world.resourceOccurrences).find(predicate);
     if (occurrence) return { world, occurrence };
   }
-  throw new Error(`Could not find occurrence for '${resourceId}' in test seed range`);
+  throw new Error(`Could not find occurrence for ${label} in test seed range`);
 }
 
 function assertAlmostEqual(actual, expected, label) {
@@ -153,6 +161,43 @@ test('occurrence materialization preserves iron composition and deterministic co
   }
 });
 
+test('solid occurrences without structured composition still extract and store under their coarse resource identity', () => {
+  const unresolvedSolidIds = new Set([
+    'basalt',
+    'granite',
+    'sandstone',
+    'clay',
+    'water-ice',
+    'titanium-ore',
+    'manganese-ore',
+    'sulfur',
+    'halite',
+    'phosphate-rock',
+    'graphite',
+    'coal',
+  ]);
+  const { world, occurrence } = findOccurrenceMatching(
+    'null-composition solid occurrence',
+    item => unresolvedSolidIds.has(item.resourceId) && item.composition == null
+  );
+
+  const sample = acquireSampleFromOccurrence(world, occurrence.id, 7.5);
+  const hopper = createHopper({ id: 'coarse-resource-storage', capacityKg: 20, initialMaterialBody: sample.materialBody });
+  const body = sample.materialBody;
+  const speciesSummary = summarizeSolidMaterialBySpecies(body.solidState);
+  const sizeSummary = summarizeSolidMaterialBySizeBin(body.solidState);
+  const liberationSummary = summarizeSolidMaterialByLiberationClass(body.solidState);
+
+  assert.equal(getMaterialSpecies(occurrence.resourceId), null);
+  assertAlmostEqual(speciesSummary[occurrence.resourceId], 7.5, 'unresolved coarse species mass');
+  assert.equal(Object.keys(speciesSummary).length, 1);
+  assertAlmostEqual(sizeSummary['60-120mm'], 4.875, 'unresolved coarse 60-120mm mass');
+  assertAlmostEqual(sizeSummary['120mm-plus'], 2.625, 'unresolved coarse 120mm-plus mass');
+  assertAlmostEqual(liberationSummary.locked, 6.01875, 'unresolved coarse locked mass');
+  assertAlmostEqual(liberationSummary.partial, 1.48125, 'unresolved coarse partial mass');
+  assertAlmostEqual(hopperStoredMassKg(hopper), 7.5, 'stored unresolved coarse mass');
+});
+
 test('non-solid occurrences fail clearly instead of receiving fake particulate state', () => {
   assert.throws(
     () => createSolidMaterialBodyFromOccurrence({ id: 'fresh-water-occ', resourceId: 'fresh-water', composition: { H2O: 100 } }, 5),
@@ -203,6 +248,34 @@ test('crusher produces a real smaller-size distribution, improves liberation det
   assertAlmostEqual(summarizeSolidMaterialBySpecies(product).hematite, 10, 'hematite crushed mass');
 });
 
+test('particle-size bin boundary mapping treats exact cut points as belonging to the lower target class', () => {
+  assert.equal(particleSizeBinIdForMm(1), 'lt-1mm');
+  assert.equal(particleSizeBinIdForMm(5), '1-5mm');
+  assert.equal(particleSizeBinIdForMm(15), '5-15mm');
+  assert.equal(particleSizeBinIdForMm(25), '15-25mm');
+  assert.equal(particleSizeBinIdForMm(60), '25-60mm');
+  assert.equal(particleSizeBinIdForMm(120), '60-120mm');
+});
+
+test('crusher preserves already-fine fractions, crushes only coarser fractions, and idles cleanly when nothing is crushable', () => {
+  const mixedFeed = createSolidMaterialState([
+    { speciesId: 'hematite', sizeBinId: '60-120mm', liberationClassId: 'locked', quantity: 6 },
+    { speciesId: 'quartz', sizeBinId: '5-15mm', liberationClassId: 'liberated', quantity: 2 },
+  ]);
+  const product = crushSolidMaterialState(mixedFeed, 15);
+
+  assert.equal(hasCrushableSolidFractions(mixedFeed, 15), true);
+  assertAlmostEqual(product.fractions['quartz|5-15mm|liberated'], 2, 'already-fine fraction preserved');
+  assertAlmostEqual(summarizeSolidMaterialBySpecies(product).hematite, 6, 'coarse species conserved');
+
+  const alreadyFineFeed = createSolidMaterialState([
+    { speciesId: 'hematite', sizeBinId: '5-15mm', liberationClassId: 'partial', quantity: 3 },
+    { speciesId: 'quartz', sizeBinId: '1-5mm', liberationClassId: 'liberated', quantity: 1 },
+  ]);
+  assert.equal(hasCrushableSolidFractions(alreadyFineFeed, 15), false);
+  assert.ok(solidMaterialStatesEqual(crushSolidMaterialState(alreadyFineFeed, 15), alreadyFineFeed));
+});
+
 test('magnetic recovery varies by species, liberation, particle size, and field strength while conserving every fraction', () => {
   assert.ok(
     magneticRecoveryForFraction('magnetite', '15-25mm', 'liberated', 0.8)
@@ -233,6 +306,21 @@ test('magnetic recovery varies by species, liberation, particle size, and field 
   }
 });
 
+test('serialized solid fraction keys reject malformed persisted state', () => {
+  assert.throws(
+    () => validateSolidMaterialState({ fractions: { 'hematite|5-15mm': 1 } }),
+    /must have exactly 3 segments/
+  );
+  assert.throws(
+    () => validateSolidMaterialState({ fractions: { 'hematite||locked': 1 } }),
+    /must not contain empty segments/
+  );
+  assert.throws(
+    () => validateSolidMaterialState({ fractions: { 'hematite|5-15mm|locked|garbage': 1 } }),
+    /must have exactly 3 segments/
+  );
+});
+
 test('continuous fraction-aware crusher backpressure preserves mass and stores transformed fractions', () => {
   _resetOrdinals();
   const blueprint = createBlueprint();
@@ -259,6 +347,67 @@ test('continuous fraction-aware crusher backpressure preserves mass and stores t
 
   assertAlmostEqual(feedDecrease, outputIncrease, 'crusher backpressure conservation');
   assert.ok(Object.keys(output.materialBody.solidState.fractions).some(key => key.startsWith('hematite|5-15mm|')));
+});
+
+test('continuous chained crushers with progressively finer targets run sequentially and conserve mass', () => {
+  _resetOrdinals();
+  const blueprint = createBlueprint();
+  const world = { resourceOccurrences: {} };
+  const feed = blueprintAddHopper(blueprint, 100);
+  const crusherA = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 25 });
+  const middle = blueprintAddHopper(blueprint, 100);
+  const crusherB = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 2, targetParticleSizeMm: 5 });
+  const output = blueprintAddHopper(blueprint, 100);
+  const initialTotal = 12;
+
+  hopperReceiveInflow(feed, createSolidMaterialState([
+    { speciesId: 'hematite', sizeBinId: '120mm-plus', liberationClassId: 'locked', quantity: initialTotal },
+  ]), 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, crusherA.id, crusherA.inputPortId);
+  blueprintConnect(blueprint, crusherA.id, crusherA.outputPortId, middle.id, middle.inputPortId);
+  blueprintConnect(blueprint, middle.id, middle.outputPortId, crusherB.id, crusherB.inputPortId);
+  blueprintConnect(blueprint, crusherB.id, crusherB.outputPortId, output.id, output.inputPortId);
+  setNodeEnabled(blueprint, crusherA.id, true);
+  setNodeEnabled(blueprint, crusherB.id, true);
+
+  for (let i = 0; i < 5; i += 1) simulationTick(blueprint, world, 0.1);
+
+  assert.equal(crusherB.operatingState, 'running');
+  assert.ok(hopperStoredMassKg(output) > 0, 'second crusher should produce output');
+  assert.ok((summarizeSolidMaterialBySizeBin(middle.materialBody.solidState)['15-25mm'] ?? 0) > 0, 'first crusher output should accumulate an intermediate 15-25 mm class');
+  const outputSizeSummary = summarizeSolidMaterialBySizeBin(output.materialBody.solidState);
+  assert.deepEqual(Object.keys(outputSizeSummary).sort(), ['1-5mm', 'lt-1mm']);
+  assert.ok((summarizeSolidMaterialByLiberationClass(output.materialBody.solidState)['mostly-liberated'] ?? 0) > 0);
+  assertAlmostEqual(
+    hopperStoredMassKg(feed) + hopperStoredMassKg(middle) + hopperStoredMassKg(output),
+    initialTotal,
+    'two-stage crusher chain conservation'
+  );
+});
+
+test('continuous crusher with feed already at the configured target idles instead of reporting a blocked transport failure', () => {
+  _resetOrdinals();
+  const blueprint = createBlueprint();
+  const world = { resourceOccurrences: {} };
+  const feed = blueprintAddHopper(blueprint, 100);
+  const crusher = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
+  const output = blueprintAddHopper(blueprint, 100);
+
+  hopperReceiveInflow(feed, createSolidMaterialState([
+    { speciesId: 'hematite', sizeBinId: '5-15mm', liberationClassId: 'partial', quantity: 3 },
+    { speciesId: 'quartz', sizeBinId: '1-5mm', liberationClassId: 'liberated', quantity: 1 },
+  ]), 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, crusher.id, crusher.inputPortId);
+  blueprintConnect(blueprint, crusher.id, crusher.outputPortId, output.id, output.inputPortId);
+  setNodeEnabled(blueprint, crusher.id, true);
+
+  const feedBefore = hopperStoredMassKg(feed);
+  simulationTick(blueprint, world, 0.1);
+
+  assert.equal(crusher.operatingState, 'idle');
+  assert.equal(crusher.lastError, 'Feed already meets target particle size');
+  assertAlmostEqual(hopperStoredMassKg(feed), feedBefore, 'already-fine feed remains in place');
+  assertAlmostEqual(hopperStoredMassKg(output), 0, 'idle crusher should not report product transfer');
 });
 
 test('continuous fraction-aware magnetic separator backpressure remains atomic', () => {

@@ -1356,6 +1356,17 @@ export function compactCompositionSummaryHtml(rows, emptyLabel, suffix = 'kg') {
   return `${primaryHtml}${otherHtml}<details class="ws-ins-comp-details"><summary>Show ${overflowRows.length} more species</summary>${detailHtml}</details>`;
 }
 
+function replaceInspectorSectionHtml(section, html) {
+  if (!section) return;
+  const wasExpanded = section.querySelector('.ws-ins-comp-details')?.open ?? false;
+  if (section.innerHTML === html) return;
+  section.innerHTML = html;
+  if (wasExpanded) {
+    const details = section.querySelector('.ws-ins-comp-details');
+    if (details) details.open = true;
+  }
+}
+
 function formatTransferInspector(transfer) {
   if (!transfer) return 'Select a system or transfer.';
   return `<div class="ws-ins-type">TRANSFER</div>
@@ -1467,7 +1478,7 @@ function updateCompositeInspector(force = false) {
     const liberation = body.querySelector('[data-live-section="boundary-liberation"]');
     if (stored) stored.textContent = details.storedMassKg.toFixed(3);
     if (free) free.textContent = details.freeCapacityKg.toFixed(3);
-    if (components) components.innerHTML = compactCompositionSummaryHtml(details.composition, 'no stored material');
+    replaceInspectorSectionHtml(components, compactCompositionSummaryHtml(details.composition, 'no stored material'));
     if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
     if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
   }
@@ -1870,7 +1881,7 @@ function updateInspector(force = false) {
       const liberation = body.querySelector('[data-live-section="liberation-distribution"]');
       if (stored) stored.textContent = details.storedMassKg.toFixed(3);
       if (free) free.textContent = details.freeCapacityKg.toFixed(3);
-      if (components) components.innerHTML = compactCompositionSummaryHtml(details.composition, 'no stored material');
+      replaceInspectorSectionHtml(components, compactCompositionSummaryHtml(details.composition, 'no stored material'));
       if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
       if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
     } else if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
@@ -1900,7 +1911,7 @@ function updateInspector(force = false) {
       const size = body.querySelector('[data-live-section="stream-size"]');
       const liberation = body.querySelector('[data-live-section="stream-liberation"]');
       if (flow) flow.textContent = details.totalFlowKgPerSecond.toFixed(3);
-      if (components) components.innerHTML = compactCompositionSummaryHtml(details.composition, 'no flow', 'kg/s');
+      replaceInspectorSectionHtml(components, compactCompositionSummaryHtml(details.composition, 'no flow', 'kg/s'));
       if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s');
       if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s');
     }

@@ -10,7 +10,14 @@ function fractionKey(speciesId, sizeBinId, liberationClassId) {
 }
 
 function parseFractionKey(key) {
-  const [speciesId, sizeBinId, liberationClassId] = key.split('|');
+  const segments = key.split('|');
+  if (segments.length !== 3) {
+    throw new Error(`Solid material fraction key '${key}' must have exactly 3 segments`);
+  }
+  if (segments.some(segment => segment.length === 0)) {
+    throw new Error(`Solid material fraction key '${key}' must not contain empty segments`);
+  }
+  const [speciesId, sizeBinId, liberationClassId] = segments;
   return { speciesId, sizeBinId, liberationClassId };
 }
 

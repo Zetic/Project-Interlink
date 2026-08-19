@@ -2,7 +2,6 @@
 
 import { MAGNETIC_SEPARATION_PROCESS_ID, CRUSHING_PROCESS_ID } from '../core/processes/processDefinitions.js';
 import {
-  assertCrushingTarget,
   crushSolidMaterialState,
   magneticRecoveryForFraction,
   splitMagneticSolidState,
@@ -49,7 +48,6 @@ export function applyContinuousCrushing(feed, targetParticleSizeMm, throughputCa
   validateFeed(feed);
   const normalizedFeed = normalizeFeed(feed);
   const feedSolidState = normalizedFeed.solidState;
-  assertCrushingTarget(feedSolidState, targetParticleSizeMm);
   if (
     typeof throughputCapacityKgPerSecond !== 'number' ||
     !Number.isFinite(throughputCapacityKgPerSecond) ||

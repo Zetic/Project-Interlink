@@ -163,6 +163,18 @@ test('validateWorld returns no errors for a freshly generated world', () => {
   assert.deepStrictEqual(validateWorld(world), []);
 });
 
+test('validateWorld rejects stale schema versions clearly before structural validation', () => {
+  const world = buildWorld('stale-schema-version');
+  world.schemaVersion = SCHEMA_VERSION - 1;
+  assert.deepStrictEqual(validateWorld(world), [`Unsupported schemaVersion '${SCHEMA_VERSION - 1}'; expected ${SCHEMA_VERSION}`]);
+});
+
+test('validateWorld rejects stale generator versions clearly before structural validation', () => {
+  const world = buildWorld('stale-generator-version');
+  world.generatorVersion = GENERATOR_VERSION - 1;
+  assert.deepStrictEqual(validateWorld(world), [`Unsupported generatorVersion '${GENERATOR_VERSION - 1}'; expected ${GENERATOR_VERSION}`]);
+});
+
 test('generated localized Features each have exactly one ResourceOccurrence', () => {
   const world = buildWorld('one-occ-per-feature');
   const localizedFeatures = Object.values(world.features).filter(feature => !feature.regionalAccess);

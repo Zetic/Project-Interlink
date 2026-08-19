@@ -131,6 +131,16 @@ function isNonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
 }
 
+function validateExactVersion(actual, expected, label, errors) {
+  if (!Number.isInteger(actual)) {
+    errors.push(`${label} must be an integer`);
+    return;
+  }
+  if (actual !== expected) {
+    errors.push(`Unsupported ${label} '${actual}'; expected ${expected}`);
+  }
+}
+
 function validateReferenceIdArray(value, label, referenceMap, errors) {
   if (!Array.isArray(value)) {
     errors.push(`${label} must be an array`);
@@ -154,43 +164,57 @@ function validateReferenceIdArray(value, label, referenceMap, errors) {
 
 /** Validate cross-references and physical ownership invariants within a world. */
 export function validateWorld(world) {
+  if (!world || typeof world !== 'object' || Array.isArray(world)) {
+    return ['world must be an object'];
+  }
   const errors = [];
+  validateExactVersion(world.schemaVersion, SCHEMA_VERSION, 'schemaVersion', errors);
+  validateExactVersion(world.generatorVersion, GENERATOR_VERSION, 'generatorVersion', errors);
+  if (errors.length > 0) return errors;
 
-  if (!world.planets[world.planetId]) errors.push(`planetId '${world.planetId}' not in planets map`);
+  const planets = world.planets ?? {};
+  const regions = world.regions ?? {};
+  const sites = world.sites ?? {};
+  const features = world.features ?? {};
+  const resourceOccurrences = world.resourceOccurrences ?? {};
+  const materialBatches = world.materialBatches ?? {};
+  const processResults = world.processResults ?? {};
 
-  const planet = world.planets[world.planetId];
+  if (!planets[world.planetId]) errors.push(`planetId '${world.planetId}' not in planets map`);
+
+  const planet = planets[world.planetId];
   if (planet) {
-    validateReferenceIdArray(planet.regions, `Planet '${planet.id}' regions`, world.regions, errors);
+    validateReferenceIdArray(planet.regions, `Planet '${planet.id}' regions`, regions, errors);
   }
 
   const siteFeatureOwners = new Map();
   const featureOccurrenceOwners = new Map();
 
-  for (const [regionId, region] of Object.entries(world.regions ?? {})) {
+  for (const [regionId, region] of Object.entries(regions)) {
     if ('features' in region) errors.push(`Region '${regionId}' must not own a features collection; use siteIds`);
     if ('backgroundResourceOccurrences' in region) {
       errors.push(`Region '${regionId}' must not own ResourceOccurrences; materialize them through Site Features`);
     }
-    validateReferenceIdArray(region.siteIds, `Region '${regionId}' siteIds`, world.sites ?? {}, errors);
+    validateReferenceIdArray(region.siteIds, `Region '${regionId}' siteIds`, sites, errors);
     for (const siteId of region.siteIds ?? []) {
-      const site = world.sites?.[siteId];
+      const site = sites[siteId];
       if (site && site.regionId !== regionId) {
         errors.push(`Site '${siteId}' regionId '${site.regionId}' does not match parent region '${regionId}'`);
       }
     }
   }
 
-  for (const [siteId, site] of Object.entries(world.sites ?? {})) {
+  for (const [siteId, site] of Object.entries(sites)) {
     if (!isNonEmptyString(site.name)) errors.push(`Site '${siteId}' must have a player-facing name`);
     if ('resourceOccurrenceIds' in site) {
       errors.push(`Site '${siteId}' must not duplicate ResourceOccurrence ownership; resources belong to Features`);
     }
-    validateReferenceIdArray(site.featureIds, `Site '${siteId}' featureIds`, world.features ?? {}, errors);
+    validateReferenceIdArray(site.featureIds, `Site '${siteId}' featureIds`, features, errors);
     for (const featureId of site.featureIds ?? []) {
       const owners = siteFeatureOwners.get(featureId) ?? [];
       owners.push(siteId);
       siteFeatureOwners.set(featureId, owners);
-      const feature = world.features?.[featureId];
+      const feature = features[featureId];
       if (!feature) continue;
       if (feature.siteId !== siteId) {
         errors.push(`Feature '${featureId}' siteId '${feature.siteId}' does not match parent Site '${siteId}'`);
@@ -201,7 +225,7 @@ export function validateWorld(world) {
     }
   }
 
-  for (const [featureId, feature] of Object.entries(world.features ?? {})) {
+  for (const [featureId, feature] of Object.entries(features)) {
     const owners = siteFeatureOwners.get(featureId) ?? [];
     if (owners.length !== 1) {
       errors.push(`Feature '${featureId}' must belong to exactly one Site; found ${owners.length}`);
@@ -216,14 +240,14 @@ export function validateWorld(world) {
     validateReferenceIdArray(
       feature.resourceOccurrences,
       `Feature '${featureId}' resourceOccurrences`,
-      world.resourceOccurrences ?? {},
+      resourceOccurrences,
       errors,
     );
     for (const occurrenceId of feature.resourceOccurrences) {
       const ownersForOccurrence = featureOccurrenceOwners.get(occurrenceId) ?? [];
       ownersForOccurrence.push(featureId);
       featureOccurrenceOwners.set(occurrenceId, ownersForOccurrence);
-      const occurrence = world.resourceOccurrences?.[occurrenceId];
+      const occurrence = resourceOccurrences[occurrenceId];
       if (!occurrence) continue;
       if (occurrence.sourceType !== 'feature') {
         errors.push(`ResourceOccurrence '${occurrenceId}' must have sourceType 'feature', got '${occurrence.sourceType}'`);
@@ -234,7 +258,7 @@ export function validateWorld(world) {
     }
   }
 
-  for (const [occurrenceId, occurrence] of Object.entries(world.resourceOccurrences ?? {})) {
+  for (const [occurrenceId, occurrence] of Object.entries(resourceOccurrences)) {
     const owners = featureOccurrenceOwners.get(occurrenceId) ?? [];
     if (owners.length !== 1) {
       errors.push(`ResourceOccurrence '${occurrenceId}' must belong to exactly one Feature; found ${owners.length}`);
@@ -245,8 +269,8 @@ export function validateWorld(world) {
   }
 
   // Material batch references and physical invariants
-  for (const [bid, batch] of Object.entries(world.materialBatches ?? {})) {
-    if (batch.sourceOccurrenceId && !world.resourceOccurrences[batch.sourceOccurrenceId]) {
+  for (const [bid, batch] of Object.entries(materialBatches)) {
+    if (batch.sourceOccurrenceId && !resourceOccurrences[batch.sourceOccurrenceId]) {
       errors.push(`Material batch '${bid}' references unknown source occurrence '${batch.sourceOccurrenceId}'`);
     }
 
@@ -256,13 +280,13 @@ export function validateWorld(world) {
       validateReferenceIdArray(
         batch.provenance.sourceOccurrenceIds,
         `Material batch '${bid}' provenance.sourceOccurrenceIds`,
-        world.resourceOccurrences,
+        resourceOccurrences,
         errors
       );
       validateReferenceIdArray(
         batch.provenance.sourceBatchIds,
         `Material batch '${bid}' provenance.sourceBatchIds`,
-        world.materialBatches,
+      materialBatches,
         errors
       );
 
@@ -270,7 +294,7 @@ export function validateWorld(world) {
       if (createdByProcessRunId != null) {
         if (!isNonEmptyString(createdByProcessRunId)) {
           errors.push(`Material batch '${bid}' provenance.createdByProcessRunId must be a non-empty string or null`);
-        } else if (!world.processResults?.[createdByProcessRunId]) {
+        } else if (!processResults[createdByProcessRunId]) {
           errors.push(`Material batch '${bid}' provenance references unknown process run '${createdByProcessRunId}'`);
         }
       }
@@ -319,7 +343,7 @@ export function validateWorld(world) {
   }
 
   // Process result references and port contracts
-  for (const [runId, result] of Object.entries(world.processResults ?? {})) {
+  for (const [runId, result] of Object.entries(processResults)) {
     if (!result || typeof result !== 'object' || Array.isArray(result)) {
       errors.push(`Process result '${runId}' must be an object`);
       continue;
@@ -356,7 +380,7 @@ export function validateWorld(world) {
         } else {
           if (seenInputBatchIds.has(batchId)) errors.push(`Process result '${runId}' binds input batch '${batchId}' more than once`);
           seenInputBatchIds.add(batchId);
-          if (!world.materialBatches[batchId]) errors.push(`Process result '${runId}' references unknown input batch '${batchId}'`);
+          if (!materialBatches[batchId]) errors.push(`Process result '${runId}' references unknown input batch '${batchId}'`);
         }
       }
     }
@@ -394,7 +418,7 @@ export function validateWorld(world) {
         } else {
           if (seenOutputBatchIds.has(batchId)) errors.push(`Process result '${runId}' references output batch '${batchId}' more than once`);
           seenOutputBatchIds.add(batchId);
-          if (!world.materialBatches[batchId]) errors.push(`Process result '${runId}' references unknown output batch '${batchId}'`);
+          if (!materialBatches[batchId]) errors.push(`Process result '${runId}' references unknown output batch '${batchId}'`);
         }
       }
     }

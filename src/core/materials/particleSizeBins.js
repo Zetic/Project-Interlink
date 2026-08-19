@@ -32,7 +32,9 @@ export function particleSizeBinIdForMm(sizeMm) {
   if (typeof sizeMm !== 'number' || !Number.isFinite(sizeMm) || sizeMm <= 0) {
     throw new Error('particle size must be a finite positive number');
   }
-  return PARTICLE_SIZE_BINS.find(bin => sizeMm < bin.maxMm)?.id ?? PARTICLE_SIZE_BINS[PARTICLE_SIZE_BINS.length - 1].id;
+  // Exact cut points map to the finer/lower bin so a target like 15 mm means
+  // “no coarser than 15 mm”, not the next coarser 15–25 mm product class.
+  return PARTICLE_SIZE_BINS.find(bin => sizeMm <= bin.maxMm)?.id ?? PARTICLE_SIZE_BINS[PARTICLE_SIZE_BINS.length - 1].id;
 }
 
 export function representativeParticleSizeMm(binId) {

@@ -18,7 +18,7 @@ import {
   getProcessDefinition,
   MAGNETIC_SEPARATION_PROCESS_ID,
 } from './processDefinitions.js';
-import { assertCrushingTarget, crushSolidMaterialState, splitMagneticSolidState } from './processPhysics.js';
+import { crushSolidMaterialState, splitMagneticSolidState } from './processPhysics.js';
 
 function assertWorldOrdinals(world) {
   if (!Number.isInteger(world.nextMaterialBatchOrdinal) || world.nextMaterialBatchOrdinal < 1) {
@@ -184,7 +184,6 @@ function runCrushing(processDefinition, inputBatchesByPort, normalizedParameters
   const inputBatch = inputBatchesByPort.feed;
   const inputMaterialBody = materialBodyForBatchLike(inputBatch);
   const { targetParticleSizeMm } = normalizedParameters;
-  assertCrushingTarget(inputMaterialBody.solidState, targetParticleSizeMm);
 
   return {
     outputPortBatches: [

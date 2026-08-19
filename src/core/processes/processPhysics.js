@@ -35,11 +35,18 @@ function coarsestActiveBinIndex(solidState) {
   return coarsestIndex;
 }
 
-function computedCrushingSizeShares(inputSizeBinId, targetParticleSizeMm) {
+function requireCrusherTargetSizeBinId(targetParticleSizeMm) {
+  if (typeof targetParticleSizeMm !== 'number' || !Number.isFinite(targetParticleSizeMm) || targetParticleSizeMm <= 0) {
+    throw new Error('Crusher targetParticleSizeMm must be a finite positive number');
+  }
+  return particleSizeBinIdForMm(targetParticleSizeMm);
+}
+
+function computedCrushingSizeShares(inputSizeBinId, targetSizeBinId) {
   const inputIndex = particleSizeBinIndex(inputSizeBinId);
-  const targetIndex = particleSizeBinIndex(particleSizeBinIdForMm(targetParticleSizeMm));
+  const targetIndex = particleSizeBinIndex(targetSizeBinId);
   if (inputIndex <= targetIndex) return [{ sizeBinId: inputSizeBinId, share: 1 }];
-  const entries = [{ sizeBinId: particleSizeBinIdForMm(targetParticleSizeMm), share: 0.65 }];
+  const entries = [{ sizeBinId: targetSizeBinId, share: 0.65 }];
   const finerIndex = Math.max(0, targetIndex - 1);
   entries.push({ sizeBinId: listOrderedSizeBinIds()[finerIndex], share: 0.25 });
   const finestIndex = Math.max(0, targetIndex - 2);
@@ -165,11 +172,8 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
 
 export function assertCrushingTarget(feedSolidState, targetParticleSizeMm) {
   validateSolidMaterialState(feedSolidState);
-  if (typeof targetParticleSizeMm !== 'number' || !Number.isFinite(targetParticleSizeMm) || targetParticleSizeMm <= 0) {
-    throw new Error('Crusher targetParticleSizeMm must be a finite positive number');
-  }
+  const targetIndex = particleSizeBinIndex(requireCrusherTargetSizeBinId(targetParticleSizeMm));
   const coarsestIndex = coarsestActiveBinIndex(feedSolidState);
-  const targetIndex = particleSizeBinIndex(particleSizeBinIdForMm(targetParticleSizeMm));
   if (coarsestIndex < 0) {
     throw new Error('Crusher requires non-empty feed');
   }
@@ -180,12 +184,24 @@ export function assertCrushingTarget(feedSolidState, targetParticleSizeMm) {
   }
 }
 
+export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm) {
+  validateSolidMaterialState(feedSolidState);
+  const targetIndex = particleSizeBinIndex(requireCrusherTargetSizeBinId(targetParticleSizeMm));
+  let hasCrushable = false;
+  forEachSolidFraction(feedSolidState, (fraction) => {
+    if (particleSizeBinIndex(fraction.sizeBinId) > targetIndex) hasCrushable = true;
+  });
+  return hasCrushable;
+}
+
 export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
   validateSolidMaterialState(feedSolidState);
-  assertCrushingTarget(feedSolidState, targetParticleSizeMm);
+  const targetSizeBinId = requireCrusherTargetSizeBinId(targetParticleSizeMm);
   const product = createSolidMaterialState();
+  let sawFeed = false;
   forEachSolidFraction(feedSolidState, (fraction) => {
-    const sizeShares = computedCrushingSizeShares(fraction.sizeBinId, targetParticleSizeMm);
+    sawFeed = true;
+    const sizeShares = computedCrushingSizeShares(fraction.sizeBinId, targetSizeBinId);
     for (const outputShare of sizeShares) {
       distributeLiberationMass(
         product,
@@ -197,6 +213,7 @@ export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
       );
     }
   });
+  if (!sawFeed) throw new Error('Crusher requires non-empty feed');
   const inputTotal = totalSolidQuantity(feedSolidState);
   const outputTotal = totalSolidQuantity(product);
   if (Math.abs(inputTotal - outputTotal) > 1e-9 * Math.max(1, inputTotal)) {
