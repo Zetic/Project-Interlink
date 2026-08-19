@@ -595,6 +595,13 @@ hr {
 .ws-node--hopper    { border-color: #2a4a7a; }
 .ws-node--crusher   { border-color: #7a5a3a; }
 .ws-node--magSep    { border-color: #5a3a7a; }
+.ws-node--placement-preview {
+  z-index: 4;
+  border-style: dashed;
+  opacity: 0.58;
+  pointer-events: none;
+  cursor: default;
+}
 
 .ws-node-label {
   display: flex;
