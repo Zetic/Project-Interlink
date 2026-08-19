@@ -5,6 +5,8 @@
 import { layoutMoveNode } from '../simulation/simulationEngine.js';
 import { screenToGraph } from './viewport.js';
 
+export const CATALOG_POINTER_MOVE_THRESHOLD_PX = 5;
+
 export function createPlacementState() {
   return {
     definitionId: null,
@@ -24,6 +26,27 @@ export function armPlacement(state, definitionId) {
 export function updatePlacementPosition(state, point, viewport) {
   state.graphPosition = screenToGraph(point, viewport);
   return state.graphPosition;
+}
+
+export function graphPositionForCenteredPoint(point, viewport, nodeWidth = 0, nodeHeight = 0) {
+  const graphPoint = screenToGraph(point, viewport);
+  return {
+    x: graphPoint.x - nodeWidth / 2,
+    y: graphPoint.y - nodeHeight / 2,
+  };
+}
+
+export function graphPositionForViewportCenter(viewport, size, nodeWidth = 0, nodeHeight = 0) {
+  return graphPositionForCenteredPoint(
+    { x: size.width / 2, y: size.height / 2 },
+    viewport,
+    nodeWidth,
+    nodeHeight,
+  );
+}
+
+export function pointerMovementExceedsThreshold(start, current, threshold = CATALOG_POINTER_MOVE_THRESHOLD_PX) {
+  return Math.hypot(current.x - start.x, current.y - start.y) >= threshold;
 }
 
 export function cancelPlacement(state) {

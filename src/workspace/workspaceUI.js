@@ -66,13 +66,18 @@ import {
   projectNodeCatalog,
 } from './nodeCatalog.js';
 import {
-  armPlacement,
   cancelPlacement,
   commitNodePlacement,
   createPlacementState,
+  graphPositionForCenteredPoint,
+  graphPositionForViewportCenter,
+  pointerMovementExceedsThreshold,
   placementIsActive,
-  updatePlacementPosition,
 } from './nodePlacement.js';
+import {
+  nodeRemovalEligibility,
+  removeBlueprintNode,
+} from './nodeRemoval.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -108,6 +113,8 @@ const wsState = {
   nodeCatalogHiddenCategories: new Set(),
   nodeCatalogCollapsedCategories: new Set(),
   placement: createPlacementState(),
+  catalogPointer: null,
+  suppressCatalogClick: false,
 };
 
 const NODE_WIDTH = 160;
@@ -165,11 +172,11 @@ function installWindowDragTracking(moveHandler, upHandler) {
   if (typeof window === 'undefined') return;
 
   const onMove = event => {
-    if (!dragState && !systemDragState && !pendingGraphConnection.active && !placementIsActive(wsState.placement)) return;
+    if (!dragState && !systemDragState && !pendingGraphConnection.active) return;
     moveHandler(event);
   };
   const onUp = event => {
-    if (!dragState && !systemDragState && !pendingGraphConnection.active && !placementIsActive(wsState.placement)) return;
+    if (!dragState && !systemDragState && !pendingGraphConnection.active) return;
     upHandler(event);
   };
 
@@ -293,7 +300,7 @@ function setNavigationOpen(open) {
   const visibility = navigationVisibilityState(open);
   wsState.navigationOpen = visibility.visible;
   if (visibility.visible) {
-    cancelPlacement(wsState.placement);
+    clearCatalogPointerGesture();
     wsState.nodeCatalogOpen = false;
   }
   const drawer = el('ws-navigation-drawer');
@@ -328,7 +335,7 @@ function setNodeCatalogOpen(open) {
   if (visible) {
     setNavigationOpen(false);
   } else {
-    cancelPlacement(wsState.placement);
+    clearCatalogPointerGesture();
   }
   wsState.nodeCatalogOpen = visible;
   const drawer = el('ws-node-catalog-drawer');
@@ -467,6 +474,23 @@ function installNavigationEvents() {
   const controller = new AbortController();
   wsState.navigationEventController = controller;
   const eventOptions = { signal: controller.signal };
+  navigationEventRoot.addEventListener('pointerdown', event => {
+    const definitionEntry = event.target.closest('[data-node-definition]');
+    if (!definitionEntry) return;
+    const definition = nodeDefinitionById(definitionEntry.dataset.nodeDefinition);
+    if (definition) beginCatalogPointer(definition, event);
+  }, eventOptions);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointermove', updateCatalogPointer, eventOptions);
+    window.addEventListener('pointerup', finishCatalogPointer, eventOptions);
+    window.addEventListener('pointercancel', event => {
+      const gesture = wsState.catalogPointer;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      clearCatalogPointerGesture({ suppressClick: true });
+      renderNodeCatalogDrawer();
+      renderPlacementPreview();
+    }, eventOptions);
+  }
   navigationEventRoot.addEventListener('click', event => {
     const toggle = event.target.closest('#ws-navigation-toggle');
     if (toggle) {
@@ -494,9 +518,11 @@ function installNavigationEvents() {
     if (definition) {
       const selected = nodeDefinitionById(definition.dataset.nodeDefinition);
       if (selected && wsState.currentLevel === 'site') {
-        armPlacement(wsState.placement, selected.id);
-        renderNodeCatalogDrawer();
-        renderPlacementPreview();
+        if (wsState.suppressCatalogClick) {
+          wsState.suppressCatalogClick = false;
+          return;
+        }
+        quickPlaceDefinition(selected);
       }
       return;
     }
@@ -566,9 +592,22 @@ function installNavigationEvents() {
     renderNodeCatalogDrawer();
   }, eventOptions);
   navigationEventRoot.addEventListener('keydown', event => {
+    if (event.key === 'Delete') {
+      if (isEditableWorkspaceTarget(event.target)) return;
+      const selectedNode = wsState.blueprint?.nodes?.[inspector.selectedNodeId];
+      if (
+        wsState.currentLevel === 'site'
+        && selectedNode
+        && nodeRemovalEligibility(wsState.blueprint, selectedNode).removable
+      ) {
+        event.preventDefault();
+        attemptNodeRemoval(inspector.selectedNodeId);
+      }
+      return;
+    }
     if (event.key !== 'Escape') return;
-    if (placementIsActive(wsState.placement)) {
-      cancelPlacement(wsState.placement);
+    if (wsState.catalogPointer || placementIsActive(wsState.placement)) {
+      clearCatalogPointerGesture({ suppressClick: true });
       renderNodeCatalogDrawer();
       renderPlacementPreview();
       return;
@@ -609,7 +648,7 @@ function activateSiteSession(occurrenceId, siteId) {
 }
 
 export function navigateTo(level, opts = {}) {
-  cancelPlacement(wsState.placement);
+  clearCatalogPointerGesture();
   if (level === 'planet') {
     wsState.selectedRegionId = null;
     wsState.selectedSiteId = null;
@@ -771,6 +810,147 @@ function placementContext() {
   };
 }
 
+function siteViewportSurface() {
+  return el('ws-site-canvas')?.parentElement ?? null;
+}
+
+function siteViewportSize(surface) {
+  const rect = surface?.getBoundingClientRect?.() ?? { width: 0, height: 0 };
+  return {
+    width: surface?.clientWidth || rect.width || 0,
+    height: surface?.clientHeight || rect.height || 0,
+  };
+}
+
+function localPointForEvent(event, surface = siteViewportSurface()) {
+  const rect = surface?.getBoundingClientRect?.() ?? { left: 0, top: 0 };
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+}
+
+function pointIsInsideSurface(event, surface = siteViewportSurface()) {
+  if (!surface) return false;
+  const rect = surface.getBoundingClientRect();
+  return event.clientX >= rect.left
+    && event.clientX <= rect.right
+    && event.clientY >= rect.top
+    && event.clientY <= rect.bottom;
+}
+
+function clearCatalogPointerGesture({ suppressClick = false } = {}) {
+  wsState.catalogPointer = null;
+  cancelPlacement(wsState.placement);
+  if (suppressClick) {
+    wsState.suppressCatalogClick = true;
+    setTimeout(() => { wsState.suppressCatalogClick = false; }, 0);
+  }
+}
+
+function commitCatalogDefinition(definition, graphPosition) {
+  if (!definition || !wsState.blueprint || !wsState.blueprintLayout) return false;
+  try {
+    const node = commitNodePlacement(
+      wsState.blueprint,
+      wsState.blueprintLayout,
+      definition,
+      placementContext(),
+      graphPosition,
+    );
+    cancelPlacement(wsState.placement);
+    inspector.selectedNodeId = node.id;
+    inspector.selectedConnId = null;
+    inspector.message = '';
+    inspector.renderKey = null;
+    invalidateNavigationIndex();
+    renderSiteNodes();
+    renderNavigationDrawer();
+    renderNodeCatalogDrawer();
+    return true;
+  } catch (error) {
+    cancelPlacement(wsState.placement);
+    inspector.message = error.message;
+    inspector.renderKey = null;
+    renderNodeCatalogDrawer();
+    updateInspector(true);
+    return false;
+  }
+}
+
+function quickPlaceDefinition(definition) {
+  if (wsState.currentLevel !== 'site') return false;
+  const surface = siteViewportSurface();
+  const viewport = workspaceViewport(`site:${wsState.selectedSiteId}`);
+  const position = graphPositionForViewportCenter(
+    viewport,
+    siteViewportSize(surface),
+    NODE_WIDTH,
+    NODE_HEIGHT,
+  );
+  return commitCatalogDefinition(definition, position);
+}
+
+function beginCatalogPointer(definition, event) {
+  if (event.button !== 0 || wsState.currentLevel !== 'site') return;
+  clearCatalogPointerGesture();
+  wsState.catalogPointer = {
+    definitionId: definition.id,
+    pointerId: event.pointerId,
+    start: { x: event.clientX, y: event.clientY },
+    dragging: false,
+  };
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function updateCatalogPointer(event) {
+  const gesture = wsState.catalogPointer;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const current = { x: event.clientX, y: event.clientY };
+  if (!gesture.dragging && !pointerMovementExceedsThreshold(gesture.start, current)) return;
+  gesture.dragging = true;
+  const definition = nodeDefinitionById(gesture.definitionId);
+  if (!definition) return;
+  wsState.placement.definitionId = definition.id;
+  const surface = siteViewportSurface();
+  if (pointIsInsideSurface(event, surface)) {
+    wsState.placement.graphPosition = graphPositionForCenteredPoint(
+      localPointForEvent(event, surface),
+      workspaceViewport(`site:${wsState.selectedSiteId}`),
+      NODE_WIDTH,
+      NODE_HEIGHT,
+    );
+  } else {
+    wsState.placement.graphPosition = null;
+  }
+  renderNodeCatalogDrawer();
+  renderPlacementPreview();
+}
+
+function finishCatalogPointer(event) {
+  const gesture = wsState.catalogPointer;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const definition = nodeDefinitionById(gesture.definitionId);
+  const wasDragging = gesture.dragging;
+  const surface = siteViewportSurface();
+  clearCatalogPointerGesture({ suppressClick: true });
+  if (!definition) return;
+
+  if (!wasDragging) {
+    quickPlaceDefinition(definition);
+  } else if (pointIsInsideSurface(event, surface)) {
+    const graphPosition = graphPositionForCenteredPoint(
+      localPointForEvent(event, surface),
+      workspaceViewport(`site:${wsState.selectedSiteId}`),
+      NODE_WIDTH,
+      NODE_HEIGHT,
+    );
+    commitCatalogDefinition(definition, graphPosition);
+  } else {
+    renderNodeCatalogDrawer();
+    renderPlacementPreview();
+  }
+  event.preventDefault();
+}
+
 function renderPlacementPreview() {
   const canvas = el('ws-site-canvas');
   const existing = canvas?.querySelector('[data-node-placement-preview]');
@@ -794,6 +974,8 @@ function renderPlacementPreview() {
   preview.querySelector('.ws-node-category').className = `ws-node-category ws-node-category--${escHtml(definition.category)}`;
   preview.querySelector('.ws-node-category').textContent = definition.category.toUpperCase();
   preview.querySelector('.ws-node-label').innerHTML = `<span>${escHtml(definition.label)}</span><span>Preview</span>`;
+  preview.style.width = `${NODE_WIDTH}px`;
+  preview.style.height = `${NODE_HEIGHT}px`;
   preview.style.left = `${wsState.placement.graphPosition.x}px`;
   preview.style.top = `${wsState.placement.graphPosition.y}px`;
 }
@@ -1420,7 +1602,6 @@ function renderSiteWorkspace(container) {
   });
   el('ws-sim-reset')?.addEventListener('click', onResetSite);
   el('ws-inspector-body')?.addEventListener('click', onInspectorClick);
-  shell.viewport.addEventListener('click', commitPlacementAtEvent);
   renderSiteNodes();
   installWindowDragTracking(onCanvasMouseMove, onCanvasMouseUp);
   installViewport(
@@ -1508,18 +1689,6 @@ function onCanvasMouseMove(event) {
     pendingGraphConnection.y = point.y;
     renderConnections(el('ws-site-svg'));
   }
-  if (placementIsActive(wsState.placement)) {
-    const surface = el('ws-site-canvas')?.parentElement;
-    updatePlacementPosition(
-      wsState.placement,
-      (() => {
-        const rect = surface?.getBoundingClientRect() ?? { left: 0, top: 0 };
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      })(),
-      workspaceViewport(`site:${wsState.selectedSiteId}`),
-    );
-    renderPlacementPreview();
-  }
 }
 
 function onCanvasMouseUp() {
@@ -1529,39 +1698,6 @@ function onCanvasMouseUp() {
     pendingGraphConnection.adapter = null;
     renderConnections(el('ws-site-svg'));
   }
-}
-
-function commitPlacementAtEvent(event) {
-  if (!placementIsActive(wsState.placement) || event.button !== 0) return;
-  if (event.target.closest('.ws-port')) return;
-  const surface = el('ws-site-canvas')?.parentElement;
-  const point = eventGraphPoint(event, surface, `site:${wsState.selectedSiteId}`);
-  const definition = nodeDefinitionById(wsState.placement.definitionId);
-  if (!definition || !wsState.blueprint || !wsState.blueprintLayout) return;
-  try {
-    const node = commitNodePlacement(
-      wsState.blueprint,
-      wsState.blueprintLayout,
-      definition,
-      placementContext(),
-      point,
-    );
-    cancelPlacement(wsState.placement);
-    inspector.selectedNodeId = node.id;
-    inspector.selectedConnId = null;
-    inspector.message = '';
-    inspector.renderKey = null;
-    invalidateNavigationIndex();
-    renderSiteNodes();
-    renderNavigationDrawer();
-    renderNodeCatalogDrawer();
-  } catch (error) {
-    inspector.message = error.message;
-    inspector.renderKey = null;
-    renderNodeCatalogDrawer();
-  }
-  event.preventDefault();
-  event.stopPropagation();
 }
 
 function selectNode(nodeId) {
@@ -1581,15 +1717,42 @@ function selectConnection(connectionId) {
   renderSiteNodes();
 }
 
+function isEditableWorkspaceTarget(target) {
+  return Boolean(target?.closest?.('input, textarea, select, [contenteditable]'));
+}
+
+function attemptNodeRemoval(nodeId) {
+  if (!wsState.blueprint) return { removed: false, reason: 'No Site blueprint is active.' };
+  const result = removeBlueprintNode(wsState.blueprint, wsState.blueprintLayout, nodeId);
+  if (!result.removed) {
+    inspector.message = result.reason;
+    inspector.renderKey = null;
+    updateInspector(true);
+    return result;
+  }
+
+  inspector.selectedNodeId = null;
+  inspector.selectedConnId = null;
+  inspector.message = '';
+  inspector.renderKey = null;
+  invalidateNavigationIndex();
+  renderSiteNodes();
+  renderNavigationDrawer();
+  renderNodeCatalogDrawer();
+  return result;
+}
+
 function featureResourcesHtml(details) {
   if (!details.resources.length) return '<div class="ws-ins-note">No resource access is currently exposed.</div>';
   return details.resources.map(resource => `<div class="ws-ins-comp-row"><span>${escHtml(resource.name)}</span><span>${escHtml(resource.availabilityClass)}</span></div>${resource.descriptor ? `<div class="ws-ins-resource-note">${escHtml(resource.descriptor)}</div>` : ''}`).join('');
 }
 
 function formatNodeInspector(node) {
+  if (!node) return 'Select a node or connection.';
   const hopper = ['hopper', 'boundary-buffer'].includes(node.systemType) || node.nodeType === 'hopper';
   const typeLabel = node.systemType === 'boundary-buffer' ? node.displayName : node.nodeType;
   const isFeature = node.nodeType === 'feature';
+  const removal = nodeRemovalEligibility(wsState.blueprint, node);
   let html = `<div class="ws-ins-type">${escHtml(typeLabel.toUpperCase())}</div>`;
   if (!isFeature) html += `<div class="ws-ins-row"><b>ID:</b> ${escHtml(node.id)}</div>`;
 
@@ -1635,6 +1798,11 @@ function formatNodeInspector(node) {
   }
 
   html += `<div class="ws-ins-action"><button class="ws-btn-disconnect" data-node-id="${escHtml(node.id)}">Remove all connections</button></div>`;
+  if (removal.removable) {
+    html += removal.ok
+      ? `<div class="ws-ins-action"><button class="ws-btn-delete-node" data-node-id="${escHtml(node.id)}">Delete Node</button></div>`
+      : `<div class="ws-ins-note">${escHtml(removal.reason)}</div><div class="ws-ins-action"><button class="ws-btn-delete-node" data-node-id="${escHtml(node.id)}" disabled>Delete Node</button></div>`;
+  }
   return html;
 }
 
@@ -1659,7 +1827,9 @@ function formatConnectionInspector(connection) {
 function updateInspector(force = false) {
   const body = el('ws-inspector-body');
   if (!body || !wsState.blueprint) return;
-  const key = `${inspector.selectedNodeId ?? ''}:${inspector.selectedConnId ?? ''}:${inspector.message}`;
+  const selectedNode = inspector.selectedNodeId ? wsState.blueprint.nodes[inspector.selectedNodeId] : null;
+  const removal = selectedNode ? nodeRemovalEligibility(wsState.blueprint, selectedNode) : null;
+  const key = `${inspector.selectedNodeId ?? ''}:${inspector.selectedConnId ?? ''}:${inspector.message}:${removal?.removable ?? ''}:${removal?.ownedMatterKg ?? ''}`;
   if (force || inspector.renderKey !== key) {
     let html = inspector.message ? `<div class="ws-ins-note">${escHtml(inspector.message)}</div>` : '';
     if (inspector.selectedNodeId) html += formatNodeInspector(wsState.blueprint.nodes[inspector.selectedNodeId]);
@@ -1723,6 +1893,11 @@ function onInspectorClick(event) {
     if (node) setNodeEnabled(wsState.blueprint, node.id, !node.enabled);
     inspector.renderKey = null;
     updateInspector(true);
+    return;
+  }
+  const deleteButton = event.target.closest('.ws-btn-delete-node');
+  if (deleteButton) {
+    attemptNodeRemoval(deleteButton.dataset.nodeId);
     return;
   }
   const button = event.target.closest('.ws-btn-disconnect');
@@ -1802,7 +1977,7 @@ function updateSimStatus() {
 function onResetSite() {
   const siteId = wsState.selectedSiteId;
   if (!siteId) return;
-  cancelPlacement(wsState.placement);
+  clearCatalogPointerGesture();
   const session = createSiteSession(wsState.selectedOccurrenceId, siteId);
   wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
@@ -1860,7 +2035,8 @@ export function initWorkspace(world, knowledge) {
   wsState.nodeCatalogQuery = '';
   wsState.nodeCatalogHiddenCategories = new Set();
   wsState.nodeCatalogCollapsedCategories = new Set();
-  cancelPlacement(wsState.placement);
+  clearCatalogPointerGesture();
+  wsState.suppressCatalogClick = false;
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.selectedSystemId = null;
