@@ -354,11 +354,11 @@ function navigateNavigationEntry(key) {
 
 function installNavigationEvents() {
   if (wsState.navigationEventsInstalled) return;
-  wsState.navigationEventsInstalled = true;
+  const navigationEventRoot = el('ws-main') ?? el('player-view');
+  if (!navigationEventRoot) return;
   const controller = new AbortController();
   wsState.navigationEventController = controller;
   const eventOptions = { signal: controller.signal };
-  const navigationEventRoot = el('ws-main') ?? el('player-view') ?? document;
   navigationEventRoot.addEventListener('click', event => {
     const toggle = event.target.closest('#ws-navigation-toggle');
     if (toggle) {
@@ -415,6 +415,7 @@ function installNavigationEvents() {
       if (shouldRestoreFocus) el('ws-navigation-toggle')?.focus();
     }
   }, eventOptions);
+  wsState.navigationEventsInstalled = true;
 }
 
 function createSiteSession(_occurrenceId, siteId) {
