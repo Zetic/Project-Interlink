@@ -18,8 +18,9 @@ function cssRule(css, selector) {
     }
     searchFrom = candidateIndex + selector.length;
   }
+  if (selectorIndex < 0) return '';
   const openIndex = css.indexOf('{', selectorIndex);
-  if (selectorIndex < 0 || openIndex < 0) return '';
+  if (openIndex < 0) return '';
 
   let depth = 0;
   for (let index = openIndex; index < css.length; index++) {
