@@ -1,9 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { workspaceShellMarkup } from '../src/workspace/workspaceUI.js';
+import {
+  navigationFilterState,
+  navigationVisibilityState,
+  workspaceShellMarkup,
+} from '../src/workspace/workspaceUI.js';
 
 const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const workspaceOverrides = readFileSync(new URL('../workspace-overrides.css', import.meta.url), 'utf8');
 
 function cssRule(css, selector) {
   let selectorIndex = -1;
@@ -66,4 +71,74 @@ test('player shell reserves a viewport-safe outer inset', () => {
   assert.ok(declarations.some(declaration => /^height: calc\(100vh\s*-\s*16px\)$/.test(declaration)), 'expected viewport height fallback');
   assert.ok(declarations.some(declaration => /^height: calc\(100dvh\s*-\s*16px\)$/.test(declaration)), 'expected dynamic viewport height');
   assert.ok(declarations.some(declaration => /^margin: 8px$/.test(declaration)), 'expected 8px outer shell inset');
+});
+
+test('hierarchy navigator has a permanent rail and body-relative overlay', () => {
+  const markup = workspaceShellMarkup({
+    title: 'Planet',
+    canvasId: 'canvas',
+    svgId: 'svg',
+    inspectorBodyId: 'inspector-body',
+  });
+  assert.match(markup, /class="ws-panel-rail".*id="ws-navigation-toggle"/s);
+  assert.match(markup, /id="ws-navigation-drawer"[^>]*aria-hidden="true"[^>]*hidden/);
+  assert.match(markup, /id="ws-navigation-collapse-all"/);
+  assert.match(markup, /id="ws-navigation-expand-all"/);
+  assert.match(markup, /id="ws-navigation-search"/);
+  assert.match(markup, /id="ws-navigation-tree"/);
+  assert.ok(markup.indexOf('ws-workspace-header') < markup.indexOf('ws-panel-rail'));
+  assert.ok(markup.indexOf('ws-panel-rail') < markup.indexOf('class="ws-viewport"'));
+
+  const drawerRule = cssRule(workspaceOverrides, '.ws-navigation-drawer');
+  assert.match(drawerRule, /position:\s*absolute/);
+  assert.match(drawerRule, /inset:\s*0 auto 0 34px/);
+  assert.match(drawerRule, /border-right:\s*1px solid/);
+  assert.match(cssRule(workspaceOverrides, '.ws-navigation-drawer[hidden]'), /display:\s*none !important/);
+
+  const layoutRule = cssRule(workspaceOverrides, '.ws-layout');
+  assert.match(layoutRule, /grid-template-columns:\s*34px minmax\(0, 1fr\) clamp\(180px, 24vw, 280px\)/);
+  assert.match(cssRule(workspaceOverrides, '.ws-navigation-filters'), /max-height:\s*112px/);
+  assert.match(cssRule(workspaceOverrides, '.ws-navigation-filters'), /overflow-y:\s*auto/);
+});
+
+test('navigation visibility state keeps drawer and toggle attributes synchronized', () => {
+  const closed = navigationVisibilityState(false);
+  const open = navigationVisibilityState(true);
+  const toggledClosed = navigationVisibilityState(false);
+
+  assert.deepEqual(closed, {
+    visible: false,
+    hidden: true,
+    ariaHidden: 'true',
+    ariaExpanded: 'false',
+  });
+  assert.deepEqual(open, {
+    visible: true,
+    hidden: false,
+    ariaHidden: 'false',
+    ariaExpanded: 'true',
+  });
+  assert.deepEqual(toggledClosed, closed);
+});
+
+test('navigation filter UI retains the canonical vocabulary while honoring hidden state', () => {
+  const state = navigationFilterState(new Set(['apparatus']));
+
+  assert.deepEqual(state.categories, [
+    'planet',
+    'region',
+    'site',
+    'facility',
+    'feature',
+    'apparatus',
+    'container',
+    'boundary',
+    'process',
+    'sensor',
+    'controller',
+    'logistics',
+    'system',
+  ]);
+  assert.equal(state.visibleCategories.has('apparatus'), false);
+  assert.equal(state.visibleCategories.has('container'), true);
 });
