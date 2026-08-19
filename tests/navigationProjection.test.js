@@ -13,6 +13,8 @@ import {
   navigationVisibleCategories,
 } from '../src/workspace/navigationProjection.js';
 import { NODE_CATEGORIES } from '../src/workspace/nodePresentation.js';
+import { NODE_DEFINITIONS } from '../src/workspace/nodeCatalog.js';
+import { commitNodePlacement } from '../src/workspace/nodePlacement.js';
 
 function findWorldWithIron() {
   for (let index = 0; index < 200; index++) {
@@ -40,7 +42,7 @@ test('navigation projection follows authoritative Planet → Region → Site →
 });
 
 test('indexing existing graph nodes is stable and does not create unopened Site sessions', () => {
-  const { world, site } = findWorldWithIron();
+  const { world, site, occurrence } = findWorldWithIron();
   const before = JSON.stringify(world);
   const index = buildNavigationIndex(world);
   const ids = index.entries.map(entry => entry.targetId);
@@ -51,10 +53,17 @@ test('indexing existing graph nodes is stable and does not create unopened Site 
   assert.equal(JSON.stringify(world), before);
 
   const session = buildSiteSession(world, site.id);
+  const extractorDefinition = NODE_DEFINITIONS.find(definition => definition.id === 'extractor');
+  const extractor = commitNodePlacement(
+    session.blueprint,
+    session.blueprintLayout,
+    extractorDefinition,
+    { occurrenceId: occurrence.id },
+    { x: 240, y: 120 },
+  );
   const withSession = buildNavigationIndex(world, {
     siteSessions: { [site.id]: session },
   });
-  const extractor = Object.values(session.blueprint.nodes).find(node => node.nodeType === 'extractor');
   assert.ok(extractor);
   assert.equal(withSession.entries.filter(entry => entry.targetId === extractor.id).length, 1);
   assert.equal(withSession.byKey.get(`node:${extractor.id}`).parentKey, `site:${site.id}`);
@@ -231,6 +240,13 @@ test('hidden categories stay hidden when a later index adds matching nodes', () 
   assert.equal(initial.entries.some(entry => entry.category === 'apparatus'), false);
 
   const session = buildSiteSession(world, site.id);
+  commitNodePlacement(
+    session.blueprint,
+    session.blueprintLayout,
+    NODE_DEFINITIONS.find(definition => definition.id === 'crusher'),
+    {},
+    { x: 240, y: 120 },
+  );
   const refreshed = buildNavigationIndex(world, { siteSessions: { [site.id]: session } });
   const visibleCategories = navigationVisibleCategories(navigationCategoryVocabulary(), hidden);
   const projection = getNavigationRows(refreshed, {

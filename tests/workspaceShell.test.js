@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   navigationFilterState,
+  nodeCatalogFilterState,
   navigationVisibilityState,
   workspaceShellMarkup,
 } from '../src/workspace/workspaceUI.js';
@@ -81,7 +82,9 @@ test('hierarchy navigator has a permanent rail and body-relative overlay', () =>
     inspectorBodyId: 'inspector-body',
   });
   assert.match(markup, /class="ws-panel-rail".*id="ws-navigation-toggle"/s);
+  assert.match(markup, /class="ws-panel-rail".*id="ws-node-catalog-toggle"/s);
   assert.match(markup, /id="ws-navigation-drawer"[^>]*aria-hidden="true"[^>]*hidden/);
+  assert.match(markup, /id="ws-node-catalog-drawer"[^>]*aria-hidden="true"[^>]*hidden/);
   assert.match(markup, /id="ws-navigation-collapse-all"/);
   assert.match(markup, /id="ws-navigation-expand-all"/);
   assert.match(markup, /id="ws-navigation-search"/);
@@ -99,6 +102,21 @@ test('hierarchy navigator has a permanent rail and body-relative overlay', () =>
   assert.match(layoutRule, /grid-template-columns:\s*34px minmax\(0, 1fr\) clamp\(180px, 24vw, 280px\)/);
   assert.match(cssRule(workspaceOverrides, '.ws-navigation-filters'), /max-height:\s*112px/);
   assert.match(cssRule(workspaceOverrides, '.ws-navigation-filters'), /overflow-y:\s*auto/);
+});
+
+test('NODE catalog shares the body-relative overlay geometry and category filters', () => {
+  const markup = workspaceShellMarkup({
+    title: 'Site',
+    canvasId: 'canvas',
+    svgId: 'svg',
+    inspectorBodyId: 'inspector-body',
+  });
+  assert.match(markup, /id="ws-node-catalog-search"/);
+  assert.match(markup, /id="ws-node-catalog-filters"/);
+  assert.match(markup, /id="ws-node-catalog-tree"/);
+  assert.match(cssRule(workspaceOverrides, '.ws-node-catalog-drawer'), /position:\s*absolute/);
+  assert.match(cssRule(workspaceOverrides, '.ws-node-catalog-drawer'), /inset:\s*0 auto 0 34px/);
+  assert.deepEqual(nodeCatalogFilterState().categories, ['apparatus', 'container']);
 });
 
 test('navigation visibility state keeps drawer and toggle attributes synchronized', () => {

@@ -59,6 +59,25 @@ import {
   navigationVisibleCategories,
   navigationEntryForTarget,
 } from './navigationProjection.js';
+import {
+  nodeCatalogCategoryVocabulary,
+  nodeCatalogVisibleCategories,
+  nodeDefinitionById,
+  projectNodeCatalog,
+} from './nodeCatalog.js';
+import {
+  cancelPlacement,
+  commitNodePlacement,
+  createPlacementState,
+  graphPositionForCenteredPoint,
+  graphPositionForViewportCenter,
+  pointerMovementExceedsThreshold,
+  placementIsActive,
+} from './nodePlacement.js';
+import {
+  nodeRemovalEligibility,
+  removeBlueprintNode,
+} from './nodeRemoval.js';
 
 const wsState = {
   currentLevel: 'planet',
@@ -89,6 +108,13 @@ const wsState = {
   navigationEventsInstalled: false,
   navigationEventController: null,
   navigationIndexCache: null,
+  nodeCatalogOpen: false,
+  nodeCatalogQuery: '',
+  nodeCatalogHiddenCategories: new Set(),
+  nodeCatalogCollapsedCategories: new Set(),
+  placement: createPlacementState(),
+  catalogPointer: null,
+  suppressCatalogClick: false,
 };
 
 const NODE_WIDTH = 160;
@@ -124,7 +150,7 @@ export function workspaceShellMarkup({
   inspectorBodyId,
   inspectorInitial = '',
 } = {}) {
-  return `<div class="ws-workspace"><div class="ws-workspace-header"><div class="ws-workspace-title">${escHtml(title)}</div>${subtitle ? `<div class="ws-workspace-subtitle">${escHtml(subtitle)}</div>` : ''}</div><div class="ws-toolbar"><div class="ws-context-controls">${contextControls}</div><div class="ws-viewport-controls"><button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div></div><div class="ws-layout"><div class="ws-panel-rail"><button id="ws-navigation-toggle" class="ws-navigation-tab" type="button" aria-controls="ws-navigation-drawer" aria-expanded="false"><span aria-hidden="true">N<br>A<br>V</span><span class="ws-visually-hidden">Open hierarchy navigation</span></button></div><aside id="ws-navigation-drawer" class="ws-navigation-drawer" aria-label="Hierarchy navigation" aria-hidden="true" hidden><div class="ws-navigation-header"><strong>NAVIGATION</strong><div class="ws-navigation-actions"><button id="ws-navigation-collapse-all" class="ws-navigation-action" type="button" aria-label="Collapse all hierarchy entries" title="Collapse all">−</button><button id="ws-navigation-expand-all" class="ws-navigation-action" type="button" aria-label="Expand all hierarchy entries" title="Expand all">+</button><button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close hierarchy navigation" title="Close">×</button></div></div><label class="ws-navigation-search-label" for="ws-navigation-search">Search hierarchy</label><input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search hierarchy…" autocomplete="off"><details id="ws-navigation-filters" class="ws-navigation-filters-panel"><summary>Show filters</summary><div class="ws-navigation-filters"></div></details><div id="ws-navigation-match-count" class="ws-navigation-match-count" aria-live="polite"></div><div id="ws-navigation-tree" class="ws-navigation-tree" role="tree" aria-label="World hierarchy"></div></aside><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div></div>`;
+  return `<div class="ws-workspace"><div class="ws-workspace-header"><div class="ws-workspace-title">${escHtml(title)}</div>${subtitle ? `<div class="ws-workspace-subtitle">${escHtml(subtitle)}</div>` : ''}</div><div class="ws-toolbar"><div class="ws-context-controls">${contextControls}</div><div class="ws-viewport-controls"><button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div></div><div class="ws-layout"><div class="ws-panel-rail"><button id="ws-navigation-toggle" class="ws-navigation-tab" type="button" aria-controls="ws-navigation-drawer" aria-expanded="false"><span aria-hidden="true">N<br>A<br>V</span><span class="ws-visually-hidden">Open hierarchy navigation</span></button><button id="ws-node-catalog-toggle" class="ws-navigation-tab ws-node-catalog-tab" type="button" aria-controls="ws-node-catalog-drawer" aria-expanded="false"><span aria-hidden="true">N<br>O<br>D<br>E</span><span class="ws-visually-hidden">Open node catalog</span></button></div><aside id="ws-navigation-drawer" class="ws-navigation-drawer" aria-label="Hierarchy navigation" aria-hidden="true" hidden><div class="ws-navigation-header"><strong>NAVIGATION</strong><div class="ws-navigation-actions"><button id="ws-navigation-collapse-all" class="ws-navigation-action" type="button" aria-label="Collapse all hierarchy entries" title="Collapse all">−</button><button id="ws-navigation-expand-all" class="ws-navigation-action" type="button" aria-label="Expand all hierarchy entries" title="Expand all">+</button><button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close hierarchy navigation" title="Close">×</button></div></div><label class="ws-navigation-search-label" for="ws-navigation-search">Search hierarchy</label><input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search hierarchy…" autocomplete="off"><details id="ws-navigation-filters" class="ws-navigation-filters-panel"><summary>Show filters</summary><div class="ws-navigation-filters"></div></details><div id="ws-navigation-match-count" class="ws-navigation-match-count" aria-live="polite"></div><div id="ws-navigation-tree" class="ws-navigation-tree" role="tree" aria-label="World hierarchy"></div></aside><aside id="ws-node-catalog-drawer" class="ws-node-catalog-drawer" aria-label="Node catalog" aria-hidden="true" hidden><div class="ws-navigation-header"><strong>NODE</strong><div class="ws-navigation-actions"><button id="ws-node-catalog-close" class="ws-navigation-close" type="button" aria-label="Close node catalog" title="Close">×</button></div></div><label class="ws-navigation-search-label" for="ws-node-catalog-search">Search nodes</label><input id="ws-node-catalog-search" class="ws-navigation-search" type="search" placeholder="Search nodes…" autocomplete="off"><details id="ws-node-catalog-filters" class="ws-navigation-filters-panel"><summary>Show filters</summary><div class="ws-navigation-filters"></div></details><div id="ws-node-catalog-match-count" class="ws-navigation-match-count" aria-live="polite"></div><div id="ws-node-catalog-tree" class="ws-navigation-tree" role="tree" aria-label="Placeable nodes"></div><div id="ws-node-catalog-status" class="ws-node-catalog-status" aria-live="polite"></div></aside><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div></div>`;
 }
 function renderWorkspaceShell(container, options = {}) {
   container.innerHTML = workspaceShellMarkup(options);
@@ -262,11 +288,25 @@ export function navigationFilterState(hiddenCategories = new Set()) {
   };
 }
 
+export function nodeCatalogFilterState(hiddenCategories = new Set()) {
+  const categories = nodeCatalogCategoryVocabulary();
+  return {
+    categories,
+    visibleCategories: nodeCatalogVisibleCategories(categories, hiddenCategories),
+  };
+}
+
 function setNavigationOpen(open) {
   const visibility = navigationVisibilityState(open);
   wsState.navigationOpen = visibility.visible;
+  if (visibility.visible) {
+    clearCatalogPointerGesture();
+    wsState.nodeCatalogOpen = false;
+  }
   const drawer = el('ws-navigation-drawer');
   const toggle = el('ws-navigation-toggle');
+  const nodeDrawer = el('ws-node-catalog-drawer');
+  const nodeToggle = el('ws-node-catalog-toggle');
   if (drawer) {
     drawer.hidden = visibility.hidden;
     drawer.setAttribute('aria-hidden', visibility.ariaHidden);
@@ -277,6 +317,40 @@ function setNavigationOpen(open) {
       document.createTextNode(wsState.navigationOpen ? 'Close hierarchy navigation' : 'Open hierarchy navigation'),
     );
   }
+  if (nodeDrawer && visibility.visible) {
+    nodeDrawer.hidden = true;
+    nodeDrawer.setAttribute('aria-hidden', 'true');
+  }
+  if (nodeToggle && visibility.visible) {
+    nodeToggle.setAttribute('aria-expanded', 'false');
+    nodeToggle.querySelector('.ws-visually-hidden')?.replaceChildren(
+      document.createTextNode('Open node catalog'),
+    );
+  }
+  if (visibility.visible) renderPlacementPreview();
+}
+
+function setNodeCatalogOpen(open) {
+  const visible = Boolean(open);
+  if (visible) {
+    setNavigationOpen(false);
+  } else {
+    clearCatalogPointerGesture();
+  }
+  wsState.nodeCatalogOpen = visible;
+  const drawer = el('ws-node-catalog-drawer');
+  const toggle = el('ws-node-catalog-toggle');
+  if (drawer) {
+    drawer.hidden = !visible;
+    drawer.setAttribute('aria-hidden', String(!visible));
+  }
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', String(visible));
+    toggle.querySelector('.ws-visually-hidden')?.replaceChildren(
+      document.createTextNode(visible ? 'Close node catalog' : 'Open node catalog'),
+    );
+  }
+  if (!visible) renderPlacementPreview();
 }
 
 function renderNavigationDrawer() {
@@ -316,6 +390,47 @@ function renderNavigationDrawer() {
   const count = el('ws-navigation-match-count');
   if (count) count.textContent = projection.query ? `${projection.matchCount} match${projection.matchCount === 1 ? '' : 'es'}` : '';
   setNavigationOpen(wsState.navigationOpen);
+}
+
+function renderNodeCatalogDrawer() {
+  const tree = el('ws-node-catalog-tree');
+  const drawer = el('ws-node-catalog-drawer');
+  if (!tree || !drawer) return;
+
+  const { categories: filterCategories, visibleCategories } = nodeCatalogFilterState(
+    wsState.nodeCatalogHiddenCategories,
+  );
+  const filters = el('ws-node-catalog-filters')?.querySelector('.ws-navigation-filters');
+  if (filters) {
+    filters.innerHTML = filterCategories.map(category => {
+      const id = `ws-node-catalog-filter-${category}`;
+      return `<label for="${id}"><input id="${id}" type="checkbox" data-node-catalog-filter="${escHtml(category)}"${visibleCategories.has(category) ? ' checked' : ''}>${escHtml(category.toUpperCase())}</label>`;
+    }).join('');
+  }
+
+  const projection = projectNodeCatalog({
+    query: wsState.nodeCatalogQuery,
+    visibleCategories,
+  });
+  tree.innerHTML = projection.rows.length
+    ? projection.rows.map(group => {
+      const expanded = Boolean(wsState.nodeCatalogQuery) || !wsState.nodeCatalogCollapsedCategories.has(group.category);
+      return `<div class="ws-node-catalog-group" role="group"><button class="ws-node-catalog-category" type="button" data-node-catalog-expand="${escHtml(group.category)}" aria-expanded="${String(expanded)}"><span aria-hidden="true">${expanded ? '▾' : '▸'}</span>${escHtml(group.category.toUpperCase())}</button>${expanded ? group.definitions.map(definition => `<button class="ws-node-catalog-entry" type="button" data-node-definition="${escHtml(definition.id)}"><span class="ws-navigation-category ws-node-category--${escHtml(definition.category)}" aria-hidden="true"></span><span><strong>${escHtml(definition.label)}</strong><small>${escHtml(definition.description)}</small></span></button>`).join('') : ''}</div>`;
+    }).join('')
+    : `<div class="ws-navigation-empty">${wsState.nodeCatalogQuery ? 'No matching nodes.' : 'No placeable nodes.'}</div>`;
+
+  const count = el('ws-node-catalog-match-count');
+  if (count) count.textContent = wsState.nodeCatalogQuery
+    ? `${projection.matchCount} match${projection.matchCount === 1 ? '' : 'es'}`
+    : '';
+  const status = el('ws-node-catalog-status');
+  if (status) {
+    const definition = nodeDefinitionById(wsState.placement.definitionId);
+    status.innerHTML = placementIsActive(wsState.placement)
+      ? `Placing: <strong>${escHtml(definition?.label ?? 'Node')}</strong> <button type="button" data-node-placement-cancel>Cancel</button>`
+      : (wsState.currentLevel === 'site' ? 'Select a node to place it in this Site.' : 'Open a Site to place nodes.');
+  }
+  setNodeCatalogOpen(wsState.nodeCatalogOpen);
 }
 
 function navigateNavigationEntry(key) {
@@ -359,15 +474,71 @@ function installNavigationEvents() {
   const controller = new AbortController();
   wsState.navigationEventController = controller;
   const eventOptions = { signal: controller.signal };
+  navigationEventRoot.addEventListener('pointerdown', event => {
+    const definitionEntry = event.target.closest('[data-node-definition]');
+    if (!definitionEntry) return;
+    const definition = nodeDefinitionById(definitionEntry.dataset.nodeDefinition);
+    if (definition) beginCatalogPointer(definition, event);
+  }, eventOptions);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointermove', updateCatalogPointer, eventOptions);
+    window.addEventListener('pointerup', finishCatalogPointer, eventOptions);
+    window.addEventListener('pointercancel', event => {
+      const gesture = wsState.catalogPointer;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      clearCatalogPointerGesture({ suppressClick: true });
+      renderNodeCatalogDrawer();
+      renderPlacementPreview();
+    }, eventOptions);
+  }
   navigationEventRoot.addEventListener('click', event => {
     const toggle = event.target.closest('#ws-navigation-toggle');
     if (toggle) {
       setNavigationOpen(!wsState.navigationOpen);
       return;
     }
+    const nodeToggle = event.target.closest('#ws-node-catalog-toggle');
+    if (nodeToggle) {
+      setNodeCatalogOpen(!wsState.nodeCatalogOpen);
+      renderNodeCatalogDrawer();
+      return;
+    }
     const close = event.target.closest('#ws-navigation-close');
     if (close) {
       setNavigationOpen(false);
+      return;
+    }
+    const nodeClose = event.target.closest('#ws-node-catalog-close');
+    if (nodeClose) {
+      setNodeCatalogOpen(false);
+      renderNodeCatalogDrawer();
+      return;
+    }
+    const definition = event.target.closest('[data-node-definition]');
+    if (definition) {
+      const selected = nodeDefinitionById(definition.dataset.nodeDefinition);
+      if (selected && wsState.currentLevel === 'site') {
+        if (wsState.suppressCatalogClick) {
+          wsState.suppressCatalogClick = false;
+          return;
+        }
+        quickPlaceDefinition(selected);
+      }
+      return;
+    }
+    const expandNodeCategory = event.target.closest('[data-node-catalog-expand]');
+    if (expandNodeCategory) {
+      const category = expandNodeCategory.dataset.nodeCatalogExpand;
+      if (wsState.nodeCatalogCollapsedCategories.has(category)) wsState.nodeCatalogCollapsedCategories.delete(category);
+      else wsState.nodeCatalogCollapsedCategories.add(category);
+      renderNodeCatalogDrawer();
+      return;
+    }
+    const cancel = event.target.closest('[data-node-placement-cancel]');
+    if (cancel) {
+      cancelPlacement(wsState.placement);
+      renderNodeCatalogDrawer();
+      renderPlacementPreview();
       return;
     }
     const collapse = event.target.closest('#ws-navigation-collapse-all');
@@ -408,11 +579,47 @@ function installNavigationEvents() {
     else wsState.navigationHiddenCategories.add(input.dataset.navigationFilter);
     renderNavigationDrawer();
   }, eventOptions);
+  navigationEventRoot.addEventListener('input', event => {
+    if (!event.target.matches('#ws-node-catalog-search')) return;
+    wsState.nodeCatalogQuery = event.target.value;
+    renderNodeCatalogDrawer();
+  }, eventOptions);
+  navigationEventRoot.addEventListener('change', event => {
+    const input = event.target.closest('[data-node-catalog-filter]');
+    if (!input || !event.target.closest('#ws-node-catalog-drawer')) return;
+    if (input.checked) wsState.nodeCatalogHiddenCategories.delete(input.dataset.nodeCatalogFilter);
+    else wsState.nodeCatalogHiddenCategories.add(input.dataset.nodeCatalogFilter);
+    renderNodeCatalogDrawer();
+  }, eventOptions);
   navigationEventRoot.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && wsState.navigationOpen) {
+    if (event.key === 'Delete') {
+      if (isEditableWorkspaceTarget(event.target)) return;
+      const selectedNode = wsState.blueprint?.nodes?.[inspector.selectedNodeId];
+      if (
+        wsState.currentLevel === 'site'
+        && selectedNode
+        && nodeRemovalEligibility(wsState.blueprint, selectedNode).removable
+      ) {
+        event.preventDefault();
+        attemptNodeRemoval(inspector.selectedNodeId);
+      }
+      return;
+    }
+    if (event.key !== 'Escape') return;
+    if (wsState.catalogPointer || placementIsActive(wsState.placement)) {
+      clearCatalogPointerGesture({ suppressClick: true });
+      renderNodeCatalogDrawer();
+      renderPlacementPreview();
+      return;
+    }
+    if (wsState.navigationOpen) {
       const shouldRestoreFocus = event.target.closest('#ws-navigation-drawer, #ws-navigation-toggle');
       setNavigationOpen(false);
       if (shouldRestoreFocus) el('ws-navigation-toggle')?.focus();
+    } else if (wsState.nodeCatalogOpen) {
+      const shouldRestoreFocus = event.target.closest('#ws-node-catalog-drawer, #ws-node-catalog-toggle');
+      setNodeCatalogOpen(false);
+      if (shouldRestoreFocus) el('ws-node-catalog-toggle')?.focus();
     }
   }, eventOptions);
   wsState.navigationEventsInstalled = true;
@@ -441,6 +648,7 @@ function activateSiteSession(occurrenceId, siteId) {
 }
 
 export function navigateTo(level, opts = {}) {
+  clearCatalogPointerGesture();
   if (level === 'planet') {
     wsState.selectedRegionId = null;
     wsState.selectedSiteId = null;
@@ -590,6 +798,186 @@ function eventGraphPoint(event, surface, key) {
     { x: event.clientX - rect.left, y: event.clientY - rect.top },
     workspaceViewport(key),
   );
+}
+
+function placementContext() {
+  const site = wsState.world?.sites?.[wsState.selectedSiteId];
+  return {
+    world: wsState.world,
+    siteId: wsState.selectedSiteId,
+    occurrenceId: wsState.selectedOccurrenceId ?? siteResourceOccurrenceIds(wsState.world, site)[0] ?? null,
+    occurrenceIds: siteResourceOccurrenceIds(wsState.world, site),
+  };
+}
+
+function siteViewportSurface() {
+  return el('ws-site-canvas')?.parentElement ?? null;
+}
+
+function siteViewportSize(surface) {
+  const rect = surface?.getBoundingClientRect?.() ?? { width: 0, height: 0 };
+  return {
+    width: surface?.clientWidth || rect.width || 0,
+    height: surface?.clientHeight || rect.height || 0,
+  };
+}
+
+function localPointForEvent(event, surface = siteViewportSurface()) {
+  const rect = surface?.getBoundingClientRect?.() ?? { left: 0, top: 0 };
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+}
+
+function pointIsInsideSurface(event, surface = siteViewportSurface()) {
+  if (!surface) return false;
+  const rect = surface.getBoundingClientRect();
+  return event.clientX >= rect.left
+    && event.clientX <= rect.right
+    && event.clientY >= rect.top
+    && event.clientY <= rect.bottom;
+}
+
+function clearCatalogPointerGesture({ suppressClick = false } = {}) {
+  wsState.catalogPointer = null;
+  cancelPlacement(wsState.placement);
+  if (suppressClick) {
+    wsState.suppressCatalogClick = true;
+    setTimeout(() => { wsState.suppressCatalogClick = false; }, 0);
+  }
+}
+
+function commitCatalogDefinition(definition, graphPosition) {
+  if (!definition || !wsState.blueprint || !wsState.blueprintLayout) return false;
+  try {
+    const node = commitNodePlacement(
+      wsState.blueprint,
+      wsState.blueprintLayout,
+      definition,
+      placementContext(),
+      graphPosition,
+    );
+    cancelPlacement(wsState.placement);
+    inspector.selectedNodeId = node.id;
+    inspector.selectedConnId = null;
+    inspector.message = '';
+    inspector.renderKey = null;
+    invalidateNavigationIndex();
+    renderSiteNodes();
+    renderNavigationDrawer();
+    renderNodeCatalogDrawer();
+    return true;
+  } catch (error) {
+    cancelPlacement(wsState.placement);
+    inspector.message = error.message;
+    inspector.renderKey = null;
+    renderNodeCatalogDrawer();
+    updateInspector(true);
+    return false;
+  }
+}
+
+function quickPlaceDefinition(definition) {
+  if (wsState.currentLevel !== 'site') return false;
+  const surface = siteViewportSurface();
+  const viewport = workspaceViewport(`site:${wsState.selectedSiteId}`);
+  const position = graphPositionForViewportCenter(
+    viewport,
+    siteViewportSize(surface),
+    NODE_WIDTH,
+    NODE_HEIGHT,
+  );
+  return commitCatalogDefinition(definition, position);
+}
+
+function beginCatalogPointer(definition, event) {
+  if (event.button !== 0 || wsState.currentLevel !== 'site') return;
+  clearCatalogPointerGesture();
+  wsState.catalogPointer = {
+    definitionId: definition.id,
+    pointerId: event.pointerId,
+    start: { x: event.clientX, y: event.clientY },
+    dragging: false,
+  };
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function updateCatalogPointer(event) {
+  const gesture = wsState.catalogPointer;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const current = { x: event.clientX, y: event.clientY };
+  if (!gesture.dragging && !pointerMovementExceedsThreshold(gesture.start, current)) return;
+  gesture.dragging = true;
+  const definition = nodeDefinitionById(gesture.definitionId);
+  if (!definition) return;
+  wsState.placement.definitionId = definition.id;
+  const surface = siteViewportSurface();
+  if (pointIsInsideSurface(event, surface)) {
+    wsState.placement.graphPosition = graphPositionForCenteredPoint(
+      localPointForEvent(event, surface),
+      workspaceViewport(`site:${wsState.selectedSiteId}`),
+      NODE_WIDTH,
+      NODE_HEIGHT,
+    );
+  } else {
+    wsState.placement.graphPosition = null;
+  }
+  renderNodeCatalogDrawer();
+  renderPlacementPreview();
+}
+
+function finishCatalogPointer(event) {
+  const gesture = wsState.catalogPointer;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const definition = nodeDefinitionById(gesture.definitionId);
+  const wasDragging = gesture.dragging;
+  const surface = siteViewportSurface();
+  clearCatalogPointerGesture({ suppressClick: true });
+  if (!definition) return;
+
+  if (!wasDragging) {
+    quickPlaceDefinition(definition);
+  } else if (pointIsInsideSurface(event, surface)) {
+    const graphPosition = graphPositionForCenteredPoint(
+      localPointForEvent(event, surface),
+      workspaceViewport(`site:${wsState.selectedSiteId}`),
+      NODE_WIDTH,
+      NODE_HEIGHT,
+    );
+    commitCatalogDefinition(definition, graphPosition);
+  } else {
+    renderNodeCatalogDrawer();
+    renderPlacementPreview();
+  }
+  event.preventDefault();
+}
+
+function renderPlacementPreview() {
+  const canvas = el('ws-site-canvas');
+  const existing = canvas?.querySelector('[data-node-placement-preview]');
+  if (!canvas || !placementIsActive(wsState.placement) || !wsState.placement.graphPosition) {
+    existing?.remove();
+    return;
+  }
+  const definition = nodeDefinitionById(wsState.placement.definitionId);
+  if (!definition) {
+    existing?.remove();
+    return;
+  }
+  const preview = existing ?? document.createElement('div');
+  if (!existing) {
+    preview.dataset.nodePlacementPreview = 'true';
+    preview.className = 'ws-node ws-node--placement-preview';
+    preview.innerHTML = `<div class="ws-node-category"></div><div class="ws-node-label"></div>`;
+    canvas.appendChild(preview);
+  }
+  preview.className = `ws-node ws-node--placement-preview ws-node--${escHtml(definition.nodeType)}`;
+  preview.querySelector('.ws-node-category').className = `ws-node-category ws-node-category--${escHtml(definition.category)}`;
+  preview.querySelector('.ws-node-category').textContent = definition.category.toUpperCase();
+  preview.querySelector('.ws-node-label').innerHTML = `<span>${escHtml(definition.label)}</span><span>Preview</span>`;
+  preview.style.width = `${NODE_WIDTH}px`;
+  preview.style.height = `${NODE_HEIGHT}px`;
+  preview.style.left = `${wsState.placement.graphPosition.x}px`;
+  preview.style.top = `${wsState.placement.graphPosition.y}px`;
 }
 
 function applyViewportTransform(key) {
@@ -1187,6 +1575,7 @@ function renderSiteNodes() {
     },
   });
   renderConnections(svg);
+  renderPlacementPreview();
   updateInspector();
   updateSimStatus();
 }
@@ -1328,15 +1717,42 @@ function selectConnection(connectionId) {
   renderSiteNodes();
 }
 
+function isEditableWorkspaceTarget(target) {
+  return Boolean(target?.closest?.('input, textarea, select, [contenteditable]'));
+}
+
+function attemptNodeRemoval(nodeId) {
+  if (!wsState.blueprint) return { removed: false, reason: 'No Site blueprint is active.' };
+  const result = removeBlueprintNode(wsState.blueprint, wsState.blueprintLayout, nodeId);
+  if (!result.removed) {
+    inspector.message = result.reason;
+    inspector.renderKey = null;
+    updateInspector(true);
+    return result;
+  }
+
+  inspector.selectedNodeId = null;
+  inspector.selectedConnId = null;
+  inspector.message = '';
+  inspector.renderKey = null;
+  invalidateNavigationIndex();
+  renderSiteNodes();
+  renderNavigationDrawer();
+  renderNodeCatalogDrawer();
+  return result;
+}
+
 function featureResourcesHtml(details) {
   if (!details.resources.length) return '<div class="ws-ins-note">No resource access is currently exposed.</div>';
   return details.resources.map(resource => `<div class="ws-ins-comp-row"><span>${escHtml(resource.name)}</span><span>${escHtml(resource.availabilityClass)}</span></div>${resource.descriptor ? `<div class="ws-ins-resource-note">${escHtml(resource.descriptor)}</div>` : ''}`).join('');
 }
 
 function formatNodeInspector(node) {
+  if (!node) return 'Select a node or connection.';
   const hopper = ['hopper', 'boundary-buffer'].includes(node.systemType) || node.nodeType === 'hopper';
   const typeLabel = node.systemType === 'boundary-buffer' ? node.displayName : node.nodeType;
   const isFeature = node.nodeType === 'feature';
+  const removal = nodeRemovalEligibility(wsState.blueprint, node);
   let html = `<div class="ws-ins-type">${escHtml(typeLabel.toUpperCase())}</div>`;
   if (!isFeature) html += `<div class="ws-ins-row"><b>ID:</b> ${escHtml(node.id)}</div>`;
 
@@ -1382,6 +1798,11 @@ function formatNodeInspector(node) {
   }
 
   html += `<div class="ws-ins-action"><button class="ws-btn-disconnect" data-node-id="${escHtml(node.id)}">Remove all connections</button></div>`;
+  if (removal.removable) {
+    html += removal.ok
+      ? `<div class="ws-ins-action"><button class="ws-btn-delete-node" data-node-id="${escHtml(node.id)}">Delete Node</button></div>`
+      : `<div class="ws-ins-note">${escHtml(removal.reason)}</div><div class="ws-ins-action"><button class="ws-btn-delete-node" data-node-id="${escHtml(node.id)}" disabled>Delete Node</button></div>`;
+  }
   return html;
 }
 
@@ -1406,7 +1827,9 @@ function formatConnectionInspector(connection) {
 function updateInspector(force = false) {
   const body = el('ws-inspector-body');
   if (!body || !wsState.blueprint) return;
-  const key = `${inspector.selectedNodeId ?? ''}:${inspector.selectedConnId ?? ''}:${inspector.message}`;
+  const selectedNode = inspector.selectedNodeId ? wsState.blueprint.nodes[inspector.selectedNodeId] : null;
+  const removal = selectedNode ? nodeRemovalEligibility(wsState.blueprint, selectedNode) : null;
+  const key = `${inspector.selectedNodeId ?? ''}:${inspector.selectedConnId ?? ''}:${inspector.message}:${removal?.removable ?? ''}:${removal?.ownedMatterKg ?? ''}`;
   if (force || inspector.renderKey !== key) {
     let html = inspector.message ? `<div class="ws-ins-note">${escHtml(inspector.message)}</div>` : '';
     if (inspector.selectedNodeId) html += formatNodeInspector(wsState.blueprint.nodes[inspector.selectedNodeId]);
@@ -1470,6 +1893,11 @@ function onInspectorClick(event) {
     if (node) setNodeEnabled(wsState.blueprint, node.id, !node.enabled);
     inspector.renderKey = null;
     updateInspector(true);
+    return;
+  }
+  const deleteButton = event.target.closest('.ws-btn-delete-node');
+  if (deleteButton) {
+    attemptNodeRemoval(deleteButton.dataset.nodeId);
     return;
   }
   const button = event.target.closest('.ws-btn-disconnect');
@@ -1549,6 +1977,7 @@ function updateSimStatus() {
 function onResetSite() {
   const siteId = wsState.selectedSiteId;
   if (!siteId) return;
+  clearCatalogPointerGesture();
   const session = createSiteSession(wsState.selectedOccurrenceId, siteId);
   wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
@@ -1560,6 +1989,7 @@ function onResetSite() {
   inspector.renderKey = null;
   renderSiteWorkspace(el('ws-main'));
   renderNavigationDrawer();
+  renderNodeCatalogDrawer();
 }
 
 export function renderWorkspace() {
@@ -1570,6 +2000,7 @@ export function renderWorkspace() {
   else if (wsState.currentLevel === 'site') renderSiteWorkspace(container);
   else renderPlanetWorkspace(container);
   renderNavigationDrawer();
+  renderNodeCatalogDrawer();
 }
 
 export function initWorkspace(world, knowledge) {
@@ -1600,6 +2031,12 @@ export function initWorkspace(world, knowledge) {
   wsState.navigationHiddenCategories = new Set();
   wsState.navigationManualExpandedKeys = new Set([`planet:${world.planetId}`]);
   wsState.navigationIndexCache = null;
+  wsState.nodeCatalogOpen = false;
+  wsState.nodeCatalogQuery = '';
+  wsState.nodeCatalogHiddenCategories = new Set();
+  wsState.nodeCatalogCollapsedCategories = new Set();
+  clearCatalogPointerGesture();
+  wsState.suppressCatalogClick = false;
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;
   inspector.selectedSystemId = null;
