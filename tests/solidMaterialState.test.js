@@ -286,9 +286,14 @@ test('continuous fraction-aware magnetic separator backpressure remains atomic',
     const [speciesId, sizeBinId, liberationClassId] = key.split('|');
     return { speciesId, sizeBinId, liberationClassId, quantity };
   }));
+  const concentrateBefore = createSolidMaterialState(Object.entries(concentrate.materialBody.solidState.fractions).map(([key, quantity]) => {
+    const [speciesId, sizeBinId, liberationClassId] = key.split('|');
+    return { speciesId, sizeBinId, liberationClassId, quantity };
+  }));
   const tailingsBefore = createSolidMaterialState();
   simulationTick(blueprint, world, 0.1);
 
   assert.ok(solidMaterialStatesEqual(feed.materialBody.solidState, feedBefore));
+  assert.ok(solidMaterialStatesEqual(concentrate.materialBody.solidState, concentrateBefore));
   assert.ok(solidMaterialStatesEqual(tailings.materialBody.solidState, tailingsBefore));
 });
