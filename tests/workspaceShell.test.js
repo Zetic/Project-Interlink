@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { workspaceShellMarkup } from '../src/workspace/workspaceUI.js';
+
+const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
 test('workspace shell owns shared controls and reserves semantic content slots', () => {
   const markup = workspaceShellMarkup({
@@ -20,4 +23,13 @@ test('workspace shell owns shared controls and reserves semantic content slots',
   assert.equal((markup.match(/data-zoom-label/g) ?? []).length, 1);
   assert.ok(markup.indexOf('ws-context-controls') < markup.indexOf('data-viewport="out"'));
   assert.match(markup, /class="ws-inspector".*class="ws-inspector-body"/s);
+});
+
+test('player shell reserves a viewport-safe outer inset', () => {
+  const playerViewRule = styles.match(/#player-view\s*\{([^}]*)\}/)?.[1] ?? '';
+
+  assert.match(playerViewRule, /width:\s*calc\(100%\s*-\s*16px\)/);
+  assert.match(playerViewRule, /height:\s*calc\(100vh\s*-\s*16px\)/);
+  assert.match(playerViewRule, /height:\s*calc\(100dvh\s*-\s*16px\)/);
+  assert.match(playerViewRule, /margin:\s*8px/);
 });

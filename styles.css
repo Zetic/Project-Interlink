@@ -338,9 +338,10 @@ hr {
 /* ── Player workspace shell ───────────────────────────────────────────────── */
 
 #player-view {
-  width: 100%;
-  height: 100vh;
-  height: 100dvh;
+  width: calc(100% - 16px);
+  height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
+  margin: 8px;
   display: flex;
   flex-direction: column;
   min-width: 0;
