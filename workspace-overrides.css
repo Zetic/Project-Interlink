@@ -177,6 +177,7 @@
   border: 0;
 }
 .ws-panel-rail {
+  box-sizing: border-box;
   position: relative;
   z-index: 40;
   display: flex;
@@ -186,7 +187,9 @@
   width: 34px;
   min-height: 0;
   background: #0d1723;
+  border-top: 1px solid #1e2e3e;
   border-right: 1px solid #1e3a5f;
+  border-bottom: 1px solid #1e2e3e;
 }
 .ws-navigation-tab {
   width: 28px;
@@ -200,6 +203,7 @@
 .ws-navigation-tab:hover,
 .ws-navigation-tab:focus-visible { background: #1d385b; }
 .ws-navigation-drawer {
+  box-sizing: border-box;
   position: absolute;
   inset: 0 auto 0 34px;
   z-index: 30;
@@ -209,7 +213,9 @@
   min-height: 0;
   overflow: hidden;
   background: #0c1521;
+  border-top: 1px solid #1e2e3e;
   border-right: 1px solid #2c4c6d;
+  border-bottom: 1px solid #1e2e3e;
   box-shadow: 8px 0 24px #0009;
 }
 .ws-navigation-drawer[hidden] { display: none !important; }
