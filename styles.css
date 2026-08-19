@@ -6,12 +6,21 @@
   padding: 0;
 }
 
+html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background: #0d0d0d;
   color: #d4d4d4;
   font-family: 'Courier New', Courier, monospace;
   font-size: 14px;
   line-height: 1.6;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 header {
@@ -329,23 +338,33 @@ hr {
 /* ── Player workspace shell ───────────────────────────────────────────────── */
 
 #player-view {
-  height: calc(100vh - 41px);
+  width: calc(100% - 16px);
+  height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
+  margin: 8px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
 .ws-shell {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .ws-header {
   background: #0f1a2a;
   border-bottom: 1px solid #1e3a5f;
   padding: 8px 20px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ws-breadcrumbs {
@@ -388,9 +407,10 @@ hr {
 }
 
 .ws-main {
-  flex: 1;
-  overflow: auto;
-  padding: 20px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .ws-empty {
@@ -635,7 +655,8 @@ hr {
 
 .ws-inspector {
   width: 240px;
-  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
   background: #0c121c;
   border: 1px solid #1e2e3e;
   display: flex;
@@ -658,7 +679,10 @@ hr {
   padding: 12px;
   font-size: 12px;
   overflow-y: auto;
-  flex: 1;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   color: #b0c0d0;
 }
 

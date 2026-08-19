@@ -1,5 +1,5 @@
 /* Shared recursive workspace shell. */
-#landing-screen { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; background: #0b1018; color: #d4e2f0; }
+#landing-screen { width: 100%; height: 100vh; height: 100dvh; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; overflow: hidden; background: #0b1018; color: #d4e2f0; }
 #landing-screen h1 { letter-spacing: 0.16em; font-size: 1.5rem; }
 #landing-screen input { width: min(420px, 80vw); }
 #landing-screen button { padding: 8px 16px; }
@@ -56,16 +56,95 @@
 .ws-system-selected { outline: 1px solid #ffcc44; }
 .ws-btn-enable, .ws-btn-remove-transfer { padding: 2px 8px; font-size: 11px; }
 
-.ws-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: stretch; height: calc(100vh - 150px); min-height: 420px; }
-.ws-toolbar { display: flex; align-items: center; gap: 8px; min-height: 38px; }
+.ws-workspace {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.ws-workspace-header {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 10px 20px 8px;
+  background: #0c1724;
+  border-bottom: 1px solid #1e2e3e;
+}
+.ws-workspace-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #a0c8ff;
+  font-size: 1.2rem;
+  font-weight: bold;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-workspace-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  color: #888;
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 38px;
+  padding: 4px 20px;
+  overflow: hidden;
+}
+.ws-context-controls,
+.ws-viewport-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ws-context-controls {
+  overflow: hidden;
+}
+.ws-viewport-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .ws-toolbar button { padding: 3px 8px; font-size: 11px; }
 .ws-toolbar [data-zoom-label] { color: #9ab0c2; min-width: 42px; text-align: center; font-size: 11px; }
-.ws-viewport { position: relative; min-height: 0; overflow: hidden; background: #0a0f16; border: 1px solid #1e2e3e; cursor: grab; }
+.ws-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(180px, 24vw, 280px);
+  gap: 12px;
+  align-items: stretch;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.ws-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #0a0f16;
+  border: 1px solid #1e2e3e;
+  cursor: grab;
+}
 .ws-viewport:active { cursor: grabbing; }
-.ws-graph-canvas { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 2; }
-.ws-graph-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 3; pointer-events: none; }
+.ws-graph-canvas { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: visible; z-index: 2; }
+.ws-graph-svg { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: visible; z-index: 3; pointer-events: none; }
 .ws-graph-svg .ws-connection { pointer-events: stroke; cursor: pointer; }
-.ws-inspector { width: 280px; min-width: 280px; }
+.ws-inspector { width: auto; min-width: 0; min-height: 0; }
 .ws-ins-section-title { margin-top: 14px; padding-top: 8px; border-top: 1px solid #243443; color: #8eb0ca; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .ws-ins-resource-note { margin: -2px 0 7px; color: #7f919f; font-size: 10px; line-height: 1.35; }
 .ws-system-svg .ws-system-connection { pointer-events: stroke; cursor: pointer; }
@@ -84,6 +163,12 @@
 
 #ws-player-seed { display: block; width: min(420px, 100%); margin: 6px 0 10px; }
 
-@media (max-width: 900px) {
-  .ws-layout { grid-template-columns: 1fr; }
+@media (max-width: 720px) {
+  .ws-toolbar {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .ws-viewport-controls {
+    justify-content: flex-start;
+  }
 }
