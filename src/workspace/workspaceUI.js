@@ -55,6 +55,7 @@ import {
   expandNavigationPath,
   getNavigationRows,
   navigationExpandableKeys,
+  navigationCategoryVocabulary,
   navigationVisibleCategories,
   navigationEntryForTarget,
 } from './navigationProjection.js';
@@ -122,7 +123,7 @@ export function workspaceShellMarkup({
   inspectorBodyId,
   inspectorInitial = '',
 } = {}) {
-  return `<div class="ws-workspace"><div class="ws-workspace-header"><div class="ws-workspace-title">${escHtml(title)}</div>${subtitle ? `<div class="ws-workspace-subtitle">${escHtml(subtitle)}</div>` : ''}</div><div class="ws-toolbar"><div class="ws-context-controls">${contextControls}</div><div class="ws-viewport-controls"><button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div></div><div class="ws-layout"><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div></div>`;
+  return `<div class="ws-workspace"><div class="ws-workspace-header"><div class="ws-workspace-title">${escHtml(title)}</div>${subtitle ? `<div class="ws-workspace-subtitle">${escHtml(subtitle)}</div>` : ''}</div><div class="ws-toolbar"><div class="ws-context-controls">${contextControls}</div><div class="ws-viewport-controls"><button data-viewport="out">Zoom Out</button><span data-zoom-label>100%</span><button data-viewport="in">Zoom In</button><button data-viewport="fit">Fit</button><button data-viewport="center">Center</button></div></div><div class="ws-layout"><div class="ws-panel-rail"><button id="ws-navigation-toggle" class="ws-navigation-tab" type="button" aria-controls="ws-navigation-drawer" aria-expanded="false"><span aria-hidden="true">N<br>A<br>V</span><span class="ws-visually-hidden">Open hierarchy navigation</span></button></div><aside id="ws-navigation-drawer" class="ws-navigation-drawer" aria-label="Hierarchy navigation" aria-hidden="true" hidden><div class="ws-navigation-header"><strong>NAVIGATION</strong><div class="ws-navigation-actions"><button id="ws-navigation-collapse-all" class="ws-navigation-action" type="button" aria-label="Collapse all hierarchy entries" title="Collapse all">−</button><button id="ws-navigation-expand-all" class="ws-navigation-action" type="button" aria-label="Expand all hierarchy entries" title="Expand all">+</button><button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close hierarchy navigation" title="Close">×</button></div></div><label class="ws-navigation-search-label" for="ws-navigation-search">Search hierarchy</label><input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search hierarchy…" autocomplete="off"><details id="ws-navigation-filters" class="ws-navigation-filters-panel"><summary>Show filters</summary><div class="ws-navigation-filters"></div></details><div id="ws-navigation-match-count" class="ws-navigation-match-count" aria-live="polite"></div><div id="ws-navigation-tree" class="ws-navigation-tree" role="tree" aria-label="World hierarchy"></div></aside><div class="ws-viewport" data-viewport-surface><svg id="${svgId}" class="ws-graph-svg"></svg><div id="${canvasId}" class="ws-graph-canvas"></div></div><div class="ws-inspector"><div class="ws-inspector-title">Inspector</div><div id="${inspectorBodyId}" class="ws-inspector-body">${inspectorInitial}</div></div></div></div>`;
 }
 function renderWorkspaceShell(container, options = {}) {
   container.innerHTML = workspaceShellMarkup(options);
@@ -275,11 +276,12 @@ function renderNavigationDrawer() {
   if (!tree || !drawer || !wsState.world) return;
 
   const index = navigationIndex();
-  const visibleCategories = navigationVisibleCategories(index.categories, wsState.navigationHiddenCategories);
+  const filterCategories = navigationCategoryVocabulary();
+  const visibleCategories = navigationVisibleCategories(filterCategories, wsState.navigationHiddenCategories);
 
   const filters = el('ws-navigation-filters')?.querySelector('.ws-navigation-filters');
   if (filters) {
-    filters.innerHTML = index.categories.map(category => {
+    filters.innerHTML = filterCategories.map(category => {
       const id = `ws-navigation-filter-${category}`;
       return `<label for="${id}"><input id="${id}" type="checkbox" data-navigation-filter="${escHtml(category)}"${visibleCategories.has(category) ? ' checked' : ''}>${escHtml(navigationCategoryLabel(index, category))}</label>`;
     }).join('');
@@ -344,41 +346,33 @@ function navigateNavigationEntry(key) {
 
 function installNavigationEvents() {
   if (wsState.navigationEventsInstalled) return;
-  const toggle = el('ws-navigation-toggle');
-  const close = el('ws-navigation-close');
-  const drawer = el('ws-navigation-drawer');
-  const search = el('ws-navigation-search');
-  const tree = el('ws-navigation-tree');
-  const collapse = el('ws-navigation-collapse-all');
-  const expand = el('ws-navigation-expand-all');
-  if (!toggle || !close || !drawer || !search || !tree) return;
-
   wsState.navigationEventsInstalled = true;
-  toggle.addEventListener('click', () => setNavigationOpen(!wsState.navigationOpen));
-  close.addEventListener('click', () => setNavigationOpen(false));
-  collapse?.addEventListener('click', () => {
-    wsState.navigationManualExpandedKeys = new Set();
-    renderNavigationDrawer();
-  });
-  expand?.addEventListener('click', () => {
-    wsState.navigationManualExpandedKeys = navigationExpandableKeys(navigationIndex());
-    renderNavigationDrawer();
-  });
-  search.addEventListener('input', event => {
-    wsState.navigationQuery = event.currentTarget.value;
-    renderNavigationDrawer();
-  });
-  drawer.addEventListener('change', event => {
-    const input = event.target.closest('[data-navigation-filter]');
-    if (!input) return;
-    if (input.checked) wsState.navigationHiddenCategories.delete(input.dataset.navigationFilter);
-    else wsState.navigationHiddenCategories.add(input.dataset.navigationFilter);
-    renderNavigationDrawer();
-  });
-  tree.addEventListener('click', event => {
-    const expand = event.target.closest('[data-navigation-expand]');
+  document.addEventListener('click', event => {
+    const toggle = event.target.closest('#ws-navigation-toggle');
+    if (toggle) {
+      setNavigationOpen(!wsState.navigationOpen);
+      return;
+    }
+    const close = event.target.closest('#ws-navigation-close');
+    if (close) {
+      setNavigationOpen(false);
+      return;
+    }
+    const collapse = event.target.closest('#ws-navigation-collapse-all');
+    if (collapse) {
+      wsState.navigationManualExpandedKeys = new Set();
+      renderNavigationDrawer();
+      return;
+    }
+    const expand = event.target.closest('#ws-navigation-expand-all');
     if (expand) {
-      const key = expand.dataset.navigationExpand;
+      wsState.navigationManualExpandedKeys = navigationExpandableKeys(navigationIndex());
+      renderNavigationDrawer();
+      return;
+    }
+    const expandEntry = event.target.closest('[data-navigation-expand]');
+    if (expandEntry) {
+      const key = expandEntry.dataset.navigationExpand;
       if (wsState.navigationManualExpandedKeys.has(key)) wsState.navigationManualExpandedKeys.delete(key);
       else wsState.navigationManualExpandedKeys.add(key);
       renderNavigationDrawer();
@@ -387,10 +381,22 @@ function installNavigationEvents() {
     const entry = event.target.closest('[data-navigation-entry]');
     if (entry) navigateNavigationEntry(entry.dataset.navigationEntry);
   });
+  document.addEventListener('input', event => {
+    if (!event.target.matches('#ws-navigation-search')) return;
+    wsState.navigationQuery = event.target.value;
+    renderNavigationDrawer();
+  });
+  document.addEventListener('change', event => {
+    const input = event.target.closest('[data-navigation-filter]');
+    if (!input) return;
+    if (input.checked) wsState.navigationHiddenCategories.delete(input.dataset.navigationFilter);
+    else wsState.navigationHiddenCategories.add(input.dataset.navigationFilter);
+    renderNavigationDrawer();
+  });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && wsState.navigationOpen) {
       setNavigationOpen(false);
-      toggle.focus();
+      el('ws-navigation-toggle')?.focus();
     }
   });
 }

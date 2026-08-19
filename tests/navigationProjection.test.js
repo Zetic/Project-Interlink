@@ -9,8 +9,10 @@ import {
   expandNavigationPath,
   getNavigationRows,
   navigationExpandableKeys,
+  navigationCategoryVocabulary,
   navigationVisibleCategories,
 } from '../src/workspace/navigationProjection.js';
+import { NODE_CATEGORIES } from '../src/workspace/nodePresentation.js';
 
 function findWorldWithIron() {
   for (let index = 0; index < 200; index++) {
@@ -56,6 +58,19 @@ test('indexing existing graph nodes is stable and does not create unopened Site 
   assert.ok(extractor);
   assert.equal(withSession.entries.filter(entry => entry.targetId === extractor.id).length, 1);
   assert.equal(withSession.byKey.get(`node:${extractor.id}`).parentKey, `site:${site.id}`);
+});
+
+test('filter vocabulary remains canonical when categories are not populated', () => {
+  assert.deepEqual(
+    navigationCategoryVocabulary(),
+    Object.values(NODE_CATEGORIES).map(category => category.key),
+  );
+  const world = createWorld('navigation-filter-vocabulary');
+  const index = buildNavigationIndex(world);
+  assert.equal(index.categories.includes('apparatus'), false);
+  assert.equal(navigationCategoryVocabulary().includes('apparatus'), true);
+  assert.equal(navigationCategoryVocabulary().includes('container'), true);
+  assert.equal(navigationCategoryVocabulary().includes('sensor'), true);
 });
 
 test('authoritative boundary graph nodes are indexed under their owning workspace', () => {
@@ -199,13 +214,33 @@ test('hidden category state persists across visible-category projections', () =>
   const { world } = findWorldWithIron();
   const index = buildNavigationIndex(world);
   const hidden = new Set(['region']);
-  const first = navigationVisibleCategories(index.categories, hidden);
-  const rerender = navigationVisibleCategories(index.categories, hidden);
-  const restored = navigationVisibleCategories(index.categories, new Set());
+  const categories = navigationCategoryVocabulary();
+  const first = navigationVisibleCategories(categories, hidden);
+  const rerender = navigationVisibleCategories(categories, hidden);
+  const restored = navigationVisibleCategories(categories, new Set());
 
   assert.equal(first.has('region'), false);
   assert.deepEqual(rerender, first);
   assert.equal(restored.has('region'), true);
+});
+
+test('hidden categories stay hidden when a later index adds matching nodes', () => {
+  const { world, site } = findWorldWithIron();
+  const hidden = new Set(['apparatus']);
+  const initial = buildNavigationIndex(world);
+  assert.equal(initial.entries.some(entry => entry.category === 'apparatus'), false);
+
+  const session = buildSiteSession(world, site.id);
+  const refreshed = buildNavigationIndex(world, { siteSessions: { [site.id]: session } });
+  const visibleCategories = navigationVisibleCategories(navigationCategoryVocabulary(), hidden);
+  const projection = getNavigationRows(refreshed, {
+    visibleCategories,
+    manualExpandedKeys: navigationExpandableKeys(refreshed),
+  });
+
+  assert.equal(refreshed.entries.some(entry => entry.category === 'apparatus'), true);
+  assert.equal(visibleCategories.has('apparatus'), false);
+  assert.equal(projection.rows.some(row => row.category === 'apparatus'), false);
 });
 
 test('active workspace path remains visible while searching another branch', () => {

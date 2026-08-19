@@ -8,7 +8,6 @@ import {
 
 const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const workspaceOverrides = readFileSync(new URL('../workspace-overrides.css', import.meta.url), 'utf8');
-const indexMarkup = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 function cssRule(css, selector) {
   let selectorIndex = -1;
@@ -73,23 +72,32 @@ test('player shell reserves a viewport-safe outer inset', () => {
   assert.ok(declarations.some(declaration => /^margin: 8px$/.test(declaration)), 'expected 8px outer shell inset');
 });
 
-test('hierarchy navigator is a shell overlay and does not become a graph column', () => {
-  assert.match(indexMarkup, /id="ws-navigation-toggle"/);
-  assert.match(indexMarkup, /id="ws-navigation-drawer"/);
-  assert.match(indexMarkup, /id="ws-navigation-drawer"[^>]*aria-hidden="true"[^>]*hidden/);
-  assert.match(indexMarkup, /id="ws-navigation-collapse-all"/);
-  assert.match(indexMarkup, /id="ws-navigation-expand-all"/);
-  assert.match(indexMarkup, /id="ws-navigation-search"/);
-  assert.match(indexMarkup, /id="ws-navigation-tree"/);
+test('hierarchy navigator has a permanent rail and body-relative overlay', () => {
+  const markup = workspaceShellMarkup({
+    title: 'Planet',
+    canvasId: 'canvas',
+    svgId: 'svg',
+    inspectorBodyId: 'inspector-body',
+  });
+  assert.match(markup, /class="ws-panel-rail".*id="ws-navigation-toggle"/s);
+  assert.match(markup, /id="ws-navigation-drawer"[^>]*aria-hidden="true"[^>]*hidden/);
+  assert.match(markup, /id="ws-navigation-collapse-all"/);
+  assert.match(markup, /id="ws-navigation-expand-all"/);
+  assert.match(markup, /id="ws-navigation-search"/);
+  assert.match(markup, /id="ws-navigation-tree"/);
+  assert.ok(markup.indexOf('ws-workspace-header') < markup.indexOf('ws-panel-rail'));
+  assert.ok(markup.indexOf('ws-panel-rail') < markup.indexOf('class="ws-viewport"'));
 
   const drawerRule = cssRule(workspaceOverrides, '.ws-navigation-drawer');
   assert.match(drawerRule, /position:\s*absolute/);
-  assert.match(drawerRule, /inset:\s*0 auto 0 0/);
+  assert.match(drawerRule, /inset:\s*0 auto 0 34px/);
   assert.match(drawerRule, /border-right:\s*1px solid/);
   assert.match(cssRule(workspaceOverrides, '.ws-navigation-drawer[hidden]'), /display:\s*none !important/);
 
   const layoutRule = cssRule(workspaceOverrides, '.ws-layout');
-  assert.match(layoutRule, /grid-template-columns:\s*minmax\(0, 1fr\) clamp\(180px, 24vw, 280px\)/);
+  assert.match(layoutRule, /grid-template-columns:\s*34px minmax\(0, 1fr\) clamp\(180px, 24vw, 280px\)/);
+  assert.match(cssRule(workspaceOverrides, '.ws-navigation-filters'), /max-height:\s*112px/);
+  assert.match(cssRule(workspaceOverrides, '.ws-navigation-filters'), /overflow-y:\s*auto/);
 });
 
 test('navigation visibility state keeps drawer and toggle attributes synchronized', () => {

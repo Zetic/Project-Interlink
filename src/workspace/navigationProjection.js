@@ -8,21 +8,7 @@
 import { NODE_CATEGORIES, nodeCategory } from './nodePresentation.js';
 
 const COMPOSITE_TYPES = new Set(['planet', 'region', 'site']);
-const CATEGORY_ORDER = [
-  'planet',
-  'region',
-  'site',
-  'facility',
-  'feature',
-  'apparatus',
-  'container',
-  'boundary',
-  'process',
-  'sensor',
-  'controller',
-  'logistics',
-  'system',
-];
+const CATEGORY_ORDER = Object.values(NODE_CATEGORIES).map(category => category.key);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -374,6 +360,10 @@ function normalizedCategorySet(categories, fallback) {
   if (categories == null) return new Set(fallback);
   const values = categories instanceof Set ? [...categories] : asArray(categories);
   return new Set(values.map(category => typeof category === 'string' ? category : category?.key).filter(Boolean));
+}
+
+export function navigationCategoryVocabulary() {
+  return [...CATEGORY_ORDER];
 }
 
 export function navigationAncestorKeys(index, key) {
