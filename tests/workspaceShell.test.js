@@ -12,7 +12,7 @@ function cssRule(css, selector) {
     const candidateIndex = css.indexOf(selector, searchFrom);
     if (candidateIndex < 0) break;
     const nextCharacter = css[candidateIndex + selector.length];
-    if (nextCharacter === undefined || /[\s{,]/.test(nextCharacter)) {
+    if (nextCharacter !== undefined && /[\s{,]/.test(nextCharacter)) {
       selectorIndex = candidateIndex;
       break;
     }
@@ -55,12 +55,13 @@ test('player shell reserves a viewport-safe outer inset', () => {
   assert.ok(playerViewRule.trim(), 'expected a #player-view style rule');
 
   const declarations = playerViewRule
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .split(';')
     .map(declaration => declaration.trim().replace(/\s+/g, ' '))
     .filter(Boolean);
 
-  assert.ok(declarations.includes('width: calc(100% - 16px)'), 'expected viewport-safe width');
-  assert.ok(declarations.includes('height: calc(100vh - 16px)'), 'expected viewport height fallback');
-  assert.ok(declarations.includes('height: calc(100dvh - 16px)'), 'expected dynamic viewport height');
-  assert.ok(declarations.includes('margin: 8px'), 'expected 8px outer shell inset');
+  assert.ok(declarations.some(declaration => /^width: calc\(100%\s*-\s*16px\)$/.test(declaration)), 'expected viewport-safe width');
+  assert.ok(declarations.some(declaration => /^height: calc\(100vh\s*-\s*16px\)$/.test(declaration)), 'expected viewport height fallback');
+  assert.ok(declarations.some(declaration => /^height: calc\(100dvh\s*-\s*16px\)$/.test(declaration)), 'expected dynamic viewport height');
+  assert.ok(declarations.some(declaration => /^margin: 8px$/.test(declaration)), 'expected 8px outer shell inset');
 });
