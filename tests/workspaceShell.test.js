@@ -11,8 +11,11 @@ function cssRule(css, selector) {
   while (searchFrom < css.length) {
     const candidateIndex = css.indexOf(selector, searchFrom);
     if (candidateIndex < 0) break;
+    const previousCharacter = css[candidateIndex - 1];
     const nextCharacter = css[candidateIndex + selector.length];
-    if (nextCharacter !== undefined && /[\s{,]/.test(nextCharacter)) {
+    const hasLeftBoundary = candidateIndex === 0 || /[\s,]/.test(previousCharacter);
+    const hasRightBoundary = nextCharacter !== undefined && /[\s{,]/.test(nextCharacter);
+    if (hasLeftBoundary && hasRightBoundary) {
       selectorIndex = candidateIndex;
       break;
     }
