@@ -10,6 +10,7 @@ export const NODE_CATEGORIES = Object.freeze({
   PLANET: Object.freeze({ key: 'planet', label: 'PLANET' }),
   REGION: Object.freeze({ key: 'region', label: 'REGION' }),
   SITE: Object.freeze({ key: 'site', label: 'SITE' }),
+  FACILITY: Object.freeze({ key: 'facility', label: 'FACILITY' }),
   FEATURE: Object.freeze({ key: 'feature', label: 'FEATURE' }),
   APPARATUS: Object.freeze({ key: 'apparatus', label: 'APPARATUS' }),
   CONTAINER: Object.freeze({ key: 'container', label: 'CONTAINER' }),
@@ -46,6 +47,7 @@ export function nodeCategory(node) {
   if (nodeType === 'planet') return NODE_CATEGORIES.PLANET;
   if (nodeType === 'region') return NODE_CATEGORIES.REGION;
   if (nodeType === 'site') return NODE_CATEGORIES.SITE;
+  if (nodeType === 'facility') return NODE_CATEGORIES.FACILITY;
   if (nodeType === 'feature') return NODE_CATEGORIES.FEATURE;
 
   if (PROCESS_TYPES.has(nodeType) || PROCESS_TYPES.has(systemType)) return NODE_CATEGORIES.PROCESS;
