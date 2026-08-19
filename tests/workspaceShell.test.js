@@ -19,5 +19,5 @@ test('workspace shell owns shared controls and reserves semantic content slots',
   assert.equal((markup.match(/data-viewport="/g) ?? []).length, 4);
   assert.equal((markup.match(/data-zoom-label/g) ?? []).length, 1);
   assert.ok(markup.indexOf('ws-context-controls') < markup.indexOf('data-viewport="out"'));
-  assert.match(markup, /class="ws-inspector".*class="ws-inspector-body"/);
+  assert.match(markup, /class="ws-inspector".*class="ws-inspector-body"/s);
 });
