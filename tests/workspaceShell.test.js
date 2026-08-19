@@ -52,12 +52,13 @@ test('workspace shell owns shared controls and reserves semantic content slots',
 
 test('player shell reserves a viewport-safe outer inset', () => {
   const playerViewRule = cssRule(styles, '#player-view');
+  assert.ok(playerViewRule.trim(), 'expected a #player-view style rule');
+
   const declarations = playerViewRule
     .split(';')
     .map(declaration => declaration.trim().replace(/\s+/g, ' '))
     .filter(Boolean);
 
-  assert.ok(playerViewRule.trim(), 'expected a #player-view style rule');
   assert.ok(declarations.includes('width: calc(100% - 16px)'));
   assert.ok(declarations.includes('height: calc(100vh - 16px)'));
   assert.ok(declarations.includes('height: calc(100dvh - 16px)'));
