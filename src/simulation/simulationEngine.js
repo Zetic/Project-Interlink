@@ -1,7 +1,6 @@
 /**
- * Fixed-timestep simulation for the first Engineering workspace vertical slice.
- * Physical material state lives in the blueprint simulation-runtime object;
- * node layout lives separately in BlueprintLayout application state.
+ * Fixed-timestep Site simulation. Physical material state lives in blueprint
+ * runtime objects; node layout and viewport state live separately in UI state.
  */
 
 import { createExtractor, extractorOutputRates, DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND } from './extractorNode.js';
@@ -60,6 +59,32 @@ export function createBlueprint() {
       extractedKg: 0,
     },
   };
+}
+
+/** Add a physical world Feature as a source/opportunity node in a Site graph. */
+export function blueprintAddFeatureSource(blueprint, {
+  id = null,
+  featureId,
+  displayName = null,
+  resourceOccurrenceIds = [],
+} = {}) {
+  if (!featureId || typeof featureId !== 'string') throw new Error('Feature source featureId must be a non-empty string');
+  if (!Array.isArray(resourceOccurrenceIds)) throw new Error('Feature source resourceOccurrenceIds must be an array');
+  const nodeId = id ?? `feature-node-${featureId}`;
+  if (blueprint.nodes[nodeId]) throw new Error(`Blueprint node '${nodeId}' already exists`);
+  const node = {
+    id: nodeId,
+    featureId,
+    displayName: displayName ?? featureId,
+    resourceOccurrenceIds: [...resourceOccurrenceIds],
+    nodeType: 'feature',
+    systemType: 'feature',
+    kind: 'world-feature',
+    resourceAccessPortId: 'resource-access',
+    ports: [{ id: 'resource-access', direction: 'output', kind: 'resource-access', label: 'resources' }],
+  };
+  blueprint.nodes[nodeId] = node;
+  return node;
 }
 
 export function blueprintAddExtractor(
@@ -147,17 +172,18 @@ export function blueprintAddMagSep(blueprint, {
   return node;
 }
 
-/**
- * Ports exposed to the child engineering workspace.
- * Boundary buffers retain both physical ports internally so a parent boundary
- * can map to the opposite side, but the player only sees the side facing the
- * current child workspace: Import -> output, Export -> input.
- */
+/** Ports exposed to the current child workspace. */
 export function getNodePortDefinitions(node) {
   if (!node) return [];
 
+  if (node.nodeType === 'feature') {
+    return node.ports ?? [{ id: 'resource-access', direction: 'output', kind: 'resource-access', label: 'resources' }];
+  }
   if (node.nodeType === 'extractor') {
-    return [{ id: node.outputPortId, direction: 'output', kind: 'material', label: 'out' }];
+    return [
+      { id: node.sourceInputPortId, direction: 'input', kind: 'resource-access', label: 'resource source' },
+      { id: node.outputPortId, direction: 'output', kind: 'material', label: 'material out' },
+    ];
   }
   if (node.nodeType === 'hopper') {
     if (node.boundaryRole === 'import') {
@@ -175,18 +201,8 @@ export function getNodePortDefinitions(node) {
   const processDefinition = getProcessDefinition(node.processId);
   if (!processDefinition) return [];
   return [
-    ...(processDefinition.inputs ?? []).map(port => ({
-      id: port.id,
-      direction: 'input',
-      kind: port.kind,
-      label: port.id,
-    })),
-    ...(processDefinition.outputs ?? []).map(port => ({
-      id: port.id,
-      direction: 'output',
-      kind: port.kind,
-      label: port.id,
-    })),
+    ...(processDefinition.inputs ?? []).map(port => ({ id: port.id, direction: 'input', kind: port.kind, label: port.id })),
+    ...(processDefinition.outputs ?? []).map(port => ({ id: port.id, direction: 'output', kind: port.kind, label: port.id })),
   ];
 }
 
@@ -196,16 +212,17 @@ function isExplicitBoundaryStorageTransition(sourceNode, targetNode) {
     && (sourceNode.boundaryRole === 'import' || targetNode.boundaryRole === 'export');
 }
 
-function supportedNodeTransition(sourceNode, targetNode) {
+function supportedNodeTransition(sourceNode, targetNode, kind) {
+  if (kind === 'resource-access') return sourceNode?.nodeType === 'feature' && targetNode?.nodeType === 'extractor';
+  if (kind !== 'material') return false;
   if (isExplicitBoundaryStorageTransition(sourceNode, targetNode)) return true;
-  const key = `${sourceNode.nodeType}->${targetNode.nodeType}`;
   return new Set([
     'extractor->hopper',
     'hopper->crusher',
     'crusher->hopper',
     'hopper->magSep',
     'magSep->hopper',
-  ]).has(key);
+  ]).has(`${sourceNode.nodeType}->${targetNode.nodeType}`);
 }
 
 export function checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId) {
@@ -221,22 +238,31 @@ export function checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, 
   if (!targetPort) return { ok: false, reason: `Unknown target port '${targetPortId}'` };
   if (sourcePort.direction !== 'output') return { ok: false, reason: 'Connections must start at an output port' };
   if (targetPort.direction !== 'input') return { ok: false, reason: 'Connections must end at an input port' };
-  if (sourcePort.kind !== targetPort.kind) return { ok: false, reason: 'Port material kinds are incompatible' };
+  if (sourcePort.kind !== targetPort.kind) return { ok: false, reason: 'Port kinds are incompatible' };
 
   for (const connection of Object.values(blueprint.connections ?? {})) {
-    if (connection.sourceNodeId === sourceNodeId && connection.sourcePortId === sourcePortId) {
-      return { ok: false, reason: 'This output port is already connected; use an explicit splitter for fan-out' };
+    // Material outputs cannot fan out until an explicit splitter exists. A Feature's
+    // resource-access interface may feed multiple extractors because it moves no matter.
+    if (
+      sourcePort.kind === 'material'
+      && connection.sourceNodeId === sourceNodeId
+      && connection.sourcePortId === sourcePortId
+    ) {
+      return { ok: false, reason: 'This material output is already connected; use an explicit splitter for fan-out' };
     }
     if (connection.targetNodeId === targetNodeId && connection.targetPortId === targetPortId) {
       return { ok: false, reason: 'This input port is already connected' };
     }
   }
 
-  if (!supportedNodeTransition(sourceNode, targetNode)) {
-    return {
-      ok: false,
-      reason: `${sourceNode.nodeType} → ${targetNode.nodeType} is not supported by the current material-flow solver`,
-    };
+  if (!supportedNodeTransition(sourceNode, targetNode, sourcePort.kind)) {
+    return { ok: false, reason: `${sourceNode.nodeType} → ${targetNode.nodeType} is not supported for '${sourcePort.kind}'` };
+  }
+
+  if (sourcePort.kind === 'resource-access') {
+    if (!sourceNode.resourceOccurrenceIds?.includes(targetNode.occurrenceId)) {
+      return { ok: false, reason: 'Extractor target occurrence is not available from this Feature' };
+    }
   }
 
   return { ok: true, reason: '' };
@@ -246,20 +272,25 @@ export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNo
   const compatibility = checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId);
   if (!compatibility.ok) return null;
 
+  const sourceNode = blueprint.nodes[sourceNodeId];
+  const sourcePort = getNodePortDefinitions(sourceNode).find(port => port.id === sourcePortId);
   const id = nextConnectionId();
-  const connection = { id, sourceNodeId, sourcePortId, targetNodeId, targetPortId, kind: 'material' };
+  const connection = { id, sourceNodeId, sourcePortId, targetNodeId, targetPortId, kind: sourcePort.kind };
   blueprint.connections[id] = connection;
 
-  const streamId = nextStreamId();
-  blueprint.streams[streamId] = createZeroStream({
-    id: streamId,
-    connectionId: id,
-    sourceNodeId,
-    sourcePortId,
-    targetNodeId,
-    targetPortId,
-  });
-
+  // Resource-access edges are relationships, not matter in transit. Only a material
+  // connection owns a MaterialStream rate/state object.
+  if (sourcePort.kind === 'material') {
+    const streamId = nextStreamId();
+    blueprint.streams[streamId] = createZeroStream({
+      id: streamId,
+      connectionId: id,
+      sourceNodeId,
+      sourcePortId,
+      targetNodeId,
+      targetPortId,
+    });
+  }
   return connection;
 }
 
@@ -293,15 +324,12 @@ function updateConnectionStream(blueprint, connection, rates, particleSizeMm = n
 }
 
 function zeroAllStreams(blueprint) {
-  for (const stream of Object.values(blueprint.streams)) {
-    setMaterialStreamState(stream, {}, null);
-  }
+  for (const stream of Object.values(blueprint.streams)) setMaterialStreamState(stream, {}, null);
 }
 
 function proportionalRatesFromHopper(hopper, requestedTotalRateKgPerSecond) {
   const storedMassKg = hopperStoredMassKg(hopper);
   if (storedMassKg <= HOPPER_TOLERANCE_KG || requestedTotalRateKgPerSecond <= 0) return {};
-
   return Object.fromEntries(
     Object.entries(hopper.storedComponentsKg).map(([componentId, kg]) => [
       componentId,
@@ -311,10 +339,7 @@ function proportionalRatesFromHopper(hopper, requestedTotalRateKgPerSecond) {
 }
 
 function cloneHopperPhysicalState(hopper) {
-  return {
-    ...hopper,
-    storedComponentsKg: { ...hopper.storedComponentsKg },
-  };
+  return { ...hopper, storedComponentsKg: { ...hopper.storedComponentsKg } };
 }
 
 function commitHopperPhysicalState(target, staged) {
@@ -337,22 +362,40 @@ function capacityScaleForOutput(freeCapacityKg, componentRates, dt) {
 function simulateExtractorNode(blueprint, world, node, dt) {
   if (!node.enabled) {
     node.operatingState = 'off';
+    node.lastError = null;
     return 0;
   }
 
-  const occurrence = world?.resourceOccurrences?.[node.occurrenceId];
-  const outputConnection = findOutboundConnection(blueprint, node.id, node.outputPortId);
-  if (!outputConnection) {
+  const accessConnection = findInboundConnection(blueprint, node.id, node.sourceInputPortId);
+  if (!accessConnection || accessConnection.kind !== 'resource-access') {
+    node.lastError = 'Extractor requires a connected Feature resource source';
     node.operatingState = 'blocked';
     return 0;
   }
-  if (!occurrence) {
-    node.operatingState = 'idle';
+  const sourceFeature = blueprint.nodes[accessConnection.sourceNodeId];
+  const occurrence = world?.resourceOccurrences?.[node.occurrenceId];
+  if (
+    sourceFeature?.nodeType !== 'feature'
+    || !sourceFeature.resourceOccurrenceIds?.includes(node.occurrenceId)
+    || !occurrence
+    || occurrence.sourceType !== 'feature'
+    || occurrence.sourceId !== sourceFeature.featureId
+  ) {
+    node.lastError = 'Connected Feature does not own the configured ResourceOccurrence';
+    node.operatingState = 'blocked';
+    return 0;
+  }
+
+  const outputConnection = findOutboundConnection(blueprint, node.id, node.outputPortId);
+  if (!outputConnection || outputConnection.kind !== 'material') {
+    node.lastError = 'Extractor requires a connected material output';
+    node.operatingState = 'blocked';
     return 0;
   }
 
   const targetHopper = blueprint.nodes[outputConnection.targetNodeId];
   if (!targetHopper || targetHopper.nodeType !== 'hopper') {
+    node.lastError = 'Extractor material output must feed storage';
     node.operatingState = 'blocked';
     return 0;
   }
@@ -365,6 +408,7 @@ function simulateExtractorNode(blueprint, world, node, dt) {
   const plannedRates = scaleFlowRates(baseOutput.componentMassFlowKgPerSecond, throttle);
   const plannedKg = totalMassFlowKgPerSecond(plannedRates) * dt;
   if (plannedKg <= TRANSFER_TOLERANCE_KG) {
+    node.lastError = 'Extractor output storage is full';
     node.operatingState = 'blocked';
     return 0;
   }
@@ -373,6 +417,7 @@ function simulateExtractorNode(blueprint, world, node, dt) {
   const acceptanceFactor = plannedKg > 0 ? Math.max(0, Math.min(1, acceptedKg / plannedKg)) : 0;
   const actualRates = scaleFlowRates(plannedRates, acceptanceFactor);
   updateConnectionStream(blueprint, outputConnection, actualRates, baseOutput.particleSizeMm);
+  node.lastError = acceptedKg > TRANSFER_TOLERANCE_KG ? null : 'Extractor output storage is full';
   node.operatingState = acceptedKg > TRANSFER_TOLERANCE_KG ? 'running' : 'blocked';
   return acceptedKg;
 }
@@ -416,11 +461,7 @@ function simulateCrusherNode(blueprint, node, dt) {
     return;
   }
 
-  const feasibleRate = Math.min(
-    node.throughputKgPerSecond,
-    storedMassKg / dt,
-    freeOutputKg / dt
-  );
+  const feasibleRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt, freeOutputKg / dt);
   if (feasibleRate <= 0) {
     node.operatingState = 'blocked';
     return;
@@ -448,10 +489,7 @@ function simulateCrusherNode(blueprint, node, dt) {
     return;
   }
 
-  const actualFeed = {
-    componentMassFlowKgPerSecond: withdrawal.actualRates,
-    particleSizeMm,
-  };
+  const actualFeed = { componentMassFlowKgPerSecond: withdrawal.actualRates, particleSizeMm };
   const result = applyContinuousCrushing(actualFeed, node.targetParticleSizeMm, node.throughputKgPerSecond);
   const expectedOutputKg = totalMassFlowKgPerSecond(result.productRates.componentMassFlowKgPerSecond) * dt;
   const acceptedOutputKg = hopperReceiveInflow(
@@ -465,12 +503,7 @@ function simulateCrusherNode(blueprint, node, dt) {
   commitHopperPhysicalState(inputHopper, stagedInput);
   commitHopperPhysicalState(outputHopper, stagedOutput);
   updateConnectionStream(blueprint, inputConnection, withdrawal.actualRates, particleSizeMm);
-  updateConnectionStream(
-    blueprint,
-    outputConnection,
-    result.productRates.componentMassFlowKgPerSecond,
-    result.productRates.particleSizeMm
-  );
+  updateConnectionStream(blueprint, outputConnection, result.productRates.componentMassFlowKgPerSecond, result.productRates.particleSizeMm);
   node.lastError = null;
   node.operatingState = 'running';
 }
@@ -503,11 +536,7 @@ function simulateMagSepNode(blueprint, node, dt) {
   }
   const concentrateHopper = blueprint.nodes[concentrateConnection.targetNodeId];
   const tailingsHopper = blueprint.nodes[tailingsConnection.targetNodeId];
-  if (
-    inputHopper?.nodeType !== 'hopper'
-    || concentrateHopper?.nodeType !== 'hopper'
-    || tailingsHopper?.nodeType !== 'hopper'
-  ) {
+  if (inputHopper?.nodeType !== 'hopper' || concentrateHopper?.nodeType !== 'hopper' || tailingsHopper?.nodeType !== 'hopper') {
     node.operatingState = 'blocked';
     return;
   }
@@ -562,7 +591,6 @@ function simulateMagSepNode(blueprint, node, dt) {
     node.fieldStrength,
     node.maxFeedParticleSizeMm
   );
-
   const expectedConcentrateKg = totalMassFlowKgPerSecond(result.concentrateRates.componentMassFlowKgPerSecond) * dt;
   const acceptedConcentrateKg = hopperReceiveInflow(
     stagedConcentrate,
@@ -585,24 +613,15 @@ function simulateMagSepNode(blueprint, node, dt) {
   commitHopperPhysicalState(concentrateHopper, stagedConcentrate);
   commitHopperPhysicalState(tailingsHopper, stagedTailings);
   updateConnectionStream(blueprint, inputConnection, withdrawal.actualRates, particleSizeMm);
-  updateConnectionStream(
-    blueprint,
-    concentrateConnection,
-    result.concentrateRates.componentMassFlowKgPerSecond,
-    result.concentrateRates.particleSizeMm
-  );
-  updateConnectionStream(
-    blueprint,
-    tailingsConnection,
-    result.tailingsRates.componentMassFlowKgPerSecond,
-    result.tailingsRates.particleSizeMm
-  );
+  updateConnectionStream(blueprint, concentrateConnection, result.concentrateRates.componentMassFlowKgPerSecond, result.concentrateRates.particleSizeMm);
+  updateConnectionStream(blueprint, tailingsConnection, result.tailingsRates.componentMassFlowKgPerSecond, result.tailingsRates.particleSizeMm);
   node.lastError = null;
   node.operatingState = 'running';
 }
 
 function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
   for (const connection of Object.values(blueprint.connections)) {
+    if (connection.kind !== 'material') continue;
     const source = blueprint.nodes[connection.sourceNodeId];
     const target = blueprint.nodes[connection.targetNodeId];
     if (!isExplicitBoundaryStorageTransition(source, target)) continue;
@@ -611,11 +630,7 @@ function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
     const freeKg = hopperFreeCapacityKg(target);
     if (availableKg <= HOPPER_TOLERANCE_KG || freeKg <= HOPPER_TOLERANCE_KG) continue;
 
-    const rate = Math.min(
-      DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S,
-      availableKg / dt,
-      freeKg / dt
-    );
+    const rate = Math.min(DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S, availableKg / dt, freeKg / dt);
     if (rate <= TRANSFER_TOLERANCE_KG) continue;
 
     const rates = proportionalRatesFromHopper(source, rate);
@@ -634,10 +649,7 @@ function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
 }
 
 export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
-    throw new Error('Simulation dt must be a finite positive number');
-  }
-
+  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) throw new Error('Simulation dt must be a finite positive number');
   zeroAllStreams(blueprint);
   let extractedThisTickKg = 0;
 
@@ -654,7 +666,6 @@ export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
 
   blueprint.simulationStats.elapsedSeconds += dt;
   blueprint.simulationStats.extractedKg += extractedThisTickKg;
-
   return { extractedKg: extractedThisTickKg };
 }
 
@@ -662,10 +673,7 @@ export function simulationAdvance(blueprint, world, elapsedSeconds, dt = SIMULAT
   if (typeof elapsedSeconds !== 'number' || !Number.isFinite(elapsedSeconds) || elapsedSeconds < 0) {
     throw new Error('elapsedSeconds must be a finite non-negative number');
   }
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
-    throw new Error('Simulation dt must be a finite positive number');
-  }
-
+  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) throw new Error('Simulation dt must be a finite positive number');
   const ticks = Math.floor((elapsedSeconds + 1e-12) / dt);
   for (let i = 0; i < ticks; i++) simulationTick(blueprint, world, dt);
   return ticks;
@@ -674,9 +682,7 @@ export function simulationAdvance(blueprint, world, elapsedSeconds, dt = SIMULAT
 export function setNodeEnabled(blueprint, nodeId, enabled) {
   const node = blueprint?.nodes?.[nodeId];
   if (!node) throw new Error(`Unknown node '${nodeId}'`);
-  if (!['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
-    throw new Error(`Node '${nodeId}' is not active machinery`);
-  }
+  if (!['extractor', 'crusher', 'magSep'].includes(node.nodeType)) throw new Error(`Node '${nodeId}' is not active machinery`);
   if (typeof enabled !== 'boolean') throw new Error('enabled must be boolean');
   node.enabled = enabled;
   if (!enabled) node.operatingState = 'off';
@@ -686,9 +692,7 @@ export function setNodeEnabled(blueprint, nodeId, enabled) {
 
 export function getNodeOperatingState(node) {
   if (!node) return null;
-  if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
-    return node.enabled ? (node.operatingState ?? 'idle') : 'off';
-  }
+  if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) return node.enabled ? (node.operatingState ?? 'idle') : 'off';
   return null;
 }
 
