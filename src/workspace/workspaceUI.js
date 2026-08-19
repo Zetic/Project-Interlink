@@ -60,7 +60,6 @@ import {
   navigationEntryForTarget,
 } from './navigationProjection.js';
 import {
-  NODE_DEFINITIONS,
   nodeCatalogCategoryVocabulary,
   nodeCatalogVisibleCategories,
   nodeDefinitionById,
@@ -107,6 +106,7 @@ const wsState = {
   nodeCatalogOpen: false,
   nodeCatalogQuery: '',
   nodeCatalogHiddenCategories: new Set(),
+  nodeCatalogCollapsedCategories: new Set(),
   placement: createPlacementState(),
 };
 
@@ -406,7 +406,10 @@ function renderNodeCatalogDrawer() {
     visibleCategories,
   });
   tree.innerHTML = projection.rows.length
-    ? projection.rows.map(group => `<div class="ws-node-catalog-group" role="group"><div class="ws-node-catalog-category"><span aria-hidden="true">▾</span>${escHtml(group.category.toUpperCase())}</div>${group.definitions.map(definition => `<button class="ws-node-catalog-entry" type="button" data-node-definition="${escHtml(definition.id)}"><span class="ws-navigation-category ws-node-category--${escHtml(definition.category)}" aria-hidden="true"></span><span><strong>${escHtml(definition.label)}</strong><small>${escHtml(definition.description)}</small></span></button>`).join('')}</div>`).join('')
+    ? projection.rows.map(group => {
+      const expanded = Boolean(wsState.nodeCatalogQuery) || !wsState.nodeCatalogCollapsedCategories.has(group.category);
+      return `<div class="ws-node-catalog-group" role="group"><button class="ws-node-catalog-category" type="button" data-node-catalog-expand="${escHtml(group.category)}" aria-expanded="${String(expanded)}"><span aria-hidden="true">${expanded ? '▾' : '▸'}</span>${escHtml(group.category.toUpperCase())}</button>${expanded ? group.definitions.map(definition => `<button class="ws-node-catalog-entry" type="button" data-node-definition="${escHtml(definition.id)}"><span class="ws-navigation-category ws-node-category--${escHtml(definition.category)}" aria-hidden="true"></span><span><strong>${escHtml(definition.label)}</strong><small>${escHtml(definition.description)}</small></span></button>`).join('') : ''}</div>`;
+    }).join('')
     : `<div class="ws-navigation-empty">${wsState.nodeCatalogQuery ? 'No matching nodes.' : 'No placeable nodes.'}</div>`;
 
   const count = el('ws-node-catalog-match-count');
@@ -495,6 +498,14 @@ function installNavigationEvents() {
         renderNodeCatalogDrawer();
         renderPlacementPreview();
       }
+      return;
+    }
+    const expandNodeCategory = event.target.closest('[data-node-catalog-expand]');
+    if (expandNodeCategory) {
+      const category = expandNodeCategory.dataset.nodeCatalogExpand;
+      if (wsState.nodeCatalogCollapsedCategories.has(category)) wsState.nodeCatalogCollapsedCategories.delete(category);
+      else wsState.nodeCatalogCollapsedCategories.add(category);
+      renderNodeCatalogDrawer();
       return;
     }
     const cancel = event.target.closest('[data-node-placement-cancel]');
@@ -1791,6 +1802,7 @@ function updateSimStatus() {
 function onResetSite() {
   const siteId = wsState.selectedSiteId;
   if (!siteId) return;
+  cancelPlacement(wsState.placement);
   const session = createSiteSession(wsState.selectedOccurrenceId, siteId);
   wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
@@ -1802,6 +1814,7 @@ function onResetSite() {
   inspector.renderKey = null;
   renderSiteWorkspace(el('ws-main'));
   renderNavigationDrawer();
+  renderNodeCatalogDrawer();
 }
 
 export function renderWorkspace() {
@@ -1846,6 +1859,7 @@ export function initWorkspace(world, knowledge) {
   wsState.nodeCatalogOpen = false;
   wsState.nodeCatalogQuery = '';
   wsState.nodeCatalogHiddenCategories = new Set();
+  wsState.nodeCatalogCollapsedCategories = new Set();
   cancelPlacement(wsState.placement);
   inspector.selectedNodeId = null;
   inspector.selectedConnId = null;

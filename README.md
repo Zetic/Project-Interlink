@@ -406,33 +406,26 @@ For Sites with multiple physical sources, show multiple Feature nodes rather tha
 
 ---
 
-# Temporary Iron Processing Prototype
+# Player-authored Site node placement
 
-The automatic iron chain remains a temporary validation scaffold.
+Entering a Site initializes its authoritative Feature nodes and Site import/export
+boundaries. Processing apparatus and containers are available through the NODE
+catalog and are created only when the player places them.
 
-At a compatible iron Site:
+The initial NODE catalog contains:
 
 ```text
-Iron-bearing Feature
-        │ resource-access
-        ▼
-Extractor
-        │ actual source mixture
-        ▼
-Raw Ore Hopper
-        ↓
-Crusher
-        ↓
-Crushed Ore Hopper
-        ↓
-Magnetic Separator
-       ├────────→ Concentrate Hopper
-       └────────→ Tailings Hopper
+APPARATUS
+  Extractor
+  Crusher
+  Magnetic Separator
+CONTAINER
+  Hopper
 ```
 
-Non-iron Sites must not receive the iron chain merely because they are enterable.
-
-Issue #25 must preserve the iron case as **one physical ore occurrence containing a mineral mixture**, while splitting unrelated physical sources into separate Features.
+The player explicitly connects a Feature's `resource-access` port to an
+Extractor. Extraction then produces the occurrence's actual source mixture;
+resource access itself carries no material flow.
 
 ---
 
@@ -547,8 +540,8 @@ Persistent graph edges must correspond to real underlying relationships. Materia
 Current order:
 
 1. ~~Issue #25 — split independently exploitable sources into distinct Features and establish composition/classification direction.~~ **Done (generator v4).**
-2. **Player-authored Site construction** — active milestone.
-3. Remove automatic iron-chain placement from normal gameplay.
+2. **Player-authored Site node placement** — active milestone.
+3. Add explicit construction requirements only after the NODE workflow is established.
 4. Deepen extraction/reserve/depletion mechanics when useful.
 5. Add additional Feature interaction families incrementally.
 6. Add splitter/merger when real branching requires it.
@@ -557,14 +550,14 @@ Current order:
 9. Add sensors/controllers and deeper Knowledge mechanics.
 10. Expand reusable composite systems, chemistry, thermodynamics, fluids/gases, and larger-scale industry iteratively.
 
-The construction loop now available:
+The current NODE workflow:
 
 ```text
 Enter Site
     ↓
 Inspect distinct physical Features
     ↓
-Choose compatible apparatus/storage
+Choose a definition from NODE
     ↓
 Place nodes
     ↓

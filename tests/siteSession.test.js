@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from '../src/core/world/worldState.js';
 import { buildSiteSession } from '../src/workspace/siteSession.js';
-import { getStreamForConnection } from '../src/simulation/simulationEngine.js';
 
 function findWorldWithIronSite() {
   for (let i = 0; i < 200; i++) {
@@ -18,31 +17,17 @@ function findWorldWithIronSite() {
   throw new Error('Could not find an iron Site in test seed range');
 }
 
-test('iron Site session connects Feature resource access to the temporary Extractor', () => {
+test('iron Site session contains Features and boundaries without an automatic apparatus chain', () => {
   const { world, occurrence, feature, site } = findWorldWithIronSite();
   const session = buildSiteSession(world, site.id);
   const featureNode = [...session.featureNodes.values()].find(node => node.featureId === feature.id);
-  const extractor = session.blueprint.nodes[session.prototypeExtractorId];
   assert.ok(featureNode);
-  assert.ok(extractor);
-  assert.equal(session.prototypeOccurrenceId, occurrence.id);
-  assert.equal(session.prototypeFeatureId, feature.id);
-
-  const access = Object.values(session.blueprint.connections).find(connection =>
-    connection.kind === 'resource-access'
-    && connection.sourceNodeId === featureNode.id
-    && connection.targetNodeId === extractor.id
-  );
-  assert.ok(access, 'Feature must have an explicit resource-access edge to the Extractor');
-  assert.equal(getStreamForConnection(session.blueprint, access.id), null, 'resource access must not create a MaterialStream');
-
-  const materialOutput = Object.values(session.blueprint.connections).find(connection =>
-    connection.kind === 'material'
-    && connection.sourceNodeId === extractor.id
-    && connection.sourcePortId === extractor.outputPortId
-  );
-  assert.ok(materialOutput, 'Extractor should create matter only through its material output connection');
-  assert.ok(getStreamForConnection(session.blueprint, materialOutput.id));
+  assert.equal(occurrence.sourceId, feature.id);
+  assert.equal(Object.values(session.blueprint.nodes).filter(node => node.boundaryRole).length, 2);
+  assert.equal(Object.values(session.blueprint.nodes).some(node =>
+    ['extractor', 'crusher', 'magSep'].includes(node.nodeType)
+  ), false);
+  assert.deepEqual(Object.values(session.blueprint.connections), []);
 });
 
 test('non-iron Sites contain Features and boundaries but no temporary iron process chain', () => {
@@ -59,8 +44,6 @@ test('non-iron Sites contain Features and boundaries but no temporary iron proce
   assert.equal(nodeTypes.includes('extractor'), false);
   assert.equal(nodeTypes.includes('crusher'), false);
   assert.equal(nodeTypes.includes('magSep'), false);
-  assert.equal(session.prototypeOccurrenceId, null);
-  assert.equal(session.prototypeExtractorId, null);
 
   const boundaries = Object.values(session.blueprint.nodes).filter(node => node.boundaryRole);
   assert.equal(boundaries.length, 2);
