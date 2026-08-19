@@ -13,6 +13,7 @@ test('hierarchy and natural-world nodes keep stable recognition categories', () 
   assert.equal(nodeCategory({ nodeType: 'planet' }), NODE_CATEGORIES.PLANET);
   assert.equal(nodeCategory({ nodeType: 'region' }), NODE_CATEGORIES.REGION);
   assert.equal(nodeCategory({ nodeType: 'site' }), NODE_CATEGORIES.SITE);
+  assert.equal(nodeCategory({ nodeType: 'facility' }), NODE_CATEGORIES.FACILITY);
   assert.equal(nodeCategory({ nodeType: 'feature' }), NODE_CATEGORIES.FEATURE);
 });
 
