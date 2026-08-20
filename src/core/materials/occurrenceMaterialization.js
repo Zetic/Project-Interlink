@@ -54,6 +54,25 @@ function normalizeComposition(occurrence) {
   });
 }
 
+function materializedTextureProfile(occurrence) {
+  if (!occurrence?.mineralTexture) return null;
+  return {
+    ...occurrence.mineralTexture,
+    speciesTextures: Object.fromEntries(
+      Object.entries(occurrence.mineralTexture.speciesTextures ?? {}).map(([speciesId, texture]) => [
+        speciesId,
+        {
+          grainSizeUm: { ...texture.grainSizeUm },
+          occurrenceModes: { ...texture.occurrenceModes },
+        },
+      ]),
+    ),
+    ...(occurrence.comminutionProperties
+      ? { comminutionProperties: { ...occurrence.comminutionProperties } }
+      : {}),
+  };
+}
+
 export function createSolidMaterialBodyFromOccurrence(occurrence, quantity, {
   fragmentationProfile = OCCURRENCE_FRAGMENTATION_PROFILES.COARSE_SOLID,
 } = {}) {
@@ -65,8 +84,9 @@ export function createSolidMaterialBodyFromOccurrence(occurrence, quantity, {
     throw new Error('Occurrence materialization quantity must be a finite positive number');
   }
   const solidState = createSolidMaterialState();
-  const textureProfileId = occurrence?.mineralTexture?.id ?? null;
-  if (occurrence?.mineralTexture) registerSolidTextureProfile(solidState, occurrence.mineralTexture);
+  const textureProfile = materializedTextureProfile(occurrence);
+  const textureProfileId = textureProfile?.id ?? null;
+  if (textureProfile) registerSolidTextureProfile(solidState, textureProfile);
   const template = fragmentationTemplate(fragmentationProfile);
   for (const { speciesId, share } of normalizeComposition(occurrence)) {
     for (const sizeTemplate of template) {
