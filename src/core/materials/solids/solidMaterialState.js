@@ -18,7 +18,7 @@ function fractionKey(speciesId, sizeBinId, liberationClassId, textureProfileId =
 function parseFractionKey(key) {
   const segments = key.split('|');
   if (segments.length !== 3 && segments.length !== 4) {
-    throw new Error(`Solid material fraction key '${key}' must have 3 or 4 segments`);
+    throw new Error(`Solid material fraction key '${key}' must have exactly 3 segments for legacy/untextured material or exactly 4 segments for textured material`);
   }
   if (segments.some(segment => segment.length === 0)) {
     throw new Error(`Solid material fraction key '${key}' must not contain empty segments`);
@@ -146,10 +146,14 @@ export function registerSolidTextureProfile(state, profile) {
   return state.textureProfiles[profile.id];
 }
 
+/**
+ * Hot-path profile lookup. Public state validation occurs at process/material
+ * boundaries; repeated full-state validation here would make per-fraction
+ * comminution quadratic in the number of sparse populations.
+ */
 export function solidTextureProfile(state, textureProfileId) {
-  validateSolidMaterialState(state);
   if (textureProfileId == null) return null;
-  return state.textureProfiles?.[textureProfileId] ?? null;
+  return state?.textureProfiles?.[textureProfileId] ?? null;
 }
 
 export function createSolidMaterialStateFromSpeciesQuantities(speciesQuantities, particleSizeMm, liberationClassId = 'partial') {
@@ -222,7 +226,7 @@ export function validateSolidMaterialState(state) {
     requireParticleSizeBin(sizeBinId);
     requireLiberationClass(liberationClassId);
     if (textureProfileId && !state.textureProfiles?.[textureProfileId]) {
-      throw new Error(`Fraction '${key}' references unknown mineral texture profile '${textureProfileId}'`);
+      throw new Error(`Fraction '${key}' references unknown mineral texture profile '${textureProfileId}'; textured material must have exactly 3 base segments plus a registered texture-profile segment`);
     }
     assertFiniteNonNegative(quantity, `Fraction '${key}' quantity`);
   }
@@ -340,7 +344,10 @@ export function summarizeSolidMaterialByLiberationClass(state) {
 }
 
 export function summarizeSolidMaterialByTextureProfile(state) {
-  return summarize(state, fraction => fraction.textureProfileId ?? 'untextured');
+  return Object.fromEntries(
+    Object.entries(summarize(state, fraction => fraction.textureProfileId ?? 'untextured'))
+      .map(([profileId, quantity]) => [profileId, roundSolidQuantity(quantity)]),
+  );
 }
 
 export function multiplySolidMaterialState(state, factor) {
