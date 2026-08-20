@@ -54,11 +54,15 @@ const MACHINE_CONFIG = Object.freeze({
 function createComminutionNode(config, {
   id,
   throughputKgPerSecond,
+  ratedPowerKw,
   enabled = false,
   ...parameters
 } = {}) {
   if (typeof throughputKgPerSecond !== 'number' || !Number.isFinite(throughputKgPerSecond) || throughputKgPerSecond <= 0) {
     throw new Error(`${config.label} throughputKgPerSecond must be a finite positive number`);
+  }
+  if (typeof ratedPowerKw !== 'number' || !Number.isFinite(ratedPowerKw) || ratedPowerKw <= 0) {
+    throw new Error(`${config.label} ratedPowerKw must be a finite positive number`);
   }
   if (typeof enabled !== 'boolean') throw new Error(`${config.label} enabled must be boolean`);
   const targetParticleSizeMm = parameters[config.parameterId];
@@ -70,6 +74,7 @@ function createComminutionNode(config, {
     kind: 'primitive',
     processId: config.processId,
     throughputKgPerSecond,
+    ratedPowerKw,
     maxFeedParticleSizeMm: processDefinition?.maxFeedParticleSizeMm ?? null,
     [config.parameterId]: targetParticleSizeMm,
     inputPortId: 'feed',
@@ -90,16 +95,26 @@ function createComminutionNode(config, {
         provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
       },
     ],
+    lastSpecificEnergyKWhPerT: 0,
+    lastPowerKw: 0,
+    lastBondAbrasionIndex: 0,
+    abrasionExposureTonneAi: 0,
     lastError: null,
     enabled,
     operatingState: enabled ? 'idle' : 'off',
   };
 }
 
+function setIdleDiagnostics(node) {
+  node.lastSpecificEnergyKWhPerT = 0;
+  node.lastPowerKw = 0;
+}
+
 function simulateComminutionNode(blueprint, node, dt, config) {
   if (!node.enabled) {
     node.operatingState = 'off';
     node.lastError = null;
+    setIdleDiagnostics(node);
     return;
   }
 
@@ -108,6 +123,7 @@ function simulateComminutionNode(blueprint, node, dt, config) {
   if (!inputConnection) {
     node.lastError = null;
     node.operatingState = 'idle';
+    setIdleDiagnostics(node);
     return;
   }
 
@@ -115,11 +131,13 @@ function simulateComminutionNode(blueprint, node, dt, config) {
   if (inputHopper?.nodeType === 'hopper' && hopperStoredMassKg(inputHopper) <= HOPPER_TOLERANCE_KG) {
     node.lastError = null;
     node.operatingState = 'idle';
+    setIdleDiagnostics(node);
     return;
   }
   if (!outputConnection) {
     node.lastError = `${config.label} requires connected feed and product ports`;
     node.operatingState = 'blocked';
+    setIdleDiagnostics(node);
     return;
   }
 
@@ -127,6 +145,7 @@ function simulateComminutionNode(blueprint, node, dt, config) {
   if (inputHopper?.nodeType !== 'hopper' || outputHopper?.nodeType !== 'hopper' || inputHopper.id === outputHopper.id) {
     node.lastError = `${config.label} requires distinct input and output storage`;
     node.operatingState = 'blocked';
+    setIdleDiagnostics(node);
     return;
   }
 
@@ -135,36 +154,50 @@ function simulateComminutionNode(blueprint, node, dt, config) {
   if (freeOutputKg <= HOPPER_TOLERANCE_KG) {
     node.lastError = 'Product storage is full';
     node.operatingState = 'blocked';
+    setIdleDiagnostics(node);
     return;
   }
 
-  const feasibleRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt, freeOutputKg / dt);
-  if (feasibleRate <= 0) {
+  const mechanicalRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt, freeOutputKg / dt);
+  if (mechanicalRate <= 0) {
     node.operatingState = 'blocked';
+    setIdleDiagnostics(node);
     return;
   }
 
-  const candidateFeed = proportionalSolidStateFromHopper(inputHopper, feasibleRate);
+  const candidateFeed = proportionalSolidStateFromHopper(inputHopper, mechanicalRate);
   const targetParticleSizeMm = node[config.parameterId];
+  let planned;
   try {
-    applyContinuousStagedComminution(
+    planned = applyContinuousStagedComminution(
       candidateFeed,
       config.processId,
       targetParticleSizeMm,
       node.throughputKgPerSecond,
+      node.ratedPowerKw,
     );
   } catch (error) {
     node.lastError = error.message;
     node.operatingState = 'blocked';
+    setIdleDiagnostics(node);
+    return;
+  }
+
+  const plannedRate = totalSolidQuantity(planned.actualFeedSolidState);
+  if (plannedRate <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+    node.lastError = null;
+    node.operatingState = 'idle';
+    setIdleDiagnostics(node);
     return;
   }
 
   const stagedInput = cloneHopperMaterialState(inputHopper);
   const stagedOutput = cloneHopperMaterialState(outputHopper);
-  const withdrawal = hopperWithdraw(stagedInput, feasibleRate, dt);
+  const withdrawal = hopperWithdraw(stagedInput, plannedRate, dt);
   if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = null;
     node.operatingState = 'idle';
+    setIdleDiagnostics(node);
     return;
   }
 
@@ -176,11 +209,18 @@ function simulateComminutionNode(blueprint, node, dt, config) {
       config.processId,
       targetParticleSizeMm,
       node.throughputKgPerSecond,
+      node.ratedPowerKw,
     );
   } catch (error) {
     node.lastError = error.message;
     node.operatingState = 'blocked';
+    setIdleDiagnostics(node);
     return;
+  }
+
+  const actuallyProcessedRate = totalSolidQuantity(result.actualFeedSolidState);
+  if (Math.abs(actuallyProcessedRate - totalSolidQuantity(actualFeed)) > APPARATUS_TRANSFER_TOLERANCE_KG) {
+    throw new Error(`${config.label} power planning changed after staged withdrawal`);
   }
 
   const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
@@ -189,8 +229,12 @@ function simulateComminutionNode(blueprint, node, dt, config) {
 
   commitHopperMaterialState(inputHopper, stagedInput);
   commitHopperMaterialState(outputHopper, stagedOutput);
-  updateConnectionStream(blueprint, inputConnection, actualFeed);
+  updateConnectionStream(blueprint, inputConnection, result.actualFeedSolidState);
   updateConnectionStream(blueprint, outputConnection, result.productSolidState);
+  node.lastSpecificEnergyKWhPerT = result.specificEnergyKWhPerT;
+  node.lastPowerKw = result.actualPowerKw;
+  node.lastBondAbrasionIndex = result.comminutionProperties.bondAbrasionIndex;
+  node.abrasionExposureTonneAi += (expectedOutputKg / 1000) * node.lastBondAbrasionIndex;
   node.lastError = null;
   node.operatingState = 'running';
 }
