@@ -85,7 +85,7 @@ test('every ResourceOccurrence is owned by exactly one Feature', () => {
   for (const occurrenceId of Object.keys(world.resourceOccurrences)) assert.equal(owners.get(occurrenceId), 1);
 });
 
-test('ore-body occurrences carry deterministic species-aware mineral texture profiles', () => {
+test('ore-body occurrences carry deterministic measured texture and comminution properties', () => {
   let count = 0;
   const world = buildWorld('ore-texture-profiles');
   for (const occurrence of Object.values(world.resourceOccurrences)) {
@@ -93,13 +93,18 @@ test('ore-body occurrences carry deterministic species-aware mineral texture pro
     if (resource?.occurrenceFamily !== 'ore-body') continue;
     count += 1;
     assert.ok(occurrence.mineralTexture);
-    assert.equal(typeof occurrence.mineralTexture.fallbackLiberationSizeUm, 'number');
-    assert.ok(occurrence.mineralTexture.fallbackLiberationSizeUm > 0);
-    assert.ok(occurrence.mineralTexture.curveSpread > 0);
-    assert.ok(occurrence.mineralTexture.boundaryBreakageAffinity >= 0);
-    assert.ok(occurrence.mineralTexture.boundaryBreakageAffinity <= 1);
+    assert.ok(occurrence.comminutionProperties);
+    assert.ok(occurrence.comminutionProperties.bondCrushingWorkIndexKWhPerT > 0);
+    assert.ok(occurrence.comminutionProperties.bondBallMillWorkIndexKWhPerT > 0);
+    assert.ok(occurrence.comminutionProperties.bondAbrasionIndex >= 0);
     for (const speciesId of Object.keys(occurrence.composition ?? {})) {
-      assert.ok(occurrence.mineralTexture.speciesLiberationSizeUm[speciesId] > 0);
+      const texture = occurrence.mineralTexture.speciesTextures[speciesId];
+      assert.ok(texture);
+      assert.ok(texture.grainSizeUm.d10 > 0);
+      assert.ok(texture.grainSizeUm.d10 < texture.grainSizeUm.d50);
+      assert.ok(texture.grainSizeUm.d50 < texture.grainSizeUm.d90);
+      const modeTotal = Object.values(texture.occurrenceModes).reduce((sum, value) => sum + value, 0);
+      assert.ok(Math.abs(modeTotal - 1) <= 0.005);
     }
   }
   assert.ok(count > 0);
