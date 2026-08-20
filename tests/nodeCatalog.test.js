@@ -55,7 +55,7 @@ test('catalog search is case-insensitive and matches deliberate function synonym
     ['jaw-crusher', 'cone-crusher'],
   );
   assert.deepEqual(projectNodeCatalog({ query: 'primary crusher' }).rows[0].definitions.map(item => item.id), ['jaw-crusher']);
-  assert.deepEqual(projectNodeCatalog({ query: 'grinding' }).rows[0].definitions.map(item => item.id), ['ball-mill']);
+  assert.deepEqual(projectNodeCatalog({ query: 'grinding' }).rows[0].definitions.map(item => item.id), ['ball-mill', 'magnetic-separator']);
   assert.deepEqual(projectNodeCatalog({ query: 'sieve' }).rows[0].definitions.map(item => item.id), ['screen']);
   assert.deepEqual(projectNodeCatalog({ query: 'branch' }).rows[0].definitions.map(item => item.id), ['splitter']);
   assert.deepEqual(projectNodeCatalog({ query: 'junction' }).rows[0].definitions.map(item => item.id), ['material-merger']);
