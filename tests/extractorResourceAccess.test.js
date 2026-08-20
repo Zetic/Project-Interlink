@@ -16,7 +16,13 @@ import {
 import { hopperStoredMassKg } from '../src/simulation/hopperNode.js';
 import { nodeDefinitionById } from '../src/workspace/nodeCatalog.js';
 
-function featureOccurrence({ id, resourceId, featureId, composition = null }) {
+function defaultComposition(resourceId) {
+  if (resourceId === 'basalt') return { plagioclase: 55, augite: 30, olivine: 15 };
+  if (resourceId === 'iron-ore') return { hematite: 60, magnetite: 20, goethite: 10, quartz: 10 };
+  return null;
+}
+
+function featureOccurrence({ id, resourceId, featureId, composition = defaultComposition(resourceId) }) {
   return {
     id,
     resourceId,
@@ -156,7 +162,9 @@ test('Extractor pulls a connected non-ore solid resource without any iron-specif
   assert.equal(extractor.operatingState, 'running');
   assert.equal(extractor.lastError, null);
   assert.ok(Math.abs(hopperStoredMassKg(hopper) - 0.5) < 1e-9);
-  assert.ok(Math.abs((hopper.storedComponentsKg.basalt ?? 0) - 0.5) < 1e-9);
+  assert.ok(Math.abs((hopper.storedComponentsKg.plagioclase ?? 0) - 0.275) < 1e-9);
+  assert.ok(Math.abs((hopper.storedComponentsKg.augite ?? 0) - 0.15) < 1e-9);
+  assert.ok(Math.abs((hopper.storedComponentsKg.olivine ?? 0) - 0.075) < 1e-9);
 });
 
 test('Extractor stays blocked when the connected resource physical form is not eligible', () => {
