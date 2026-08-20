@@ -20,8 +20,10 @@ import {
   coneCrushSolidMaterialState,
   jawCrushSolidMaterialState,
   millSolidMaterialState,
+  weightedComminutionProperties,
 } from '../src/core/processes/physics/comminution.js';
 import { splitScreenedSolidState } from '../src/core/processes/physics/screening.js';
+import { applyContinuousMilling } from '../src/simulation/continuousComminution.js';
 import { extractorOutputRates } from '../src/simulation/extractorNode.js';
 
 const TOLERANCE = 1e-9;
@@ -30,17 +32,46 @@ function assertAlmostEqual(actual, expected, label) {
   assert.ok(Math.abs(actual - expected) <= TOLERANCE, `${label}: expected ${expected}, got ${actual}`);
 }
 
-function textureProfile(id, liberationSizeUm, {
-  curveSpread = 0.6,
-  boundaryBreakageAffinity = 0.2,
+function textureProfile(id, d50Um, {
   speciesId = 'hematite',
+  d10Um = d50Um * 0.4,
+  d90Um = d50Um * 2.5,
+  occurrenceModes = { free: 0.15, boundary: 0.35, intergrown: 0.35, included: 0.15 },
+  cwi = 10,
+  bwi = 15,
+  ai = 0.3,
 } = {}) {
   return {
     id,
-    fallbackLiberationSizeUm: liberationSizeUm,
-    curveSpread,
-    boundaryBreakageAffinity,
-    speciesLiberationSizeUm: { [speciesId]: liberationSizeUm },
+    speciesTextures: {
+      [speciesId]: {
+        grainSizeUm: { d10: d10Um, d50: d50Um, d90: d90Um },
+        occurrenceModes: { ...occurrenceModes },
+      },
+    },
+    comminutionProperties: {
+      bondCrushingWorkIndexKWhPerT: cwi,
+      bondBallMillWorkIndexKWhPerT: bwi,
+      bondAbrasionIndex: ai,
+    },
+  };
+}
+
+function multiSpeciesTexture(id, speciesD50, comminutionProperties = {
+  bondCrushingWorkIndexKWhPerT: 11,
+  bondBallMillWorkIndexKWhPerT: 16,
+  bondAbrasionIndex: 0.35,
+}) {
+  return {
+    id,
+    speciesTextures: Object.fromEntries(Object.entries(speciesD50).map(([speciesId, d50]) => [
+      speciesId,
+      {
+        grainSizeUm: { d10: d50 * 0.4, d50, d90: d50 * 2.5 },
+        occurrenceModes: { free: 0.15, boundary: 0.35, intergrown: 0.35, included: 0.15 },
+      },
+    ])),
+    comminutionProperties: { ...comminutionProperties },
   };
 }
 
@@ -85,19 +116,16 @@ test('particle-size vocabulary spans fine grinding through run-of-mine rock', ()
   assert.equal(particleSizeBinIdForMm(1000), '500-1000mm');
 });
 
-test('ore-body extraction enters the plant as mostly locked run-of-mine rock and carries texture lineage', () => {
-  const texture = {
-    id: 'texture-iron-occurrence',
-    fallbackLiberationSizeUm: 180,
-    curveSpread: 0.6,
-    boundaryBreakageAffinity: 0.2,
-    speciesLiberationSizeUm: { hematite: 200, quartz: 150 },
-  };
+test('ore-body extraction enters the plant as mostly locked run-of-mine rock and carries measured occurrence lineage', () => {
+  const texture = multiSpeciesTexture('texture-iron-occurrence', { hematite: 220, quartz: 150 });
+  const comminutionProperties = { ...texture.comminutionProperties };
+  delete texture.comminutionProperties;
   const occurrence = {
     id: 'iron-occurrence',
     resourceId: 'iron-ore',
     composition: { hematite: 60, quartz: 40 },
     mineralTexture: texture,
+    comminutionProperties,
   };
   const state = extractorOutputRates({ prototypeRateKgPerSecond: 10 }, occurrence, 1);
   const sizes = summarizeSolidMaterialBySizeBin(state);
@@ -107,7 +135,8 @@ test('ore-body extraction enters the plant as mostly locked run-of-mine rock and
   assert.ok((liberation.locked ?? 0) / totalSolidQuantity(state) > 0.98);
   assertSpecies(state, { hematite: 6, quartz: 4 });
   assert.deepEqual(summarizeSolidMaterialByTextureProfile(state), { 'texture-iron-occurrence': 10 });
-  assert.deepEqual(state.textureProfiles['texture-iron-occurrence'], texture);
+  assert.deepEqual(state.textureProfiles['texture-iron-occurrence'].speciesTextures, texture.speciesTextures);
+  assert.deepEqual(state.textureProfiles['texture-iron-occurrence'].comminutionProperties, comminutionProperties);
 });
 
 test('Jaw Crusher performs primary size reduction with only minor liberation', () => {
@@ -187,9 +216,9 @@ test('Ball Mill reaches the sub-millimetre regime and drives substantially more 
   assert.ok(liberationShare(milled, ['locked']) < liberationShare(crushed, ['locked']));
 });
 
-test('identical Ball Mill settings produce different liberation for coarse- and fine-textured ore', () => {
-  const coarseTexture = textureProfile('coarse-texture', 300);
-  const fineTexture = textureProfile('fine-texture', 60);
+test('identical Ball Mill settings produce different liberation from measured mineral grain distributions', () => {
+  const coarseTexture = textureProfile('coarse-texture', 350);
+  const fineTexture = textureProfile('fine-texture', 55);
   const coarseFeed = singleFractionState({ sizeBinId: '15-25mm', texture: coarseTexture });
   const fineFeed = singleFractionState({ sizeBinId: '15-25mm', texture: fineTexture });
 
@@ -198,10 +227,67 @@ test('identical Ball Mill settings produce different liberation for coarse- and 
   const coarseUsefulLiberation = liberationShare(coarseProduct, ['mostly-liberated', 'liberated']);
   const fineUsefulLiberation = liberationShare(fineProduct, ['mostly-liberated', 'liberated']);
 
-  assert.ok(coarseUsefulLiberation > fineUsefulLiberation + 0.10);
-  assert.deepEqual(summarizeSolidMaterialBySizeBin(coarseProduct), summarizeSolidMaterialBySizeBin(fineProduct));
+  assert.ok(coarseUsefulLiberation > fineUsefulLiberation + 0.05);
+  for (const [binId, quantity] of Object.entries(summarizeSolidMaterialBySizeBin(coarseProduct))) {
+    assertAlmostEqual(summarizeSolidMaterialBySizeBin(fineProduct)[binId], quantity, `${binId} same PSD`);
+  }
   assert.deepEqual(summarizeSolidMaterialByTextureProfile(coarseProduct), { 'coarse-texture': 100 });
   assert.deepEqual(summarizeSolidMaterialByTextureProfile(fineProduct), { 'fine-texture': 100 });
+});
+
+test('mineral association mode changes liberation at the same grain sizes', () => {
+  const easyTexture = textureProfile('boundary-rich', 180, {
+    occurrenceModes: { free: 0.35, boundary: 0.50, intergrown: 0.10, included: 0.05 },
+  });
+  const includedTexture = textureProfile('included-rich', 180, {
+    occurrenceModes: { free: 0.05, boundary: 0.10, intergrown: 0.35, included: 0.50 },
+  });
+  const easy = millSolidMaterialState(singleFractionState({ sizeBinId: '15-25mm', texture: easyTexture }), 0.25);
+  const difficult = millSolidMaterialState(singleFractionState({ sizeBinId: '15-25mm', texture: includedTexture }), 0.25);
+  assert.ok(
+    liberationShare(easy, ['mostly-liberated', 'liberated'])
+      > liberationShare(difficult, ['mostly-liberated', 'liberated']),
+  );
+});
+
+test('Bond Ball Mill Work Index power-limits harder ore at the same mill setting and drive power', () => {
+  const easyFeed = singleFractionState({
+    sizeBinId: '15-25mm',
+    quantity: 10,
+    texture: textureProfile('low-bwi', 180, { bwi: 9, ai: 0.2 }),
+  });
+  const hardFeed = singleFractionState({
+    sizeBinId: '15-25mm',
+    quantity: 10,
+    texture: textureProfile('high-bwi', 180, { bwi: 22, ai: 0.6 }),
+  });
+
+  const easy = applyContinuousMilling(easyFeed, 0.25, 10, 25);
+  const hard = applyContinuousMilling(hardFeed, 0.25, 10, 25);
+  assert.ok(easy.specificEnergyKWhPerT < hard.specificEnergyKWhPerT);
+  assert.ok(totalSolidQuantity(easy.actualFeedSolidState) > totalSolidQuantity(hard.actualFeedSolidState));
+  assert.ok(easy.actualPowerKw <= 25 + TOLERANCE);
+  assert.ok(hard.actualPowerKw <= 25 + TOLERANCE);
+});
+
+test('mixed ore preserves mass-weighted CWi BWi and abrasion index through lineage', () => {
+  const easy = singleFractionState({
+    sizeBinId: '15-25mm',
+    quantity: 40,
+    texture: textureProfile('easy-engineering', 220, { cwi: 7, bwi: 10, ai: 0.2 }),
+  });
+  const hard = singleFractionState({
+    sizeBinId: '15-25mm',
+    quantity: 60,
+    texture: textureProfile('hard-engineering', 80, { cwi: 17, bwi: 20, ai: 0.6 }),
+  });
+  const blended = createSolidMaterialState();
+  addSolidMaterialState(blended, easy);
+  addSolidMaterialState(blended, hard);
+  const properties = weightedComminutionProperties(blended);
+  assertAlmostEqual(properties.bondCrushingWorkIndexKWhPerT, 13, 'mass weighted CWi');
+  assertAlmostEqual(properties.bondBallMillWorkIndexKWhPerT, 16, 'mass weighted BWi');
+  assertAlmostEqual(properties.bondAbrasionIndex, 0.44, 'mass weighted Ai');
 });
 
 test('Ball Mill consolidates sub-tolerance child allocations instead of losing conserved matter', () => {
@@ -246,7 +332,7 @@ test('mixed ores retain separate texture populations instead of collapsing ident
     'easy-texture': 40,
     'difficult-texture': 60,
   });
-  assert.equal(totalSolidQuantity(milled), 100);
+  assertAlmostEqual(totalSolidQuantity(milled), 100, 'mixed mill total');
 });
 
 test('all staged comminution operations conserve each species exactly within floating-point tolerance', () => {
