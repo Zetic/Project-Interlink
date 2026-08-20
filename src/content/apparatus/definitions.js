@@ -65,7 +65,8 @@ const solidOutputPort = (
 });
 
 const comminutionCapabilities = Object.freeze([
-  Object.freeze({ id: 'throughputKgPerSecond', label: 'Rated throughput', unit: 'kg/s' }),
+  Object.freeze({ id: 'throughputKgPerSecond', label: 'Mechanical throughput limit', unit: 'kg/s' }),
+  Object.freeze({ id: 'ratedPowerKw', label: 'Rated drive power', unit: 'kW' }),
   Object.freeze({ id: 'maxFeedParticleSizeMm', label: 'Maximum feed particle size', unit: 'mm' }),
 ]);
 
@@ -112,6 +113,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     defaults: Object.freeze({
       ...defaultProcessParameters(JAW_CRUSHING_PROCESS_ID),
       throughputKgPerSecond: 8,
+      ratedPowerKw: 8,
     }),
     ports: Object.freeze([
       solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
@@ -128,6 +130,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     defaults: Object.freeze({
       ...defaultProcessParameters(CONE_CRUSHING_PROCESS_ID),
       throughputKgPerSecond: 5,
+      ratedPowerKw: 10,
     }),
     ports: Object.freeze([
       solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
@@ -144,6 +147,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     defaults: Object.freeze({
       ...defaultProcessParameters(MILLING_PROCESS_ID),
       throughputKgPerSecond: 2,
+      ratedPowerKw: 75,
     }),
     ports: Object.freeze([
       solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
