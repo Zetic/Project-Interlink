@@ -146,7 +146,7 @@ An Extractor is placed unbound. A typed `resource-access` connection from a Feat
 
 ## Crusher
 
-Current player-configurable canonical target cuts are:
+Current player-configurable canonical **nominal product settings** are:
 
 ```text
 1 mm
@@ -157,9 +157,20 @@ Current player-configurable canonical target cuts are:
 120 mm
 ```
 
-A Crusher remains a throughput device. Feed already at or below its configured target passes through unchanged rather than causing the machine to infer that no processing is needed.
+A Crusher setting is not a guaranteed maximum particle size. Coarser feed produces a deterministic prototype particle-size distribution containing some oversize material:
 
-Coarser fractions are redistributed deterministically into smaller size classes and improved liberation while preserving species mass.
+```text
+10% → one size bin coarser than the nominal setting
+55% → nominal setting bin
+25% → one size bin finer
+10% → two size bins finer
+```
+
+Shares merge naturally where the particulate model reaches its finest available bin. This prototype distribution is intentionally simple; future crusher type, feed properties, loading, wear, and operating conditions can replace the fixed curve when those variables create useful gameplay decisions.
+
+A Crusher remains a throughput device. Feed already at or below its configured nominal setting passes through unchanged rather than causing the machine to infer that no processing is needed. Coarser fractions are redistributed and gain liberation while preserving species mass.
+
+Legacy 10/12 mm settings remain accepted only for persisted/test compatibility and preserve their historical product behavior; they are not player-facing canonical choices.
 
 ## Screen
 
@@ -196,6 +207,8 @@ coarser fraction
 
 Screening does **not** change species, particle-size class, liberation class, or quantity. It only routes existing fractions.
 
+Because the Crusher now produces a nominal distribution rather than a perfect cutoff, the Screen has an immediate classification role. For coarse feed processed by a Crusher at 25 mm, the prototype curve leaves 10% in the 25–60 mm oversize class; a 25 mm Screen routes that fraction to `oversize` while the remaining 90% can proceed to a process that requires <=25 mm feed.
+
 Both outputs are required. Output handling is transactional: a disconnected required output or insufficient required output capacity prevents feed consumption rather than deleting one side of the split.
 
 Real screening inefficiency, near-cut misplacement, moisture effects, screen area/loading, particle shape, deck angle, and vibration are deferred until they create useful process decisions.
@@ -214,7 +227,7 @@ species magnetic response
 
 The current prototype requires all feed to be in particle-size classes at or below 25 mm. Oversized mixed feed blocks the process rather than being silently screened.
 
-Screen therefore provides the first explicit way to classify mixed particle sizes before a size-limited downstream process.
+Screen therefore provides the explicit way to classify a Crusher product before a size-limited downstream process.
 
 ---
 
@@ -250,11 +263,14 @@ natural mixed ore
   ↓ extraction
 coarse particulate feed
   ↓ crushing
-smaller / more liberated particulate mixture
+nominal crushed product with fines + oversize
   ↓ screening
-size-qualified streams
-  ↓ magnetic separation or later separation methods
-concentrates / tailings / recycle streams
+  ├── oversize → further crushing / future recycle
+  └── undersize → size-qualified downstream feed
+                       ↓
+                magnetic separation
+                       ↓
+              concentrate + tailings
 ```
 
 ---
