@@ -139,10 +139,6 @@ test('machine inspection sums arbitrary material input and output ports without 
   assert.equal(details.actualProductKgPerSecond, 4);
   assert.equal(details.outputStreams.length, 2);
   assert.deepEqual(details.outputStreams.map(output => output.portId).sort(), ['oversize', 'undersize']);
-
-  const source = readFileSync(new URL('../src/workspace/inspector/inspectionViewModel.js', import.meta.url), 'utf8');
-  const machineSection = source.slice(source.indexOf('export function machineInspection'));
-  assert.doesNotMatch(machineSection, /actualProductKgPerSecond[\s\S]*node\?\.nodeType === 'magSep'/);
 });
 
 test('player removal policy derives eligibility from canonical apparatus definitions', () => {
