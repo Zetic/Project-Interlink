@@ -28,10 +28,10 @@ export const PROCESS_DEFINITIONS = {
           Object.freeze({ value: 60, label: '≤60 mm' }),
           Object.freeze({ value: 120, label: '≤120 mm' }),
         ]),
-        // Older batch/process fixtures used 10 mm for the same 5–15 mm class.
-        // Keep that programmatic value readable during this prototype while it
-        // remains absent from the canonical player-facing choices.
-        legacyValues: Object.freeze([10]),
+        // Older batch/process fixtures used 10/12 mm for the same 5–15 mm
+        // physical class. Keep those programmatic values readable during this
+        // prototype while they remain absent from canonical player choices.
+        legacyValues: Object.freeze([10, 12]),
       },
     ],
   },
