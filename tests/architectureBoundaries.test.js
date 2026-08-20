@@ -113,40 +113,56 @@ test('process definitions, pure kernels, and conservation policies have separate
 });
 
 test('apparatus identity and runtime behavior are registry-backed', () => {
-  assert.equal(APPARATUS_DEFINITIONS.crusher.catalog.label, 'Crusher');
+  assert.equal(APPARATUS_DEFINITIONS.crusher.catalog.placeable, false);
+  assert.equal(APPARATUS_DEFINITIONS.jawCrusher.catalog.label, 'Jaw Crusher');
+  assert.equal(APPARATUS_DEFINITIONS.coneCrusher.catalog.label, 'Cone Crusher');
+  assert.equal(APPARATUS_DEFINITIONS.ballMill.catalog.label, 'Ball Mill');
   assert.equal(APPARATUS_DEFINITIONS.screen.catalog.label, 'Screen');
   assert.equal(APPARATUS_DEFINITIONS.splitter.catalog.label, 'Splitter');
   assert.equal(APPARATUS_DEFINITIONS.merger.catalog.label, 'Material Merger');
   assert.equal(APPARATUS_DEFINITIONS.feeder.catalog.label, 'Feeder');
+  assert.equal(APPARATUS_DEFINITIONS.magSep.catalog.label, 'Dry Drum Magnetic Separator');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.crusher.create, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.jawCrusher.simulate, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.coneCrusher.simulate, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.ballMill.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.screen.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.splitter.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.merger.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.feeder.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.magSep.simulate, 'function');
-  assert.equal(apparatusRuntimeFor('crusher'), APPARATUS_RUNTIME_REGISTRY.crusher);
-  assert.equal(apparatusRuntimeFor('screen'), APPARATUS_RUNTIME_REGISTRY.screen);
-  assert.equal(apparatusRuntimeFor('splitter'), APPARATUS_RUNTIME_REGISTRY.splitter);
+  assert.equal(apparatusRuntimeFor('jawCrusher'), APPARATUS_RUNTIME_REGISTRY.jawCrusher);
+  assert.equal(apparatusRuntimeFor('coneCrusher'), APPARATUS_RUNTIME_REGISTRY.coneCrusher);
+  assert.equal(apparatusRuntimeFor('ballMill'), APPARATUS_RUNTIME_REGISTRY.ballMill);
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.id),
-    ['extractor', 'crusher', 'screen', 'splitter', 'material-merger', 'feeder', 'magnetic-separator', 'hopper'],
+    ['extractor', 'jaw-crusher', 'cone-crusher', 'ball-mill', 'screen', 'splitter', 'material-merger', 'feeder', 'magnetic-separator', 'hopper'],
   );
 
   _resetOrdinals();
   const blueprint = createBlueprint();
-  const crusher = blueprintAddApparatus(blueprint, 'crusher');
+  const jaw = blueprintAddApparatus(blueprint, 'jawCrusher');
+  const cone = blueprintAddApparatus(blueprint, 'coneCrusher');
+  const mill = blueprintAddApparatus(blueprint, 'ballMill');
   const screen = blueprintAddApparatus(blueprint, 'screen');
   const splitter = blueprintAddApparatus(blueprint, 'splitter');
   const merger = blueprintAddApparatus(blueprint, 'merger');
   const feeder = blueprintAddApparatus(blueprint, 'feeder');
-  assert.equal(crusher.throughputKgPerSecond, APPARATUS_DEFINITIONS.crusher.defaults.throughputKgPerSecond);
+  assert.equal(jaw.jawProductSizeMm, APPARATUS_DEFINITIONS.jawCrusher.defaults.jawProductSizeMm);
+  assert.equal(cone.coneProductSizeMm, APPARATUS_DEFINITIONS.coneCrusher.defaults.coneProductSizeMm);
+  assert.equal(mill.millProductSizeMm, APPARATUS_DEFINITIONS.ballMill.defaults.millProductSizeMm);
+  assert.equal(jaw.maxFeedParticleSizeMm, 1000);
+  assert.equal(cone.maxFeedParticleSizeMm, 250);
+  assert.equal(mill.maxFeedParticleSizeMm, 25);
   assert.equal(screen.apertureSizeMm, APPARATUS_DEFINITIONS.screen.defaults.apertureSizeMm);
   assert.equal(splitter.splitFractionToA, APPARATUS_DEFINITIONS.splitter.defaults.splitFractionToA);
   assert.equal(feeder.flowRateKgPerSecond, APPARATUS_DEFINITIONS.feeder.defaults.flowRateKgPerSecond);
   assert.equal(
-    getNodePortDefinitions(crusher).find(port => port.id === 'feed').accepts[0],
+    getNodePortDefinitions(jaw).find(port => port.id === 'feed').accepts[0],
     'stored-solid-particulate',
   );
+  assert.deepEqual(getNodePortDefinitions(cone).map(port => port.id), ['feed', 'product']);
+  assert.deepEqual(getNodePortDefinitions(mill).map(port => port.id), ['feed', 'product']);
   assert.deepEqual(getNodePortDefinitions(screen).map(port => port.id), ['feed', 'undersize', 'oversize']);
   assert.deepEqual(getNodePortDefinitions(splitter).map(port => port.id), ['feed', 'output-a', 'output-b']);
   assert.deepEqual(getNodePortDefinitions(merger).map(port => port.id), ['input-a', 'input-b', 'product']);
