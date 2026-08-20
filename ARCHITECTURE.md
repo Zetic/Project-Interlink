@@ -2,15 +2,15 @@
 
 This document records the **current implementation architecture** of Project Interlink: where responsibilities live, which dependency directions are intentional, how new systems should be added, and which files are compatibility surfaces rather than canonical implementation homes.
 
-`DESIGN.md` describes what the game is intended to become. `README.md` summarizes the current playable/technical state. `.github/copilot-instructions.md` contains coding-agent guardrails. This file is the source of truth for **code organization and responsibility boundaries**.
+`DESIGN.md` describes what the game is intended to become. `README.md` summarizes current implementation state. `.github/copilot-instructions.md` contains coding-agent guardrails. This file is the source of truth for **code organization and responsibility boundaries**.
 
 ---
 
 ## 1. Architectural Goals
 
-The project is organized to support growth from a small material-processing prototype into a much larger simulation containing many apparatus types, physical properties, process models, material forms, controls, recursive systems, and world-generation domains without returning to central switchboards or duplicate registries.
+The project is organized to grow from the current material-processing prototype into a much larger simulation containing many apparatus types, physical properties, process models, material forms, controls, recursive systems, and world-generation domains without returning to central switchboards or duplicate registries.
 
-The important boundaries are:
+The important responsibility chain is:
 
 ```text
 content definitions
@@ -32,60 +32,49 @@ content + deterministic RNG + core world assembly
                generated world
 ```
 
-The application composes generation, Knowledge State, and the workspace; the core model does not need to know about browser rendering.
+The browser application composes generation, Knowledge State, and the workspace.
 
 ---
 
 ## 2. Dependency Direction
 
-New code should preserve this broad dependency direction:
+Preferred dependency direction:
 
 ```text
-src/app.js
-├── generator
-├── core
-└── workspace
-
-workspace
-├── simulation
-├── content
-└── core
-
-simulation
-├── content
-└── core
-
-generator
-├── content
-└── core
-
-content
-└── core
-
-core
-└── core
+app → generator + core + workspace
+workspace → simulation + content + core
+simulation → content + core
+generator → content + core
+content → core
+core → core
 ```
 
 ### Rules
 
-- `core` contains reusable physical, process, world-model, validation, Knowledge-State, and neutral system abstractions. It must not depend on workspace/UI or simulation runtime code.
-- `content` defines what resources, Features, apparatus, and similar catalog entries exist. It may reference core contracts but should not contain running simulation behavior.
+- `core` contains reusable physical, process, world-model, validation, and neutral-system abstractions. It must not depend on workspace/UI or simulation-runtime code.
+- `content` defines what resources, Features, apparatus, and similar catalog entries exist. It should not contain running simulation loops or DOM behavior.
 - `generator` decides what deterministic world content appears from physical conditions and seeded RNG. It consumes content definitions rather than owning those definitions.
-- `simulation` owns continuous runtime behavior, inventories, streams, apparatus execution, world-time advancement, and boundary transfer.
+- `simulation` owns continuous runtime behavior, streams, storage, apparatus execution, world-time advancement, and boundary transfer.
 - `workspace` owns player-facing graph projection, layout, navigation, catalog interaction, Inspector presentation, and DOM orchestration. It does not own physical truth.
-- `src/app.js` is the composition root for the browser application and may compose generator, core application-facing state such as Knowledge State, and workspace modules.
+- `src/app.js` is the browser composition root.
 
 ### Legacy compatibility exception
 
-`src/core/world/worldState.js` still exposes the historical `createWorld()` API and therefore imports `generator/generateWorld.js`. New application or feature code should **not** use that dependency direction. Use `src/generator/generateWorld.js` for generation and `src/core/world/model/*` / `src/core/world/validation/*` for the core world model.
+`src/core/world/worldState.js` still exposes the historical `createWorld()` compatibility API and therefore delegates to `generator/generateWorld.js`. New code should not extend this dependency direction.
 
-Do not add additional `core → generator` dependencies. The compatibility entry point should remain thin until old callers can be migrated and removed safely.
+Use:
+
+- `src/generator/generateWorld.js` for new world generation callers;
+- `src/core/world/model/*` for world-model responsibilities;
+- `src/core/world/validation/*` for validation.
+
+Do not add additional `core → generator` dependencies.
 
 ---
 
 ## 3. Repository Organization
 
-The current repository is intentionally lightweight: vanilla HTML/CSS/ES modules, Node-based tests, and no application framework or backend.
+The project intentionally remains lightweight: vanilla HTML/CSS/ES modules, Node-based tests, and no application framework or backend.
 
 ```text
 Project-Interlink/
@@ -117,13 +106,11 @@ Project-Interlink/
 └── tests/
 ```
 
-The sections below describe the `src/` tree in detail. `tests/` is intentionally organized by behavior/domain rather than mirroring source folders one-for-one; architecture, simulation, material, generation, navigation, catalog, and UI contracts all have regression coverage there.
-
 ---
 
 ## 4. `src/content/` — Declarative Game Content
 
-`content` answers **what can exist?** It should contain declarative definitions and compatibility/catalog metadata, not process runtime loops or DOM behavior.
+`content` answers **what can exist?** It owns declarative definitions and compatibility/catalog metadata, not process runtime loops or UI behavior.
 
 ```text
 src/content/
@@ -146,28 +133,27 @@ src/content/
 
 ### Apparatus definitions
 
-`content/apparatus/definitions.js` is the canonical definition source for current placeable engineering nodes. It owns information such as:
+`content/apparatus/definitions.js` is the canonical definition source for current placeable engineering nodes. It owns:
 
-- node type / identity
-- catalog label, category, description, search terms, and order
-- whether the apparatus is placeable
-- process association
-- canonical ports and port capabilities
-- fixed capability metadata
-- default values
-- player-configurable process parameters
+- node type / identity;
+- NODE catalog label, category, description, search terms, order, and placeability;
+- process association;
+- canonical ports and interface capabilities;
+- fixed capability metadata;
+- defaults;
+- player-configurable process parameter metadata.
 
-The NODE catalog derives from these definitions; do not create a second independent machine catalog.
+Current placeable definitions are Extractor, Crusher, Screen, Magnetic Separator, and Hopper.
 
-### Resource and Feature content
+The NODE catalog is projected from these definitions. Do not create a second independent machine catalog.
 
-Resource composition templates, descriptions, occurrence-family taxonomy, Feature type rules, and Feature-generation weighting data belong here. Generator code consumes these definitions and applies deterministic selection/randomization.
+### Resources and Features
+
+Resource composition templates, descriptions, occurrence-family vocabulary, Feature types, Feature naming, hard compatibility, and generation weighting data belong under `content/`. Generator code consumes them and applies deterministic physical conditions/RNG.
 
 ---
 
-## 5. `src/core/` — Reusable Simulation Truth and Contracts
-
-`core` contains domain logic that should remain useful regardless of how a system is displayed or which runtime apparatus invokes it.
+## 5. `src/core/` — Reusable Physical Truth and Contracts
 
 ```text
 src/core/
@@ -205,17 +191,17 @@ src/core/materials/
 └── solidMaterialState.js       [compatibility re-export]
 ```
 
-The implemented particulate solid state is sparse and aggregate-based:
+The implemented particulate state is sparse and aggregate-based:
 
 ```text
 speciesId × sizeBinId × liberationClassId → quantity
 ```
 
-A fraction describes a population, not an individually simulated particle.
+A fraction represents a population, not one simulated particle.
 
-Additional physical properties should **not** automatically become more fraction-key axes. Body-level state, phase-specific state, and property resolvers should be added only when a process needs them.
+Do not automatically make every new physical property another fraction-key dimension. Body-level state, phase-specific state, species reference properties, and derived property resolvers should remain separate where appropriate.
 
-`properties/` is the intended home for domain-specific property access/resolution. Physics code should use these property APIs rather than reaching directly into registry internals when a resolver exists.
+`properties/` is the intended home for domain-specific property resolution. Process physics should use property APIs when a resolver exists instead of reaching directly into registry internals.
 
 ### 5.2 Processes
 
@@ -228,16 +214,19 @@ src/core/processes/
 ├── definitions/
 │   ├── crushing.js
 │   ├── magneticSeparation.js
+│   ├── screening.js
 │   └── index.js
 │
 ├── executors/
 │   ├── crushing.js
 │   ├── magneticSeparation.js
+│   ├── screening.js
 │   └── index.js
 │
 ├── physics/
 │   ├── crushing.js
 │   ├── magneticSeparation.js
+│   ├── screening.js
 │   └── index.js
 │
 ├── processExecution.js
@@ -245,26 +234,32 @@ src/core/processes/
 └── processPhysics.js           [compatibility re-export]
 ```
 
-Responsibilities are intentionally split:
+Responsibilities are deliberately split:
 
 ```text
 Process definition
-    what inputs/outputs/parameters/contracts exist
+    inputs / outputs / parameters / applicability / conservation policy
 
 Pure physics
-    what the transformation physically does
+    material transformation or routing
 
 Executor
-    adapts the pure transformation to discrete MaterialBatch execution
+    discrete MaterialBatch adapter
 
-Continuous runner/runtime
-    adapts the same physical behavior to apparatus flow
+Continuous runtime
+    placed-machine flow / backpressure adapter
 
 Conservation policy
-    validates the conserved quantities appropriate to the process family
+    validates the quantities conserved by the process family
 ```
 
-Mechanical processes currently use species conservation. Future chemistry or thermal processes may require different conservation policies rather than forcing every process into species-preserving rules.
+Current mechanical processes use species conservation. Future chemistry or thermal processes can introduce stronger/different conservation policies rather than weakening mechanical conservation.
+
+#### Current process kernels
+
+- **Crushing** changes size distribution and liberation while preserving species mass.
+- **Screening** routes existing fractions to `undersize` or `oversize` according to an ideal aperture cut without changing their species, size class, liberation, or quantity.
+- **Magnetic Separation** routes fractions according to magnetic response plus size, liberation, field strength, and entrainment/carryover.
 
 ### 5.3 Neutral system primitives
 
@@ -277,19 +272,19 @@ src/core/systems/
 └── systemValidation.js
 ```
 
-These modules describe neutral recursive node/port/connection concepts shared by natural hierarchy nodes and engineered systems.
+These modules describe reusable node/port/connection concepts shared by natural hierarchy nodes and engineered systems.
 
-Connection eligibility should be based on edge kind plus interface/physical capabilities, not explicit machine-pair whitelists.
+Connection eligibility derives from edge kind plus interface/physical capabilities, not explicit machine-pair whitelists.
 
-Current important kinds/capabilities include:
+Current important concepts include:
 
-- `resource-access`
-- `material`
-- `resource-source`
-- `solid-particulate`
-- `stored-solid-particulate`
+- `resource-access` edge kind;
+- `material` edge kind;
+- `resource-source` capability;
+- `solid-particulate` capability;
+- `stored-solid-particulate` capability.
 
-`stored-solid-particulate` describes a buffered/withdrawable interface requirement; it is not material provenance or a distinct physical material form.
+`stored-solid-particulate` means the receiving process requires a buffered/withdrawable particulate owner. It is an interface requirement, not material provenance or a distinct physical form.
 
 ### 5.4 World model and validation
 
@@ -317,9 +312,9 @@ src/core/world/
     └── index.js
 ```
 
-Validation domains own their own checks and are composed by `validateWorld()`; they should not be separated by filtering error strings.
+Validation domains own their own checks and are composed by `validateWorld()`.
 
-The canonical natural ownership hierarchy is:
+Canonical natural ownership remains:
 
 ```text
 Planet → Region → Site → Feature → ResourceOccurrence
@@ -329,7 +324,7 @@ Planet → Region → Site → Feature → ResourceOccurrence
 
 ## 6. `src/generator/` — Deterministic World Generation
 
-`generator` answers **what physical world is produced from this seed and these conditions?** It owns deterministic algorithms and RNG use, not the authoritative catalog of resources/Feature types.
+`generator` answers **what physical world is produced from this seed and these conditions?** It owns deterministic algorithms and RNG use, not authoritative content catalogs.
 
 ```text
 src/generator/
@@ -352,9 +347,9 @@ src/generator/
     └── generateResources.js
 ```
 
-Some top-level generator modules remain compatibility/public entry points while domain folders provide focused organization. New generation behavior should preserve deterministic namespaced RNG and follow generator-version rules when same-seed output changes.
+Some top-level modules remain compatibility/public entry points while focused domain directories establish the long-term organization. Generation changes that alter same-seed world truth must follow generator-version rules.
 
-`generateWorld.js` combines deterministic generation with `core/world/model/worldAssembly.js`.
+`generateWorld.js` composes deterministic generation with `core/world/model/worldAssembly.js`.
 
 ---
 
@@ -369,6 +364,7 @@ src/simulation/
 │   ├── crusher.js
 │   ├── extractor.js
 │   ├── magneticSeparator.js
+│   ├── screen.js
 │   └── registry.js
 │
 ├── apparatusDefinitions.js     [compatibility re-export]
@@ -384,30 +380,48 @@ src/simulation/
 
 ### Apparatus runtimes
 
-Runtime modules contain the behavior of placed machines. The runtime registry provides creation/simulation dispatch so `simulationEngine.js` does not need another machine-specific branch for every apparatus.
+Runtime modules contain the behavior of placed active machinery. The runtime registry owns generic creation/simulation dispatch so `simulationEngine.js` does not acquire a machine-specific branch for every new apparatus.
 
-Current registry-backed apparatus are:
+Current registry-backed node types are:
 
-- Extractor
-- Hopper
-- Crusher
-- Magnetic Separator
+```text
+extractor
+hopper
+crusher
+screen
+magSep
+```
 
-Hopper/storage implementation currently remains in `hopperNode.js` and is registered through `apparatus/registry.js` rather than having a separate `apparatus/hopper.js` file.
+Hopper/storage implementation remains in `hopperNode.js` and is registered through `apparatus/registry.js`.
+
+### Screen runtime contract
+
+The Screen is the first new apparatus added after the architecture restructure and intentionally validates the extension boundaries.
+
+```text
+stored solid feed
+      ↓
+    Screen
+   ├───────┐
+   ↓       ↓
+undersize oversize
+```
+
+Both outputs are explicit and required. The runtime stages feed and both destinations before committing, so a required output constraint cannot delete matter after feed consumption.
+
+The Screen uses the shared `core/processes/physics/screening.js` kernel; continuous runtime does not duplicate screening physics.
 
 ### Simulation engine
 
-`simulationEngine.js` remains the graph/simulation orchestrator. It owns generic blueprint operations, connection validation, stream setup, fixed-step apparatus dispatch, and apparatus control entry points. Machine-specific transformation behavior belongs in apparatus runtime or core physics modules.
+`simulationEngine.js` remains a graph/simulation orchestrator. It owns generic blueprint operations, connection validation, stream setup, fixed-step registry dispatch, and apparatus control entry points. Machine-specific physical transformations belong in process kernels and apparatus runtime modules.
 
 ### Streams and storage
 
-`MaterialStream` represents transfer rates, not inventory. Hoppers and boundary buffers own stored matter. Continuous processes must respect downstream capacity and commit multi-output changes atomically.
+`MaterialStream` represents transfer rates, not inventory. Hoppers and boundary buffers own stored matter. Continuous processes respect downstream capacity and multi-output processes commit atomically.
 
 ---
 
 ## 8. `src/workspace/` — Player-Facing Graph Application
-
-`workspace` owns player interaction and projection of physical state into the common graph interface.
 
 ```text
 src/workspace/
@@ -453,9 +467,9 @@ src/workspace/
 └── workspaceUI.js              [compatibility re-export]
 ```
 
-`workspaceController.js` is the current DOM/application orchestrator. Domain rules should continue to move into the focused graph/catalog/inspector/navigation/shell modules when they can be made independently meaningful and testable. Do not recreate a second hierarchy-specific workspace implementation.
+`workspaceController.js` is the current DOM/application orchestrator. Focused graph/catalog/inspector/navigation/shell modules own reusable responsibilities when they can be independently meaningful and tested.
 
-The generic apparatus Inspector and definition-driven NODE catalog are important scalability boundaries: future apparatus should not require a new central UI type list merely to be placeable, removable, inspectable, or configurable.
+The Screen requires no dedicated NODE registration or generic Inspector eligibility branch. Its catalog entry, parameter control, removability, ports, and generic machine inspection flow through existing definition-driven paths. That is an architectural invariant to preserve for future machines.
 
 ---
 
@@ -468,7 +482,7 @@ src/data/
 └── resourceDefinitions.js
 ```
 
-These are compatibility forwarding modules. Canonical resource content now lives under `src/content/resources/`.
+These are compatibility forwarding modules. Canonical resource content lives under `src/content/resources/`.
 
 Do not add new authoritative content to `src/data/`.
 
@@ -476,7 +490,7 @@ Do not add new authoritative content to `src/data/`.
 
 ## 10. Canonical Extension Path — Adding an Apparatus
 
-A new apparatus such as Screen should normally require focused additions rather than edits to unrelated central switchboards.
+Screen has now exercised this path successfully. A future process apparatus such as a Mill or Gravity Separator should normally require focused additions rather than unrelated central edits.
 
 Typical path:
 
@@ -501,127 +515,146 @@ Typical path:
    runtime registration/phase
 
 7. tests/
-   physics, conservation, connectivity, backpressure, runtime, and generic UI integration
+   physics, conservation, connectivity, backpressure, runtime, generic UI integration
 ```
 
-The following should **not** normally be required just to add a machine:
+The following should **not** normally be required merely to add a machine:
 
-- a machine-pair connection whitelist
-- a second NODE catalog registration list
-- a node-type list for removability
-- a node-type list for generic Inspector eligibility
-- a new central simulation `if/switch` branch
+- a machine-pair connection whitelist;
+- a second NODE catalog registration list;
+- a node-type list for removability;
+- a node-type list for generic Inspector eligibility;
+- a new central simulation `if/switch` dispatch branch.
 
-If those become necessary, first determine whether the new apparatus exposes a genuinely new system concept or whether an existing generic boundary is being bypassed.
+If one becomes necessary, determine whether the new apparatus introduces a genuinely new system concept or an existing generic boundary is being bypassed.
 
 ---
 
 ## 11. Canonical Extension Path — Adding a Material Property
 
-A material/species property should enter the simulation when at least one process needs it to determine a physical outcome.
+A property should enter the simulation when at least one process needs it to determine a physical outcome.
 
 Preferred pattern:
 
 ```text
-species/reference data
-        ↓
-core/materials/properties/<domain>.js resolver
-        ↓
+species/reference data or material/body state
+              ↓
+core/materials/properties/<domain>.js
+              ↓
 core/processes/physics/<process>.js
-        ↓
-apparatus result
+              ↓
+apparatus/process result
 ```
 
-Examples of future domains may include density, mechanical/grindability, thermal, electrical, surface, and chemical properties.
+Future property domains may include density, mechanical/grindability, thermal, electrical, surface, chemical, and fluid properties.
 
 Guidelines:
 
-- Do not add speculative values only to fill a universal property table.
-- Distinguish intrinsic species properties from body/mixture/structure state.
-- Do not make every new property another particulate fraction-key dimension.
-- Keep process context in the process model when the behavior is not intrinsic to the species.
-- Physics modules should depend on property APIs, not UI or runtime nodes.
+- do not add speculative values just to fill a universal table;
+- distinguish intrinsic species properties from body/mixture/structural state;
+- do not make every property another particulate fraction-key axis;
+- add state/property resolution when an implemented process consumes it;
+- keep process physics dependent on property APIs rather than UI/runtime representation.
 
 ---
 
-## 12. Canonical Extension Path — New Content or Generation Rules
+## 12. Matter, Process, and Connection Invariants
 
-When adding a new resource/Feature concept:
+### Matter ownership
+
+Every modeled unit of matter has one physical owner/location at a time. A `MaterialStream` describes transfer rate and does not duplicate inventory.
+
+### Mechanical conservation
+
+Current Crusher, Screen, and Magnetic Separator operations preserve species mass. Screening additionally preserves each routed fraction descriptor exactly.
+
+### Transactional outputs
+
+A process must establish feasible output capacity before committing feed consumption. Multi-output machinery stages all required destinations and commits only after the planned transfer is valid.
+
+### Typed connections
+
+Compatibility derives from port edge kind and capabilities. Do not reintroduce pair tables such as `hopper → screen` or `screen → hopper`.
+
+### Material fan-out/fan-in
+
+One material output cannot fan out until an explicit Splitter exists. Multiple streams must not silently combine into one input without an explicit merger/mixer contract.
+
+### Resource access
+
+`Feature → Extractor` resource access is not matter flow and creates no `MaterialStream`.
+
+---
+
+## 13. Compatibility Entry Points
+
+The restructure intentionally retained thin forwarding/compatibility modules in several areas:
+
+- root files inside `src/core/materials/` forwarding to `solids/` or `species/`;
+- `src/core/processes/processDefinitions.js` and `processPhysics.js`;
+- `src/core/world/worldState.js`;
+- `src/simulation/apparatusDefinitions.js` and `systemNode.js`;
+- several root `src/workspace/*.js` files;
+- `src/data/*`.
+
+A compatibility module is not a second implementation home.
+
+Do not add new physics, machine behavior, authoritative registries, or content to a compatibility forwarding path merely because the import is shorter.
+
+---
+
+## 14. Tests as Architecture Contracts
+
+The test suite covers both simulation behavior and architectural extension points. Relevant groups include:
+
+- `architectureBoundaries.test.js` — dependency/registry/typed-port boundaries;
+- `futureApparatusScalability.test.js` — definition-driven catalog, generic Inspector, arbitrary multi-output inspection, removal policy;
+- `apparatusControlUI.test.js` — definition-driven choice controls;
+- `continuousSimulation.test.js` — flow, backpressure, conservation, continuous apparatus behavior;
+- `materialProcessing.test.js` / `solidMaterialState.test.js` — batch and physical material invariants;
+- `screening.test.js` — Screen definition, sharp-cut physics, batch/continuous conservation, required outputs, backpressure, parameter choices, connectivity.
+
+When adding another apparatus or physical property, tests should prove both its physical behavior and that it uses the intended generic extension paths.
+
+---
+
+## 15. Growth Direction
+
+The current solid-processing foundation now supports:
 
 ```text
-content/
-    what exists, classifications, compatibility, descriptors, templates
-
-generator/
-    when/where/how the content is selected from deterministic conditions + RNG
+Feature
+  ↓
+Extractor
+  ↓
+Hopper
+  ↓
+Crusher
+  ↓
+Hopper
+  ↓
+Screen
+ ├─────────────┐
+ ↓             ↓
+undersize    oversize
 ```
 
-Do not move declarative content back into generator implementation files.
+The next likely architecture/gameplay additions are explicit Splitter/Mixer-Merger behavior, then a Mill/Grinder with finer particle-size classes, followed by a density property domain and Gravity Separation.
 
-If same-seed generated truth changes, follow the `GENERATOR_VERSION` rule in `src/core/world/versions.js`.
-
-If serialized world structure changes, follow the `SCHEMA_VERSION` rule.
+Longer-term thermal, fluid, chemical, electrical, control, and logistics systems should extend the same boundaries rather than being packed into universal material objects or central machine engines.
 
 ---
 
-## 13. Compatibility Entry-Point Policy
+## 16. Documentation Rule
 
-The architecture refactor preserved small forwarding files so existing imports and tests did not need to move all at once.
+When code organization changes, update this file in the same PR when practical.
 
-A compatibility entry point should:
+Use:
 
-- re-export or delegate to a canonical module;
-- contain little or no independent domain logic;
-- not become the preferred import path for new code;
-- not become a second source of truth.
+- `DESIGN.md` for long-term design contracts;
+- `ARCHITECTURE.md` for current code ownership and extension paths;
+- `README.md` for current implementation state and roadmap;
+- `.github/copilot-instructions.md` for implementation guardrails;
+- `PATCH_NOTES.md` for historical context.
 
-When a compatibility surface has no remaining consumers, removal can be handled as a focused cleanup rather than mixed into unrelated feature work.
-
----
-
-## 14. Tests as Architectural Contracts
-
-The test suite is not only behavior coverage; several tests deliberately protect architecture boundaries.
-
-Important classes of tests include:
-
-- deterministic generation and version behavior
-- Planet → Region → Site → Feature → ResourceOccurrence ownership
-- concrete generated solid species/property coverage
-- MaterialBody/fraction validation
-- conservation and atomic backpressure
-- no material fan-out without a splitter
-- resource-access carrying no matter
-- typed-port compatibility and boundary topology
-- registry-backed apparatus creation/simulation
-- definition-driven NODE catalog
-- generic future-apparatus Inspector behavior
-- domain-separated world validation
-- process definition/physics/executor/conservation boundaries
-- workspace state vs physical state separation
-
-Run the complete suite after architectural or simulation changes:
-
-```bash
-npm test
-```
-
----
-
-## 15. Documentation Maintenance Rule
-
-When implementation structure changes materially:
-
-- update **`ARCHITECTURE.md`** for file ownership/dependency/extension-path changes;
-- update **`README.md`** when the current implementation state or near-term direction changes;
-- update **`DESIGN.md`** only when the long-term design contract changes;
-- update **`.github/copilot-instructions.md`** when coding-agent guardrails or canonical implementation paths change;
-- keep **`PATCH_NOTES.md`** as historical development context rather than current architectural authority.
-
-The goal is for a contributor or coding agent to answer both of these questions without reverse-engineering the repository:
-
-> **Where does this kind of code belong?**
-
-and
-
-> **Which existing boundary should a new system extend instead of bypass?**
+If documentation and implementation disagree, resolve the discrepancy rather than allowing multiple architectural stories to coexist.
