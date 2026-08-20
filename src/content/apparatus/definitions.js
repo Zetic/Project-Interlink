@@ -11,12 +11,14 @@ function processParameters(processId) {
   return getProcessDefinition(processId).parameters;
 }
 
-const catalog = (id, label, category, description, searchTerms) => Object.freeze({
+const catalog = (id, label, category, description, searchTerms, order, placeable = true) => Object.freeze({
   id,
   label,
   category,
   description,
   searchTerms: Object.freeze([...searchTerms]),
+  order,
+  placeable,
 });
 
 const resourceSourcePort = Object.freeze({
@@ -55,7 +57,7 @@ const solidOutputPort = (
 export const APPARATUS_DEFINITIONS = Object.freeze({
   extractor: Object.freeze({
     nodeType: 'extractor',
-    catalog: catalog('extractor', 'Extractor', 'apparatus', 'Pulls compatible solid matter from a connected Feature resource source.', ['extractor', 'extraction', 'resource access', 'source', 'feed', 'raw material']),
+    catalog: catalog('extractor', 'Extractor', 'apparatus', 'Pulls compatible solid matter from a connected Feature resource source.', ['extractor', 'extraction', 'resource access', 'source', 'feed', 'raw material'], 10),
     defaults: Object.freeze({ prototypeRateKgPerSecond: 5 }),
     placementParameterAliases: Object.freeze({ prototypeRateKgPerSecond: 'rateKgPerSecond' }),
     ports: Object.freeze([
@@ -69,7 +71,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   }),
   hopper: Object.freeze({
     nodeType: 'hopper',
-    catalog: catalog('hopper', 'Hopper', 'container', 'Stores discrete material constituents between processing nodes.', ['hopper', 'storage', 'buffer', 'container', 'holding', 'material']),
+    catalog: catalog('hopper', 'Hopper', 'container', 'Stores discrete material constituents between processing nodes.', ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'], 40),
     defaults: Object.freeze({ capacityKg: 1000 }),
     ports: Object.freeze([
       solidInputPort('input'),
@@ -86,7 +88,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   crusher: Object.freeze({
     nodeType: 'crusher',
     processId: CRUSHING_PROCESS_ID,
-    catalog: catalog('crusher', 'Crusher', 'apparatus', 'Reduces the particle size of solid material streams.', ['crusher', 'crushing', 'grinding', 'size reduction', 'ore', 'solid', 'particle']),
+    catalog: catalog('crusher', 'Crusher', 'apparatus', 'Reduces the particle size of solid material streams.', ['crusher', 'crushing', 'grinding', 'size reduction', 'ore', 'solid', 'particle'], 20),
     defaults: Object.freeze({
       ...defaultProcessParameters(CRUSHING_PROCESS_ID),
       throughputKgPerSecond: 4,
@@ -103,7 +105,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   magSep: Object.freeze({
     nodeType: 'magSep',
     processId: MAGNETIC_SEPARATION_PROCESS_ID,
-    catalog: catalog('magnetic-separator', 'Magnetic Separator', 'apparatus', 'Separates material streams using magnetic response.', ['magnetic separator', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings']),
+    catalog: catalog('magnetic-separator', 'Magnetic Separator', 'apparatus', 'Separates material streams using magnetic response.', ['magnetic separator', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings'], 30),
     defaults: Object.freeze({
       ...defaultProcessParameters(MAGNETIC_SEPARATION_PROCESS_ID),
       throughputKgPerSecond: 4,
@@ -123,6 +125,19 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
 
 export function getApparatusDefinition(nodeType) {
   return APPARATUS_DEFINITIONS[nodeType] ?? null;
+}
+
+/** Resolve canonical definition ports to the concrete runtime port IDs on a node. */
+export function apparatusPortsForNode(nodeType, node = {}) {
+  const definition = getApparatusDefinition(nodeType);
+  if (!definition) return [];
+  return definition.ports.map(port => {
+    const { runtimePortField, ...resolvedPort } = port;
+    return {
+      ...resolvedPort,
+      id: runtimePortField ? (node?.[runtimePortField] ?? port.id) : port.id,
+    };
+  });
 }
 
 export function apparatusParametersForNode(node) {
