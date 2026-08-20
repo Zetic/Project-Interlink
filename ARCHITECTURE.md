@@ -32,8 +32,6 @@ content + deterministic RNG + core world assembly
                generated world
 ```
 
-The browser application composes generation, Knowledge State, and the workspace.
-
 ---
 
 ## 2. Dependency Direction
@@ -62,13 +60,7 @@ core → core
 
 `src/core/world/worldState.js` still exposes the historical `createWorld()` compatibility API and therefore delegates to `generator/generateWorld.js`. New code should not extend this dependency direction.
 
-Use:
-
-- `src/generator/generateWorld.js` for new world generation callers;
-- `src/core/world/model/*` for world-model responsibilities;
-- `src/core/world/validation/*` for validation.
-
-Do not add additional `core → generator` dependencies.
+Use `src/generator/generateWorld.js` for new generation callers, `src/core/world/model/*` for world-model responsibilities, and `src/core/world/validation/*` for validation.
 
 ---
 
@@ -107,40 +99,26 @@ Project-Interlink/
 
 `content` answers **what can exist?** It owns declarative definitions and compatibility/catalog metadata, not process runtime loops or UI behavior.
 
+`content/apparatus/definitions.js` is the canonical definition source for placeable engineering nodes. It owns node identity, NODE catalog metadata, process association, canonical ports/capabilities, fixed capabilities, defaults, and player-configurable process parameters.
+
+Current placeable definitions are:
+
 ```text
-src/content/
-├── apparatus/
-│   └── definitions.js
-├── features/
-│   ├── featureCompatibility.js
-│   ├── featureGeneration.js
-│   ├── featureNames.js
-│   └── featureTypes.js
-└── resources/
-    ├── occurrenceFamilies.js
-    ├── rawResources.js
-    ├── resourceCompositions.js
-    ├── resourceDefinitions.js
-    └── resourceDescriptors.js
+Extractor
+Jaw Crusher
+Cone Crusher
+Ball Mill
+Screen
+Splitter
+Material Merger
+Feeder
+Dry Drum Magnetic Separator
+Hopper
 ```
 
-### Apparatus definitions
-
-`content/apparatus/definitions.js` is the canonical definition source for current placeable engineering nodes. It owns:
-
-- node type / identity;
-- NODE catalog label, category, description, search terms, order, and placeability;
-- process association;
-- canonical ports and interface capabilities;
-- fixed capability metadata;
-- defaults;
-- player-configurable process parameter metadata.
-
-Current placeable definitions are Extractor, Crusher, Screen, Splitter, Material Merger, Feeder, Magnetic Separator, and Hopper.
+The old generic `Crusher` definition is compatibility-only and `placeable: false`.
 
 The NODE catalog is projected from these definitions. Do not create a second independent machine catalog.
-
-### Resources and Features
 
 Resource composition templates, descriptions, occurrence-family vocabulary, Feature types, Feature naming, hard compatibility, and generation weighting data belong under `content/`. Generator code consumes them and applies deterministic physical conditions/RNG.
 
@@ -158,6 +136,8 @@ src/core/
 
 ### 5.1 Materials
 
+Relevant solid-material implementation:
+
 ```text
 src/core/materials/
 ├── materialBatches.js
@@ -169,66 +149,53 @@ src/core/materials/
 │   └── magneticProperties.js
 ├── solids/
 │   ├── liberationClasses.js
+│   ├── mineralTextures.js
 │   ├── particleSizeBins.js
 │   └── solidMaterialState.js
-├── species/
-│   ├── materialSpecies.js
-│   └── speciesRegistry.js
-├── liberationClasses.js        [compatibility re-export]
-├── materialSpecies.js          [compatibility re-export]
-├── particleSizeBins.js         [compatibility re-export]
-└── solidMaterialState.js       [compatibility re-export]
+└── species/
+    ├── materialSpecies.js
+    └── speciesRegistry.js
 ```
 
-The implemented particulate state is sparse and aggregate-based:
+The implemented particulate state is sparse and aggregate-based. Textured ore populations use:
+
+```text
+speciesId × sizeBinId × liberationClassId × textureProfileId → quantity
+```
+
+Legacy/untextured populations remain valid as the historical three-axis form:
 
 ```text
 speciesId × sizeBinId × liberationClassId → quantity
 ```
 
-A fraction represents a population, not one simulated particle.
+A fraction represents a statistical population, not one simulated particle.
 
-Do not automatically make every new physical property another fraction-key dimension. Body-level state, phase-specific state, species reference properties, and derived property resolvers should remain separate where appropriate.
+`solidMaterialState.textureProfiles` is a small profile registry referenced by textured fraction IDs. It exists so blending two physically different ore textures does not collapse them into one otherwise-identical population and permanently lose information needed by later comminution.
 
-`properties/` is the intended home for domain-specific property resolution. Process physics should use property APIs when a resolver exists instead of reaching directly into registry internals.
+A mineral texture profile currently contains:
+
+```text
+id
+fallbackLiberationSizeUm
+curveSpread
+boundaryBreakageAffinity
+speciesLiberationSizeUm
+```
+
+Texture is **occurrence/geological structural state**, not a `MaterialSpecies` property. Hematite can therefore have different grain/intergrowth scales in different deposits.
+
+The source texture profile remains immutable lineage while particle size and liberation state evolve. This fourth particulate identity axis is justified because merging it away would change future physical outcomes.
+
+Do **not** generalize this into appending every future property to the fraction key. Temperature, pressure, moisture, phase state, and similar body-scale/phase-scale variables should remain outside the sparse particulate identity unless loss of that axis would genuinely merge populations with different future particulate behavior.
+
+`properties/` remains the intended home for domain-specific intrinsic/reference property resolution. Process physics should use property APIs when a resolver exists rather than reaching directly into species registry internals.
 
 ### 5.2 Processes
 
-```text
-src/core/processes/
-├── conservation/
-│   ├── conservation.js
-│   └── speciesConservation.js
-├── definitions/
-│   ├── crushing.js
-│   ├── feeding.js
-│   ├── magneticSeparation.js
-│   ├── merging.js
-│   ├── screening.js
-│   ├── splitting.js
-│   └── index.js
-├── executors/
-│   ├── crushing.js
-│   ├── feeding.js
-│   ├── magneticSeparation.js
-│   ├── merging.js
-│   ├── screening.js
-│   ├── splitting.js
-│   └── index.js
-├── physics/
-│   ├── crushing.js
-│   ├── feeding.js
-│   ├── magneticSeparation.js
-│   ├── merging.js
-│   ├── screening.js
-│   ├── splitting.js
-│   └── index.js
-├── processExecution.js
-├── processDefinitions.js       [compatibility re-export]
-└── processPhysics.js           [compatibility re-export]
-```
+Current staged comminution adds dedicated process definitions/kernels for Jaw crushing, Cone crushing, and milling while retaining generic crushing only for compatibility.
 
-Responsibilities are deliberately split:
+The conceptual responsibility split remains:
 
 ```text
 Process definition
@@ -247,67 +214,52 @@ Conservation policy
     validates the quantities conserved by the process family
 ```
 
-Current mechanical processes use species conservation. Future chemistry or thermal processes can introduce stronger/different conservation policies rather than weakening mechanical conservation.
+Current mechanical process behavior:
 
-#### Current process kernels
+- **Jaw Crushing** — primary size reduction with a coarse PSD and intentionally very low direct liberation.
+- **Cone Crushing** — secondary/tertiary size reduction with nominal PSD/oversize behavior and limited texture-dependent direct liberation.
+- **Milling** — sub-millimetre grinding; liberation depends on resulting particle size relative to the source texture's species-specific characteristic liberation scale.
+- **Screening** — routes existing fractions to `undersize`/`oversize` by ideal aperture cut without changing descriptors.
+- **Material Splitting** — divides every existing population proportionally across explicit outputs.
+- **Material Merging** — combines sparse populations while retaining distinct texture lineages.
+- **Controlled Feeding** — preserves material state while runtime meters requested mass flow.
+- **Magnetic Separation** — routes fractions according to magnetic response plus size, liberation, field strength, and entrainment/carryover.
 
-- **Crushing** changes size distribution and liberation while preserving species mass.
-- **Screening** routes existing fractions to `undersize` or `oversize` according to an ideal aperture cut without changing their species, size class, liberation, or quantity.
-- **Material Splitting** divides every existing fraction proportionally across two explicit outputs.
-- **Material Merging** combines sparse particulate populations without changing fraction identity.
-- **Controlled Feeding** preserves material state while continuous runtime applies a requested mass-flow setpoint.
-- **Magnetic Separation** routes fractions according to magnetic response plus size, liberation, field strength, and entrainment/carryover.
+All current mechanical transformations preserve species mass. Routing/classification also preserves texture lineage.
 
-### 5.3 Neutral system primitives
+### 5.3 Texture-aware liberation rule
+
+Generated ore no longer receives a universal liberation gain based only on how many size bins a machine crosses.
+
+The physical dependency is:
 
 ```text
-src/core/systems/
-├── connections.js
-├── nodeCategories.js
-├── ports.js
-├── systemNode.js
-└── systemValidation.js
+resulting particle size
+        ↓
+size relative to species grain/liberation scale
+        +
+source ResourceOccurrence mineral texture
+        +
+equipment breakage regime
+        ↓
+liberation advancement
 ```
 
-These modules describe reusable node/port/connection concepts shared by natural hierarchy nodes and engineered systems.
+Jaw/Cone equipment strongly limits direct liberation even when size reduction is large. Ball Mill grinding can create substantial liberation when particles approach or fall below the occurrence-specific characteristic mineral scale.
+
+Two ores with the same bulk composition and the same Ball Mill PSD may therefore leave the mill with different liberation distributions.
+
+### 5.4 Neutral system primitives
+
+`src/core/systems/` describes reusable node/port/connection concepts shared by natural hierarchy nodes and engineered systems.
 
 Connection eligibility derives from edge kind plus interface/physical capabilities, not explicit machine-pair whitelists.
 
-Current important concepts include:
-
-- `resource-access` edge kind;
-- `material` edge kind;
-- `resource-source` capability;
-- `solid-particulate` capability;
-- `stored-solid-particulate` capability.
+Important current concepts include `resource-access`, `material`, `resource-source`, `solid-particulate`, and `stored-solid-particulate`.
 
 `stored-solid-particulate` means the receiving process requires a buffered/withdrawable particulate owner. It is an interface requirement, not material provenance or a distinct physical form.
 
-### 5.4 World model and validation
-
-```text
-src/core/world/
-├── knowledgeState.js
-├── versions.js
-├── worldState.js               [legacy compatibility entry point]
-├── model/
-│   ├── feature.js
-│   ├── planet.js
-│   ├── region.js
-│   ├── resourceOccurrence.js
-│   ├── site.js
-│   ├── worldAssembly.js
-│   └── worldState.js
-└── validation/
-    ├── helpers.js
-    ├── hierarchyValidation.js
-    ├── occurrenceValidation.js
-    ├── processHistoryValidation.js
-    ├── worldValidation.js
-    └── index.js
-```
-
-Validation domains own their own checks and are composed by `validateWorld()`.
+### 5.5 World model and validation
 
 Canonical natural ownership remains:
 
@@ -315,30 +267,26 @@ Canonical natural ownership remains:
 Planet → Region → Site → Feature → ResourceOccurrence
 ```
 
+Schema `9` requires generated ore-body ResourceOccurrences to carry valid `mineralTexture` data. Generator `7` deterministically creates those texture profiles. Same-seed physical world truth remains deterministic within that generator version.
+
+Occurrence validation checks texture profile structure and species coverage for ore-body composition.
+
 ---
 
 ## 6. `src/generator/` — Deterministic World Generation
 
 `generator` answers **what physical world is produced from this seed and these conditions?** It owns deterministic algorithms and RNG use, not authoritative content catalogs.
 
-```text
-src/generator/
-├── random.js
-├── generateWorld.js
-├── generatePlanet.js
-├── generateRegions.js
-├── generateFeatures.js
-├── generateResources.js
-├── planet/generatePlanet.js
-├── regions/generateRegions.js
-├── sites/generateSites.js
-├── features/generateFeatures.js
-└── resources/generateResources.js
-```
+`generateResources.js` now generates ore-body texture profiles after composition is generated. Current prototype texture generation intentionally spans a broad geological range rather than hard-coding one liberation size per resource name:
 
-Some top-level modules remain compatibility/public entry points while focused domain directories establish the long-term organization. Generation changes that alter same-seed world truth must follow generator-version rules.
+- occurrence fallback characteristic liberation scale is generated broadly in the tens-to-hundreds of microns;
+- each constituent species receives a deterministic scale variation within the occurrence;
+- curve spread varies the width of the statistical liberation transition;
+- boundary-breakage affinity influences the small amount of liberation possible during crushing.
 
-`generateWorld.js` composes deterministic generation with `core/world/model/worldAssembly.js`.
+These values are physical world truth. Exact values should not automatically become player knowledge merely because they exist in the world model.
+
+Generation changes that alter same-seed world truth must follow generator-version rules.
 
 ---
 
@@ -346,133 +294,51 @@ Some top-level modules remain compatibility/public entry points while focused do
 
 `simulation` owns continuous time evolution and placed-system behavior.
 
-```text
-src/simulation/
-├── apparatus/
-│   ├── blueprintHelpers.js
-│   ├── crusher.js
-│   ├── extractor.js
-│   ├── feeder.js
-│   ├── magneticSeparator.js
-│   ├── materialTransferHelpers.js
-│   ├── merger.js
-│   ├── screen.js
-│   ├── splitter.js
-│   └── registry.js
-├── apparatusDefinitions.js     [compatibility re-export]
-├── boundaryTransfer.js
-├── continuousProcessing.js
-├── extractorNode.js
-├── hopperNode.js
-├── materialStream.js
-├── simulationEngine.js
-├── systemNode.js               [compatibility re-export]
-└── worldSimulation.js
-```
+Runtime behavior remains registry-driven. Current active apparatus include Extractor, Jaw Crusher, Cone Crusher, Ball Mill, Screen, Splitter, Material Merger, Feeder, and Dry Drum Magnetic Separator; Hopper is the current storage owner.
 
-### Apparatus runtimes
+### Routing/material-state preservation
 
-Runtime modules contain the behavior of placed active machinery. The runtime registry owns generic creation/simulation dispatch so `simulationEngine.js` does not acquire a machine-specific branch for every new apparatus.
+Texture lineage must survive any operation that does not physically replace the geological lineage contract:
 
-Current registry-backed node types are:
+- Hopper receive/withdraw;
+- MaterialStream cloning/scaling;
+- Splitter;
+- Material Merger;
+- Feeder;
+- Screen;
+- Jaw/Cone/Ball Mill outputs;
+- Dry Drum Magnetic Separator concentrate/tailings;
+- compatibility Crusher paths.
 
-```text
-extractor
-hopper
-merger
-feeder
-crusher
-screen
-splitter
-magSep
-```
+Material Merger may combine two texture registries into one state, but same-ID conflicting profile definitions are rejected. Fractions with different texture IDs remain separate even when species, size, and liberation class are otherwise identical.
 
-Hopper/storage implementation remains in `hopperNode.js` and is registered through `apparatus/registry.js`.
+Screen and Splitter remain explicit multi-output apparatus with transactional commits. Material Merger remains explicit fan-in. Feeder remains an identity transformation over material state with flow-control semantics.
 
-### Routing runtime contracts
+`simulationEngine.js` remains a graph/simulation orchestrator. Machine-specific transformations belong in process kernels and runtime modules rather than central type switches.
 
-Screen and Splitter are explicit multi-output apparatus. Their runtimes stage feed and every required destination before committing so one constrained branch cannot delete matter from another branch.
-
-The Material Merger is explicit fan-in. It owns two distinct stored-particulate input ports and a single product port. When output capacity constrains a move, both source withdrawals are scaled and committed together. A connected input may be temporarily empty without blocking material available at the other input.
-
-The Feeder is an identity process over material state with a continuous flow-control role. Its configurable setpoint limits requested transfer below a fixed rated throughput; a zero setpoint idles without consuming feed.
-
-`materialTransferHelpers.js` contains reusable staging calculations used by these routing runtimes rather than duplicating output-capacity and transfer-acceptance checks.
-
-### Simulation engine
-
-`simulationEngine.js` remains a graph/simulation orchestrator. It owns generic blueprint operations, connection validation, stream setup, fixed-step registry dispatch, and apparatus control entry points. Machine-specific physical transformations belong in process kernels and apparatus runtime modules.
-
-### Streams and storage
-
-`MaterialStream` represents transfer rates, not inventory. Hoppers and boundary buffers own stored matter. Continuous processes respect downstream capacity and multi-input/multi-output processes commit atomically.
+`MaterialStream` represents transfer rates, not inventory. Hoppers/boundary buffers own stored matter.
 
 ---
 
 ## 8. `src/workspace/` — Player-Facing Graph Application
 
-```text
-src/workspace/
-├── workspaceController.js
-├── workspaceState.js
-├── sitePrototype.js
-├── siteSession.js
-├── catalog/
-│   ├── catalogState.js
-│   └── nodeCatalog.js
-├── graph/
-│   ├── nodePlacement.js
-│   ├── nodePresentation.js
-│   ├── nodeRemoval.js
-│   ├── viewport.js
-│   └── workspaceGraph.js
-├── inspector/
-│   ├── apparatusControlUI.js
-│   ├── genericApparatusInspectorUI.js
-│   ├── inspectionViewModel.js
-│   └── inspectorUI.js
-├── navigation/
-│   ├── navigationProjection.js
-│   └── navigationState.js
-├── shell/
-│   ├── utils.js
-│   └── workspaceUI.js
-├── apparatusControlUI.js       [public installer / compatibility surface]
-├── inspectionViewModel.js      [compatibility re-export]
-├── navigationProjection.js     [compatibility re-export]
-├── nodeCatalog.js              [compatibility re-export]
-├── nodePlacement.js            [compatibility re-export]
-├── nodePresentation.js         [compatibility re-export]
-├── nodeRemoval.js              [compatibility re-export]
-├── viewport.js                 [compatibility re-export]
-├── workspaceGraph.js           [compatibility re-export]
-└── workspaceUI.js              [compatibility re-export]
-```
+`workspace` owns graph projection, catalog, placement, navigation, Inspector presentation, and DOM orchestration. It does not own physical truth.
 
-`workspaceController.js` is the current DOM/application orchestrator. Focused graph/catalog/inspector/navigation/shell modules own reusable responsibilities when they can be independently meaningful and tested.
+The generic Inspector currently summarizes composition, particle-size distribution, and liberation. Texture profile IDs/precise grain scales are intentionally not dumped into normal material UI merely because they exist in World State; future analysis/measurement can expose texture knowledge through the Knowledge layer when gameplay needs it.
 
-Screen, Splitter, Material Merger, and Feeder require no dedicated NODE registration or generic Inspector eligibility branches. Catalog entries, parameter controls, removability, ports, and generic machine inspection flow through definition-driven paths. That is an architectural invariant to preserve for future machines.
+New machinery should continue to flow through definition-driven catalog, parameter, port, removability, and generic inspection paths instead of acquiring node-type branches.
 
 ---
 
 ## 9. `src/data/` — Compatibility Namespace
 
-```text
-src/data/
-├── occurrence-families.js
-├── raw-resources.js
-└── resourceDefinitions.js
-```
-
-These are compatibility forwarding modules. Canonical resource content lives under `src/content/resources/`.
+`src/data/*` contains compatibility forwarding modules. Canonical resource content lives under `src/content/resources/`.
 
 Do not add new authoritative content to `src/data/`.
 
 ---
 
 ## 10. Canonical Extension Path — Adding an Apparatus
-
-Screen and the routing/flow-control apparatus have exercised this path successfully. A future process package such as Mill/fine classification should normally require focused additions rather than unrelated central edits.
 
 Typical path:
 
@@ -482,13 +348,13 @@ Typical path:
    fixed capabilities, defaults, configurable parameters
 
 2. core/processes/definitions/<process>.js
-   process contract when the apparatus performs a process
+   process contract
 
 3. core/processes/physics/<process>.js
    pure physical transformation/routing behavior
 
 4. core/processes/executors/<process>.js
-   only when discrete MaterialBatch execution is supported/needed
+   when discrete MaterialBatch execution is supported/needed
 
 5. simulation/apparatus/<apparatus>.js
    continuous placed-machine behavior, backpressure, transaction boundaries
@@ -508,35 +374,31 @@ The following should **not** normally be required merely to add a machine:
 - a node-type list for generic Inspector eligibility;
 - a new central simulation `if/switch` dispatch branch.
 
-If one becomes necessary, determine whether the new apparatus introduces a genuinely new system concept or an existing generic boundary is being bypassed.
-
 ---
 
-## 11. Canonical Extension Path — Adding a Material Property
+## 11. Canonical Extension Path — Adding a Material Property or Structural Descriptor
 
-A property should enter the simulation when at least one process needs it to determine a physical outcome.
+A property/state descriptor should enter the simulation when at least one process needs it to determine a physical outcome.
 
-Preferred pattern:
+First determine its physical owner:
 
 ```text
-species/reference data or material/body state
-              ↓
-core/materials/properties/<domain>.js
-              ↓
-core/processes/physics/<process>.js
-              ↓
-apparatus/process result
+intrinsic species property      → MaterialSpecies / property resolver
+occurrence geological structure → ResourceOccurrence + carried lineage
+body/mixture state              → MaterialBody / phase state
+process operating condition     → apparatus/process state
 ```
 
-Future property domains may include density, mechanical/grindability, thermal, electrical, surface, chemical, and fluid properties.
+Texture is the current example of an occurrence-owned structural descriptor that must also travel with particulate populations because downstream liberation depends on it after blending.
 
 Guidelines:
 
 - do not add speculative values just to fill a universal table;
-- distinguish intrinsic species properties from body/mixture/structural state;
+- distinguish intrinsic species properties from occurrence/body/mixture/structural state;
 - do not make every property another particulate fraction-key axis;
+- use a new population identity axis only when collapsing it would erase physically relevant future behavior;
 - add state/property resolution when an implemented process consumes it;
-- keep process physics dependent on property APIs rather than UI/runtime representation.
+- keep process physics independent from UI/runtime representation.
 
 ---
 
@@ -548,11 +410,13 @@ Every modeled unit of matter has one physical owner/location at a time. A `Mater
 
 ### Mechanical conservation
 
-Current Crusher, Screen, Splitter, Material Merger, Feeder, and Magnetic Separator operations preserve species mass. Screen and routing primitives additionally preserve fraction descriptors exactly except where Crusher intentionally changes size/liberation.
+Jaw Crusher, Cone Crusher, Ball Mill, compatibility Crusher, Screen, Splitter, Material Merger, Feeder, and Dry Drum Magnetic Separator preserve species mass.
+
+Comminution may change particle size and liberation. It does not change species or texture lineage. Screen/routing/magnetic separation preserve texture lineage while routing populations.
 
 ### Transactional inputs and outputs
 
-A process must establish feasible output capacity before committing feed consumption. Multi-output machinery stages all required destinations. Multi-input routing stages all source withdrawals and the destination. A transaction commits only after the planned movement is valid.
+A process must establish feasible output capacity before committing feed consumption. Multi-output machinery stages all required destinations. Multi-input routing stages all source withdrawals and the destination. A transaction commits only after planned movement is valid.
 
 ### Typed connections
 
@@ -560,9 +424,7 @@ Compatibility derives from port edge kind and capabilities. Do not reintroduce p
 
 ### Material fan-out/fan-in
 
-An ordinary material output remains single-connection and cannot implicitly duplicate matter. Explicit branching occurs through a Splitter's distinct output ports.
-
-An ordinary input remains single-source and cannot silently combine streams. Explicit recombination occurs through the Material Merger's distinct input ports. The Material Merger is not a physical Mixer and does not imply homogeneity physics.
+An ordinary material output remains single-connection. Explicit branching occurs through Splitter output ports. An ordinary input remains single-source. Explicit recombination occurs through Material Merger input ports.
 
 ### Resource access
 
@@ -572,62 +434,58 @@ An ordinary input remains single-source and cannot silently combine streams. Exp
 
 ## 13. Compatibility Entry Points
 
-The restructure intentionally retained thin forwarding/compatibility modules in several areas:
+Thin compatibility modules remain in several areas, including root material re-exports, `processDefinitions.js` / `processPhysics.js`, `core/world/worldState.js`, simulation compatibility exports, workspace forwarding files, and `src/data/*`.
 
-- root files inside `src/core/materials/` forwarding to `solids/` or `species/`;
-- `src/core/processes/processDefinitions.js` and `processPhysics.js`;
-- `src/core/world/worldState.js`;
-- `src/simulation/apparatusDefinitions.js` and `systemNode.js`;
-- several root `src/workspace/*.js` files;
-- `src/data/*`.
+A compatibility module is not a second implementation home. Do not add new authoritative physics, machine behavior, registries, or content there merely because the import is shorter.
 
-A compatibility module is not a second implementation home.
-
-Do not add new physics, machine behavior, authoritative registries, or content to a compatibility forwarding path merely because the import is shorter.
+The legacy generic Crusher likewise remains a compatibility apparatus, not the player-facing comminution model.
 
 ---
 
 ## 14. Tests as Architecture Contracts
 
-The test suite covers both simulation behavior and architectural extension points. Relevant groups include:
+The suite covers both simulation behavior and architectural extension points. In addition to existing architecture, routing, screening, and conservation groups, `stagedComminution.test.js` now proves:
 
-- `architectureBoundaries.test.js` — dependency/registry/typed-port boundaries;
-- `futureApparatusScalability.test.js` — definition-driven catalog, generic Inspector, arbitrary multi-output inspection, removal policy;
-- `apparatusControlUI.test.js` — definition-driven choice controls;
-- `continuousSimulation.test.js` — flow, backpressure, conservation, continuous apparatus behavior;
-- `materialProcessing.test.js` / `solidMaterialState.test.js` — batch and physical material invariants;
-- `screening.test.js` — Screen definition, sharp-cut physics, batch/continuous conservation, required outputs, backpressure, parameter choices, connectivity;
-- `materialRoutingApparatus.test.js` — explicit Splitter branching, Material Merger fan-in, Feeder setpoint behavior, transactional routing, and preservation of ordinary graph fan-out/fan-in restrictions.
+- fine-through-ROM particle-size vocabulary;
+- mostly locked run-of-mine extraction;
+- Jaw primary-crushing size reduction with little liberation;
+- Cone feed envelope and nominal PSD;
+- Ball Mill feed envelope and fine PSD;
+- screen-to-mill eligibility;
+- exact species conservation through staged comminution;
+- persistent texture lineage from extraction;
+- identical Ball Mill settings producing different liberation for different ore textures;
+- blended ores retaining separate texture populations rather than collapsing.
 
-When adding another apparatus or physical property, tests should prove both its physical behavior and that it uses the intended generic extension paths.
+`worldIntegrity.test.js` proves ore-body texture generation, species coverage, schema/generator versioning, and determinism.
+
+When adding another apparatus or physical property, tests should prove both its physical behavior and that it uses intended generic extension paths.
 
 ---
 
 ## 15. Growth Direction
 
-The current solid-processing foundation now supports explicit routing and control around the coarse-processing chain:
+The current ore-processing foundation now represents a realistic high-level distinction:
 
 ```text
-fresh feed ─────────────┐
-                       ↓
-                Material Merger
-                       ↓
-                    Feeder
-                       ↓
-                    Crusher
-                       ↓
-                     Screen
-                  ┌────┴────┐
-            undersize     oversize
-                ↓             ↓
-          downstream       Splitter / storage / recycle topology
+run-of-mine ore
+      ↓
+Jaw Crusher       coarse size reduction / little liberation
+      ↓
+Cone Crusher      secondary/tertiary reduction / limited liberation
+      ↕
+Screen / recycle
+      ↓
+Ball Mill         fine grinding / texture-dependent liberation
+      ↓
+beneficiation selected from actual material properties
 ```
 
-The next major capability should establish a useful **fine-processing regime** rather than adding a Mill in isolation: Mill/Grinder behavior, finer particle-size classes, fine classification, and at least one downstream separation method that benefits from fine liberation should be designed together.
+The Dry Drum Magnetic Separator can serve as coarse dry preconcentration for suitable strongly magnetic material; it is not being treated as universal final beneficiation.
 
-After that, density + Gravity Separation is a strong next property/process domain, followed by slurry/fluid/flotation, thermal, chemical, control, logistics, and reusable composite systems as gameplay requires them.
+The next major capability should be chosen from the physical state now available rather than added to compensate for missing liberation physics. Density + Gravity Separation is a strong candidate. Slurry/fluid handling then opens wet classification, flotation, and wet magnetic separation. Hardness/grindability and energy can later distinguish comminution efficiency/HPGR behavior.
 
-Longer-term systems should extend the same boundaries rather than being packed into universal material objects or central machine engines.
+Longer-term systems should extend these boundaries rather than being packed into universal material objects or central machine engines.
 
 ---
 
