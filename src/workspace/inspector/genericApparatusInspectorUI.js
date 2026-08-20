@@ -1,5 +1,6 @@
 import { getApparatusDefinition } from '../../content/apparatus/definitions.js';
 import { apparatusRuntimeFor } from '../../simulation/apparatus/registry.js';
+import { machineInspection } from './inspectionViewModel.js';
 import { wsState, inspector } from '../workspaceState.js';
 import { escHtml } from '../shell/utils.js';
 
@@ -18,10 +19,15 @@ function parameterMarkup(node, parameter) {
 /**
  * Definition-driven fallback Inspector markup for future active apparatus.
  * Current machines may keep richer specialized projections; a newly registered
- * apparatus still receives working state, enable, capability, and parameter
- * controls without adding another node-type branch to the workspace controller.
+ * apparatus still receives working state, enable, capability, flow, parameter,
+ * and diagnostic controls without adding another node-type branch to the
+ * workspace controller.
  */
-export function genericApparatusInspectorMarkup(node, definition = getApparatusDefinition(node?.nodeType)) {
+export function genericApparatusInspectorMarkup(
+  node,
+  definition = getApparatusDefinition(node?.nodeType),
+  details = null,
+) {
   if (!node || !definition) return '';
   const state = node.enabled ? (node.operatingState ?? 'idle') : 'off';
   const capabilities = (definition.capabilities ?? []).map(capability => {
@@ -29,24 +35,58 @@ export function genericApparatusInspectorMarkup(node, definition = getApparatusD
     return `<div class="ws-ins-row"><b>${escHtml(capability.label)}:</b> ${escHtml(displayValue(node[capability.id]))}${unit}</div>`;
   }).join('');
   const parameters = (definition.parameters ?? []).map(parameter => parameterMarkup(node, parameter)).join('');
-  return `<div class="ws-generic-apparatus-inspector" data-generic-apparatus-inspector="${escHtml(node.id)}"><div class="ws-ins-row"><b>State:</b> <span data-live="state">${escHtml(state)}</span></div><div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${node.enabled ? 'On' : 'Off'}</button></div>${capabilities}${parameters}<div class="ws-ins-note" data-live="error"${node.lastError ? '' : ' hidden'}>${escHtml(node.lastError ?? '')}</div></div>`;
+  const flow = details
+    ? `<div class="ws-ins-row"><b>Actual feed:</b> <span data-live="generic-machine-feed">${details.actualFeedKgPerSecond.toFixed(3)}</span> kg/s</div><div class="ws-ins-row"><b>Actual product:</b> <span data-live="generic-machine-product">${details.actualProductKgPerSecond.toFixed(3)}</span> kg/s</div>`
+    : '';
+  return `<div class="ws-generic-apparatus-inspector" data-generic-apparatus-inspector="${escHtml(node.id)}"><div class="ws-ins-row"><b>State:</b> <span data-live="state">${escHtml(state)}</span></div><div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${node.enabled ? 'On' : 'Off'}</button></div>${capabilities}${flow}${parameters}<div class="ws-ins-note" data-live="error"${node.lastError ? '' : ' hidden'}>${escHtml(node.lastError ?? '')}</div></div>`;
 }
 
 function inspectorBodies(root) {
-  const bodies = [];
-  if (root?.matches?.('#ws-inspector-body')) bodies.push(root);
-  root?.querySelectorAll?.('#ws-inspector-body').forEach(body => bodies.push(body));
-  return bodies;
+  const bodies = new Set();
+  if (root?.matches?.('#ws-inspector-body')) bodies.add(root);
+  const ancestor = root?.closest?.('#ws-inspector-body');
+  if (ancestor) bodies.add(ancestor);
+  root?.querySelectorAll?.('#ws-inspector-body').forEach(body => bodies.add(body));
+  return [...bodies];
+}
+
+function setTextIfChanged(element, value) {
+  if (element && element.textContent !== value) element.textContent = value;
+}
+
+function refreshGenericApparatusInspector(body, node) {
+  const generic = body.querySelector?.('[data-generic-apparatus-inspector]');
+  if (!generic) return;
+  const details = machineInspection(wsState.blueprint, node);
+  setTextIfChanged(generic.querySelector?.('[data-live="state"]'), details.operatingState);
+  setTextIfChanged(generic.querySelector?.('[data-live="generic-machine-feed"]'), details.actualFeedKgPerSecond.toFixed(3));
+  setTextIfChanged(generic.querySelector?.('[data-live="generic-machine-product"]'), details.actualProductKgPerSecond.toFixed(3));
+  const error = generic.querySelector?.('[data-live="error"]');
+  if (error) {
+    const message = details.lastError ?? '';
+    setTextIfChanged(error, message);
+    if (error.hidden !== !message) error.hidden = !message;
+  }
 }
 
 export function upgradeGenericApparatusInspector(root) {
   for (const body of inspectorBodies(root)) {
-    if (body.querySelector('.ws-btn-enable, [data-generic-apparatus-inspector]')) continue;
     const node = wsState.blueprint?.nodes?.[inspector.selectedNodeId];
     const definition = getApparatusDefinition(node?.nodeType);
     const runtime = apparatusRuntimeFor(node?.nodeType);
     if (!node || !definition || typeof runtime?.simulate !== 'function') continue;
-    const markup = genericApparatusInspectorMarkup(node, definition);
+
+    if (body.querySelector?.('[data-generic-apparatus-inspector]')) {
+      refreshGenericApparatusInspector(body, node);
+      continue;
+    }
+    // Current apparatus may intentionally have richer built-in Inspector views.
+    // Their enable control identifies that specialized view and suppresses the
+    // fallback. Future registered apparatus need no controller branch.
+    if (body.querySelector?.('.ws-btn-enable')) continue;
+
+    const details = machineInspection(wsState.blueprint, node);
+    const markup = genericApparatusInspectorMarkup(node, definition, details);
     if (markup) body.insertAdjacentHTML('beforeend', markup);
   }
 }
@@ -59,6 +99,10 @@ export function installGenericApparatusInspectorUI(documentRef = globalThis.docu
   if (!Observer) return () => {};
   const observer = new Observer(records => {
     for (const record of records) {
+      // innerHTML updates report the existing Inspector body as record.target;
+      // inspecting it directly is what makes the fallback reliable when the
+      // controller renders an otherwise-unknown future apparatus.
+      if (record.target?.nodeType === 1) upgradeGenericApparatusInspector(record.target);
       for (const addedNode of record.addedNodes ?? []) {
         if (addedNode?.nodeType === 1) upgradeGenericApparatusInspector(addedNode);
       }
