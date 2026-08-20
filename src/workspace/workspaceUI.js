@@ -40,7 +40,7 @@ import {
   renderGraphConnections,
   renderGraphConnectionPreview,
   disconnectGraphConnection,
-} from './workspaceGraph.js';
+} from './graph/workspaceGraph.js';
 import {
   boundsForNodePositions,
   clampZoom,
@@ -49,7 +49,7 @@ import {
   screenToGraph,
   translateGraphPosition,
   zoomAroundPoint,
-} from './viewport.js';
+} from './graph/viewport.js';
 import { siteResourceOccurrenceIds } from './sitePrototype.js';
 import { buildSiteSession } from './siteSession.js';
 import {
@@ -57,16 +57,12 @@ import {
   expandNavigationPath,
   getNavigationRows,
   navigationExpandableKeys,
-  navigationCategoryVocabulary,
-  navigationVisibleCategories,
   navigationEntryForTarget,
-} from './navigationProjection.js';
+} from './navigation/navigationProjection.js';
 import {
-  nodeCatalogCategoryVocabulary,
-  nodeCatalogVisibleCategories,
   nodeDefinitionById,
   projectNodeCatalog,
-} from './nodeCatalog.js';
+} from './catalog/nodeCatalog.js';
 import {
   cancelPlacement,
   commitNodePlacement,
@@ -75,12 +71,19 @@ import {
   graphPositionForViewportCenter,
   pointerMovementExceedsThreshold,
   placementIsActive,
-} from './nodePlacement.js';
+} from './graph/nodePlacement.js';
 import {
   nodeRemovalEligibility,
   removeBlueprintNode,
-} from './nodeRemoval.js';
+} from './graph/nodeRemoval.js';
 import { wsState, pendingGraphConnection, inspector } from './workspaceState.js';
+import {
+  navigationVisibilityState,
+  navigationFilterState,
+} from './navigation/navigationState.js';
+import { nodeCatalogFilterState } from './catalog/catalogState.js';
+
+export { navigationVisibilityState, navigationFilterState, nodeCatalogFilterState };
 
 const NODE_WIDTH = 160;
 const NODE_HEIGHT = 100;
@@ -217,32 +220,6 @@ function selectedNavigationKey(index) {
 
 function navigationCategoryLabel(index, category) {
   return index.categoryLabels?.[category] ?? category.toUpperCase();
-}
-
-export function navigationVisibilityState(open) {
-  const visible = Boolean(open);
-  return {
-    visible,
-    hidden: !visible,
-    ariaHidden: String(!visible),
-    ariaExpanded: String(visible),
-  };
-}
-
-export function navigationFilterState(hiddenCategories = new Set()) {
-  const categories = navigationCategoryVocabulary();
-  return {
-    categories,
-    visibleCategories: navigationVisibleCategories(categories, hiddenCategories),
-  };
-}
-
-export function nodeCatalogFilterState(hiddenCategories = new Set()) {
-  const categories = nodeCatalogCategoryVocabulary();
-  return {
-    categories,
-    visibleCategories: nodeCatalogVisibleCategories(categories, hiddenCategories),
-  };
 }
 
 function setNavigationOpen(open) {
