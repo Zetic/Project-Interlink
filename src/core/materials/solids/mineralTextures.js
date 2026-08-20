@@ -1,4 +1,9 @@
 import { requireMaterialConstituentId } from '../species/materialSpecies.js';
+import {
+  cloneComminutionProperties,
+  comminutionPropertiesEqual,
+  validateComminutionProperties,
+} from './comminutionProperties.js';
 
 const PROFILE_ID_SEPARATOR = '|';
 const OCCURRENCE_MODE_KEYS = Object.freeze(['free', 'boundary', 'intergrown', 'included']);
@@ -63,6 +68,10 @@ function cloneSpeciesTexture(texture) {
  * Persistent geological texture for one ResourceOccurrence. Grain-size D10/D50/D90
  * and mineral occurrence modes are measurable mineralogical properties; comminution
  * changes particle populations but does not rewrite this source texture.
+ *
+ * Material-state copies may also carry the occurrence's measured comminution
+ * properties under the same immutable lineage id so blended ores retain their
+ * own CWi/BWi/Ai during downstream processing.
  */
 export function validateMineralTextureProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
@@ -86,6 +95,9 @@ export function validateMineralTextureProfile(profile) {
     validateGrainSizeDistribution(texture.grainSizeUm, label);
     validateOccurrenceModes(texture.occurrenceModes, label);
   }
+  if (profile.comminutionProperties != null) {
+    validateComminutionProperties(profile.comminutionProperties);
+  }
   return profile;
 }
 
@@ -99,12 +111,16 @@ export function cloneMineralTextureProfile(profile) {
         cloneSpeciesTexture(texture),
       ]),
     ),
+    ...(profile.comminutionProperties
+      ? { comminutionProperties: cloneComminutionProperties(profile.comminutionProperties) }
+      : {}),
   };
 }
 
 export function mineralTextureProfilesEqual(a, b) {
   if (!a || !b) return a === b;
   if (a.id !== b.id) return false;
+  if (!comminutionPropertiesEqual(a.comminutionProperties ?? null, b.comminutionProperties ?? null)) return false;
   const speciesIds = new Set([
     ...Object.keys(a.speciesTextures ?? {}),
     ...Object.keys(b.speciesTextures ?? {}),
