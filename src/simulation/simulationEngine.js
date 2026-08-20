@@ -179,10 +179,13 @@ export function getNodePortDefinitions(node) {
   }
   const apparatusDefinition = getApparatusDefinition(node.nodeType);
   if (apparatusDefinition && node.nodeType !== 'hopper') {
-    return apparatusDefinition.ports.map(port => ({
-      ...port,
-      id: node[port.id === 'resource-source' ? 'sourceInputPortId' : `${port.direction === 'input' ? 'input' : 'output'}PortId`] ?? port.id,
-    }));
+    return apparatusDefinition.ports.map(port => {
+      const { runtimePortField, ...resolvedPort } = port;
+      return {
+        ...resolvedPort,
+        id: node[runtimePortField] ?? port.id,
+      };
+    });
   }
   if (node.nodeType === 'hopper') {
     const solidCapability = PORT_CAPABILITIES.SOLID_PARTICULATE;
