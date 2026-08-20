@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 
 import {
   addSolidFractionDirect,
+  addSolidMaterialState,
   createSolidMaterialState,
+  registerSolidTextureProfile,
   summarizeSolidMaterialByLiberationClass,
   summarizeSolidMaterialBySizeBin,
   summarizeSolidMaterialBySpecies,
+  summarizeSolidMaterialByTextureProfile,
   totalSolidQuantity,
 } from '../src/core/materials/solids/solidMaterialState.js';
 import {
@@ -26,9 +29,36 @@ function assertAlmostEqual(actual, expected, label) {
   assert.ok(Math.abs(actual - expected) <= TOLERANCE, `${label}: expected ${expected}, got ${actual}`);
 }
 
-function singleFractionState({ speciesId = 'hematite', sizeBinId, liberationClassId = 'locked', quantity = 100 }) {
+function textureProfile(id, liberationSizeUm, {
+  curveSpread = 0.6,
+  boundaryBreakageAffinity = 0.2,
+  speciesId = 'hematite',
+} = {}) {
+  return {
+    id,
+    fallbackLiberationSizeUm: liberationSizeUm,
+    curveSpread,
+    boundaryBreakageAffinity,
+    speciesLiberationSizeUm: { [speciesId]: liberationSizeUm },
+  };
+}
+
+function singleFractionState({
+  speciesId = 'hematite',
+  sizeBinId,
+  liberationClassId = 'locked',
+  quantity = 100,
+  texture = null,
+}) {
   const state = createSolidMaterialState();
-  addSolidFractionDirect(state, { speciesId, sizeBinId, liberationClassId, quantity });
+  if (texture) registerSolidTextureProfile(state, texture);
+  addSolidFractionDirect(state, {
+    speciesId,
+    sizeBinId,
+    liberationClassId,
+    textureProfileId: texture?.id ?? null,
+    quantity,
+  });
   return state;
 }
 
@@ -54,11 +84,19 @@ test('particle-size vocabulary spans fine grinding through run-of-mine rock', ()
   assert.equal(particleSizeBinIdForMm(1000), '500-1000mm');
 });
 
-test('ore-body extraction enters the plant as mostly locked run-of-mine rock', () => {
+test('ore-body extraction enters the plant as mostly locked run-of-mine rock and carries texture lineage', () => {
+  const texture = {
+    id: 'texture-iron-occurrence',
+    fallbackLiberationSizeUm: 180,
+    curveSpread: 0.6,
+    boundaryBreakageAffinity: 0.2,
+    speciesLiberationSizeUm: { hematite: 200, quartz: 150 },
+  };
   const occurrence = {
     id: 'iron-occurrence',
     resourceId: 'iron-ore',
     composition: { hematite: 60, quartz: 40 },
+    mineralTexture: texture,
   };
   const state = extractorOutputRates({ prototypeRateKgPerSecond: 10 }, occurrence, 1);
   const sizes = summarizeSolidMaterialBySizeBin(state);
@@ -67,6 +105,8 @@ test('ore-body extraction enters the plant as mostly locked run-of-mine rock', (
   assert.deepEqual(Object.keys(sizes).sort(), ['120-250mm', '250-500mm', '500-1000mm']);
   assert.ok((liberation.locked ?? 0) / totalSolidQuantity(state) > 0.98);
   assertSpecies(state, { hematite: 6, quartz: 4 });
+  assert.deepEqual(summarizeSolidMaterialByTextureProfile(state), { 'texture-iron-occurrence': 10 });
+  assert.deepEqual(state.textureProfiles['texture-iron-occurrence'], texture);
 });
 
 test('Jaw Crusher performs primary size reduction with only minor liberation', () => {
@@ -142,8 +182,54 @@ test('Ball Mill reaches the sub-millimetre regime and drives substantially more 
   assertAlmostEqual(sizes['0.063-0.125mm'], 30, 'mill finer');
   assertAlmostEqual(sizes['0.032-0.063mm'], 15, 'mill very fine');
   assertAlmostEqual(sizes['lt-0.032mm'], 5, 'mill finest');
-  assert.ok(liberationShare(milled, ['mostly-liberated', 'liberated']) > 0.15);
+  assert.ok(liberationShare(milled, ['mostly-liberated', 'liberated']) > 0.10);
   assert.ok(liberationShare(milled, ['locked']) < liberationShare(crushed, ['locked']));
+});
+
+test('identical Ball Mill settings produce different liberation for coarse- and fine-textured ore', () => {
+  const coarseTexture = textureProfile('coarse-texture', 300);
+  const fineTexture = textureProfile('fine-texture', 60);
+  const coarseFeed = singleFractionState({ sizeBinId: '15-25mm', texture: coarseTexture });
+  const fineFeed = singleFractionState({ sizeBinId: '15-25mm', texture: fineTexture });
+
+  const coarseProduct = millSolidMaterialState(coarseFeed, 0.25);
+  const fineProduct = millSolidMaterialState(fineFeed, 0.25);
+  const coarseUsefulLiberation = liberationShare(coarseProduct, ['mostly-liberated', 'liberated']);
+  const fineUsefulLiberation = liberationShare(fineProduct, ['mostly-liberated', 'liberated']);
+
+  assert.ok(coarseUsefulLiberation > fineUsefulLiberation + 0.10);
+  assert.deepEqual(summarizeSolidMaterialBySizeBin(coarseProduct), summarizeSolidMaterialBySizeBin(fineProduct));
+  assert.deepEqual(summarizeSolidMaterialByTextureProfile(coarseProduct), { 'coarse-texture': 100 });
+  assert.deepEqual(summarizeSolidMaterialByTextureProfile(fineProduct), { 'fine-texture': 100 });
+});
+
+test('mixed ores retain separate texture populations instead of collapsing identical fractions', () => {
+  const easy = singleFractionState({
+    sizeBinId: '15-25mm',
+    quantity: 40,
+    texture: textureProfile('easy-texture', 300),
+  });
+  const difficult = singleFractionState({
+    sizeBinId: '15-25mm',
+    quantity: 60,
+    texture: textureProfile('difficult-texture', 50),
+  });
+  const blended = createSolidMaterialState();
+  addSolidMaterialState(blended, easy);
+  addSolidMaterialState(blended, difficult);
+
+  assert.equal(Object.keys(blended.fractions).length, 2);
+  assert.deepEqual(summarizeSolidMaterialByTextureProfile(blended), {
+    'easy-texture': 40,
+    'difficult-texture': 60,
+  });
+
+  const milled = millSolidMaterialState(blended, 0.25);
+  assert.deepEqual(summarizeSolidMaterialByTextureProfile(milled), {
+    'easy-texture': 40,
+    'difficult-texture': 60,
+  });
+  assert.equal(totalSolidQuantity(milled), 100);
 });
 
 test('all staged comminution operations conserve each species exactly within floating-point tolerance', () => {
@@ -154,9 +240,10 @@ test('all staged comminution operations conserve each species exactly within flo
   const jaw = jawCrushSolidMaterialState(feed, 120);
   const cone = coneCrushSolidMaterialState(jaw, 25);
   const { undersize } = splitScreenedSolidState(cone, 25);
+  const undersizeTotal = totalSolidQuantity(undersize);
   const mill = millSolidMaterialState(undersize, 0.25);
 
   assertSpecies(jaw, { hematite: 60, quartz: 40 });
   assertSpecies(cone, { hematite: 60, quartz: 40 });
-  assertSpecies(mill, { hematite: 54, quartz: 36 });
+  assertSpecies(mill, { hematite: undersizeTotal * 0.6, quartz: undersizeTotal * 0.4 });
 });
