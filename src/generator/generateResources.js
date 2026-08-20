@@ -11,6 +11,7 @@ import {
   RESOURCE_DESCRIPTORS,
 } from '../content/resources/resourceDescriptors.js';
 import { RESOURCE_COMPOSITION_TEMPLATES } from '../content/resources/resourceCompositions.js';
+import { validateMineralTextureProfile } from '../core/materials/solids/mineralTextures.js';
 
 export { resources, getLocalizedResources, getRegionalResources, getResourceDefinition };
 
@@ -61,6 +62,9 @@ export function makeFeatureResource(resource, rng, occurrenceId, featureId, {
   const concentration = parseFloat(rng.range(1, 80).toFixed(1));
   const qv = rng.random();
   const availabilityRoll = Math.max(0, Math.min(0.999999, rng.random() + availabilityBias));
+  const descriptor = featureDescriptor(resource, rng);
+  const composition = featureComposition(resource, rng);
+  const mineralTexture = featureMineralTexture(resource, composition, rng, occurrenceId);
   return {
     id: occurrenceId,
     resourceId: resource.id,
@@ -69,8 +73,9 @@ export function makeFeatureResource(resource, rng, occurrenceId, featureId, {
     quantityClass: quantityClass(qv),
     availabilityClass: availabilityClass(availabilityRoll),
     accessScope,
-    descriptor: featureDescriptor(resource, rng),
-    composition: featureComposition(resource, rng),
+    descriptor,
+    composition,
+    ...(mineralTexture ? { mineralTexture } : {}),
     sourceType: 'feature',
     sourceId: featureId,
   };
@@ -96,6 +101,39 @@ function featureComposition(resource, rng) {
     Array.isArray(value) ? rng.int(value[0], value[1]) : value,
   ]));
   return Object.values(template).every(value => !Array.isArray(value)) ? values : normalise(values);
+}
+
+/**
+ * Ore bodies receive a deterministic statistical mineral-texture profile. The
+ * profile belongs to the occurrence, not to MaterialSpecies: identical hematite
+ * can be coarse-grained in one deposit and finely disseminated in another.
+ *
+ * Characteristic liberation sizes are intentionally broad prototype geology
+ * rather than resource-specific calibration. They establish the physical
+ * dependency needed for ore-specific grinding behavior without pretending that
+ * composition alone determines texture.
+ */
+function featureMineralTexture(resource, composition, rng, occurrenceId) {
+  if (resource.occurrenceFamily !== 'ore-body' || !composition) return null;
+
+  const logMinUm = Math.log(32);
+  const logMaxUm = Math.log(750);
+  const fallbackLiberationSizeUm = Math.exp(rng.range(logMinUm, logMaxUm));
+  const speciesLiberationSizeUm = {};
+  for (const speciesId of Object.keys(composition)) {
+    const speciesScale = Math.exp(rng.range(Math.log(0.6), Math.log(1.6)));
+    speciesLiberationSizeUm[speciesId] = parseFloat((fallbackLiberationSizeUm * speciesScale).toFixed(1));
+  }
+
+  const profile = {
+    id: `texture-${occurrenceId}`,
+    fallbackLiberationSizeUm: parseFloat(fallbackLiberationSizeUm.toFixed(1)),
+    curveSpread: parseFloat(rng.range(0.45, 0.8).toFixed(3)),
+    boundaryBreakageAffinity: parseFloat(rng.range(0.05, 0.35).toFixed(3)),
+    speciesLiberationSizeUm,
+  };
+  validateMineralTextureProfile(profile);
+  return profile;
 }
 
 function normalise(obj) {
