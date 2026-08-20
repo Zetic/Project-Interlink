@@ -13,11 +13,11 @@ const byId = id => NODE_DEFINITIONS.find(definition => definition.id === id);
 test('NODE catalog exposes the current primitive definitions and existing categories', () => {
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.label),
-    ['Extractor', 'Crusher', 'Screen', 'Magnetic Separator', 'Hopper'],
+    ['Extractor', 'Crusher', 'Screen', 'Splitter', 'Material Merger', 'Feeder', 'Magnetic Separator', 'Hopper'],
   );
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.category),
-    ['apparatus', 'apparatus', 'apparatus', 'apparatus', 'container'],
+    ['apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'container'],
   );
   for (const definition of NODE_DEFINITIONS) {
     assert.equal(typeof definition.create, 'function');
@@ -42,6 +42,9 @@ test('catalog search is case-insensitive and matches deliberate function synonym
   assert.deepEqual(projectNodeCatalog({ query: 'CRUSHER' }).rows[0].definitions.map(item => item.id), ['crusher']);
   assert.deepEqual(projectNodeCatalog({ query: 'grinding' }).rows[0].definitions.map(item => item.id), ['crusher']);
   assert.deepEqual(projectNodeCatalog({ query: 'sieve' }).rows[0].definitions.map(item => item.id), ['screen']);
+  assert.deepEqual(projectNodeCatalog({ query: 'branch' }).rows[0].definitions.map(item => item.id), ['splitter']);
+  assert.deepEqual(projectNodeCatalog({ query: 'junction' }).rows[0].definitions.map(item => item.id), ['material-merger']);
+  assert.deepEqual(projectNodeCatalog({ query: 'meter' }).rows[0].definitions.map(item => item.id), ['feeder']);
   assert.deepEqual(projectNodeCatalog({ query: 'separation' }).rows[0].definitions.map(item => item.id), ['screen', 'magnetic-separator']);
   assert.deepEqual(projectNodeCatalog({ query: 'storage' }).rows[0].definitions.map(item => item.id), ['hopper']);
 });
@@ -53,7 +56,7 @@ test('category filters affect projection without changing the catalog definition
 
   assert.deepEqual(categories, ['apparatus', 'container']);
   assert.deepEqual(projection.rows.flatMap(row => row.definitions).map(item => item.id), ['hopper']);
-  assert.equal(NODE_DEFINITIONS.length, 5);
+  assert.equal(NODE_DEFINITIONS.length, 8);
 });
 
 test('definitions create the expected authoritative blueprint node types', () => {
@@ -62,10 +65,16 @@ test('definitions create the expected authoritative blueprint node types', () =>
     byId('extractor').create(blueprint, { occurrenceId: 'occurrence-1' }),
     byId('crusher').create(blueprint),
     byId('screen').create(blueprint),
+    byId('splitter').create(blueprint),
+    byId('material-merger').create(blueprint),
+    byId('feeder').create(blueprint),
     byId('magnetic-separator').create(blueprint),
     byId('hopper').create(blueprint),
   ];
 
-  assert.deepEqual(nodes.map(node => node.nodeType), ['extractor', 'crusher', 'screen', 'magSep', 'hopper']);
-  assert.equal(Object.keys(blueprint.nodes).length, 5);
+  assert.deepEqual(
+    nodes.map(node => node.nodeType),
+    ['extractor', 'crusher', 'screen', 'splitter', 'merger', 'feeder', 'magSep', 'hopper'],
+  );
+  assert.equal(Object.keys(blueprint.nodes).length, 8);
 });
