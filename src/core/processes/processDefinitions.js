@@ -64,6 +64,18 @@ export function defaultProcessParameters(processId) {
   );
 }
 
+export function validateProcessParameter(parameter, value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`Process parameter '${parameter.id}' must be a finite number`);
+  }
+  if (value < parameter.min || value > parameter.max) {
+    throw new Error(
+      `Process parameter '${parameter.id}' must be within [${parameter.min}, ${parameter.max}]`
+    );
+  }
+  return value;
+}
+
 export function validateProcessParameters(processDefinition, parameters = {}) {
   if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
     throw new Error('Process parameters must be an object keyed by parameter id');
@@ -80,15 +92,7 @@ export function validateProcessParameters(processDefinition, parameters = {}) {
   const normalized = {};
   for (const parameter of parameterDefinitions) {
     const value = parameters[parameter.id] ?? parameter.defaultValue;
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new Error(`Process parameter '${parameter.id}' must be a finite number`);
-    }
-    if (value < parameter.min || value > parameter.max) {
-      throw new Error(
-        `Process parameter '${parameter.id}' must be within [${parameter.min}, ${parameter.max}]`
-      );
-    }
-    normalized[parameter.id] = value;
+    normalized[parameter.id] = validateProcessParameter(parameter, value);
   }
   return normalized;
 }

@@ -3,8 +3,8 @@
 import {
   MAGNETIC_SEPARATION_PROCESS_ID,
   CRUSHING_PROCESS_ID,
-  getProcessDefinition,
-  validateProcessParameters,
+  getProcessParameterDefinition,
+  validateProcessParameter,
 } from '../core/processes/processDefinitions.js';
 import {
   crushSolidMaterialState,
@@ -51,7 +51,10 @@ function legacyFlowView(solidState, particleSizeMm) {
 
 export function applyContinuousCrushing(feed, targetParticleSizeMm, throughputCapacityKgPerSecond) {
   validateFeed(feed);
-  validateProcessParameters(getProcessDefinition(CRUSHING_PROCESS_ID), { targetParticleSizeMm });
+  validateProcessParameter(
+    getProcessParameterDefinition(CRUSHING_PROCESS_ID, 'targetParticleSizeMm'),
+    targetParticleSizeMm,
+  );
   const normalizedFeed = normalizeFeed(feed);
   const feedSolidState = normalizedFeed.solidState;
   if (
@@ -77,7 +80,10 @@ export function applyContinuousCrushing(feed, targetParticleSizeMm, throughputCa
 
 export function applyContinuousMagneticSeparation(feed, fieldStrength, maxFeedParticleSizeMm = 25) {
   validateFeed(feed);
-  validateProcessParameters(getProcessDefinition(MAGNETIC_SEPARATION_PROCESS_ID), { fieldStrength });
+  validateProcessParameter(
+    getProcessParameterDefinition(MAGNETIC_SEPARATION_PROCESS_ID, 'fieldStrength'),
+    fieldStrength,
+  );
   const normalizedFeed = normalizeFeed(feed);
   const feedSolidState = normalizedFeed.solidState;
   const { concentrate, tailings } = splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedParticleSizeMm);
