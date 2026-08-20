@@ -26,19 +26,19 @@ const resourceSourcePort = Object.freeze({
   label: 'resource source',
   accepts: Object.freeze([PORT_CAPABILITIES.RESOURCE_SOURCE]),
 });
-const solidInputPort = id => Object.freeze({
+const solidInputPort = (id, accepts = PORT_CAPABILITIES.SOLID_PARTICULATE) => Object.freeze({
   id,
   direction: 'input',
   kind: 'material',
   label: id,
-  accepts: Object.freeze([PORT_CAPABILITIES.SOLID_PARTICULATE]),
+  accepts: Object.freeze([accepts]),
 });
-const solidOutputPort = id => Object.freeze({
+const solidOutputPort = (id, provides = [PORT_CAPABILITIES.SOLID_PARTICULATE]) => Object.freeze({
   id,
   direction: 'output',
   kind: 'material',
   label: id,
-  provides: Object.freeze([PORT_CAPABILITIES.SOLID_PARTICULATE]),
+  provides: Object.freeze(Array.isArray(provides) ? [...provides] : [provides]),
 });
 
 export const APPARATUS_DEFINITIONS = Object.freeze({
@@ -62,7 +62,10 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     defaults: Object.freeze({ capacityKg: 1000 }),
     ports: Object.freeze([
       solidInputPort('input'),
-      solidOutputPort('output'),
+      solidOutputPort('output', [
+        PORT_CAPABILITIES.SOLID_PARTICULATE,
+        PORT_CAPABILITIES.STORED_SOLID_PARTICULATE,
+      ]),
     ]),
     capabilities: Object.freeze([
       Object.freeze({ id: 'capacityKg', label: 'Capacity', unit: 'kg' }),
@@ -78,7 +81,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
       throughputKgPerSecond: 4,
     }),
     ports: Object.freeze([
-      solidInputPort('feed'),
+      solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
       solidOutputPort('product'),
     ]),
     capabilities: Object.freeze([
@@ -95,7 +98,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
       throughputKgPerSecond: 4,
     }),
     ports: Object.freeze([
-      solidInputPort('feed'),
+      solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
       solidOutputPort('concentrate'),
       solidOutputPort('tailings'),
     ]),

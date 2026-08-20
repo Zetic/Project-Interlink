@@ -1,4 +1,5 @@
 import { CRUSHING_PROCESS_ID } from '../../core/processes/definitions/index.js';
+import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
 import { multiplySolidMaterialState, totalSolidQuantity } from '../../core/materials/solids/solidMaterialState.js';
 import {
   cloneHopperMaterialState,
@@ -55,6 +56,22 @@ export function createCrusher({
     targetParticleSizeMm,
     inputPortId: 'feed',
     outputPortId: 'product',
+    ports: [
+      {
+        id: 'feed',
+        direction: 'input',
+        kind: 'material',
+        label: 'feed',
+        accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE],
+      },
+      {
+        id: 'product',
+        direction: 'output',
+        kind: 'material',
+        label: 'product',
+        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
+      },
+    ],
     lastError: null,
     enabled,
     operatingState: enabled ? 'idle' : 'off',

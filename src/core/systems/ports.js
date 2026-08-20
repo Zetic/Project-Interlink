@@ -16,6 +16,7 @@ export function portCapabilityMatches(sourcePort, targetPort) {
 export const PORT_CAPABILITIES = Object.freeze({
   RESOURCE_SOURCE: 'resource-source',
   SOLID_PARTICULATE: 'solid-particulate',
+  STORED_SOLID_PARTICULATE: 'stored-solid-particulate',
 });
 
 export function normalizePortCapabilities(capabilities) {

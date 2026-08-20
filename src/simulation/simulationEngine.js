@@ -27,9 +27,12 @@ import {
   CRUSHING_PROCESS_ID,
   MAGNETIC_SEPARATION_PROCESS_ID,
 } from '../core/processes/definitions/index.js';
-import { validateApparatusParameters } from './apparatusDefinitions.js';
+import {
+  getApparatusDefinition,
+  validateApparatusParameters,
+} from '../content/apparatus/definitions.js';
 import { createApparatusRuntime, apparatusRuntimeFor } from './apparatus/registry.js';
-import { portCapabilityMatches } from '../core/systems/ports.js';
+import { PORT_CAPABILITIES, portCapabilityMatches } from '../core/systems/ports.js';
 
 export const SIMULATION_STEP_S = 0.1;
 export const DEFAULT_HOPPER_CAPACITY_KG = 1000;
@@ -92,7 +95,7 @@ export function blueprintAddFeatureSource(blueprint, {
       direction: 'output',
       kind: 'resource-access',
       label: 'resources',
-      provides: ['resource-source'],
+      provides: [PORT_CAPABILITIES.RESOURCE_SOURCE],
     }],
   };
   blueprint.nodes[nodeId] = node;
@@ -105,22 +108,15 @@ export function blueprintAddExtractor(
   rateKgPerSecond = DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND,
   { enabled = false } = {}
 ) {
-  const id = nextNodeId();
-  const node = createApparatusRuntime('extractor', {
-    id,
+  return blueprintAddApparatus(blueprint, 'extractor', {
     occurrenceId,
-    prototypeRateKgPerSecond: rateKgPerSecond,
+    rateKgPerSecond,
     enabled,
   });
-  blueprint.nodes[id] = node;
-  return node;
 }
 
 export function blueprintAddHopper(blueprint, capacityKg = DEFAULT_HOPPER_CAPACITY_KG) {
-  const id = nextNodeId();
-  const node = createApparatusRuntime('hopper', { id, capacityKg });
-  blueprint.nodes[id] = node;
-  return node;
+  return blueprintAddApparatus(blueprint, 'hopper', { capacityKg });
 }
 
 export function blueprintAddCrusher(blueprint, {
@@ -128,21 +124,11 @@ export function blueprintAddCrusher(blueprint, {
   targetParticleSizeMm = DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
   enabled = false,
 } = {}) {
-  if (typeof throughputKgPerSecond !== 'number' || !Number.isFinite(throughputKgPerSecond) || throughputKgPerSecond <= 0) {
-    throw new Error('Crusher throughputKgPerSecond must be a finite positive number');
-  }
-  if (typeof enabled !== 'boolean') throw new Error('Crusher enabled must be boolean');
-
-  const id = nextNodeId();
-  const node = createApparatusRuntime('crusher', {
-    id,
+  return blueprintAddApparatus(blueprint, 'crusher', {
     throughputKgPerSecond,
     targetParticleSizeMm,
     enabled,
   });
-  validateApparatusParameters(node);
-  blueprint.nodes[id] = node;
-  return node;
 }
 
 export function blueprintAddMagSep(blueprint, {
@@ -150,20 +136,31 @@ export function blueprintAddMagSep(blueprint, {
   throughputKgPerSecond = DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S,
   enabled = false,
 } = {}) {
-  if (typeof throughputKgPerSecond !== 'number' || !Number.isFinite(throughputKgPerSecond) || throughputKgPerSecond <= 0) {
-    throw new Error('Magnetic Separator throughputKgPerSecond must be a finite positive number');
-  }
-  if (typeof enabled !== 'boolean') throw new Error('Magnetic Separator enabled must be boolean');
-
-  const id = nextNodeId();
-  const node = createApparatusRuntime('magSep', {
-    id,
+  return blueprintAddApparatus(blueprint, 'magSep', {
     fieldStrength,
     throughputKgPerSecond,
     enabled,
   });
+}
+
+export function blueprintAddApparatus(blueprint, nodeType, parameters = {}) {
+  const definition = getApparatusDefinition(nodeType);
+  if (!definition) throw new Error(`Unknown apparatus '${nodeType}'`);
+
+  const runtimeParameters = {
+    ...definition.defaults,
+    ...parameters,
+    id: parameters.id ?? nextNodeId(),
+  };
+  for (const [canonicalId, alias] of Object.entries(definition.placementParameterAliases ?? {})) {
+    if (parameters[canonicalId] == null && parameters[alias] != null) {
+      runtimeParameters[canonicalId] = parameters[alias];
+    }
+  }
+
+  const node = createApparatusRuntime(nodeType, runtimeParameters);
   validateApparatusParameters(node);
-  blueprint.nodes[id] = node;
+  blueprint.nodes[node.id] = node;
   return node;
 }
 
@@ -177,35 +174,25 @@ export function getNodePortDefinitions(node) {
       direction: 'output',
       kind: 'resource-access',
       label: 'resources',
-      provides: ['resource-source'],
+      provides: [PORT_CAPABILITIES.RESOURCE_SOURCE],
     }];
   }
-  if (node.nodeType === 'extractor') {
-    return [
-      {
-        id: node.sourceInputPortId,
-        direction: 'input',
-        kind: 'resource-access',
-        label: 'resource source',
-        accepts: ['resource-source'],
-      },
-      {
-        id: node.outputPortId,
-        direction: 'output',
-        kind: 'material',
-        label: 'material out',
-        provides: ['extracted-material'],
-      },
-    ];
+  const apparatusDefinition = getApparatusDefinition(node.nodeType);
+  if (apparatusDefinition && node.nodeType !== 'hopper') {
+    return apparatusDefinition.ports.map(port => ({
+      ...port,
+      id: node[port.id === 'resource-source' ? 'sourceInputPortId' : `${port.direction === 'input' ? 'input' : 'output'}PortId`] ?? port.id,
+    }));
   }
   if (node.nodeType === 'hopper') {
+    const solidCapability = PORT_CAPABILITIES.SOLID_PARTICULATE;
     if (node.boundaryRole === 'import') {
       return [{
         id: node.outputPortId,
         direction: 'output',
         kind: 'material',
         label: 'out',
-        provides: ['boundary-material'],
+        provides: [solidCapability, PORT_CAPABILITIES.STORED_SOLID_PARTICULATE],
       }];
     }
     if (node.boundaryRole === 'export') {
@@ -214,7 +201,7 @@ export function getNodePortDefinitions(node) {
         direction: 'input',
         kind: 'material',
         label: 'in',
-        accepts: ['stored-material', 'boundary-material'],
+        accepts: [solidCapability],
       }];
     }
     return [
@@ -223,14 +210,14 @@ export function getNodePortDefinitions(node) {
         direction: 'input',
         kind: 'material',
         label: 'in',
-        accepts: ['extracted-material', 'processed-material', 'boundary-material'],
+        accepts: [solidCapability],
       },
       {
         id: node.outputPortId,
         direction: 'output',
         kind: 'material',
         label: 'out',
-        provides: ['stored-material'],
+        provides: [solidCapability, PORT_CAPABILITIES.STORED_SOLID_PARTICULATE],
       },
     ];
   }
@@ -244,14 +231,14 @@ export function getNodePortDefinitions(node) {
       direction: 'input',
       kind: port.kind,
       label: port.id,
-      accepts: ['stored-material'],
+      accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE],
     })),
     ...(processDefinition.outputs ?? []).map(port => ({
       id: port.id,
       direction: 'output',
       kind: port.kind,
       label: port.id,
-      provides: ['processed-material'],
+      provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
     })),
   ];
 }

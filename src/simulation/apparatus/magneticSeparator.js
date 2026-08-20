@@ -2,6 +2,7 @@ import {
   MAGNETIC_SEPARATION_PROCESS_ID,
   getProcessDefinition,
 } from '../../core/processes/definitions/index.js';
+import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
 import { multiplySolidMaterialState, totalSolidQuantity } from '../../core/materials/solids/solidMaterialState.js';
 import {
   cloneHopperMaterialState,
@@ -66,6 +67,29 @@ export function createMagneticSeparator({
     inputPortId: 'feed',
     concentratePortId: 'concentrate',
     tailingsPortId: 'tailings',
+    ports: [
+      {
+        id: 'feed',
+        direction: 'input',
+        kind: 'material',
+        label: 'feed',
+        accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE],
+      },
+      {
+        id: 'concentrate',
+        direction: 'output',
+        kind: 'material',
+        label: 'concentrate',
+        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
+      },
+      {
+        id: 'tailings',
+        direction: 'output',
+        kind: 'material',
+        label: 'tailings',
+        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
+      },
+    ],
     maxFeedParticleSizeMm: processDefinition?.maxFeedParticleSizeMm ?? 25,
     lastError: null,
     enabled,

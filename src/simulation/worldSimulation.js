@@ -3,6 +3,7 @@ import { simulationTick, SIMULATION_STEP_S } from './simulationEngine.js';
 import { createBoundaryBuffer } from './hopperNode.js';
 import { transferBoundaryMaterial, validateBoundaryTransfer } from './boundaryTransfer.js';
 import { createCompositeNode, createSystemPort, getSystemNodePort } from '../core/systems/systemNode.js';
+import { PORT_CAPABILITIES } from '../core/systems/ports.js';
 
 export const DEFAULT_BOUNDARY_TRANSFER_RATE_KG_PER_SECOND = 10;
 export const DEFAULT_REGIONAL_BUFFER_CAPACITY_KG = 1000;
@@ -49,6 +50,10 @@ function ensureRegionBoundaryAdapters(world, regionId, regionNode, importHopperI
         direction: 'output',
         kind: 'material',
         label: 'regional import out',
+        provides: [
+          PORT_CAPABILITIES.SOLID_PARTICULATE,
+          PORT_CAPABILITIES.STORED_SOLID_PARTICULATE,
+        ],
         childNodeId: importHopperId,
         childPortId: 'output',
       })],
@@ -67,6 +72,7 @@ function ensureRegionBoundaryAdapters(world, regionId, regionNode, importHopperI
         direction: 'input',
         kind: 'material',
         label: 'regional export in',
+        accepts: [PORT_CAPABILITIES.SOLID_PARTICULATE],
         childNodeId: exportHopperId,
         childPortId: 'input',
       })],
@@ -82,8 +88,25 @@ function normalizeRecursiveContracts(world) {
     const input = existingMapping(node, 'material-input');
     const output = existingMapping(node, 'material-output');
     replacePorts(node, [
-      createSystemPort({ id: 'material-input', direction: 'input', kind: 'material', label: 'material in', ...input }),
-      createSystemPort({ id: 'material-output', direction: 'output', kind: 'material', label: 'material out', ...output }),
+      createSystemPort({
+        id: 'material-input',
+        direction: 'input',
+        kind: 'material',
+        label: 'material in',
+        accepts: [PORT_CAPABILITIES.SOLID_PARTICULATE],
+        ...input,
+      }),
+      createSystemPort({
+        id: 'material-output',
+        direction: 'output',
+        kind: 'material',
+        label: 'material out',
+        provides: [
+          PORT_CAPABILITIES.SOLID_PARTICULATE,
+          PORT_CAPABILITIES.STORED_SOLID_PARTICULATE,
+        ],
+        ...output,
+      }),
     ]);
     site.boundaryPorts = node.ports;
   }
@@ -99,6 +122,7 @@ function normalizeRecursiveContracts(world) {
         direction: 'input',
         kind: 'material',
         label: 'material in',
+        accepts: [PORT_CAPABILITIES.SOLID_PARTICULATE],
         childNodeId: importHopperId,
         childPortId: 'input',
       }),
@@ -107,6 +131,10 @@ function normalizeRecursiveContracts(world) {
         direction: 'output',
         kind: 'material',
         label: 'material out',
+        provides: [
+          PORT_CAPABILITIES.SOLID_PARTICULATE,
+          PORT_CAPABILITIES.STORED_SOLID_PARTICULATE,
+        ],
         childNodeId: exportHopperId,
         childPortId: 'output',
       }),

@@ -1,1 +1,1 @@
-export * from '../inspectionViewModel.js';
+export * from './inspectionViewModel.js';

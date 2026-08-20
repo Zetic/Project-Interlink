@@ -12,10 +12,12 @@ function aggregateComponentsFromBodies(bodies) {
   for (const body of bodies) {
     const summary = summarizeSolidMaterialBySpecies(body.solidState);
     for (const [componentId, massKg] of Object.entries(summary)) {
-      aggregated[componentId] = roundKg((aggregated[componentId] ?? 0) + massKg);
+      aggregated[componentId] = (aggregated[componentId] ?? 0) + massKg;
     }
   }
-  return aggregated;
+  return Object.fromEntries(
+    Object.entries(aggregated).map(([componentId, massKg]) => [componentId, roundKg(massKg)])
+  );
 }
 
 export function validateSpeciesConservation(inputBodies, outputBodies, processId) {

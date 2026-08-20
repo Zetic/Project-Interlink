@@ -1,6 +1,24 @@
 import { SCHEMA_VERSION, GENERATOR_VERSION } from '../versions.js';
 import { createCompositeNode, createSystemPort } from '../../systems/systemNode.js';
+import { PORT_CAPABILITIES } from '../../systems/ports.js';
 import { validateWorld } from '../validation/worldValidation.js';
+
+function materialBoundaryPort(direction, id, label) {
+  return createSystemPort({
+    id,
+    direction,
+    kind: 'material',
+    label,
+    ...(direction === 'input'
+      ? { accepts: [PORT_CAPABILITIES.SOLID_PARTICULATE] }
+      : {
+        provides: [
+          PORT_CAPABILITIES.SOLID_PARTICULATE,
+          PORT_CAPABILITIES.STORED_SOLID_PARTICULATE,
+        ],
+      }),
+  });
+}
 
 /**
  * Assemble serializable world truth from generated physical content.
@@ -42,6 +60,7 @@ export function assembleWorld(planet, seed) {
           world.resourceOccurrences[occurrence.id] = occurrence;
           occurrenceIds.push(occurrence.id);
         }
+
         world.features[generatedFeature.id] = {
           ...generatedFeature,
           siteId: generatedSite.id,
@@ -57,8 +76,8 @@ export function assembleWorld(planet, seed) {
         systemType: 'site',
         childWorkspaceId: `${generatedSite.id}-workspace`,
         ports: [
-          createSystemPort({ id: 'material-input', direction: 'input', kind: 'material', label: 'material in' }),
-          createSystemPort({ id: 'material-output', direction: 'output', kind: 'material', label: 'material out' }),
+          materialBoundaryPort('input', 'material-input', 'material in'),
+          materialBoundaryPort('output', 'material-output', 'material out'),
         ],
         inspectableState: { regionId: generatedRegion.id, featureIds },
       });
@@ -84,8 +103,8 @@ export function assembleWorld(planet, seed) {
       systemType: 'region',
       childWorkspaceId: `${generatedRegion.id}-workspace`,
       ports: [
-        createSystemPort({ id: 'material-input', direction: 'input', kind: 'material', label: 'material in' }),
-        createSystemPort({ id: 'material-output', direction: 'output', kind: 'material', label: 'material out' }),
+        materialBoundaryPort('input', 'material-input', 'material in'),
+        materialBoundaryPort('output', 'material-output', 'material out'),
       ],
       inspectableState: { regionId: generatedRegion.id, siteIds },
     });
