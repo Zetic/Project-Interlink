@@ -11,6 +11,7 @@ import { getParticleSizeBin } from '../core/materials/particleSizeBins.js';
 import { getLiberationClass } from '../core/materials/liberationClasses.js';
 import { getMaterialSpecies } from '../core/materials/materialSpecies.js';
 import { getNodeOperatingState } from '../simulation/simulationEngine.js';
+import { apparatusParametersForNode, getApparatusDefinition } from '../simulation/apparatusDefinitions.js';
 
 function summaryRows(summary, total, labelFor) {
   return Object.entries(summary ?? {})
@@ -165,6 +166,14 @@ export function machineInspection(blueprint, node) {
     input: inputInspection,
     resourceAccess: connectionInspection(blueprint, resourceAccessInput),
     outputs: outputByPort,
+    parameters: apparatusParametersForNode(node).map(parameter => ({
+      ...parameter,
+      value: node?.[parameter.id],
+    })),
+    capabilities: (getApparatusDefinition(node?.nodeType)?.capabilities ?? []).map(capability => ({
+      ...capability,
+      value: node?.[capability.id],
+    })),
   };
 
   if (node?.nodeType === 'crusher') result.targetParticleSizeMm = node.targetParticleSizeMm;

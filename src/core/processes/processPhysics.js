@@ -27,14 +27,6 @@ function mergeShares(entries) {
   return [...merged.entries()].map(([sizeBinId, share]) => ({ sizeBinId, share }));
 }
 
-function coarsestActiveBinIndex(solidState) {
-  let coarsestIndex = -1;
-  forEachSolidFraction(solidState, fraction => {
-    coarsestIndex = Math.max(coarsestIndex, particleSizeBinIndex(fraction.sizeBinId));
-  });
-  return coarsestIndex;
-}
-
 function requireCrusherTargetSizeBinId(targetParticleSizeMm) {
   if (typeof targetParticleSizeMm !== 'number' || !Number.isFinite(targetParticleSizeMm) || targetParticleSizeMm <= 0) {
     throw new Error('Crusher targetParticleSizeMm must be a finite positive number');
@@ -168,20 +160,6 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
   });
 
   return { concentrate, tailings };
-}
-
-export function assertCrushingTarget(feedSolidState, targetParticleSizeMm) {
-  validateSolidMaterialState(feedSolidState);
-  const targetIndex = particleSizeBinIndex(requireCrusherTargetSizeBinId(targetParticleSizeMm));
-  const coarsestIndex = coarsestActiveBinIndex(feedSolidState);
-  if (coarsestIndex < 0) {
-    throw new Error('Crusher requires non-empty feed');
-  }
-  if (targetIndex >= coarsestIndex) {
-    throw new Error(
-      `Crusher requires targetParticleSizeMm below current feed size (${representativeParticleSizeMm(listOrderedSizeBinIds()[coarsestIndex])} mm representative); got ${targetParticleSizeMm} mm`
-    );
-  }
 }
 
 export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm) {

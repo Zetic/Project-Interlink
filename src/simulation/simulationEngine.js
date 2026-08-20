@@ -28,17 +28,19 @@ import {
   totalSolidQuantity,
 } from '../core/materials/solidMaterialState.js';
 import {
+  defaultProcessParameters,
   getProcessDefinition,
   CRUSHING_PROCESS_ID,
   MAGNETIC_SEPARATION_PROCESS_ID,
 } from '../core/processes/processDefinitions.js';
+import { validateApparatusParameters } from './apparatusDefinitions.js';
 
 export const SIMULATION_STEP_S = 0.1;
 export const DEFAULT_HOPPER_CAPACITY_KG = 1000;
 export const DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S = 4;
-export const DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM = 15;
+export const DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM = defaultProcessParameters(CRUSHING_PROCESS_ID).targetParticleSizeMm;
 export const DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S = 4;
-export const DEFAULT_MAG_SEP_FIELD_STRENGTH = 0.6;
+export const DEFAULT_MAG_SEP_FIELD_STRENGTH = defaultProcessParameters(MAGNETIC_SEPARATION_PROCESS_ID).fieldStrength;
 export const DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S = 10;
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
@@ -144,6 +146,7 @@ export function blueprintAddCrusher(blueprint, {
     enabled,
     operatingState: enabled ? 'idle' : 'off',
   };
+  validateApparatusParameters(node);
   blueprint.nodes[id] = node;
   return node;
 }
@@ -176,6 +179,7 @@ export function blueprintAddMagSep(blueprint, {
     enabled,
     operatingState: enabled ? 'idle' : 'off',
   };
+  validateApparatusParameters(node);
   blueprint.nodes[id] = node;
   return node;
 }
@@ -680,6 +684,17 @@ export function setNodeEnabled(blueprint, nodeId, enabled) {
   node.enabled = enabled;
   if (!enabled) node.operatingState = 'off';
   else if (node.operatingState === 'off') node.operatingState = 'idle';
+  return node;
+}
+
+export function setApparatusParameter(blueprint, nodeId, parameterId, value) {
+  const node = blueprint?.nodes?.[nodeId];
+  if (!node) throw new Error(`Unknown node '${nodeId}'`);
+  const normalized = validateApparatusParameters(node, { [parameterId]: value });
+  if (!Object.hasOwn(normalized, parameterId)) {
+    throw new Error(`Unknown apparatus parameter '${parameterId}' for '${node.nodeType}'`);
+  }
+  node[parameterId] = normalized[parameterId];
   return node;
 }
 

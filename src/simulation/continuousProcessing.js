@@ -1,6 +1,11 @@
 /** Continuous solid-material process physics for the Engineering workspace. */
 
-import { MAGNETIC_SEPARATION_PROCESS_ID, CRUSHING_PROCESS_ID } from '../core/processes/processDefinitions.js';
+import {
+  MAGNETIC_SEPARATION_PROCESS_ID,
+  CRUSHING_PROCESS_ID,
+  getProcessDefinition,
+  validateProcessParameters,
+} from '../core/processes/processDefinitions.js';
 import {
   crushSolidMaterialState,
   magneticRecoveryForFraction,
@@ -46,6 +51,7 @@ function legacyFlowView(solidState, particleSizeMm) {
 
 export function applyContinuousCrushing(feed, targetParticleSizeMm, throughputCapacityKgPerSecond) {
   validateFeed(feed);
+  validateProcessParameters(getProcessDefinition(CRUSHING_PROCESS_ID), { targetParticleSizeMm });
   const normalizedFeed = normalizeFeed(feed);
   const feedSolidState = normalizedFeed.solidState;
   if (
@@ -71,6 +77,7 @@ export function applyContinuousCrushing(feed, targetParticleSizeMm, throughputCa
 
 export function applyContinuousMagneticSeparation(feed, fieldStrength, maxFeedParticleSizeMm = 25) {
   validateFeed(feed);
+  validateProcessParameters(getProcessDefinition(MAGNETIC_SEPARATION_PROCESS_ID), { fieldStrength });
   const normalizedFeed = normalizeFeed(feed);
   const feedSolidState = normalizedFeed.solidState;
   const { concentrate, tailings } = splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedParticleSizeMm);
