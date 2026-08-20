@@ -3,6 +3,7 @@ import { requireMaterialConstituentId } from '../species/materialSpecies.js';
 import { particleSizeBinIdForMm, requireParticleSizeBin } from './particleSizeBins.js';
 import {
   cloneMineralTextureProfile,
+  mineralTextureProfilesEqual,
   validateMineralTextureProfile,
 } from './mineralTextures.js';
 
@@ -53,21 +54,7 @@ function cloneTextureProfiles(textureProfiles = {}) {
 }
 
 function profilesEquivalent(a, b) {
-  if (!a || !b) return a === b;
-  if (
-    a.id !== b.id
-    || a.fallbackLiberationSizeUm !== b.fallbackLiberationSizeUm
-    || a.curveSpread !== b.curveSpread
-    || a.boundaryBreakageAffinity !== b.boundaryBreakageAffinity
-  ) return false;
-  const keys = new Set([
-    ...Object.keys(a.speciesLiberationSizeUm ?? {}),
-    ...Object.keys(b.speciesLiberationSizeUm ?? {}),
-  ]);
-  for (const key of keys) {
-    if (a.speciesLiberationSizeUm?.[key] !== b.speciesLiberationSizeUm?.[key]) return false;
-  }
-  return true;
+  return mineralTextureProfilesEqual(a, b);
 }
 
 function mergeTextureProfiles(target, source) {
