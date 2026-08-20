@@ -35,14 +35,17 @@ function computedCrushingSizeShares(inputSizeBinId, targetSizeBinId, targetParti
   const orderedSizeBinIds = listOrderedSizeBinIds();
 
   // Preserve historical behavior for persisted legacy 10/12 mm settings. New
-  // player-facing canonical settings model a nominal crusher product rather
-  // than a perfect maximum-size cutoff.
+  // player-facing staged comminution uses the expanded canonical vocabulary,
+  // while old generic Crusher results retain their broad <1 mm bucket.
   if ([10, 12].includes(targetParticleSizeMm)) {
     const entries = [{ sizeBinId: targetSizeBinId, share: 0.65 }];
     const finerIndex = Math.max(0, targetIndex - 1);
     entries.push({ sizeBinId: orderedSizeBinIds[finerIndex], share: 0.25 });
     const finestIndex = Math.max(0, targetIndex - 2);
-    entries.push({ sizeBinId: orderedSizeBinIds[finestIndex], share: 0.1 });
+    const finestBinId = orderedSizeBinIds[finestIndex] === '0.5-1mm'
+      ? 'lt-1mm'
+      : orderedSizeBinIds[finestIndex];
+    entries.push({ sizeBinId: finestBinId, share: 0.1 });
     return mergeShares(entries);
   }
 
