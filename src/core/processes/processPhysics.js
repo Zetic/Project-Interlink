@@ -162,7 +162,7 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
   const oversized = oversizedFeedSummary(feedSolidState, maxFeedParticleSizeMm);
   if (oversized.oversized > 0) {
     throw new Error(
-      `Magnetic Separator blocked: feed contains ${oversized.percentage.toFixed(1)}% oversized material (> ${maxFeedParticleSizeMm} mm; largest class ${oversized.largestBin?.name ?? 'unknown'})`
+      `Magnetic Separator requires feed particle size <= ${maxFeedParticleSizeMm} mm; blocked because feed contains ${oversized.percentage.toFixed(1)}% oversized material (largest class ${oversized.largestBin?.name ?? 'unknown'})`
     );
   }
 
