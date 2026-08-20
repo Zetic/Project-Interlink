@@ -60,7 +60,7 @@ World generation exists to create meaningful physical starting conditions for th
 
 # Current Project State
 
-The current build has a coherent vertical slice from deterministic planet generation through natural resource sources, player-authored Site construction, continuous particulate processing, recursive boundaries, and a shared graph workspace.
+The current build has a coherent vertical slice from deterministic planet generation through natural resource sources, player-authored Site construction, continuous particulate processing and routing, recursive boundaries, and a shared graph workspace.
 
 Current serialized versions are:
 
@@ -94,6 +94,9 @@ APPARATUS
   Extractor
   Crusher
   Screen
+  Splitter
+  Material Merger
+  Feeder
   Magnetic Separator
 
 CONTAINER
@@ -127,12 +130,15 @@ Mechanical process physics currently includes:
 
 - Crushing
 - Screening
+- Material Splitting
+- Material Merging
+- Controlled Feeding
 - Magnetic Separation
 - shared discrete and continuous physical kernels
 - replaceable process-conservation policies
 - transactional backpressure and atomic multi-output commits
 - one physical owner/location for stored matter
-- no material fan-out until an explicit Splitter exists
+- explicit branching and recombination without implicit material duplication
 
 ---
 
@@ -207,11 +213,61 @@ coarser fraction
 
 Screening does **not** change species, particle-size class, liberation class, or quantity. It only routes existing fractions.
 
-Because the Crusher now produces a nominal distribution rather than a perfect cutoff, the Screen has an immediate classification role. For coarse feed processed by a Crusher at 25 mm, the prototype curve leaves 10% in the 25–60 mm oversize class; a 25 mm Screen routes that fraction to `oversize` while the remaining 90% can proceed to a process that requires <=25 mm feed.
+Because the Crusher produces a nominal distribution rather than a perfect cutoff, the Screen has an immediate classification role. For coarse feed processed by a Crusher at 25 mm, the prototype curve leaves 10% in the 25–60 mm oversize class; a 25 mm Screen routes that fraction to `oversize` while the remaining 90% can proceed to a process that requires <=25 mm feed.
 
 Both outputs are required. Output handling is transactional: a disconnected required output or insufficient required output capacity prevents feed consumption rather than deleting one side of the split.
 
 Real screening inefficiency, near-cut misplacement, moisture effects, screen area/loading, particle shape, deck angle, and vibration are deferred until they create useful process decisions.
+
+## Splitter
+
+The Splitter is the explicit material-branching primitive:
+
+```text
+stored feed
+    ↓
+ Splitter
+ ├── output A
+ └── output B
+```
+
+The player configures `splitFractionToA` from `0` to `1`. Every species/size/liberation fraction is divided by the same ratio, so the Splitter changes ownership and flow only; it does not alter material state.
+
+Both outputs are explicit and required. Downstream capacity throttles the whole planned split transactionally rather than allowing one branch to consume matter while the other branch is lost or blocked.
+
+Ordinary material outputs still cannot fan out. A Splitter creates two independent physical output ports, each of which remains subject to the normal one-connection rule.
+
+## Material Merger
+
+The Material Merger is the explicit inverse routing primitive:
+
+```text
+input A ─┐
+         ├── Material Merger → product
+input B ─┘
+```
+
+It combines two stored particulate populations into one conserved output without changing species, particle size, or liberation. It is deliberately **not** called a Mixer: no mixing intensity, homogeneity, residence-time, viscosity, or other physical mixing model is implied.
+
+Both input ports and the product port must be connected. If one connected input is temporarily empty, material available from the other input can continue through. When combined availability exceeds the rated throughput, both inputs are drawn proportionally from their currently stored masses.
+
+Output capacity backpressures both source withdrawals as one transaction.
+
+## Feeder
+
+The Feeder separates a requested material-flow setpoint from the rated capacity of downstream machinery:
+
+```text
+Hopper
+  ↓
+Feeder @ requested kg/s
+  ↓
+downstream process
+```
+
+The current prototype Feeder is rated at `10 kg/s`. The player-configurable `flowRateKgPerSecond` setpoint ranges from `0` to `10 kg/s` and defaults to `4 kg/s`.
+
+The Feeder does not transform material. It preserves composition, particle-size distribution, and liberation exactly while metering the feasible flow. A zero setpoint leaves the machine idle without consuming feed. Downstream storage capacity applies normal backpressure.
 
 ## Magnetic Separator
 
@@ -254,24 +310,27 @@ A fully liberated body may still be a mixed collection of separate mineral grain
 
 ### Separation
 
-Separation routes material according to physical differences or classifications. The current Screen separates by particle size; the Magnetic Separator separates according to magnetic response plus size/liberation/process effects.
+Separation routes material according to physical differences or classifications. The current Screen separates by particle size; the Magnetic Separator separates according to magnetic response plus size/liberation/process effects. Splitter and Material Merger are routing operations rather than property-based separation processes.
 
-A developing mineral-processing path is therefore:
+A developing mineral-processing path can now include explicit recycle and controlled feed:
 
 ```text
-natural mixed ore
-  ↓ extraction
-coarse particulate feed
-  ↓ crushing
-nominal crushed product with fines + oversize
-  ↓ screening
-  ├── oversize → further crushing / future recycle
-  └── undersize → size-qualified downstream feed
-                       ↓
-                magnetic separation
-                       ↓
-              concentrate + tailings
+fresh ore ───────────────┐
+                         ↓
+                  Material Merger
+                         ↓
+                      Feeder
+                         ↓
+                      Crusher
+                         ↓
+                       Screen
+                    ┌────┴────┐
+              undersize     oversize
+                  ↓             │
+             downstream         └── storage / recycle path
 ```
+
+A complete automatic recycle loop still depends on the chosen graph topology and storage/throughput balance; no implicit routing occurs merely because compatible machines exist.
 
 ---
 
@@ -347,7 +406,7 @@ process applicability / operating constraints
 
 A process must not consume input and later discover that a required output cannot accept the result. Multi-output machinery commits planned movement atomically.
 
-Until an explicit Splitter exists, one material output cannot fan out to multiple consumers.
+Ordinary material outputs cannot fan out to multiple consumers. Explicit branching occurs through Splitter output ports. Multiple streams cannot silently combine into one ordinary input; explicit fan-in occurs through the Material Merger's distinct input ports.
 
 ---
 
@@ -356,9 +415,11 @@ Until an explicit Splitter exists, one material output cannot fan out to multipl
 The current runtime provides:
 
 - fixed-step simulation independent from render FPS
-- continuous Extractor, Crusher, Screen, and Magnetic Separator execution
+- continuous Extractor, Crusher, Screen, Splitter, Material Merger, Feeder, and Magnetic Separator execution
 - Hopper buffering and finite capacity
 - material streams represented as mass-flow state rather than per-tick batches
+- explicit player-configurable branching and feed-rate control
+- transactional multi-input/multi-output routing
 - global world Pause/Resume
 - machine enabled/disabled command state
 - derived `off / idle / running / blocked` operating state
@@ -427,7 +488,7 @@ runtime registration
 tests
 ```
 
-Screen was added through this path without adding a machine-pair connection whitelist, second NODE catalog, removable-node type list, generic-Inspector type list, or central simulation dispatch branch.
+Screen, Splitter, Material Merger, and Feeder have all been added through this path without adding machine-pair connection whitelists, a second NODE catalog, removable-node type lists, generic-Inspector type lists, or central simulation dispatch branches.
 
 ---
 
@@ -453,17 +514,16 @@ The viewport is finite. Logical graph space is effectively unbounded and support
 
 # Near-Term Development Direction
 
-Screen establishes explicit particle-size routing and validates the post-restructure apparatus extension path. The next processing work can build on it rather than adding more architecture switchboards.
+The routing/flow-control layer now provides explicit branching, recombination, and feed-rate control. The next major processing addition should create a complete new physical regime rather than adding an isolated machine with no useful downstream consumer.
 
 Likely sequence:
 
-1. **Splitter / Mixer-Merger** — explicit material branching and recombination instead of implicit fan-out/fan-in.
-2. **Mill / Grinder** — finer particle-size regimes and more realistic liberation progression below the current Crusher scale.
-3. **Density property + Gravity Separation** — first major new process-driven property domain beyond magnetic response.
-4. **Slurry/liquid handling and Hydrocyclone / Flotation-style processing** when the material model supports them.
-5. **Thermal state and thermal apparatus** once internal-energy/phase modeling has a concrete process need.
-6. **Chemical transformation** after elemental/stoichiometric conservation and thermal foundations are ready.
-7. **Sensors, controllers, logistics, energy networks, and reusable composite systems** incrementally as real gameplay demands them.
+1. **Fine-processing package: Mill / Grinder + finer particle-size bins + fine classification + a separation method that benefits from fine liberated material** — avoids making milling an isolated step that only worsens the current coarse Magnetic Separator.
+2. **Density property + Gravity Separation** — first major new process-driven property domain beyond magnetic response.
+3. **Slurry/liquid handling and Hydrocyclone / Flotation-style processing** when the material model supports them.
+4. **Thermal state and thermal apparatus** once internal-energy/phase modeling has a concrete process need.
+5. **Chemical transformation** after elemental/stoichiometric conservation and thermal foundations are ready.
+6. **Sensors, controllers, logistics, energy networks, and reusable composite systems** incrementally as real gameplay demands them.
 
 This is direction, not a commitment to implement every system immediately. Each addition should justify the physical state and complexity it introduces.
 
