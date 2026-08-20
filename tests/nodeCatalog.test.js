@@ -13,11 +13,22 @@ const byId = id => NODE_DEFINITIONS.find(definition => definition.id === id);
 test('NODE catalog exposes the current primitive definitions and existing categories', () => {
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.label),
-    ['Extractor', 'Crusher', 'Screen', 'Splitter', 'Material Merger', 'Feeder', 'Magnetic Separator', 'Hopper'],
+    [
+      'Extractor',
+      'Jaw Crusher',
+      'Cone Crusher',
+      'Ball Mill',
+      'Screen',
+      'Splitter',
+      'Material Merger',
+      'Feeder',
+      'Dry Drum Magnetic Separator',
+      'Hopper',
+    ],
   );
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.category),
-    ['apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'container'],
+    ['apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'container'],
   );
   for (const definition of NODE_DEFINITIONS) {
     assert.equal(typeof definition.create, 'function');
@@ -29,7 +40,7 @@ test('NODE catalog exposes the current primitive definitions and existing catego
 test('catalog projection is independent of currently instantiated blueprint nodes', () => {
   const empty = projectNodeCatalog();
   const blueprint = createBlueprint();
-  byId('crusher').create(blueprint);
+  byId('cone-crusher').create(blueprint);
   const projected = projectNodeCatalog();
 
   assert.equal(empty.matchCount, NODE_DEFINITIONS.length);
@@ -39,8 +50,12 @@ test('catalog projection is independent of currently instantiated blueprint node
 });
 
 test('catalog search is case-insensitive and matches deliberate function synonyms', () => {
-  assert.deepEqual(projectNodeCatalog({ query: 'CRUSHER' }).rows[0].definitions.map(item => item.id), ['crusher']);
-  assert.deepEqual(projectNodeCatalog({ query: 'grinding' }).rows[0].definitions.map(item => item.id), ['crusher']);
+  assert.deepEqual(
+    projectNodeCatalog({ query: 'CRUSHER' }).rows[0].definitions.map(item => item.id),
+    ['jaw-crusher', 'cone-crusher'],
+  );
+  assert.deepEqual(projectNodeCatalog({ query: 'primary crusher' }).rows[0].definitions.map(item => item.id), ['jaw-crusher']);
+  assert.deepEqual(projectNodeCatalog({ query: 'grinding' }).rows[0].definitions.map(item => item.id), ['ball-mill']);
   assert.deepEqual(projectNodeCatalog({ query: 'sieve' }).rows[0].definitions.map(item => item.id), ['screen']);
   assert.deepEqual(projectNodeCatalog({ query: 'branch' }).rows[0].definitions.map(item => item.id), ['splitter']);
   assert.deepEqual(projectNodeCatalog({ query: 'junction' }).rows[0].definitions.map(item => item.id), ['material-merger']);
@@ -56,14 +71,16 @@ test('category filters affect projection without changing the catalog definition
 
   assert.deepEqual(categories, ['apparatus', 'container']);
   assert.deepEqual(projection.rows.flatMap(row => row.definitions).map(item => item.id), ['hopper']);
-  assert.equal(NODE_DEFINITIONS.length, 8);
+  assert.equal(NODE_DEFINITIONS.length, 10);
 });
 
 test('definitions create the expected authoritative blueprint node types', () => {
   const blueprint = createBlueprint();
   const nodes = [
     byId('extractor').create(blueprint, { occurrenceId: 'occurrence-1' }),
-    byId('crusher').create(blueprint),
+    byId('jaw-crusher').create(blueprint),
+    byId('cone-crusher').create(blueprint),
+    byId('ball-mill').create(blueprint),
     byId('screen').create(blueprint),
     byId('splitter').create(blueprint),
     byId('material-merger').create(blueprint),
@@ -74,7 +91,7 @@ test('definitions create the expected authoritative blueprint node types', () =>
 
   assert.deepEqual(
     nodes.map(node => node.nodeType),
-    ['extractor', 'crusher', 'screen', 'splitter', 'merger', 'feeder', 'magSep', 'hopper'],
+    ['extractor', 'jawCrusher', 'coneCrusher', 'ballMill', 'screen', 'splitter', 'merger', 'feeder', 'magSep', 'hopper'],
   );
-  assert.equal(Object.keys(blueprint.nodes).length, 8);
+  assert.equal(Object.keys(blueprint.nodes).length, 10);
 });
