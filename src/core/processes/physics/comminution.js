@@ -6,6 +6,7 @@ import {
   particleSizeBinIndex,
 } from '../../materials/solids/particleSizeBins.js';
 import { liberationPotentialAtParticleSize } from '../../materials/solids/mineralTextures.js';
+import { bondSpecificEnergyKWhPerT } from '../../materials/solids/comminutionProperties.js';
 import {
   SOLID_MATERIAL_TOLERANCE,
   addSolidFractionDirect,
@@ -32,7 +33,8 @@ const EQUIPMENT_PROFILES = Object.freeze({
       Object.freeze({ offset: -1, share: 0.20 }),
       Object.freeze({ offset: -2, share: 0.10 }),
     ]),
-    liberationMode: 'coarse-crushing',
+    liberationEfficiency: 0.02,
+    workIndexProperty: 'bondCrushingWorkIndexKWhPerT',
   }),
   [COMMINUTION_EQUIPMENT.CONE_CRUSHER]: Object.freeze({
     label: 'Cone Crusher',
@@ -43,7 +45,8 @@ const EQUIPMENT_PROFILES = Object.freeze({
       Object.freeze({ offset: -1, share: 0.25 }),
       Object.freeze({ offset: -2, share: 0.10 }),
     ]),
-    liberationMode: 'fine-crushing',
+    liberationEfficiency: 0.10,
+    workIndexProperty: 'bondCrushingWorkIndexKWhPerT',
   }),
   [COMMINUTION_EQUIPMENT.BALL_MILL]: Object.freeze({
     label: 'Ball Mill',
@@ -55,19 +58,29 @@ const EQUIPMENT_PROFILES = Object.freeze({
       Object.freeze({ offset: -2, share: 0.15 }),
       Object.freeze({ offset: -3, share: 0.05 }),
     ]),
-    liberationMode: 'grinding',
+    liberationEfficiency: 0.95,
+    workIndexProperty: 'bondBallMillWorkIndexKWhPerT',
   }),
 });
 
-// Compatibility fallback for manually-created or legacy material without an
-// occurrence texture lineage. Newly generated ore carries its own profile.
-const GENERIC_MINERAL_TEXTURE = Object.freeze({
-  id: 'generic-mineral-texture',
-  fallbackLiberationSizeUm: 125,
-  curveSpread: 0.6,
-  boundaryBreakageAffinity: 0.2,
-  speciesLiberationSizeUm: Object.freeze({}),
+const LEGACY_REFERENCE_COMMINUTION = Object.freeze({
+  bondCrushingWorkIndexKWhPerT: 10,
+  bondBallMillWorkIndexKWhPerT: 15,
+  bondAbrasionIndex: 0.3,
 });
+
+function genericTextureForSpecies(speciesId) {
+  return {
+    id: `legacy-reference-${speciesId}`,
+    speciesTextures: {
+      [speciesId]: {
+        grainSizeUm: { d10: 50, d50: 125, d90: 300 },
+        occurrenceModes: { free: 0.15, boundary: 0.35, intergrown: 0.35, included: 0.15 },
+      },
+    },
+    comminutionProperties: LEGACY_REFERENCE_COMMINUTION,
+  };
+}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -122,13 +135,14 @@ function oversizedFeedSummary(feedSolidState, maxFeedParticleSizeMm) {
 function textureForFraction(feedSolidState, fraction) {
   return fraction.textureProfileId
     ? solidTextureProfile(feedSolidState, fraction.textureProfileId)
-    : GENERIC_MINERAL_TEXTURE;
+    : genericTextureForSpecies(fraction.speciesId);
 }
 
 /**
- * Liberation is an emergent response to particle size relative to the source
- * ore's mineral texture. Crushers mostly reduce size; grinding becomes
- * effective when particles approach the characteristic mineral-grain scale.
+ * Liberation is derived from current particle size relative to measured mineral
+ * grain-size distributions and occurrence modes. Equipment geometry affects how
+ * efficiently size reduction creates intergranular liberation, but no occurrence
+ * stores a synthetic liberation-size or curve-width parameter.
  */
 function liberationAdvancement(
   equipmentProfile,
@@ -149,31 +163,17 @@ function liberationAdvancement(
     outputBin.representativeMm,
   );
   const reductionFactor = clamp(0.45 + 0.11 * sizeReductionBins, 0, 1);
-  const boundaryAffinity = textureProfile.boundaryBreakageAffinity;
+  const improvedShare = clamp(
+    liberationPotential * reductionFactor * equipmentProfile.liberationEfficiency,
+    0,
+    equipmentProfile.liberationEfficiency,
+  );
 
-  if (equipmentProfile.liberationMode === 'coarse-crushing') {
-    return {
-      improvedShare: clamp(
-        reductionFactor * (0.002 + 0.015 * boundaryAffinity + 0.01 * liberationPotential),
-        0,
-        0.025,
-      ),
-      maxLift: 1,
-    };
+  if (equipmentProfile.liberationEfficiency <= 0.10) {
+    return { improvedShare, maxLift: 1 };
   }
-  if (equipmentProfile.liberationMode === 'fine-crushing') {
-    return {
-      improvedShare: clamp(
-        reductionFactor * (0.005 + 0.04 * boundaryAffinity + 0.12 * liberationPotential),
-        0,
-        0.12,
-      ),
-      maxLift: 1,
-    };
-  }
-
   return {
-    improvedShare: clamp(liberationPotential * reductionFactor, 0, 0.95),
+    improvedShare,
     maxLift: liberationPotential >= 0.75 ? 3 : liberationPotential >= 0.30 ? 2 : 1,
   };
 }
@@ -272,22 +272,10 @@ function mergeAllocation(merged, allocation) {
   if (allocation.quantity <= 0) return;
   const key = `${allocation.sizeBinId}|${allocation.liberationClassId}`;
   const existing = merged.get(key);
-  if (existing) {
-    existing.quantity += allocation.quantity;
-  } else {
-    merged.set(key, { ...allocation });
-  }
+  if (existing) existing.quantity += allocation.quantity;
+  else merged.set(key, { ...allocation });
 }
 
-/**
- * One parent fraction may fan out across several product-size and liberation
- * classes. The sparse material store intentionally prunes fractions at or
- * below SOLID_MATERIAL_TOLERANCE, so adding each child independently can lose
- * real mass when a small parent is subdivided many times. Consolidate those
- * sub-tolerance children into the largest sibling before committing them.
- * This preserves parent mass while perturbing the statistical PSD by at most
- * the state's numerical storage tolerance.
- */
 function addConservedFractionChildren(
   outputState,
   feedSolidState,
@@ -317,9 +305,6 @@ function addConservedFractionChildren(
     if (entry.quantity > largest.quantity) largest = entry;
   }
 
-  // Preserve sparse-state pruning without allowing it to delete conserved mass.
-  // The moved quantities are already part of the parent allocation, so no
-  // additional floating-point normalization is applied to ordinary children.
   let subToleranceResidual = 0;
   for (const entry of entries) {
     if (entry === largest) continue;
@@ -386,6 +371,64 @@ export function comminuteSolidMaterialState(feedSolidState, targetParticleSizeMm
     throw new Error(`${equipmentProfile.label} violated solid-matter conservation`);
   }
   return product;
+}
+
+export function particleSizePercentileUm(state, percentile = 0.8) {
+  validateSolidMaterialState(state);
+  if (typeof percentile !== 'number' || !Number.isFinite(percentile) || percentile <= 0 || percentile > 1) {
+    throw new Error('particle-size percentile must be in (0, 1]');
+  }
+  const byBin = new Map();
+  let total = 0;
+  forEachSolidFraction(state, fraction => {
+    byBin.set(fraction.sizeBinId, (byBin.get(fraction.sizeBinId) ?? 0) + fraction.quantity);
+    total += fraction.quantity;
+  });
+  if (total <= 0) return null;
+  const target = total * percentile;
+  let cumulative = 0;
+  for (const bin of listParticleSizeBins()) {
+    cumulative += byBin.get(bin.id) ?? 0;
+    if (cumulative >= target) return bin.representativeMm * 1000;
+  }
+  const coarsest = listParticleSizeBins()[listParticleSizeBins().length - 1];
+  return coarsest.representativeMm * 1000;
+}
+
+export function weightedComminutionProperties(feedSolidState) {
+  validateSolidMaterialState(feedSolidState);
+  let total = 0;
+  let cwi = 0;
+  let bwi = 0;
+  let ai = 0;
+  forEachSolidFraction(feedSolidState, fraction => {
+    const profile = textureForFraction(feedSolidState, fraction);
+    const properties = profile?.comminutionProperties ?? LEGACY_REFERENCE_COMMINUTION;
+    total += fraction.quantity;
+    cwi += fraction.quantity * properties.bondCrushingWorkIndexKWhPerT;
+    bwi += fraction.quantity * properties.bondBallMillWorkIndexKWhPerT;
+    ai += fraction.quantity * properties.bondAbrasionIndex;
+  });
+  if (total <= 0) return { ...LEGACY_REFERENCE_COMMINUTION };
+  return {
+    bondCrushingWorkIndexKWhPerT: cwi / total,
+    bondBallMillWorkIndexKWhPerT: bwi / total,
+    bondAbrasionIndex: ai / total,
+  };
+}
+
+export function comminutionSpecificEnergyKWhPerT(feedSolidState, targetParticleSizeMm, equipmentId) {
+  const equipmentProfile = requireEquipmentProfile(equipmentId);
+  const product = comminuteSolidMaterialState(feedSolidState, targetParticleSizeMm, equipmentId);
+  const feedP80Um = particleSizePercentileUm(feedSolidState, 0.8);
+  const productP80Um = particleSizePercentileUm(product, 0.8);
+  if (!feedP80Um || !productP80Um || productP80Um >= feedP80Um) return 0;
+  const properties = weightedComminutionProperties(feedSolidState);
+  return bondSpecificEnergyKWhPerT(
+    properties[equipmentProfile.workIndexProperty],
+    feedP80Um,
+    productP80Um,
+  );
 }
 
 export function jawCrushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
