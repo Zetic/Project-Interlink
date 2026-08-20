@@ -8,6 +8,7 @@
 
 import { createWorld } from './core/world/worldState.js';
 import { createKnowledge } from './core/world/knowledgeState.js';
+import { installApparatusControlUI } from './workspace/apparatusControlUI.js';
 import { initWorkspace } from './workspace/workspaceUI.js';
 
 function el(id) {
@@ -24,6 +25,7 @@ function generateWorld() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  installApparatusControlUI();
   el('generate-btn')?.addEventListener('click', generateWorld);
   el('seed-input')?.addEventListener('keydown', event => {
     if (event.key === 'Enter') generateWorld();
