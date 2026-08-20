@@ -13,10 +13,10 @@ function buildWorld(seed = 'integrity-test') {
 
 test('world uses the Site/Feature resource schema and generator versions', () => {
   const world = buildWorld();
-  assert.equal(SCHEMA_VERSION, 8);
-  assert.equal(GENERATOR_VERSION, 6);
-  assert.equal(world.schemaVersion, 8);
-  assert.equal(world.generatorVersion, 6);
+  assert.equal(SCHEMA_VERSION, 9);
+  assert.equal(GENERATOR_VERSION, 7);
+  assert.equal(world.schemaVersion, 9);
+  assert.equal(world.generatorVersion, 7);
 });
 
 test('planetId and every planet region ID resolve', () => {
@@ -83,6 +83,26 @@ test('every ResourceOccurrence is owned by exactly one Feature', () => {
     }
   }
   for (const occurrenceId of Object.keys(world.resourceOccurrences)) assert.equal(owners.get(occurrenceId), 1);
+});
+
+test('ore-body occurrences carry deterministic species-aware mineral texture profiles', () => {
+  let count = 0;
+  const world = buildWorld('ore-texture-profiles');
+  for (const occurrence of Object.values(world.resourceOccurrences)) {
+    const resource = getResourceDefinition(occurrence.resourceId);
+    if (resource?.occurrenceFamily !== 'ore-body') continue;
+    count += 1;
+    assert.ok(occurrence.mineralTexture);
+    assert.equal(typeof occurrence.mineralTexture.fallbackLiberationSizeUm, 'number');
+    assert.ok(occurrence.mineralTexture.fallbackLiberationSizeUm > 0);
+    assert.ok(occurrence.mineralTexture.curveSpread > 0);
+    assert.ok(occurrence.mineralTexture.boundaryBreakageAffinity >= 0);
+    assert.ok(occurrence.mineralTexture.boundaryBreakageAffinity <= 1);
+    for (const speciesId of Object.keys(occurrence.composition ?? {})) {
+      assert.ok(occurrence.mineralTexture.speciesLiberationSizeUm[speciesId] > 0);
+    }
+  }
+  assert.ok(count > 0);
 });
 
 test('regional resource potential materializes as access Sites and Feature-owned occurrences', () => {
@@ -166,9 +186,9 @@ test('a localized Site can contain multiple distinct Features', () => {
   ));
 });
 
-test('deterministic generation: same seed produces identical worlds under generator v6', () => {
-  const world1 = buildWorld('determinism-v6');
-  const world2 = buildWorld('determinism-v6');
+test('deterministic generation: same seed produces identical worlds under generator v7', () => {
+  const world1 = buildWorld('determinism-v7');
+  const world2 = buildWorld('determinism-v7');
   assert.deepStrictEqual(world1, world2);
 });
 
