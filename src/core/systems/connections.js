@@ -1,5 +1,8 @@
-import { getSystemNodePort } from './systemNode.js';
 import { portCapabilityMatches } from './ports.js';
+
+function getSystemNodePort(node, portId) {
+  return node?.ports?.find(port => port.id === portId) ?? null;
+}
 
 /**
  * Validate the neutral graph contract. Domain-specific compatibility is

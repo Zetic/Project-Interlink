@@ -467,14 +467,16 @@ export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
   zeroAllStreams(blueprint);
   let extractedThisTickKg = 0;
 
+  const nodes = Object.values(blueprint.nodes);
+  const runtimeByNode = new Map(nodes.map(node => [node, apparatusRuntimeFor(node.nodeType)]));
   const phases = [...new Set(
-    Object.values(blueprint.nodes)
-      .map(node => apparatusRuntimeFor(node.nodeType)?.phase)
+    nodes
+      .map(node => runtimeByNode.get(node)?.phase)
       .filter(Number.isFinite)
   )].sort((a, b) => a - b);
   for (const phase of phases) {
-    for (const node of Object.values(blueprint.nodes)) {
-      const runtime = apparatusRuntimeFor(node.nodeType);
+    for (const node of nodes) {
+      const runtime = runtimeByNode.get(node);
       if (runtime?.phase !== phase || typeof runtime.simulate !== 'function') continue;
       const result = runtime.simulate(blueprint, world, node, dt);
       if (node.nodeType === 'extractor') extractedThisTickKg += result ?? 0;
