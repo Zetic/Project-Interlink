@@ -16,6 +16,11 @@ import { OCCURRENCE_FAMILIES, OCCURRENCE_FAMILY_VALUES } from '../content/resour
 import { FEATURE_TYPES, FEATURE_FALLBACK_RESOURCE } from '../content/features/featureTypes.js';
 import { FEATURE_NAME_PARTS, SITE_NAME_PARTS } from '../content/features/featureNames.js';
 import { FEATURE_ALLOWED_FAMILIES, allowedPhysicalStates } from '../content/features/featureCompatibility.js';
+import {
+  FEATURE_AFFINITY_TAGS,
+  FEATURE_TYPE_WEIGHT_RULES,
+  conditionMatches,
+} from '../content/features/featureGeneration.js';
 
 export { OCCURRENCE_FAMILIES, OCCURRENCE_FAMILY_VALUES };
 
@@ -28,34 +33,14 @@ function generateSiteName(rng) {
 }
 
 function weightedFeatureTypes(region) {
-  const { heat, moisture, geologicActivity, relief, latitude } = region;
   const weights = Object.fromEntries(FEATURE_TYPES.map(type => [type, 1]));
-
-  if (heat > 0.6 && geologicActivity > 0.6) {
-    weights['Volcanic Vent'] += 5;
-    weights['Magma Chamber'] += 4;
-    weights['Hydrothermal System'] += 5;
-    weights['Mineral Deposit'] += 3;
+  for (const rule of FEATURE_TYPE_WEIGHT_RULES) {
+    const matches = Object.entries(rule.when).every(([key, condition]) =>
+      conditionMatches(region[key], condition)
+    );
+    if (!matches) continue;
+    for (const [type, weight] of Object.entries(rule.add)) weights[type] += weight;
   }
-  if (moisture > 0.5) {
-    weights['Aquifer'] += 4;
-    weights['Cave / Cavern'] += 2;
-  }
-  if (heat < 0.3) {
-    weights['Ice Body'] += 4;
-    weights['Gas Reservoir'] += 2;
-  }
-  if (relief > 0.6) {
-    weights['Ravine'] += 4;
-    weights['Outcrop'] += 4;
-    weights['Fault'] += 2;
-  }
-  if (geologicActivity > 0.5) {
-    weights['Fault'] += 3;
-    weights['Mineral Deposit'] += 3;
-  }
-  if (moisture < 0.3 && heat > 0.4) weights['Salt Basin'] += 3;
-  if (Math.abs(latitude) > 55) weights['Ice Body'] += 3;
 
   const pool = [];
   for (const [type, weight] of Object.entries(weights)) {
@@ -67,34 +52,11 @@ function weightedFeatureTypes(region) {
 export { FEATURE_ALLOWED_FAMILIES };
 
 function featureAffinityTags(featureType, region, planetComposition) {
-  const { heat, moisture } = region;
-  const tags = [];
-
-  switch (featureType) {
-    case 'Mineral Deposit':
-      tags.push('metallic', 'ore');
-      if (heat > 0.5) tags.push('volcanic');
-      break;
-    case 'Geological Formation': tags.push('rock', 'igneous', 'sedimentary'); break;
-    case 'Aquifer': tags.push('wet', 'liquid'); break;
-    case 'Gas Reservoir': tags.push('gas', 'hydrocarbon', 'carbonRich'); break;
-    case 'Cave / Cavern':
-      tags.push('rock', 'carbonate', 'mineral');
-      if (moisture > 0.4) tags.push('wet');
-      break;
-    case 'Ravine': tags.push('rock', 'igneous', 'sedimentary'); break;
-    case 'Fault': tags.push('rock', 'metallic'); break;
-    case 'Crater': tags.push('rock', 'metallic', 'mineral'); break;
-    case 'Volcanic Vent': tags.push('volcanic', 'mineral', 'gas'); break;
-    case 'Hydrothermal System': tags.push('volcanic', 'wet', 'liquid', 'metallic'); break;
-    case 'Magma Chamber': tags.push('volcanic', 'liquid'); break;
-    case 'Ice Body': tags.push('icy', 'volatile'); break;
-    case 'Salt Basin': tags.push('evaporite', 'saline'); break;
-    case 'Outcrop': tags.push('rock', 'igneous', 'sedimentary'); break;
-    default: tags.push('rock', 'mineral');
-  }
+  const tags = [...(FEATURE_AFFINITY_TAGS[featureType] ?? ['rock', 'mineral'])];
 
   // Planet-wide context influences tag affinity only — it never overrides family compatibility.
+  if (featureType === 'Mineral Deposit' && region.heat > 0.5) tags.push('volcanic');
+  if (featureType === 'Cave / Cavern' && region.moisture > 0.4) tags.push('wet');
   if (planetComposition?.ironMetals > 20) tags.push('metallic');
   if (planetComposition?.waterVolatiles > 15) tags.push('wet', 'icy');
   if (planetComposition?.carbonCompounds > 5) tags.push('carbonRich');

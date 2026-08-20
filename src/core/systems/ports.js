@@ -13,6 +13,11 @@ export function portCapabilityMatches(sourcePort, targetPort) {
   return provided.some(capability => accepted.includes(capability));
 }
 
+export const PORT_CAPABILITIES = Object.freeze({
+  RESOURCE_SOURCE: 'resource-source',
+  SOLID_PARTICULATE: 'solid-particulate',
+});
+
 export function normalizePortCapabilities(capabilities) {
   if (capabilities == null) return [];
   if (!Array.isArray(capabilities) || capabilities.some(capability => typeof capability !== 'string' || !capability)) {
