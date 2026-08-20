@@ -20,6 +20,12 @@ import {
 import { splitScreenedSolidState } from '../src/core/processes/physics/screening.js';
 import { extractorOutputRates } from '../src/simulation/extractorNode.js';
 
+const TOLERANCE = 1e-9;
+
+function assertAlmostEqual(actual, expected, label) {
+  assert.ok(Math.abs(actual - expected) <= TOLERANCE, `${label}: expected ${expected}, got ${actual}`);
+}
+
 function singleFractionState({ speciesId = 'hematite', sizeBinId, liberationClassId = 'locked', quantity = 100 }) {
   const state = createSolidMaterialState();
   addSolidFractionDirect(state, { speciesId, sizeBinId, liberationClassId, quantity });
@@ -30,6 +36,13 @@ function liberationShare(state, classIds) {
   const summary = summarizeSolidMaterialByLiberationClass(state);
   const total = totalSolidQuantity(state);
   return classIds.reduce((sum, classId) => sum + (summary[classId] ?? 0), 0) / total;
+}
+
+function assertSpecies(state, expected) {
+  const actual = summarizeSolidMaterialBySpecies(state);
+  for (const [speciesId, expectedQuantity] of Object.entries(expected)) {
+    assertAlmostEqual(actual[speciesId] ?? 0, expectedQuantity, `${speciesId} conserved mass`);
+  }
 }
 
 test('particle-size vocabulary spans fine grinding through run-of-mine rock', () => {
@@ -53,7 +66,7 @@ test('ore-body extraction enters the plant as mostly locked run-of-mine rock', (
 
   assert.deepEqual(Object.keys(sizes).sort(), ['120-250mm', '250-500mm', '500-1000mm']);
   assert.ok((liberation.locked ?? 0) / totalSolidQuantity(state) > 0.98);
-  assert.deepEqual(summarizeSolidMaterialBySpecies(state), { hematite: 6, quartz: 4 });
+  assertSpecies(state, { hematite: 6, quartz: 4 });
 });
 
 test('Jaw Crusher performs primary size reduction with only minor liberation', () => {
@@ -61,11 +74,11 @@ test('Jaw Crusher performs primary size reduction with only minor liberation', (
   const product = jawCrushSolidMaterialState(feed, 120);
   const sizes = summarizeSolidMaterialBySizeBin(product);
 
-  assert.equal(totalSolidQuantity(product), 100);
-  assert.equal(sizes['120-250mm'], 15);
-  assert.equal(sizes['60-120mm'], 55);
-  assert.equal(sizes['25-60mm'], 20);
-  assert.equal(sizes['15-25mm'], 10);
+  assertAlmostEqual(totalSolidQuantity(product), 100, 'jaw total');
+  assertAlmostEqual(sizes['120-250mm'], 15, 'jaw oversize');
+  assertAlmostEqual(sizes['60-120mm'], 55, 'jaw nominal');
+  assertAlmostEqual(sizes['25-60mm'], 20, 'jaw finer');
+  assertAlmostEqual(sizes['15-25mm'], 10, 'jaw finest');
   assert.ok(liberationShare(product, ['locked']) > 0.95);
 });
 
@@ -82,7 +95,7 @@ test('Jaw product fits the Cone Crusher feed envelope', () => {
   const jawProduct = jawCrushSolidMaterialState(feed, 120);
   const coneProduct = coneCrushSolidMaterialState(jawProduct, 25);
 
-  assert.equal(totalSolidQuantity(coneProduct), 100);
+  assertAlmostEqual(totalSolidQuantity(coneProduct), 100, 'cone total');
   assert.ok(summarizeSolidMaterialBySizeBin(coneProduct)['25-60mm'] > 0);
   assert.ok(liberationShare(coneProduct, ['locked']) > 0.85);
 });
@@ -92,10 +105,10 @@ test('Cone Crusher produces the existing realistic nominal 25 mm PSD for coarse 
   const product = coneCrushSolidMaterialState(feed, 25);
   const sizes = summarizeSolidMaterialBySizeBin(product);
 
-  assert.equal(sizes['25-60mm'], 10);
-  assert.equal(sizes['15-25mm'], 55);
-  assert.equal(sizes['5-15mm'], 25);
-  assert.equal(sizes['1-5mm'], 10);
+  assertAlmostEqual(sizes['25-60mm'], 10, 'cone oversize');
+  assertAlmostEqual(sizes['15-25mm'], 55, 'cone nominal');
+  assertAlmostEqual(sizes['5-15mm'], 25, 'cone finer');
+  assertAlmostEqual(sizes['1-5mm'], 10, 'cone finest');
 });
 
 test('Ball Mill requires mill-ready feed rather than silently accepting crusher oversize', () => {
@@ -112,8 +125,8 @@ test('Screening a 25 mm Cone product creates Ball-Mill-eligible undersize', () =
   const coneProduct = coneCrushSolidMaterialState(coneFeed, 25);
   const { undersize, oversize } = splitScreenedSolidState(coneProduct, 25);
 
-  assert.equal(totalSolidQuantity(undersize), 90);
-  assert.equal(totalSolidQuantity(oversize), 10);
+  assertAlmostEqual(totalSolidQuantity(undersize), 90, 'screen undersize');
+  assertAlmostEqual(totalSolidQuantity(oversize), 10, 'screen oversize');
   assert.doesNotThrow(() => millSolidMaterialState(undersize, 0.25));
 });
 
@@ -123,17 +136,17 @@ test('Ball Mill reaches the sub-millimetre regime and drives substantially more 
   const milled = millSolidMaterialState(feed, 0.25);
   const sizes = summarizeSolidMaterialBySizeBin(milled);
 
-  assert.equal(totalSolidQuantity(milled), 100);
-  assert.equal(sizes['0.25-0.5mm'], 5);
-  assert.equal(sizes['0.125-0.25mm'], 45);
-  assert.equal(sizes['0.063-0.125mm'], 30);
-  assert.equal(sizes['0.032-0.063mm'], 15);
-  assert.equal(sizes['lt-0.032mm'], 5);
+  assertAlmostEqual(totalSolidQuantity(milled), 100, 'mill total');
+  assertAlmostEqual(sizes['0.25-0.5mm'], 5, 'mill oversize');
+  assertAlmostEqual(sizes['0.125-0.25mm'], 45, 'mill nominal');
+  assertAlmostEqual(sizes['0.063-0.125mm'], 30, 'mill finer');
+  assertAlmostEqual(sizes['0.032-0.063mm'], 15, 'mill very fine');
+  assertAlmostEqual(sizes['lt-0.032mm'], 5, 'mill finest');
   assert.ok(liberationShare(milled, ['mostly-liberated', 'liberated']) > 0.15);
   assert.ok(liberationShare(milled, ['locked']) < liberationShare(crushed, ['locked']));
 });
 
-test('all staged comminution operations conserve each species exactly', () => {
+test('all staged comminution operations conserve each species exactly within floating-point tolerance', () => {
   const feed = createSolidMaterialState();
   addSolidFractionDirect(feed, { speciesId: 'hematite', sizeBinId: '500-1000mm', liberationClassId: 'locked', quantity: 60 });
   addSolidFractionDirect(feed, { speciesId: 'quartz', sizeBinId: '500-1000mm', liberationClassId: 'locked', quantity: 40 });
@@ -143,7 +156,7 @@ test('all staged comminution operations conserve each species exactly', () => {
   const { undersize } = splitScreenedSolidState(cone, 25);
   const mill = millSolidMaterialState(undersize, 0.25);
 
-  assert.deepEqual(summarizeSolidMaterialBySpecies(jaw), { hematite: 60, quartz: 40 });
-  assert.deepEqual(summarizeSolidMaterialBySpecies(cone), { hematite: 60, quartz: 40 });
-  assert.deepEqual(summarizeSolidMaterialBySpecies(mill), { hematite: 54, quartz: 36 });
+  assertSpecies(jaw, { hematite: 60, quartz: 40 });
+  assertSpecies(cone, { hematite: 60, quartz: 40 });
+  assertSpecies(mill, { hematite: 54, quartz: 36 });
 });
