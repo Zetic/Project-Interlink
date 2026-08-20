@@ -18,8 +18,8 @@ export const PROCESS_DEFINITIONS = {
         controlType: 'number',
         playerConfigurable: true,
         // The current solid model only distinguishes canonical particle-size
-        // classes. Restrict authoritative Crusher settings to their upper cuts
-        // rather than implying unsupported millimetre precision.
+        // classes. Player-facing choices use their upper cuts rather than
+        // implying unsupported millimetre precision.
         choices: Object.freeze([
           Object.freeze({ value: 1, label: '≤1 mm' }),
           Object.freeze({ value: 5, label: '≤5 mm' }),
@@ -28,6 +28,10 @@ export const PROCESS_DEFINITIONS = {
           Object.freeze({ value: 60, label: '≤60 mm' }),
           Object.freeze({ value: 120, label: '≤120 mm' }),
         ]),
+        // Older batch/process fixtures used 10 mm for the same 5–15 mm class.
+        // Keep that programmatic value readable during this prototype while it
+        // remains absent from the canonical player-facing choices.
+        legacyValues: Object.freeze([10]),
       },
     ],
   },
@@ -86,7 +90,8 @@ export function validateProcessParameter(parameter, value) {
   }
   if (parameter.choices?.length) {
     const allowedValues = parameter.choices.map(choice => choice.value);
-    if (!allowedValues.includes(value)) {
+    const legacyValues = parameter.legacyValues ?? [];
+    if (!allowedValues.includes(value) && !legacyValues.includes(value)) {
       throw new Error(
         `Process parameter '${parameter.id}' must use a canonical value: ${allowedValues.join(', ')}`
       );
