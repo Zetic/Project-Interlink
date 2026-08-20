@@ -88,8 +88,9 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
     );
   }
 
-  const concentrate = createSolidMaterialState();
-  const tailings = createSolidMaterialState();
+  const stateOptions = { textureProfiles: feedSolidState.textureProfiles ?? {} };
+  const concentrate = createSolidMaterialState([], stateOptions);
+  const tailings = createSolidMaterialState([], stateOptions);
 
   forEachSolidFraction(feedSolidState, (fraction) => {
     const recovery = magneticRecoveryForFraction(
