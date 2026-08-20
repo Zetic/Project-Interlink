@@ -60,8 +60,9 @@ const SPECIES = [
 
 export const MATERIAL_SPECIES = Object.freeze(Object.fromEntries(SPECIES.map(species => [species.id, species])));
 
-// Historical prototype inputs are canonicalized immediately when new material
-// state is constructed. They are not species and are never emitted by generation.
+// Compatibility aliases are not MaterialSpecies and are never emitted by the
+// generator. Occurrence materialization resolves them to the concrete species
+// returned here before creating physical material state.
 const LEGACY_CONSTITUENT_ALIASES = Object.freeze({
   quartzAndGangue: 'quartz',
   'gangue-mixture': 'quartz',
