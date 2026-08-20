@@ -1,5 +1,10 @@
 import { MATERIAL_FORMS, physicalFormForOccurrence } from './materialForms.js';
-import { addSolidFractionDirect, createSolidMaterialBody, createSolidMaterialState } from './solids/solidMaterialState.js';
+import {
+  addSolidFractionDirect,
+  createSolidMaterialBody,
+  createSolidMaterialState,
+  registerSolidTextureProfile,
+} from './solids/solidMaterialState.js';
 import { requireMaterialSpecies } from './species/materialSpecies.js';
 
 export const OCCURRENCE_FRAGMENTATION_PROFILES = Object.freeze({
@@ -60,6 +65,8 @@ export function createSolidMaterialBodyFromOccurrence(occurrence, quantity, {
     throw new Error('Occurrence materialization quantity must be a finite positive number');
   }
   const solidState = createSolidMaterialState();
+  const textureProfileId = occurrence?.mineralTexture?.id ?? null;
+  if (occurrence?.mineralTexture) registerSolidTextureProfile(solidState, occurrence.mineralTexture);
   const template = fragmentationTemplate(fragmentationProfile);
   for (const { speciesId, share } of normalizeComposition(occurrence)) {
     for (const sizeTemplate of template) {
@@ -69,6 +76,7 @@ export function createSolidMaterialBodyFromOccurrence(occurrence, quantity, {
           speciesId,
           sizeBinId: sizeTemplate.sizeBinId,
           liberationClassId,
+          textureProfileId,
           quantity: sizeMass * liberationShare,
         });
       }
