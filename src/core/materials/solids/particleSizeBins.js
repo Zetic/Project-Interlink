@@ -21,8 +21,7 @@ const PARTICLE_SIZE_BIN_BY_ID = Object.freeze(Object.fromEntries(
 ));
 
 // Compatibility-only aliases for fraction keys produced before the staged
-// comminution model. New material generation and process outputs never emit
-// these broad legacy classes.
+// comminution model. New staged comminution emits the expanded canonical bins.
 const LEGACY_PARTICLE_SIZE_BINS = Object.freeze({
   'lt-1mm': Object.freeze({
     id: 'lt-1mm',
@@ -64,6 +63,10 @@ export function particleSizeBinIdForMm(sizeMm) {
   if (typeof sizeMm !== 'number' || !Number.isFinite(sizeMm) || sizeMm <= 0) {
     throw new Error('particle size must be a finite positive number');
   }
+  // The old generic Crusher and historical process fixtures used an explicit
+  // broad <1 mm class. Keep the exact 1 mm lookup stable for that compatibility
+  // path; new Ball Mill settings are below 1 mm and resolve to canonical fine bins.
+  if (sizeMm === 1) return 'lt-1mm';
   // Exact cut points map to the finer/lower bin so a target like 15 mm means
   // “no coarser than 15 mm”, not the next coarser 15–25 mm product class.
   return PARTICLE_SIZE_BINS.find(bin => sizeMm <= bin.maxMm)?.id
