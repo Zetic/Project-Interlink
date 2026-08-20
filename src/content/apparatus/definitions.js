@@ -1,10 +1,13 @@
 import {
+ CONE_CRUSHING_PROCESS_ID,
  CRUSHING_PROCESS_ID,
  defaultProcessParameters,
  FEEDING_PROCESS_ID,
  getProcessDefinition,
+ JAW_CRUSHING_PROCESS_ID,
  MAGNETIC_SEPARATION_PROCESS_ID,
  MERGING_PROCESS_ID,
+ MILLING_PROCESS_ID,
  SCREENING_PROCESS_ID,
  SPLITTING_PROCESS_ID,
  validateProcessParameters,
@@ -61,6 +64,11 @@ const solidOutputPort = (
   runtimePortField,
 });
 
+const comminutionCapabilities = Object.freeze([
+  Object.freeze({ id: 'throughputKgPerSecond', label: 'Rated throughput', unit: 'kg/s' }),
+  Object.freeze({ id: 'maxFeedParticleSizeMm', label: 'Maximum feed particle size', unit: 'mm' }),
+]);
+
 export const APPARATUS_DEFINITIONS = Object.freeze({
   extractor: Object.freeze({
     nodeType: 'extractor',
@@ -76,10 +84,13 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     ]),
     parameters: Object.freeze([]),
   }),
+
+  // Compatibility-only apparatus for older tests/sessions. New player-authored
+  // plants use explicit Jaw and Cone crusher equipment with bounded feed/product regimes.
   crusher: Object.freeze({
     nodeType: 'crusher',
     processId: CRUSHING_PROCESS_ID,
-    catalog: catalog('crusher', 'Crusher', 'apparatus', 'Reduces the particle size of solid material streams.', ['crusher', 'crushing', 'grinding', 'size reduction', 'ore', 'solid', 'particle'], 20),
+    catalog: catalog('crusher', 'Legacy Crusher', 'apparatus', 'Compatibility-only generic crusher.', ['legacy crusher'], 19, false),
     defaults: Object.freeze({
       ...defaultProcessParameters(CRUSHING_PROCESS_ID),
       throughputKgPerSecond: 4,
@@ -93,10 +104,59 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     ]),
     parameters: processParameters(CRUSHING_PROCESS_ID),
   }),
+
+  jawCrusher: Object.freeze({
+    nodeType: 'jawCrusher',
+    processId: JAW_CRUSHING_PROCESS_ID,
+    catalog: catalog('jaw-crusher', 'Jaw Crusher', 'apparatus', 'Primary crusher for reducing run-of-mine rock to a coarse plant feed with little mineral liberation.', ['jaw crusher', 'primary crusher', 'primary crushing', 'run of mine', 'rom', 'coarse crushing', 'ore'], 20),
+    defaults: Object.freeze({
+      ...defaultProcessParameters(JAW_CRUSHING_PROCESS_ID),
+      throughputKgPerSecond: 8,
+    }),
+    ports: Object.freeze([
+      solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
+      solidOutputPort('product'),
+    ]),
+    capabilities: comminutionCapabilities,
+    parameters: processParameters(JAW_CRUSHING_PROCESS_ID),
+  }),
+
+  coneCrusher: Object.freeze({
+    nodeType: 'coneCrusher',
+    processId: CONE_CRUSHING_PROCESS_ID,
+    catalog: catalog('cone-crusher', 'Cone Crusher', 'apparatus', 'Secondary or tertiary crusher for reducing coarse rock to mill-ready sizes while preserving mostly locked mineral textures.', ['cone crusher', 'secondary crusher', 'tertiary crusher', 'secondary crushing', 'size reduction', 'ore'], 30),
+    defaults: Object.freeze({
+      ...defaultProcessParameters(CONE_CRUSHING_PROCESS_ID),
+      throughputKgPerSecond: 5,
+    }),
+    ports: Object.freeze([
+      solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
+      solidOutputPort('product'),
+    ]),
+    capabilities: comminutionCapabilities,
+    parameters: processParameters(CONE_CRUSHING_PROCESS_ID),
+  }),
+
+  ballMill: Object.freeze({
+    nodeType: 'ballMill',
+    processId: MILLING_PROCESS_ID,
+    catalog: catalog('ball-mill', 'Ball Mill', 'apparatus', 'Fine grinding equipment that reduces mill-ready feed into the sub-millimetre regime where substantial mineral liberation develops.', ['ball mill', 'mill', 'milling', 'grinding', 'fine grinding', 'comminution', 'liberation'], 40),
+    defaults: Object.freeze({
+      ...defaultProcessParameters(MILLING_PROCESS_ID),
+      throughputKgPerSecond: 2,
+    }),
+    ports: Object.freeze([
+      solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
+      solidOutputPort('product'),
+    ]),
+    capabilities: comminutionCapabilities,
+    parameters: processParameters(MILLING_PROCESS_ID),
+  }),
+
   screen: Object.freeze({
     nodeType: 'screen',
     processId: SCREENING_PROCESS_ID,
-    catalog: catalog('screen', 'Screen', 'apparatus', 'Separates solid particulate material into undersize and oversize streams by particle-size cut.', ['screen', 'sieve', 'screening', 'size separation', 'undersize', 'oversize', 'particle'], 30),
+    catalog: catalog('screen', 'Screen', 'apparatus', 'Separates solid particulate material into undersize and oversize streams by particle-size cut.', ['screen', 'sieve', 'screening', 'size separation', 'undersize', 'oversize', 'particle'], 50),
     defaults: Object.freeze({
       ...defaultProcessParameters(SCREENING_PROCESS_ID),
       throughputKgPerSecond: 4,
@@ -114,7 +174,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   splitter: Object.freeze({
     nodeType: 'splitter',
     processId: SPLITTING_PROCESS_ID,
-    catalog: catalog('splitter', 'Splitter', 'apparatus', 'Divides one stored particulate feed into two explicitly conserved material outputs.', ['splitter', 'split', 'branch', 'routing', 'fan out', 'ratio'], 40),
+    catalog: catalog('splitter', 'Splitter', 'apparatus', 'Divides one stored particulate feed into two explicitly conserved material outputs.', ['splitter', 'split', 'branch', 'routing', 'fan out', 'ratio'], 60),
     defaults: Object.freeze({
       ...defaultProcessParameters(SPLITTING_PROCESS_ID),
       throughputKgPerSecond: 10,
@@ -132,7 +192,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   merger: Object.freeze({
     nodeType: 'merger',
     processId: MERGING_PROCESS_ID,
-    catalog: catalog('material-merger', 'Material Merger', 'apparatus', 'Combines two stored particulate feeds into one conserved material output without applying mixing physics.', ['merger', 'merge', 'combine', 'junction', 'routing', 'fan in'], 50),
+    catalog: catalog('material-merger', 'Material Merger', 'apparatus', 'Combines two stored particulate feeds into one conserved material output without applying mixing physics.', ['merger', 'merge', 'combine', 'junction', 'routing', 'fan in'], 70),
     defaults: Object.freeze({
       ...defaultProcessParameters(MERGING_PROCESS_ID),
       throughputKgPerSecond: 10,
@@ -150,7 +210,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   feeder: Object.freeze({
     nodeType: 'feeder',
     processId: FEEDING_PROCESS_ID,
-    catalog: catalog('feeder', 'Feeder', 'apparatus', 'Meters stored particulate material into a downstream process at a configured mass-flow setpoint.', ['feeder', 'feed', 'meter', 'flow control', 'rate', 'throughput'], 60),
+    catalog: catalog('feeder', 'Feeder', 'apparatus', 'Meters stored particulate material into a downstream process at a configured mass-flow setpoint.', ['feeder', 'feed', 'meter', 'flow control', 'rate', 'throughput'], 80),
     defaults: Object.freeze({
       ...defaultProcessParameters(FEEDING_PROCESS_ID),
       throughputKgPerSecond: FEEDER_RATED_THROUGHPUT_KG_PER_SECOND,
@@ -167,7 +227,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   magSep: Object.freeze({
     nodeType: 'magSep',
     processId: MAGNETIC_SEPARATION_PROCESS_ID,
-    catalog: catalog('magnetic-separator', 'Magnetic Separator', 'apparatus', 'Separates material streams using magnetic response.', ['magnetic separator', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings'], 70),
+    catalog: catalog('magnetic-separator', 'Dry Drum Magnetic Separator', 'apparatus', 'Dry coarse magnetic preconcentrator for recovering strongly magnetic material before fine grinding.', ['magnetic separator', 'dry drum', 'lims', 'cobbing', 'separator', 'magnetic', 'concentrate', 'tailings'], 90),
     defaults: Object.freeze({
       ...defaultProcessParameters(MAGNETIC_SEPARATION_PROCESS_ID),
       throughputKgPerSecond: 4,
@@ -185,7 +245,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   }),
   hopper: Object.freeze({
     nodeType: 'hopper',
-    catalog: catalog('hopper', 'Hopper', 'container', 'Stores discrete material constituents between processing nodes.', ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'], 80),
+    catalog: catalog('hopper', 'Hopper', 'container', 'Stores discrete material constituents between processing nodes.', ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'], 100),
     defaults: Object.freeze({ capacityKg: 1000 }),
     ports: Object.freeze([
       solidInputPort('input', PORT_CAPABILITIES.SOLID_PARTICULATE, 'inputPortId', 'in'),
