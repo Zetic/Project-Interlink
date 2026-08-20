@@ -2,6 +2,30 @@ import {
   validateReferenceIdArray,
   worldCollections,
 } from './helpers.js';
+import { getResourceDefinition } from '../../../content/resources/resourceDefinitions.js';
+import { validateMineralTextureProfile } from '../../materials/solids/mineralTextures.js';
+
+function validateOccurrenceTexture(occurrenceId, occurrence, errors) {
+  const resource = getResourceDefinition(occurrence?.resourceId);
+  const requiresTexture = resource?.occurrenceFamily === 'ore-body';
+  if (!occurrence?.mineralTexture) {
+    if (requiresTexture) errors.push(`Ore-body ResourceOccurrence '${occurrenceId}' must define mineralTexture`);
+    return;
+  }
+
+  try {
+    validateMineralTextureProfile(occurrence.mineralTexture);
+  } catch (error) {
+    errors.push(`ResourceOccurrence '${occurrenceId}' has invalid mineralTexture: ${error.message}`);
+    return;
+  }
+
+  for (const speciesId of Object.keys(occurrence.composition ?? {})) {
+    if (!(speciesId in occurrence.mineralTexture.speciesLiberationSizeUm)) {
+      errors.push(`ResourceOccurrence '${occurrenceId}' mineralTexture is missing species '${speciesId}'`);
+    }
+  }
+}
 
 /** Validate Feature-owned ResourceOccurrence references and ownership. */
 export function validateOccurrences(world) {
@@ -44,6 +68,7 @@ export function validateOccurrences(world) {
     if (occurrence.sourceType !== 'feature') {
       errors.push(`ResourceOccurrence '${occurrenceId}' cannot be owned by '${occurrence.sourceType}'`);
     }
+    validateOccurrenceTexture(occurrenceId, occurrence, errors);
   }
 
   return errors;
