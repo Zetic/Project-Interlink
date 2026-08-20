@@ -5,20 +5,20 @@ This file contains implementation guardrails for coding agents.
 Document roles:
 
 - `DESIGN.md` — long-term game/simulation design
-- `ARCHITECTURE.md` — current code organization, dependency direction, canonical extension paths, and compatibility surfaces
+- `ARCHITECTURE.md` — current code organization, dependency direction, extension paths, and compatibility surfaces
 - `README.md` — current implementation state and near-term direction
 - `.github/copilot-instructions.md` — coding-agent rules
 - the active GitHub issue / PR request — immediate task scope and acceptance criteria
 
-The active issue defines what to implement. Do not expand an issue merely because the design documents mention future systems.
+The active task defines what to implement. Do not expand scope merely because design documents mention future systems.
 
 ---
 
 ## Working Rules
 
-- Read the full issue, `ARCHITECTURE.md`, and relevant existing code/tests before editing.
+- Read the full task, `ARCHITECTURE.md`, and relevant code/tests before editing.
 - Prefer the smallest coherent change that satisfies the requested behavior.
-- Preserve established physical and architectural contracts unless the issue explicitly changes them.
+- Preserve established physical and architectural contracts unless the task explicitly changes them.
 - Do not rewrite unrelated systems merely for cleanup.
 - Do not claim browser/manual behavior was verified unless it was actually tested.
 - Run the complete regression suite before declaring work complete.
@@ -26,7 +26,7 @@ The active issue defines what to implement. Do not expand an issue merely becaus
 - Keep deterministic behavior deterministic; use existing namespaced RNG patterns for generation.
 - If generated world truth changes for the same seed, follow the `GENERATOR_VERSION` rule.
 - Bump `SCHEMA_VERSION` only when the serialized world-state contract changes.
-- Update documentation when a task materially changes a documented contract or file-ownership boundary.
+- Update documentation when a task materially changes current behavior or code-ownership boundaries.
 
 ---
 
@@ -53,16 +53,16 @@ Do not recreate removed architecture such as:
 
 ---
 
-## Current Architecture and Dependency Direction
+## Current Architecture
 
-Canonical responsibility domains are:
+Canonical domains are:
 
 ```text
 src/content/
     declarative resources, Features, apparatus definitions
 
 src/core/
-    materials, properties, process contracts/physics/conservation,
+    materials, properties, process definitions/physics/conservation,
     neutral system primitives, world model/validation
 
 src/generator/
@@ -73,7 +73,7 @@ src/simulation/
     boundary transfers
 
 src/workspace/
-    graph projection, placement, catalog, navigation, Inspector,
+    graph, placement, catalog, navigation, Inspector,
     layout/UI state and DOM orchestration
 
 src/app.js
@@ -91,16 +91,9 @@ content → core
 core → core
 ```
 
-### Legacy compatibility exception
+`src/core/world/worldState.js` retains a historical `createWorld()` compatibility API that delegates to generator code. Do not add more `core → generator` dependencies. New generation callers should use `src/generator/generateWorld.js` directly.
 
-`src/core/world/worldState.js` still exposes the historical `createWorld()` compatibility API and delegates to `generator/generateWorld.js`.
-
-- New generation code should import `src/generator/generateWorld.js` directly.
-- New core model code should use `src/core/world/model/*` and validation modules.
-- Do not add additional `core → generator` dependencies.
-- Do not put new implementation logic into compatibility forwarding modules.
-
-See `ARCHITECTURE.md` for the full current file tree and compatibility entry points.
+See `ARCHITECTURE.md` for the full current file tree.
 
 ---
 
@@ -119,15 +112,13 @@ UI / Application State
 → selection, layout, viewport, panels, temporary interaction state
 ```
 
-Physical truth must not exist only in DOM/UI objects.
-
-Graph layout, pan, zoom, selection, and temporary connection gestures are UI state and must not mutate matter or world truth.
+Physical truth must not exist only in DOM/UI objects. Graph layout, pan, zoom, selection, and temporary gestures are UI state and must not mutate world matter.
 
 ---
 
-## Canonical Natural-Resource Ownership
+## Natural Resource Ownership
 
-Preserve this hierarchy:
+Preserve:
 
 ```text
 Planet
@@ -138,21 +129,19 @@ Planet
 ```
 
 - Region groups Sites and does not own natural resource inventory or Features directly.
-- Site references Features through `featureIds`; do not create a second occurrence-ownership list on Site.
+- Site references Features through `featureIds`; do not create a second occurrence-ownership list.
 - Every natural `ResourceOccurrence` is Feature-owned with `sourceType: 'feature'` and the owning Feature ID.
-- Generated localized Features currently expose one ResourceOccurrence; independently exploitable natural sources normally become separate Features.
-- Multiple constituents of one physical source belong in one occurrence composition, not separate fake source objects.
-- Broad/widespread resources must still be exposed through physical access Sites/Features rather than Region-owned inventory.
+- Generated localized Features currently expose one ResourceOccurrence; independently exploitable sources normally become separate Features.
+- Multiple constituents of one physical source belong in one occurrence composition.
+- Widespread resources still require physical access through Sites/Features rather than Region inventory.
 
-Do not reintroduce legacy Region/Site resource ownership or tolerate dual sources of truth.
+Do not reintroduce `region.features`, `region.resources`, `region.backgroundResourceOccurrences`, or other dual ownership.
 
 ---
 
 ## Content vs Generation
 
-Keep declarative content separate from deterministic generation algorithms.
-
-Canonical content locations include:
+Canonical content locations:
 
 ```text
 src/content/resources/
@@ -160,77 +149,52 @@ src/content/features/
 src/content/apparatus/
 ```
 
-Generation lives under:
-
-```text
-src/generator/
-```
-
-Rules:
+Deterministic algorithms live under `src/generator/`.
 
 - Resource composition templates/descriptors belong in content.
 - Occurrence-family vocabulary belongs in content.
 - Feature type/name/compatibility/weighting definitions belong in content.
-- Generator code should consume content and apply physical conditions + deterministic RNG.
-- Do not move authoritative catalogs back into generator implementation files.
-- `src/data/` is a compatibility namespace only; do not add new authoritative resource content there.
+- Generator code consumes content and applies conditions + deterministic RNG.
+- `src/data/` is compatibility-only; do not add new authoritative resource content there.
 
 ---
 
 ## Occurrence-Family Compatibility
 
-Resource/Feature compatibility is based on the canonical occurrence-family vocabulary.
-
 - ResourceDefinitions declare `occurrenceFamily`.
 - Feature types declare accepted occurrence families.
-- Occurrence family is the hard physical-compatibility gate.
+- Occurrence family is the hard physical compatibility gate.
 - Tags/environmental affinity may only weight candidates after hard compatibility.
-- Do not replace this with per-Feature resource-ID whitelists.
-- Keep the taxonomy small and add a new family only when existing families are physically inappropriate.
-- Preserve catalog-integrity tests so unknown or accidentally unreachable localized resources are caught.
+- Do not replace the family model with per-Feature resource-ID whitelists.
+- Keep the taxonomy small and add a family only when existing families are physically inappropriate.
 
 ---
 
 ## Material Model
 
-The implemented solid-particulate state is aggregate/statistical:
+Implemented particulate solid state is aggregate/statistical:
 
 ```text
 speciesId × sizeBinId × liberationClassId → quantity
 ```
 
-A fraction is a population, not an individually simulated particle.
+A fraction represents a population, not one simulated particle.
 
-Current important concepts:
+Do not conflate:
 
-- concrete material/mineral species
-- mass / quantity
-- particle-size class
-- liberation class
-- physical form through `MaterialBody`
-- magnetic response through the material-property boundary
+- **composition** — which species are present and how much;
+- **liberation** — how physically detached constituent populations are;
+- **separation** — routing based on physical properties or classifications.
 
-### Composition vs liberation
+A fully liberated material can still be a mixed collection of separate mineral grains. Liberation is not purity.
 
-Do not conflate these concepts:
-
-- **composition** = which species are present and how much
-- **liberation** = how physically detached constituent populations are
-- **separation** = process routing based on physical differences
-
-A fully liberated body can still be a mixed collection of separate mineral grains. Liberation is not purity.
-
-### Concrete species
-
-Current solid generation emits registered concrete species. Do not reintroduce pseudo-species such as generic `gangue`, `gangue-mixture`, or `ironOxides` as new authoritative generated output merely for convenience.
-
-Legacy aliases may remain accepted only where compatibility requires them.
+Current solid generation emits registered concrete species. Do not reintroduce generic pseudo-species such as `gangue`, `gangue-mixture`, or `ironOxides` as new authoritative generated output. Legacy aliases may remain only where compatibility requires them.
 
 ---
 
 ## Property Architecture
 
-A property should enter the simulation when a process needs it to determine a physical result.
+A material property should enter the simulation when an implemented process needs it to determine a physical result.
 
 Canonical resolver location:
 
@@ -238,26 +202,22 @@ Canonical resolver location:
 src/core/materials/properties/
 ```
 
-Current example:
-
-```text
-magneticProperties.js
-```
+Current example: `magneticProperties.js`.
 
 Rules:
 
-- Physics should use property-domain APIs when available instead of reaching directly into species registry internals.
-- Do not build one unstructured universal property object.
-- Do not add speculative physical values simply to fill a table.
-- Distinguish intrinsic species properties from body/mixture/structural state and process conditions.
-- Do not add every new property as another solid-fraction key dimension.
-- Add density, mechanical, thermal, electrical, surface, chemical, fluid, etc. domains when an implemented process requires them.
+- use property-domain APIs from physics when a resolver exists;
+- do not build one unstructured universal property object;
+- do not add speculative values merely to fill a table;
+- distinguish intrinsic species properties from body/mixture/structural state and process conditions;
+- do not add every new property as another particulate fraction-key dimension;
+- add density, mechanical, thermal, electrical, surface, chemical, fluid, etc. domains when a real process consumes them.
 
 ---
 
 ## Process Architecture
 
-Canonical process organization is:
+Canonical process organization:
 
 ```text
 src/core/processes/
@@ -268,11 +228,11 @@ src/core/processes/
 └── processExecution.js
 ```
 
-Keep these responsibilities distinct:
+Keep responsibilities distinct:
 
 ```text
 Definition
-→ ports, parameters, applicability, metadata, conservation policy
+→ inputs, outputs, parameters, applicability, metadata, conservation policy
 
 Pure physics
 → material transformation/routing only
@@ -281,17 +241,15 @@ Executor
 → discrete MaterialBatch adaptation
 
 Continuous runtime
-→ placed-machine flow adaptation
+→ placed-machine flow/backpressure adaptation
 
 Conservation
-→ validates conserved quantities appropriate to process family
+→ validates conserved quantities appropriate to the process family
 ```
 
-Pure physics modules must not depend on DOM/UI or placed graph nodes.
+Pure physics must not depend on DOM/UI or placed graph nodes. Do not duplicate transformation algorithms between batch and continuous execution when both can call one physical kernel.
 
-Do not duplicate a transformation algorithm between batch execution and continuous runtime. Both should call the same physical kernel where practical.
-
-Mechanical processes currently conserve each species. Future chemistry/thermal work must be able to use different conservation policies rather than weakening existing mechanical conservation.
+Current mechanical processes conserve species mass. Future chemical/thermal work must introduce appropriate conservation models rather than bypassing validation.
 
 ---
 
@@ -303,16 +261,7 @@ Canonical apparatus metadata lives in:
 src/content/apparatus/definitions.js
 ```
 
-Current apparatus definitions own:
-
-- identity / node type
-- catalog metadata and order
-- placeability
-- canonical ports and interface capabilities
-- associated process
-- fixed capabilities
-- defaults
-- configurable parameter metadata
+Definitions own identity, catalog metadata/order, placeability, canonical ports/capabilities, associated process, fixed capabilities, defaults, and configurable parameter metadata.
 
 Runtime behavior lives under:
 
@@ -326,11 +275,11 @@ Runtime dispatch lives in:
 src/simulation/apparatus/registry.js
 ```
 
-The main simulation engine should orchestrate apparatus generically rather than implement every machine's physics itself.
+Current registry-backed node types include Extractor, Hopper, Crusher, Screen, and Magnetic Separator.
 
 ### Adding a new apparatus
 
-A process apparatus such as Screen should normally require:
+A future process apparatus such as Mill should normally require:
 
 1. apparatus definition metadata/ports/capabilities;
 2. process definition if it performs a new process;
@@ -342,21 +291,19 @@ A process apparatus such as Screen should normally require:
 
 It should **not** normally require:
 
-- a new machine-pair connection whitelist;
-- a second NODE catalog entry authored independently from the apparatus definition;
-- a new hardcoded removable-node type list;
-- a new generic-Inspector eligibility type list;
-- a new central simulation `if/switch` dispatch branch.
+- a machine-pair connection whitelist;
+- an independently authored NODE catalog entry;
+- a hardcoded removable-node type list;
+- a generic-Inspector eligibility type list;
+- a central simulation `if/switch` dispatch branch.
 
-The NODE catalog derives from canonical apparatus definitions. Generic apparatus Inspector behavior should allow a newly registered active apparatus to receive state, enable controls, capability display, flow display, configurable parameters, and diagnostics without a new controller branch.
-
-Machine-specific Inspector presentation is allowed when it adds genuinely useful specialized information, but it must be an enhancement rather than a requirement for the machine to function.
+Machine-specific Inspector presentation is allowed only as an enhancement; a newly registered active apparatus must remain functional/configurable through generic paths.
 
 ---
 
-## Typed Ports and Connection Compatibility
+## Typed Ports and Connections
 
-Connection eligibility should derive from edge kind plus interface/physical capabilities.
+Connection eligibility derives from edge kind plus interface/physical capabilities.
 
 Current important capabilities include:
 
@@ -366,42 +313,33 @@ solid-particulate
 stored-solid-particulate
 ```
 
-`stored-solid-particulate` means the receiving process requires a buffered/withdrawable particulate owner. It is an interface requirement, not material provenance and not a distinct material form.
+`stored-solid-particulate` means the receiving process requires a buffered/withdrawable particulate owner. It is not provenance and not a distinct material form.
 
 Rules:
 
-- Do not reintroduce explicit node-pair topology tables such as `hopper → crusher`.
-- Keep material and non-material relationships semantically distinct.
-- One material output cannot fan out until an explicit Splitter/routing system exists.
-- One material input cannot silently combine multiple independent streams unless an explicit merger/mixer contract permits it.
-- Do not apply material fan-out rules to `resource-access`.
+- do not reintroduce topology tables such as `hopper → crusher` or `hopper → screen`;
+- keep material and non-material relationships distinct;
+- one material output cannot fan out until an explicit Splitter exists;
+- one material input cannot silently combine multiple streams without an explicit merger/mixer contract;
+- do not apply material fan-out rules to `resource-access`.
 
 ---
 
 ## Resource Access vs Material Flow
 
-Preserve this contract:
+Preserve:
 
 ```text
 Feature
-  ↓ resource-access relationship
-Extractor / compatible apparatus
+  ↓ resource-access
+Extractor
   ↓ material output
 MaterialStream
 ```
 
-`resource-access`:
+`resource-access` carries no matter/kg/s and creates no `MaterialStream`. It selects/authorizes a Feature-owned natural source.
 
-- is a typed graph relationship;
-- carries no matter and no kg/s;
-- creates no `MaterialStream`;
-- selects/authorizes a Feature-owned natural source.
-
-Material begins flowing only from apparatus material output.
-
-Extraction preserves the occurrence's actual composition. Do not turn natural feedstocks into purified crafting tokens because extraction occurred.
-
-An Extractor should materialize only the amount actually extracted during operation rather than copying an entire geological source into storage.
+Extraction preserves occurrence composition and materializes only the amount actually extracted; do not copy an entire geological source into a Hopper.
 
 ---
 
@@ -409,46 +347,68 @@ An Extractor should materialize only the amount actually extracted during operat
 
 - Every modeled unit of matter has one physical owner/location at a time.
 - `MaterialBatch` is for meaningful discrete lots/samples, not continuous tick flow.
-- `MaterialStream` represents constituent/material-state flow rates, not stored inventory.
+- `MaterialStream` represents transfer-rate state, not stored inventory.
 - Storage integrates inflow/outflow over `dt`.
-- Missing/full required outputs must block or throttle; never silently delete matter.
-- Multi-output processes must commit atomically so one output cannot consume input while another fails.
+- Missing/full required outputs block or throttle; never silently delete matter.
+- Multi-output processes commit atomically.
 - Preserve per-species conservation for current mechanical processes.
-- A process that changes species must introduce an appropriate stronger conservation model rather than bypassing validation.
 
 ---
 
-## Current Crushing and Magnetic-Separation Contracts
+## Current Mechanical Apparatus Contracts
 
 ### Crusher
 
-Player-facing canonical target cuts are currently:
+Canonical target cuts:
 
 ```text
 1, 5, 15, 25, 60, 120 mm
 ```
 
-Legacy noncanonical values may remain accepted only for old persisted/test compatibility; do not expose them as new player choices.
+Legacy noncanonical values may remain accepted only for old compatibility; do not expose them as new player choices.
 
-An enabled, connected Crusher with feed and downstream capacity moves material at feasible throughput even when feed is already at/below the configured target. Already-sized material passes through unchanged rather than causing the Crusher to behave like an implicit sensor or controller.
+An enabled connected Crusher with feed and capacity moves feasible material even if feed is already at/below target. Already-sized fractions pass unchanged.
+
+### Screen
+
+Screen has one stored particulate feed and two explicit outputs:
+
+```text
+feed → Screen → undersize
+              → oversize
+```
+
+Canonical aperture choices are:
+
+```text
+1, 5, 15, 25, 60, 120 mm
+```
+
+Current physics is an ideal sharp split. A fraction whose size-bin upper bound is at/below the aperture routes to `undersize`; coarser fractions route to `oversize`.
+
+Screening is routing only: do not change species, size-bin ID, liberation class, or quantity while screening.
+
+Both outputs are required. Continuous Screen execution must stage both outputs and feed transactionally so an unavailable required destination cannot cause partial consumption/loss.
+
+Do not add realistic near-cut misplacement, moisture effects, deck loading, shape effects, vibration, or other screen-efficiency physics unless the active task calls for them.
 
 ### Magnetic Separator
 
-Current magnetic separation requires feed particle size at or below 25 mm. If any material is in an oversized class, the mixed feed is rejected/blocked; the separator is not an implicit Screen.
+Current Magnetic Separator requires all feed particle-size classes at or below 25 mm. Oversized mixed feed blocks the whole process; it is not an implicit Screen.
 
-Magnetic recovery uses the material-property resolver and process context such as liberation, size suitability, field strength, and entrainment/carryover.
+Magnetic recovery uses the material-property resolver plus liberation, particle-size suitability, field strength, and entrainment/carryover.
 
 ---
 
 ## Simulation Contracts
 
-- Simulation uses fixed time steps independent of render FPS.
-- Navigation does not stop active Site simulation.
-- Keep world pause/resume separate from machine enabled/disabled state.
-- Keep machine command state separate from derived operating state (`off`, `idle`, `running`, `blocked`, later `faulted`).
-- New active apparatus defaults disabled unless an issue explicitly specifies otherwise.
-- Keep simulation logic independent from browser rendering.
-- Apparatus execution should be registry-driven and phase/order behavior explicit where ordering matters.
+- fixed time steps independent of render FPS;
+- navigation does not stop active Site simulation;
+- world pause/resume is separate from machine enabled/disabled state;
+- machine command state is separate from derived `off / idle / running / blocked` state;
+- new active apparatus defaults disabled unless a task explicitly specifies otherwise;
+- simulation logic remains independent from browser rendering;
+- apparatus execution is registry-driven with explicit phase/order where needed.
 
 ---
 
@@ -456,15 +416,14 @@ Magnetic recovery uses the material-property resolver and process context such a
 
 Composite matter exchange uses explicit boundary storage/ports.
 
-- Parent-facing ports and child-visible boundary storage represent the same physical ownership state.
-- A boundary existing does not imply transfer.
+- Parent-facing and child-visible boundary interfaces represent the same physical ownership state.
+- A boundary existing does not imply movement.
 - Cross-boundary movement must be explicit and conserved.
-- Do not create invisible/implicit cross-workspace logistics.
-- Boundary storage participates in typed-port compatibility using the same physical interface concepts as ordinary storage.
+- Do not create invisible cross-workspace logistics.
 
 ---
 
-## Shared Graph and Workspace Interaction
+## Shared Graph and Workspace
 
 Planet, Region, Site, and future recursive systems use the same graph language:
 
@@ -479,18 +438,13 @@ connect / disconnect
 drill-down for composites
 ```
 
-- Use shared projection/rendering and interaction paths rather than hierarchy-specific implementations.
-- A persistent graph relationship in the current workspace must have a visible edge.
-- Edge meaning is typed; not every edge is material flow.
-- The viewport is finite; logical graph space is effectively unbounded and supports signed coordinates.
-- Node positions must not determine document/page dimensions.
-- Node category is semantic identity (`SITE`, `FEATURE`, `APPARATUS`, `CONTAINER`, etc.), not operating state.
+- persistent relationships in the current workspace must have visible edges;
+- edge meaning is typed;
+- logical graph space is effectively unbounded and supports signed coordinates;
+- node category is semantic identity, not operating state;
+- physical truth does not belong in workspace DOM state.
 
----
-
-## Workspace Organization
-
-Canonical workspace domains are under:
+Canonical workspace domains live under:
 
 ```text
 src/workspace/catalog/
@@ -500,24 +454,13 @@ src/workspace/navigation/
 src/workspace/shell/
 ```
 
-`workspaceController.js` is the current DOM/application orchestrator.
-
-Rules:
-
-- Keep domain rules in focused modules when they can be independently meaningful/testable.
-- Do not move physical truth into the controller.
-- Do not create a second hierarchy-specific workspace implementation.
-- Prefer generic definition-driven apparatus UI behavior before adding machine-specific branches.
-- Inspector content should emphasize actionable/gameplay-relevant information rather than dumping every stored field.
-- Preserve structural Region/Site/Feature accessibility; Knowledge mechanics should affect characterization, not basic structural visibility.
-
-Root workspace forwarding files are compatibility/public entry points. New domain logic should live in the canonical subfolders/controller documented in `ARCHITECTURE.md`.
+`workspaceController.js` is the current DOM/application orchestrator. Prefer generic definition-driven apparatus UI behavior before adding machine-specific controller branches.
 
 ---
 
 ## Compatibility Entry Points
 
-The architecture refactor intentionally retained thin compatibility forwarding modules in several places, including portions of:
+The restructure retained thin forwarding/compatibility modules in portions of:
 
 - `src/core/materials/`
 - `src/core/processes/`
@@ -526,22 +469,13 @@ The architecture refactor intentionally retained thin compatibility forwarding m
 - `src/workspace/`
 - `src/data/`
 
-A compatibility module should not become a second implementation home.
-
-Do not:
-
-- add new authoritative registries there;
-- duplicate physics there;
-- put new machine behavior there when a canonical runtime module exists;
-- use a compatibility path merely because it is shorter.
-
-When all consumers have migrated, compatibility cleanup should be a focused change.
+A compatibility file must not become a second implementation home. Do not add authoritative content, machine behavior, or duplicate physics there when a canonical location exists.
 
 ---
 
 ## Scope Control
 
-Unless the active issue explicitly requires them, do not add:
+Unless the active task explicitly requires them, do not add:
 
 - full chemistry/speciation
 - giant resource/mineral databases
@@ -551,26 +485,20 @@ Unless the active issue explicitly requires them, do not add:
 - multiplayer/backend infrastructure
 - star/system generation expansion
 - reserve/depletion systems
-- unrelated gameplay features
 - speculative material properties with no active process consumer
-
-Implement only enough neighboring code to keep the requested change coherent, physically valid, architecturally aligned, and tested.
+- unrelated gameplay features
 
 ---
 
 ## Completion Checklist
 
-Before finishing an issue/PR:
+Before finishing a task/PR:
 
-1. Confirm the requested behavior is implemented through canonical architecture paths where practical.
-2. Confirm no hard ownership, conservation, compatibility, graph, state-separation, or deterministic-generation contract regressed.
-3. Confirm new apparatus did not require unrelated central type lists/switchboards unless the issue intentionally introduces a new generic concept.
-4. Add/update focused tests for the requested invariant and relevant extension boundary.
+1. Confirm the behavior uses canonical architecture paths where practical.
+2. Confirm ownership, conservation, compatibility, graph, state-separation, and deterministic-generation contracts did not regress.
+3. Confirm new apparatus did not require avoidable central type lists or pair whitelists.
+4. Add/update focused tests for the requested invariant and extension path.
 5. Run the complete test suite.
-6. Perform browser smoke testing when the issue affects layout, interaction, controls, or rendering; otherwise state that manual browser verification remains required.
-7. Update version constants only when their stated rules require it.
-8. Update `ARCHITECTURE.md` when file ownership/dependency/extension paths materially change.
-9. Update `README.md` when implementation state, versions, or near-term direction materially change.
-10. Update `DESIGN.md` only when the long-term design contract changes.
-
-Do not turn this instruction file into a chronological status log. Keep it focused on durable rules that help future agents extend Interlink without recreating the architectural problems already removed.
+6. Perform browser smoke testing for layout/interaction/rendering changes, or clearly state when manual browser verification remains.
+7. Update schema/generator versions only when their rules require it.
+8. Update README/ARCHITECTURE/design/guardrails when a documented contract or current implementation state changed.
