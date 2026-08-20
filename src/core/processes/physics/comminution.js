@@ -7,6 +7,7 @@ import {
 } from '../../materials/solids/particleSizeBins.js';
 import { liberationPotentialAtParticleSize } from '../../materials/solids/mineralTextures.js';
 import {
+  SOLID_MATERIAL_TOLERANCE,
   addSolidFractionDirect,
   createSolidMaterialState,
   forEachSolidFraction,
@@ -188,8 +189,7 @@ function addFraction(outputState, fraction, sizeBinId, liberationClassId, quanti
   });
 }
 
-function distributeLiberationMass(
-  outputState,
+function liberationAllocations(
   feedSolidState,
   fraction,
   outputSizeBinId,
@@ -210,32 +210,144 @@ function distributeLiberationMass(
   const maxLift = Math.min(advancement.maxLift, lastIndex - inputIndex);
 
   if (maxLift <= 0 || advancement.improvedShare <= 0 || inputIndex >= lastIndex) {
-    addFraction(outputState, fraction, outputSizeBinId, fraction.liberationClassId, massKg);
-    return;
+    return [{
+      sizeBinId: outputSizeBinId,
+      liberationClassId: fraction.liberationClassId,
+      quantity: massKg,
+    }];
   }
 
   const improvedMass = massKg * advancement.improvedShare;
-  addFraction(
-    outputState,
-    fraction,
-    outputSizeBinId,
-    liberationClasses[inputIndex].id,
-    massKg - improvedMass,
-  );
+  const allocations = [{
+    sizeBinId: outputSizeBinId,
+    liberationClassId: liberationClasses[inputIndex].id,
+    quantity: massKg - improvedMass,
+  }];
 
   if (maxLift === 1) {
-    addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass);
-    return;
+    allocations.push({
+      sizeBinId: outputSizeBinId,
+      liberationClassId: liberationClasses[inputIndex + 1].id,
+      quantity: improvedMass,
+    });
+    return allocations;
   }
   if (maxLift === 2) {
-    addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass * 0.65);
-    addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 2].id, improvedMass * 0.35);
-    return;
+    allocations.push(
+      {
+        sizeBinId: outputSizeBinId,
+        liberationClassId: liberationClasses[inputIndex + 1].id,
+        quantity: improvedMass * 0.65,
+      },
+      {
+        sizeBinId: outputSizeBinId,
+        liberationClassId: liberationClasses[inputIndex + 2].id,
+        quantity: improvedMass * 0.35,
+      },
+    );
+    return allocations;
   }
 
-  addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass * 0.45);
-  addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 2].id, improvedMass * 0.35);
-  addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 3].id, improvedMass * 0.20);
+  allocations.push(
+    {
+      sizeBinId: outputSizeBinId,
+      liberationClassId: liberationClasses[inputIndex + 1].id,
+      quantity: improvedMass * 0.45,
+    },
+    {
+      sizeBinId: outputSizeBinId,
+      liberationClassId: liberationClasses[inputIndex + 2].id,
+      quantity: improvedMass * 0.35,
+    },
+    {
+      sizeBinId: outputSizeBinId,
+      liberationClassId: liberationClasses[inputIndex + 3].id,
+      quantity: improvedMass * 0.20,
+    },
+  );
+  return allocations;
+}
+
+function mergeAllocation(merged, allocation) {
+  if (allocation.quantity <= 0) return;
+  const key = `${allocation.sizeBinId}|${allocation.liberationClassId}`;
+  const existing = merged.get(key);
+  if (existing) {
+    existing.quantity += allocation.quantity;
+  } else {
+    merged.set(key, { ...allocation });
+  }
+}
+
+/**
+ * One parent fraction may fan out across several product-size and liberation
+ * classes. The sparse material store intentionally prunes fractions at or
+ * below SOLID_MATERIAL_TOLERANCE, so adding each child independently can lose
+ * real mass when a small parent is subdivided many times. Consolidate those
+ * sub-tolerance children into the largest sibling before committing them.
+ * This preserves exact parent mass while perturbing the statistical PSD by at
+ * most the state's numerical storage tolerance.
+ */
+function addConservedFractionChildren(
+  outputState,
+  feedSolidState,
+  fraction,
+  sizeShares,
+  equipmentProfile,
+) {
+  const merged = new Map();
+  for (const outputShare of sizeShares) {
+    const allocations = liberationAllocations(
+      feedSolidState,
+      fraction,
+      outputShare.sizeBinId,
+      fraction.quantity * outputShare.share,
+      equipmentProfile,
+    );
+    for (const allocation of allocations) mergeAllocation(merged, allocation);
+  }
+
+  const entries = [...merged.values()];
+  if (entries.length === 0) {
+    throw new Error(`${equipmentProfile.label} produced no output allocation for a non-empty fraction`);
+  }
+
+  let allocatedTotal = entries.reduce((sum, entry) => sum + entry.quantity, 0);
+  let largest = entries[0];
+  for (const entry of entries) {
+    if (entry.quantity > largest.quantity) largest = entry;
+  }
+
+  // Absorb ordinary floating-point summation residual into the largest child.
+  largest.quantity += fraction.quantity - allocatedTotal;
+
+  // Preserve sparse-state pruning without allowing it to delete conserved mass.
+  let subToleranceResidual = 0;
+  for (const entry of entries) {
+    if (entry === largest) continue;
+    if (entry.quantity <= SOLID_MATERIAL_TOLERANCE) {
+      subToleranceResidual += entry.quantity;
+      entry.quantity = 0;
+    }
+  }
+  largest.quantity += subToleranceResidual;
+
+  allocatedTotal = 0;
+  for (const entry of entries) {
+    if (entry.quantity <= 0) continue;
+    addFraction(
+      outputState,
+      fraction,
+      entry.sizeBinId,
+      entry.liberationClassId,
+      entry.quantity,
+    );
+    allocatedTotal += entry.quantity;
+  }
+
+  if (Math.abs(fraction.quantity - allocatedTotal) > Number.EPSILON * Math.max(1, fraction.quantity) * 16) {
+    throw new Error(`${equipmentProfile.label} could not conserve an input fraction during comminution allocation`);
+  }
 }
 
 export function comminuteSolidMaterialState(feedSolidState, targetParticleSizeMm, equipmentId) {
@@ -260,16 +372,13 @@ export function comminuteSolidMaterialState(feedSolidState, targetParticleSizeMm
 
   forEachSolidFraction(feedSolidState, fraction => {
     sawFeed = true;
-    for (const outputShare of outputSizeShares(fraction.sizeBinId, targetSizeBinId, equipmentProfile)) {
-      distributeLiberationMass(
-        product,
-        feedSolidState,
-        fraction,
-        outputShare.sizeBinId,
-        fraction.quantity * outputShare.share,
-        equipmentProfile,
-      );
-    }
+    addConservedFractionChildren(
+      product,
+      feedSolidState,
+      fraction,
+      outputSizeShares(fraction.sizeBinId, targetSizeBinId, equipmentProfile),
+      equipmentProfile,
+    );
   });
 
   if (!sawFeed) throw new Error(`${equipmentProfile.label} requires non-empty feed`);
