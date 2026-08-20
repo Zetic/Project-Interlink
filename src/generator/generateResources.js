@@ -12,6 +12,7 @@ import {
 } from '../content/resources/resourceDescriptors.js';
 import { RESOURCE_COMPOSITION_TEMPLATES } from '../content/resources/resourceCompositions.js';
 import { validateMineralTextureProfile } from '../core/materials/solids/mineralTextures.js';
+import { validateComminutionProperties } from '../core/materials/solids/comminutionProperties.js';
 
 export { resources, getLocalizedResources, getRegionalResources, getResourceDefinition };
 
@@ -50,6 +51,103 @@ export function availabilityClass(value) {
   return AVAILABILITY_CLASSES[idx];
 }
 
+// Synthetic-world generation envelopes for real measured quantities. Values are
+// deliberately resource-specific so a generated deposit remains geologically
+// plausible without storing arbitrary "easy/hard" gameplay ratings.
+const ORE_GRAIN_D50_RANGES_UM = Object.freeze({
+  'iron-ore': Object.freeze([45, 450]),
+  'copper-ore': Object.freeze([20, 250]),
+  'aluminum-ore': Object.freeze([60, 600]),
+  'zinc-ore': Object.freeze([20, 220]),
+  'nickel-ore': Object.freeze([20, 280]),
+  'titanium-ore': Object.freeze([50, 500]),
+  'manganese-ore': Object.freeze([30, 400]),
+  'rare-earth-ore': Object.freeze([20, 300]),
+});
+
+const ORE_COMMINUTION_RANGES = Object.freeze({
+  'iron-ore': Object.freeze({ cwi: [6, 16], bwi: [9, 22], ai: [0.20, 0.65] }),
+  'copper-ore': Object.freeze({ cwi: [7, 18], bwi: [10, 24], ai: [0.25, 0.75] }),
+  'aluminum-ore': Object.freeze({ cwi: [4, 14], bwi: [7, 18], ai: [0.05, 0.35] }),
+  'zinc-ore': Object.freeze({ cwi: [7, 18], bwi: [10, 22], ai: [0.20, 0.65] }),
+  'nickel-ore': Object.freeze({ cwi: [8, 20], bwi: [10, 25], ai: [0.20, 0.70] }),
+  'titanium-ore': Object.freeze({ cwi: [7, 18], bwi: [9, 22], ai: [0.25, 0.70] }),
+  'manganese-ore': Object.freeze({ cwi: [5, 16], bwi: [8, 20], ai: [0.10, 0.50] }),
+  'rare-earth-ore': Object.freeze({ cwi: [7, 19], bwi: [10, 25], ai: [0.20, 0.65] }),
+});
+
+function logUniform(rng, min, max) {
+  return Math.exp(rng.range(Math.log(min), Math.log(max)));
+}
+
+function normalizedOccurrenceModes(rng, complexity) {
+  const raw = {
+    free: Math.max(0.05, (1.45 - 0.95 * complexity) * rng.range(0.85, 1.15)),
+    boundary: Math.max(0.05, 1.0 * rng.range(0.85, 1.15)),
+    intergrown: Math.max(0.05, (0.55 + 1.25 * complexity) * rng.range(0.85, 1.15)),
+    included: Math.max(0.02, (0.15 + 0.85 * complexity) * rng.range(0.85, 1.15)),
+  };
+  const total = Object.values(raw).reduce((sum, value) => sum + value, 0);
+  const result = {};
+  let accumulated = 0;
+  const keys = ['free', 'boundary', 'intergrown', 'included'];
+  keys.forEach((key, index) => {
+    if (index === keys.length - 1) {
+      result[key] = parseFloat(Math.max(0, 1 - accumulated).toFixed(4));
+    } else {
+      result[key] = parseFloat((raw[key] / total).toFixed(4));
+      accumulated += result[key];
+    }
+  });
+  return result;
+}
+
+function featureMineralTexture(resource, composition, rng, occurrenceId) {
+  if (resource.occurrenceFamily !== 'ore-body' || !composition) return null;
+  const d50Range = ORE_GRAIN_D50_RANGES_UM[resource.id];
+  if (!d50Range) throw new Error(`Ore resource '${resource.id}' is missing a mineral grain-size generation envelope`);
+
+  // One shared occurrence scale keeps mineral textures correlated. Individual
+  // species vary around that common geological fabric rather than being rolled
+  // independently across the entire possible range.
+  const occurrenceD50Um = logUniform(rng, d50Range[0], d50Range[1]);
+  const complexity = rng.range(0.15, 0.85);
+  const speciesTextures = {};
+  for (const speciesId of Object.keys(composition)) {
+    const d50 = occurrenceD50Um * logUniform(rng, 0.8, 1.25);
+    const d10 = d50 * rng.range(0.30, 0.60);
+    const d90 = d50 * rng.range(1.8, 3.5);
+    speciesTextures[speciesId] = {
+      grainSizeUm: {
+        d10: parseFloat(d10.toFixed(1)),
+        d50: parseFloat(d50.toFixed(1)),
+        d90: parseFloat(d90.toFixed(1)),
+      },
+      occurrenceModes: normalizedOccurrenceModes(rng, complexity),
+    };
+  }
+
+  const profile = {
+    id: `texture-${occurrenceId}`,
+    speciesTextures,
+  };
+  validateMineralTextureProfile(profile);
+  return profile;
+}
+
+function featureComminutionProperties(resource, rng) {
+  if (resource.occurrenceFamily !== 'ore-body') return null;
+  const ranges = ORE_COMMINUTION_RANGES[resource.id];
+  if (!ranges) throw new Error(`Ore resource '${resource.id}' is missing comminution-property generation envelopes`);
+  const properties = {
+    bondCrushingWorkIndexKWhPerT: parseFloat(rng.range(ranges.cwi[0], ranges.cwi[1]).toFixed(2)),
+    bondBallMillWorkIndexKWhPerT: parseFloat(rng.range(ranges.bwi[0], ranges.bwi[1]).toFixed(2)),
+    bondAbrasionIndex: parseFloat(rng.range(ranges.ai[0], ranges.ai[1]).toFixed(3)),
+  };
+  validateComminutionProperties(properties);
+  return properties;
+}
+
 /**
  * Generate a Feature-owned ResourceOccurrence. There are no Region-owned
  * occurrences: regional abundance is represented by access Sites/Features.
@@ -65,6 +163,7 @@ export function makeFeatureResource(resource, rng, occurrenceId, featureId, {
   const descriptor = featureDescriptor(resource, rng);
   const composition = featureComposition(resource, rng);
   const mineralTexture = featureMineralTexture(resource, composition, rng, occurrenceId);
+  const comminutionProperties = featureComminutionProperties(resource, rng);
   return {
     id: occurrenceId,
     resourceId: resource.id,
@@ -76,6 +175,7 @@ export function makeFeatureResource(resource, rng, occurrenceId, featureId, {
     descriptor,
     composition,
     ...(mineralTexture ? { mineralTexture } : {}),
+    ...(comminutionProperties ? { comminutionProperties } : {}),
     sourceType: 'feature',
     sourceId: featureId,
   };
@@ -101,39 +201,6 @@ function featureComposition(resource, rng) {
     Array.isArray(value) ? rng.int(value[0], value[1]) : value,
   ]));
   return Object.values(template).every(value => !Array.isArray(value)) ? values : normalise(values);
-}
-
-/**
- * Ore bodies receive a deterministic statistical mineral-texture profile. The
- * profile belongs to the occurrence, not to MaterialSpecies: identical hematite
- * can be coarse-grained in one deposit and finely disseminated in another.
- *
- * Characteristic liberation sizes are intentionally broad prototype geology
- * rather than resource-specific calibration. They establish the physical
- * dependency needed for ore-specific grinding behavior without pretending that
- * composition alone determines texture.
- */
-function featureMineralTexture(resource, composition, rng, occurrenceId) {
-  if (resource.occurrenceFamily !== 'ore-body' || !composition) return null;
-
-  const logMinUm = Math.log(32);
-  const logMaxUm = Math.log(750);
-  const fallbackLiberationSizeUm = Math.exp(rng.range(logMinUm, logMaxUm));
-  const speciesLiberationSizeUm = {};
-  for (const speciesId of Object.keys(composition)) {
-    const speciesScale = Math.exp(rng.range(Math.log(0.6), Math.log(1.6)));
-    speciesLiberationSizeUm[speciesId] = parseFloat((fallbackLiberationSizeUm * speciesScale).toFixed(1));
-  }
-
-  const profile = {
-    id: `texture-${occurrenceId}`,
-    fallbackLiberationSizeUm: parseFloat(fallbackLiberationSizeUm.toFixed(1)),
-    curveSpread: parseFloat(rng.range(0.45, 0.8).toFixed(3)),
-    boundaryBreakageAffinity: parseFloat(rng.range(0.05, 0.35).toFixed(3)),
-    speciesLiberationSizeUm,
-  };
-  validateMineralTextureProfile(profile);
-  return profile;
 }
 
 function normalise(obj) {
