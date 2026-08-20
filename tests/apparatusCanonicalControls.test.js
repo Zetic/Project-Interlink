@@ -48,6 +48,6 @@ test('Magnetic Separator oversized-feed error reports the blocking share and lar
 
   assert.throws(
     () => splitMagneticSolidState(feed, 0.6, 25),
-    /feed contains 90\.0% oversized material \(> 25 mm; largest class 60–120 mm\)/,
+    /requires feed particle size <= 25 mm; blocked because feed contains 90\.0% oversized material \(largest class 60–120 mm\)/,
   );
 });
