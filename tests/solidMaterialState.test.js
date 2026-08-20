@@ -248,10 +248,11 @@ test('magnetic recovery varies by species, liberation, particle size, and field 
   }
 });
 
-test('serialized solid fraction keys reject malformed persisted state', () => {
+test('serialized solid fraction keys reject malformed or orphaned texture state', () => {
   assert.throws(() => validateSolidMaterialState({ fractions: { 'hematite|5-15mm': 1 } }), /must have exactly 3 segments/);
   assert.throws(() => validateSolidMaterialState({ fractions: { 'hematite||locked': 1 } }), /must not contain empty segments/);
-  assert.throws(() => validateSolidMaterialState({ fractions: { 'hematite|5-15mm|locked|garbage': 1 } }), /must have exactly 3 segments/);
+  assert.throws(() => validateSolidMaterialState({ fractions: { 'hematite|5-15mm|locked|garbage': 1 } }), /unknown mineral texture profile/);
+  assert.throws(() => validateSolidMaterialState({ fractions: { 'hematite|5-15mm|locked|texture|extra': 1 } }), /must have exactly 3 segments/);
 });
 
 test('continuous fraction-aware crusher backpressure preserves mass and stores transformed fractions', () => {
