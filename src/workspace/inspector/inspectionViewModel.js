@@ -131,28 +131,53 @@ export function featureInspection(world, blueprint, node) {
   };
 }
 
-export function machineInspection(blueprint, node) {
-  const connections = Object.values(blueprint?.connections ?? {});
-  const materialInput = connections.find(connection =>
-    connection.kind === 'material' && connection.targetNodeId === node?.id
-  );
-  const resourceAccessInput = connections.find(connection =>
-    connection.kind === 'resource-access' && connection.targetNodeId === node?.id
-  );
-  const outputs = connections.filter(connection => connection.sourceNodeId === node?.id);
-  const outputByPort = Object.fromEntries(outputs.map(connection => [
-    connection.sourcePortId,
+function resolvedDefinitionPortId(node, port) {
+  return port?.runtimePortField ? (node?.[port.runtimePortField] ?? port.id) : port?.id;
+}
+
+function apparatusPortLabel(definition, node, portId) {
+  const port = (definition?.ports ?? []).find(candidate => resolvedDefinitionPortId(node, candidate) === portId);
+  return port?.label ?? portId;
+}
+
+function inspectedConnectionsByPort(blueprint, connections, portKey) {
+  return Object.fromEntries(connections.map(connection => [
+    connection[portKey],
     connectionInspection(blueprint, connection),
   ]));
-  const inputInspection = connectionInspection(blueprint, materialInput);
-  const configuredThroughputKgPerSecond = node?.throughputKgPerSecond ?? node?.prototypeRateKgPerSecond ?? 0;
+}
 
-  let actualProductKgPerSecond = outputByPort[node?.outputPortId]?.totalFlowKgPerSecond ?? 0;
-  if (node?.nodeType === 'magSep') {
-    actualProductKgPerSecond =
-      (outputByPort[node.concentratePortId]?.totalFlowKgPerSecond ?? 0)
-      + (outputByPort[node.tailingsPortId]?.totalFlowKgPerSecond ?? 0);
-  }
+export function machineInspection(blueprint, node) {
+  const connections = Object.values(blueprint?.connections ?? {});
+  const definition = getApparatusDefinition(node?.nodeType);
+  const materialInputs = connections.filter(connection =>
+    connection.kind === 'material' && connection.targetNodeId === node?.id
+  );
+  const resourceAccessInputs = connections.filter(connection =>
+    connection.kind === 'resource-access' && connection.targetNodeId === node?.id
+  );
+  const materialOutputs = connections.filter(connection =>
+    connection.kind === 'material' && connection.sourceNodeId === node?.id
+  );
+  const inputByPort = inspectedConnectionsByPort(blueprint, materialInputs, 'targetPortId');
+  const outputByPort = inspectedConnectionsByPort(blueprint, materialOutputs, 'sourcePortId');
+  const inputInspection = materialInputs.length ? connectionInspection(blueprint, materialInputs[0]) : null;
+  const resourceAccessInput = resourceAccessInputs.length ? resourceAccessInputs[0] : null;
+  const configuredThroughputKgPerSecond = node?.throughputKgPerSecond ?? node?.prototypeRateKgPerSecond ?? 0;
+  const actualFeedKgPerSecond = Object.values(inputByPort)
+    .reduce((sum, inspection) => sum + (inspection?.totalFlowKgPerSecond ?? 0), 0);
+  const actualProductKgPerSecond = Object.values(outputByPort)
+    .reduce((sum, inspection) => sum + (inspection?.totalFlowKgPerSecond ?? 0), 0);
+  const inputStreams = Object.entries(inputByPort).map(([portId, inspection]) => ({
+    portId,
+    label: apparatusPortLabel(definition, node, portId),
+    ...inspection,
+  }));
+  const outputStreams = Object.entries(outputByPort).map(([portId, inspection]) => ({
+    portId,
+    label: apparatusPortLabel(definition, node, portId),
+    ...inspection,
+  }));
 
   const result = {
     kind: node?.nodeType ?? 'machine',
@@ -160,22 +185,28 @@ export function machineInspection(blueprint, node) {
     enabled: node?.enabled ?? false,
     operatingState: getNodeOperatingState(node) ?? 'off',
     configuredThroughputKgPerSecond,
-    actualFeedKgPerSecond: inputInspection?.totalFlowKgPerSecond ?? 0,
+    actualFeedKgPerSecond,
     actualProductKgPerSecond,
     lastError: node?.lastError ?? null,
     input: inputInspection,
+    inputs: inputByPort,
+    inputStreams,
     resourceAccess: connectionInspection(blueprint, resourceAccessInput),
     outputs: outputByPort,
+    outputStreams,
     parameters: apparatusParametersForNode(node).map(parameter => ({
       ...parameter,
       value: node?.[parameter.id],
     })),
-    capabilities: (getApparatusDefinition(node?.nodeType)?.capabilities ?? []).map(capability => ({
+    capabilities: (definition?.capabilities ?? []).map(capability => ({
       ...capability,
       value: node?.[capability.id],
     })),
   };
 
+  // Compatibility fields used by the richer current-machine Inspector views.
+  // Product/feed totals above are deliberately port-generic so future multi-output
+  // apparatus (for example Screen undersize/oversize) need no type-specific math.
   if (node?.nodeType === 'crusher') result.targetParticleSizeMm = node.targetParticleSizeMm;
   if (node?.nodeType === 'magSep') {
     result.fieldStrength = node.fieldStrength;
