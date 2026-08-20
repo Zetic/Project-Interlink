@@ -2,6 +2,7 @@
 
 import { createSolidMaterialBodyFromOccurrence } from '../core/materials/occurrenceMaterialization.js';
 import { MATERIAL_FORMS, physicalFormForOccurrence } from '../core/materials/materialForms.js';
+import { PORT_CAPABILITIES } from '../core/systems/ports.js';
 
 export const DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND = 5;
 export const EXTRACTOR_SUPPORTED_PHYSICAL_FORMS = Object.freeze([
@@ -42,8 +43,20 @@ export function createExtractor({
     systemType: 'extractor',
     kind: 'primitive',
     ports: [
-      { id: 'resource-source', direction: 'input', kind: 'resource-access', label: 'resource source' },
-      { id: 'output', direction: 'output', kind: 'material', label: 'material out' },
+      {
+        id: 'resource-source',
+        direction: 'input',
+        kind: 'resource-access',
+        label: 'resource source',
+        accepts: [PORT_CAPABILITIES.RESOURCE_SOURCE],
+      },
+      {
+        id: 'output',
+        direction: 'output',
+        kind: 'material',
+        label: 'material out',
+        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
+      },
     ],
   };
 }

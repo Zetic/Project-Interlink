@@ -6,18 +6,18 @@
  * shell becomes the only game interface.
  */
 
-import { createWorld } from './core/world/worldState.js';
+import { generateWorld } from './generator/generateWorld.js';
 import { createKnowledge } from './core/world/knowledgeState.js';
 import { installApparatusControlUI } from './workspace/apparatusControlUI.js';
-import { initWorkspace } from './workspace/workspaceUI.js';
+import { initWorkspace } from './workspace/workspaceController.js';
 
 function el(id) {
   return document.getElementById(id);
 }
 
-function generateWorld() {
+function createPlayerWorld() {
   const seed = el('seed-input')?.value.trim() || String(Math.floor(Math.random() * 1e9));
-  const world = createWorld(seed);
+  const world = generateWorld(seed);
   const knowledge = createKnowledge(world);
   el('landing-screen')?.remove();
   el('player-view')?.style.removeProperty('display');
@@ -26,8 +26,8 @@ function generateWorld() {
 
 document.addEventListener('DOMContentLoaded', () => {
   installApparatusControlUI();
-  el('generate-btn')?.addEventListener('click', generateWorld);
+  el('generate-btn')?.addEventListener('click', createPlayerWorld);
   el('seed-input')?.addEventListener('keydown', event => {
-    if (event.key === 'Enter') generateWorld();
+    if (event.key === 'Enter') createPlayerWorld();
   });
 });

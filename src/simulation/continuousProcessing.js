@@ -10,14 +10,14 @@ import {
   crushSolidMaterialState,
   magneticRecoveryForFraction,
   splitMagneticSolidState,
-} from '../core/processes/processPhysics.js';
+} from '../core/processes/physics/index.js';
 import {
   createSolidMaterialStateFromSpeciesQuantities,
   scaleSolidMaterialState,
   summarizeSolidMaterialBySpecies,
   totalSolidQuantity,
   validateSolidMaterialState,
-} from '../core/materials/solidMaterialState.js';
+} from '../core/materials/solids/solidMaterialState.js';
 
 const STREAM_FLOW_TOLERANCE = 1e-9;
 

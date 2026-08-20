@@ -6,7 +6,7 @@ import {
   layoutMoveNode,
   DEFAULT_HOPPER_CAPACITY_KG,
 } from '../simulation/simulationEngine.js';
-import { setBoundaryMapping } from '../simulation/systemNode.js';
+import { setBoundaryMapping } from '../core/systems/systemNode.js';
 
 /**
  * Build the current Site runtime graph from canonical Site → Feature →

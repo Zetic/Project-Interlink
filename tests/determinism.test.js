@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorld } from '../src/core/world/worldState.js';
+import { createWorld } from '../src/generator/generateWorld.js';
 import { SCHEMA_VERSION, GENERATOR_VERSION } from '../src/core/world/versions.js';
 
 test('same seed produces identical worlds', () => {

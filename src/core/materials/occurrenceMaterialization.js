@@ -1,6 +1,6 @@
 import { MATERIAL_FORMS, physicalFormForOccurrence } from './materialForms.js';
-import { addSolidFractionDirect, createSolidMaterialBody, createSolidMaterialState } from './solidMaterialState.js';
-import { requireMaterialSpecies } from './materialSpecies.js';
+import { addSolidFractionDirect, createSolidMaterialBody, createSolidMaterialState } from './solids/solidMaterialState.js';
+import { requireMaterialSpecies } from './species/materialSpecies.js';
 
 const RUN_OF_OCCURRENCE_TEMPLATE = Object.freeze([
   Object.freeze({ sizeBinId: '60-120mm', liberationShares: Object.freeze({ locked: 0.75, partial: 0.25 }), massShare: 0.65 }),

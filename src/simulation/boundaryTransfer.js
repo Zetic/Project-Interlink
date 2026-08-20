@@ -8,8 +8,9 @@ import {
   hopperWithdraw,
   hopperReceiveInflow,
 } from './hopperNode.js';
-import { resolveBoundaryChain, assertSystemConnectionCompatible } from './systemNode.js';
-import { createSolidMaterialState, multiplySolidMaterialState } from '../core/materials/solidMaterialState.js';
+import { resolveBoundaryChain } from '../core/systems/systemNode.js';
+import { assertSystemConnectionCompatible } from '../core/systems/connections.js';
+import { createSolidMaterialState, multiplySolidMaterialState } from '../core/materials/solids/solidMaterialState.js';
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
 

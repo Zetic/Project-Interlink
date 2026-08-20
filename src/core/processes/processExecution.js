@@ -1,25 +1,20 @@
 import {
   MASS_TOLERANCE_KG,
   createMaterialBatch,
-  roundKg,
-  sumComponentMassKg,
   validateComponentsKg,
   isMaterialBatchAvailable,
 } from '../materials/materialBatches.js';
 import {
   createSolidMaterialBody,
   createSolidMaterialStateFromSpeciesQuantities,
-  summarizeSolidMaterialBySpecies,
-  totalSolidQuantity,
   validateSolidMaterialBody,
-} from '../materials/solidMaterialState.js';
+} from '../materials/solids/solidMaterialState.js';
 import {
-  CRUSHING_PROCESS_ID,
   getProcessDefinition,
-  MAGNETIC_SEPARATION_PROCESS_ID,
   validateProcessParameters,
-} from './processDefinitions.js';
-import { crushSolidMaterialState, splitMagneticSolidState } from './processPhysics.js';
+} from './definitions/index.js';
+import { validateProcessConservation } from './conservation/conservation.js';
+import { processExecutorFor } from './executors/index.js';
 
 function assertWorldOrdinals(world) {
   if (!Number.isInteger(world.nextMaterialBatchOrdinal) || world.nextMaterialBatchOrdinal < 1) {
@@ -121,97 +116,10 @@ function validateOutputPortBatches(processDefinition, outputPortBatches) {
   }
 }
 
-function runMagneticSeparation(processDefinition, inputBatchesByPort, normalizedParameters) {
-  const inputBatch = inputBatchesByPort.feed;
-  const inputMaterialBody = materialBodyForBatchLike(inputBatch);
-  const { fieldStrength } = normalizedParameters;
-  const { concentrate, tailings } = splitMagneticSolidState(
-    inputMaterialBody.solidState,
-    fieldStrength,
-    processDefinition.maxFeedParticleSizeMm ?? 25,
-  );
-
-  return {
-    outputPortBatches: [
-      {
-        outputId: 'concentrate',
-        materialBody: { physicalForm: inputMaterialBody.physicalForm, solidState: concentrate },
-        particleSizeMm: inputBatch.particleSizeMm ?? null,
-        resourceId: null,
-      },
-      {
-        outputId: 'tailings',
-        materialBody: { physicalForm: inputMaterialBody.physicalForm, solidState: tailings },
-        particleSizeMm: inputBatch.particleSizeMm ?? null,
-        resourceId: null,
-      },
-    ],
-  };
-}
-
-function runCrushing(processDefinition, inputBatchesByPort, normalizedParameters) {
-  const inputBatch = inputBatchesByPort.feed;
-  const inputMaterialBody = materialBodyForBatchLike(inputBatch);
-  const { targetParticleSizeMm } = normalizedParameters;
-
-  return {
-    outputPortBatches: [
-      {
-        outputId: 'product',
-        materialBody: {
-          physicalForm: inputMaterialBody.physicalForm,
-          solidState: crushSolidMaterialState(inputMaterialBody.solidState, targetParticleSizeMm),
-        },
-        particleSizeMm: targetParticleSizeMm,
-        resourceId: null,
-      },
-    ],
-  };
-}
-
-const PROCESS_EXECUTORS = {
-  [MAGNETIC_SEPARATION_PROCESS_ID]: runMagneticSeparation,
-  [CRUSHING_PROCESS_ID]: runCrushing,
-};
-
-function aggregateComponentsFromBodies(bodies) {
-  const aggregated = {};
-  for (const body of bodies) {
-    const summary = summarizeSolidMaterialBySpecies(body.solidState);
-    for (const [componentId, massKg] of Object.entries(summary)) {
-      aggregated[componentId] = roundKg((aggregated[componentId] ?? 0) + massKg);
-    }
-  }
-  return aggregated;
-}
-
-function validateConservation(inputBatches, outputPortBatches, processId) {
-  const inputComponents = aggregateComponentsFromBodies(inputBatches.map(batch => batch.materialBody));
-  const outputComponents = aggregateComponentsFromBodies(outputPortBatches.map(batch => batch.materialBody));
-
-  const allComponentIds = new Set([...Object.keys(inputComponents), ...Object.keys(outputComponents)]);
-  for (const componentId of allComponentIds) {
-    const inputMass = inputComponents[componentId] ?? 0;
-    const outputMass = outputComponents[componentId] ?? 0;
-    if (Math.abs(inputMass - outputMass) > MASS_TOLERANCE_KG) {
-      throw new Error(`Process '${processId}' violates constituent conservation for '${componentId}'`);
-    }
-  }
-
-  const massInKg = roundKg(inputBatches.reduce((sum, batch) => sum + totalSolidQuantity(batch.materialBody.solidState), 0));
-  const massOutKg = roundKg(outputPortBatches.reduce((sum, batch) => sum + totalSolidQuantity(batch.materialBody.solidState), 0));
-
-  return {
-    massInKg,
-    massOutKg,
-    balanceErrorKg: roundKg(massInKg - massOutKg),
-  };
-}
-
 export function executeProcess(processDefinition, inputBatchesByPort, parameters = {}) {
   const normalizedParameters = validateProcessParameters(processDefinition, parameters);
 
-  const executor = PROCESS_EXECUTORS[processDefinition.id];
+  const executor = processExecutorFor(processDefinition.id);
   if (!executor) {
     throw new Error(`Execution for process '${processDefinition.id}' is not implemented`);
   }
@@ -220,7 +128,11 @@ export function executeProcess(processDefinition, inputBatchesByPort, parameters
   validateOutputPortBatches(processDefinition, execution.outputPortBatches);
 
   const inputBatches = (processDefinition.inputs ?? []).map(input => inputBatchesByPort[input.id]);
-  const metrics = validateConservation(inputBatches, execution.outputPortBatches, processDefinition.id);
+  const metrics = validateProcessConservation(
+    processDefinition,
+    inputBatches.map(batch => batch.materialBody),
+    execution.outputPortBatches.map(output => output.materialBody),
+  );
 
   return {
     processId: processDefinition.id,
