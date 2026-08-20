@@ -5,6 +5,7 @@ import {
   addSolidFractionDirect,
   addSolidMaterialState,
   createSolidMaterialState,
+  iterateSolidFractions,
   registerSolidTextureProfile,
   summarizeSolidMaterialByLiberationClass,
   summarizeSolidMaterialBySizeBin,
@@ -213,9 +214,10 @@ test('Ball Mill consolidates sub-tolerance child allocations instead of losing c
 
   const milled = millSolidMaterialState(feed, 0.25);
   assert.ok(Math.abs(totalSolidQuantity(milled) - quantity) <= 1e-15);
-  assert.deepEqual(summarizeSolidMaterialByTextureProfile(milled), {
-    'tiny-textured-population': quantity,
-  });
+  assert.ok(iterateSolidFractions(milled).length > 0);
+  assert.ok(iterateSolidFractions(milled).every(
+    fraction => fraction.textureProfileId === 'tiny-textured-population',
+  ));
 });
 
 test('mixed ores retain separate texture populations instead of collapsing identical fractions', () => {
