@@ -1,7 +1,7 @@
 import { validateWorld } from './worldValidation.js';
 
-export function validateOccurrences(world) {
-  return validateWorld(world).filter(error =>
+export function validateOccurrences(world, validationErrors = validateWorld(world)) {
+  return validationErrors.filter(error =>
     /ResourceOccurrence|resourceOccurrences/.test(error)
   );
 }

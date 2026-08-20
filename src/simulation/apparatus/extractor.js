@@ -4,27 +4,14 @@ import {
   extractorOutputRates,
 } from '../extractorNode.js';
 import { hopperFreeCapacityKg, hopperReceiveInflow } from '../hopperNode.js';
-import { scaleFlowRates, setMaterialStreamState, totalMassFlowKgPerSecond } from '../materialStream.js';
+import { scaleFlowRates, totalMassFlowKgPerSecond } from '../materialStream.js';
+import {
+  findInboundConnection,
+  findOutboundConnection,
+  updateConnectionStream,
+} from './blueprintHelpers.js';
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
-
-function findInboundConnection(blueprint, targetNodeId, targetPortId) {
-  return Object.values(blueprint.connections).find(
-    connection => connection.targetNodeId === targetNodeId && connection.targetPortId === targetPortId
-  ) ?? null;
-}
-
-function findOutboundConnection(blueprint, sourceNodeId, sourcePortId) {
-  return Object.values(blueprint.connections).find(
-    connection => connection.sourceNodeId === sourceNodeId && connection.sourcePortId === sourcePortId
-  ) ?? null;
-}
-
-function updateConnectionStream(blueprint, connection, solidState) {
-  if (!connection) return;
-  const stream = Object.values(blueprint.streams).find(item => item.connectionId === connection.id);
-  if (stream) setMaterialStreamState(stream, solidState);
-}
 
 export { createExtractor, extractorOccurrenceEligibility, extractorOutputRates };
 

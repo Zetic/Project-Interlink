@@ -10,27 +10,13 @@ import {
   HOPPER_TOLERANCE_KG,
 } from '../hopperNode.js';
 import { applyContinuousCrushing } from '../continuousProcessing.js';
-import { setMaterialStreamState } from '../materialStream.js';
+import {
+  findInboundConnection,
+  findOutboundConnection,
+  updateConnectionStream,
+} from './blueprintHelpers.js';
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
-
-function findInboundConnection(blueprint, targetNodeId, targetPortId) {
-  return Object.values(blueprint.connections).find(
-    connection => connection.targetNodeId === targetNodeId && connection.targetPortId === targetPortId
-  ) ?? null;
-}
-
-function findOutboundConnection(blueprint, sourceNodeId, sourcePortId) {
-  return Object.values(blueprint.connections).find(
-    connection => connection.sourceNodeId === sourceNodeId && connection.sourcePortId === sourcePortId
-  ) ?? null;
-}
-
-function updateConnectionStream(blueprint, connection, solidState) {
-  if (!connection) return;
-  const stream = Object.values(blueprint.streams).find(item => item.connectionId === connection.id);
-  if (stream) setMaterialStreamState(stream, solidState);
-}
 
 function proportionalSolidStateFromHopper(hopper, requestedTotalRateKgPerSecond) {
   const storedMassKg = hopperStoredMassKg(hopper);
