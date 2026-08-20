@@ -9,7 +9,7 @@ export const CRUSHING_PROCESS_DEFINITION = {
   parameters: [
     {
       id: 'targetParticleSizeMm',
-      label: 'Target particle size',
+      label: 'Nominal product size',
       unit: 'mm',
       min: 1,
       max: 120,
@@ -17,12 +17,12 @@ export const CRUSHING_PROCESS_DEFINITION = {
       controlType: 'number',
       playerConfigurable: true,
       choices: Object.freeze([
-        Object.freeze({ value: 1, label: '≤1 mm' }),
-        Object.freeze({ value: 5, label: '≤5 mm' }),
-        Object.freeze({ value: 15, label: '≤15 mm' }),
-        Object.freeze({ value: 25, label: '≤25 mm' }),
-        Object.freeze({ value: 60, label: '≤60 mm' }),
-        Object.freeze({ value: 120, label: '≤120 mm' }),
+        Object.freeze({ value: 1, label: '1 mm' }),
+        Object.freeze({ value: 5, label: '5 mm' }),
+        Object.freeze({ value: 15, label: '15 mm' }),
+        Object.freeze({ value: 25, label: '25 mm' }),
+        Object.freeze({ value: 60, label: '60 mm' }),
+        Object.freeze({ value: 120, label: '120 mm' }),
       ]),
       legacyValues: Object.freeze([10, 12]),
     },
