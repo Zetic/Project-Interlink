@@ -80,20 +80,16 @@ The project intentionally remains lightweight: vanilla HTML/CSS/ES modules, Node
 Project-Interlink/
 ├── .github/
 │   ├── copilot-instructions.md
-│   └── workflows/
-│       └── test.yml
-│
+│   └── workflows/test.yml
 ├── ARCHITECTURE.md
 ├── DESIGN.md
 ├── PATCH_NOTES.md
 ├── README.md
-│
 ├── index.html
 ├── styles.css
 ├── workspace-overrides.css
 ├── apparatus-controls.css
 ├── package.json
-│
 ├── src/
 │   ├── app.js
 │   ├── content/
@@ -102,7 +98,6 @@ Project-Interlink/
 │   ├── generator/
 │   ├── simulation/
 │   └── workspace/
-│
 └── tests/
 ```
 
@@ -116,13 +111,11 @@ Project-Interlink/
 src/content/
 ├── apparatus/
 │   └── definitions.js
-│
 ├── features/
 │   ├── featureCompatibility.js
 │   ├── featureGeneration.js
 │   ├── featureNames.js
 │   └── featureTypes.js
-│
 └── resources/
     ├── occurrenceFamilies.js
     ├── rawResources.js
@@ -143,7 +136,7 @@ src/content/
 - defaults;
 - player-configurable process parameter metadata.
 
-Current placeable definitions are Extractor, Crusher, Screen, Magnetic Separator, and Hopper.
+Current placeable definitions are Extractor, Crusher, Screen, Splitter, Material Merger, Feeder, Magnetic Separator, and Hopper.
 
 The NODE catalog is projected from these definitions. Do not create a second independent machine catalog.
 
@@ -172,19 +165,15 @@ src/core/materials/
 ├── materialForms.js
 ├── occurrenceMaterialization.js
 ├── sampleAcquisition.js
-│
 ├── properties/
 │   └── magneticProperties.js
-│
 ├── solids/
 │   ├── liberationClasses.js
 │   ├── particleSizeBins.js
 │   └── solidMaterialState.js
-│
 ├── species/
 │   ├── materialSpecies.js
 │   └── speciesRegistry.js
-│
 ├── liberationClasses.js        [compatibility re-export]
 ├── materialSpecies.js          [compatibility re-export]
 ├── particleSizeBins.js         [compatibility re-export]
@@ -210,25 +199,30 @@ src/core/processes/
 ├── conservation/
 │   ├── conservation.js
 │   └── speciesConservation.js
-│
 ├── definitions/
 │   ├── crushing.js
+│   ├── feeding.js
 │   ├── magneticSeparation.js
+│   ├── merging.js
 │   ├── screening.js
+│   ├── splitting.js
 │   └── index.js
-│
 ├── executors/
 │   ├── crushing.js
+│   ├── feeding.js
 │   ├── magneticSeparation.js
+│   ├── merging.js
 │   ├── screening.js
+│   ├── splitting.js
 │   └── index.js
-│
 ├── physics/
 │   ├── crushing.js
+│   ├── feeding.js
 │   ├── magneticSeparation.js
+│   ├── merging.js
 │   ├── screening.js
+│   ├── splitting.js
 │   └── index.js
-│
 ├── processExecution.js
 ├── processDefinitions.js       [compatibility re-export]
 └── processPhysics.js           [compatibility re-export]
@@ -259,6 +253,9 @@ Current mechanical processes use species conservation. Future chemistry or therm
 
 - **Crushing** changes size distribution and liberation while preserving species mass.
 - **Screening** routes existing fractions to `undersize` or `oversize` according to an ideal aperture cut without changing their species, size class, liberation, or quantity.
+- **Material Splitting** divides every existing fraction proportionally across two explicit outputs.
+- **Material Merging** combines sparse particulate populations without changing fraction identity.
+- **Controlled Feeding** preserves material state while continuous runtime applies a requested mass-flow setpoint.
 - **Magnetic Separation** routes fractions according to magnetic response plus size, liberation, field strength, and entrainment/carryover.
 
 ### 5.3 Neutral system primitives
@@ -293,7 +290,6 @@ src/core/world/
 ├── knowledgeState.js
 ├── versions.js
 ├── worldState.js               [legacy compatibility entry point]
-│
 ├── model/
 │   ├── feature.js
 │   ├── planet.js
@@ -302,7 +298,6 @@ src/core/world/
 │   ├── site.js
 │   ├── worldAssembly.js
 │   └── worldState.js
-│
 └── validation/
     ├── helpers.js
     ├── hierarchyValidation.js
@@ -334,17 +329,11 @@ src/generator/
 ├── generateRegions.js
 ├── generateFeatures.js
 ├── generateResources.js
-│
-├── planet/
-│   └── generatePlanet.js
-├── regions/
-│   └── generateRegions.js
-├── sites/
-│   └── generateSites.js
-├── features/
-│   └── generateFeatures.js
-└── resources/
-    └── generateResources.js
+├── planet/generatePlanet.js
+├── regions/generateRegions.js
+├── sites/generateSites.js
+├── features/generateFeatures.js
+└── resources/generateResources.js
 ```
 
 Some top-level modules remain compatibility/public entry points while focused domain directories establish the long-term organization. Generation changes that alter same-seed world truth must follow generator-version rules.
@@ -363,10 +352,13 @@ src/simulation/
 │   ├── blueprintHelpers.js
 │   ├── crusher.js
 │   ├── extractor.js
+│   ├── feeder.js
 │   ├── magneticSeparator.js
+│   ├── materialTransferHelpers.js
+│   ├── merger.js
 │   ├── screen.js
+│   ├── splitter.js
 │   └── registry.js
-│
 ├── apparatusDefinitions.js     [compatibility re-export]
 ├── boundaryTransfer.js
 ├── continuousProcessing.js
@@ -387,29 +379,25 @@ Current registry-backed node types are:
 ```text
 extractor
 hopper
+merger
+feeder
 crusher
 screen
+splitter
 magSep
 ```
 
 Hopper/storage implementation remains in `hopperNode.js` and is registered through `apparatus/registry.js`.
 
-### Screen runtime contract
+### Routing runtime contracts
 
-The Screen is the first new apparatus added after the architecture restructure and intentionally validates the extension boundaries.
+Screen and Splitter are explicit multi-output apparatus. Their runtimes stage feed and every required destination before committing so one constrained branch cannot delete matter from another branch.
 
-```text
-stored solid feed
-      ↓
-    Screen
-   ├───────┐
-   ↓       ↓
-undersize oversize
-```
+The Material Merger is explicit fan-in. It owns two distinct stored-particulate input ports and a single product port. When output capacity constrains a move, both source withdrawals are scaled and committed together. A connected input may be temporarily empty without blocking material available at the other input.
 
-Both outputs are explicit and required. The runtime stages feed and both destinations before committing, so a required output constraint cannot delete matter after feed consumption.
+The Feeder is an identity process over material state with a continuous flow-control role. Its configurable setpoint limits requested transfer below a fixed rated throughput; a zero setpoint idles without consuming feed.
 
-The Screen uses the shared `core/processes/physics/screening.js` kernel; continuous runtime does not duplicate screening physics.
+`materialTransferHelpers.js` contains reusable staging calculations used by these routing runtimes rather than duplicating output-capacity and transfer-acceptance checks.
 
 ### Simulation engine
 
@@ -417,7 +405,7 @@ The Screen uses the shared `core/processes/physics/screening.js` kernel; continu
 
 ### Streams and storage
 
-`MaterialStream` represents transfer rates, not inventory. Hoppers and boundary buffers own stored matter. Continuous processes respect downstream capacity and multi-output processes commit atomically.
+`MaterialStream` represents transfer rates, not inventory. Hoppers and boundary buffers own stored matter. Continuous processes respect downstream capacity and multi-input/multi-output processes commit atomically.
 
 ---
 
@@ -429,32 +417,26 @@ src/workspace/
 ├── workspaceState.js
 ├── sitePrototype.js
 ├── siteSession.js
-│
 ├── catalog/
 │   ├── catalogState.js
 │   └── nodeCatalog.js
-│
 ├── graph/
 │   ├── nodePlacement.js
 │   ├── nodePresentation.js
 │   ├── nodeRemoval.js
 │   ├── viewport.js
 │   └── workspaceGraph.js
-│
 ├── inspector/
 │   ├── apparatusControlUI.js
 │   ├── genericApparatusInspectorUI.js
 │   ├── inspectionViewModel.js
 │   └── inspectorUI.js
-│
 ├── navigation/
 │   ├── navigationProjection.js
 │   └── navigationState.js
-│
 ├── shell/
 │   ├── utils.js
 │   └── workspaceUI.js
-│
 ├── apparatusControlUI.js       [public installer / compatibility surface]
 ├── inspectionViewModel.js      [compatibility re-export]
 ├── navigationProjection.js     [compatibility re-export]
@@ -469,7 +451,7 @@ src/workspace/
 
 `workspaceController.js` is the current DOM/application orchestrator. Focused graph/catalog/inspector/navigation/shell modules own reusable responsibilities when they can be independently meaningful and tested.
 
-The Screen requires no dedicated NODE registration or generic Inspector eligibility branch. Its catalog entry, parameter control, removability, ports, and generic machine inspection flow through existing definition-driven paths. That is an architectural invariant to preserve for future machines.
+Screen, Splitter, Material Merger, and Feeder require no dedicated NODE registration or generic Inspector eligibility branches. Catalog entries, parameter controls, removability, ports, and generic machine inspection flow through definition-driven paths. That is an architectural invariant to preserve for future machines.
 
 ---
 
@@ -490,7 +472,7 @@ Do not add new authoritative content to `src/data/`.
 
 ## 10. Canonical Extension Path — Adding an Apparatus
 
-Screen has now exercised this path successfully. A future process apparatus such as a Mill or Gravity Separator should normally require focused additions rather than unrelated central edits.
+Screen and the routing/flow-control apparatus have exercised this path successfully. A future process package such as Mill/fine classification should normally require focused additions rather than unrelated central edits.
 
 Typical path:
 
@@ -566,11 +548,11 @@ Every modeled unit of matter has one physical owner/location at a time. A `Mater
 
 ### Mechanical conservation
 
-Current Crusher, Screen, and Magnetic Separator operations preserve species mass. Screening additionally preserves each routed fraction descriptor exactly.
+Current Crusher, Screen, Splitter, Material Merger, Feeder, and Magnetic Separator operations preserve species mass. Screen and routing primitives additionally preserve fraction descriptors exactly except where Crusher intentionally changes size/liberation.
 
-### Transactional outputs
+### Transactional inputs and outputs
 
-A process must establish feasible output capacity before committing feed consumption. Multi-output machinery stages all required destinations and commits only after the planned transfer is valid.
+A process must establish feasible output capacity before committing feed consumption. Multi-output machinery stages all required destinations. Multi-input routing stages all source withdrawals and the destination. A transaction commits only after the planned movement is valid.
 
 ### Typed connections
 
@@ -578,7 +560,9 @@ Compatibility derives from port edge kind and capabilities. Do not reintroduce p
 
 ### Material fan-out/fan-in
 
-One material output cannot fan out until an explicit Splitter exists. Multiple streams must not silently combine into one input without an explicit merger/mixer contract.
+An ordinary material output remains single-connection and cannot implicitly duplicate matter. Explicit branching occurs through a Splitter's distinct output ports.
+
+An ordinary input remains single-source and cannot silently combine streams. Explicit recombination occurs through the Material Merger's distinct input ports. The Material Merger is not a physical Mixer and does not imply homogeneity physics.
 
 ### Resource access
 
@@ -612,7 +596,8 @@ The test suite covers both simulation behavior and architectural extension point
 - `apparatusControlUI.test.js` — definition-driven choice controls;
 - `continuousSimulation.test.js` — flow, backpressure, conservation, continuous apparatus behavior;
 - `materialProcessing.test.js` / `solidMaterialState.test.js` — batch and physical material invariants;
-- `screening.test.js` — Screen definition, sharp-cut physics, batch/continuous conservation, required outputs, backpressure, parameter choices, connectivity.
+- `screening.test.js` — Screen definition, sharp-cut physics, batch/continuous conservation, required outputs, backpressure, parameter choices, connectivity;
+- `materialRoutingApparatus.test.js` — explicit Splitter branching, Material Merger fan-in, Feeder setpoint behavior, transactional routing, and preservation of ordinary graph fan-out/fan-in restrictions.
 
 When adding another apparatus or physical property, tests should prove both its physical behavior and that it uses the intended generic extension paths.
 
@@ -620,28 +605,29 @@ When adding another apparatus or physical property, tests should prove both its 
 
 ## 15. Growth Direction
 
-The current solid-processing foundation now supports:
+The current solid-processing foundation now supports explicit routing and control around the coarse-processing chain:
 
 ```text
-Feature
-  ↓
-Extractor
-  ↓
-Hopper
-  ↓
-Crusher
-  ↓
-Hopper
-  ↓
-Screen
- ├─────────────┐
- ↓             ↓
-undersize    oversize
+fresh feed ─────────────┐
+                       ↓
+                Material Merger
+                       ↓
+                    Feeder
+                       ↓
+                    Crusher
+                       ↓
+                     Screen
+                  ┌────┴────┐
+            undersize     oversize
+                ↓             ↓
+          downstream       Splitter / storage / recycle topology
 ```
 
-The next likely architecture/gameplay additions are explicit Splitter/Mixer-Merger behavior, then a Mill/Grinder with finer particle-size classes, followed by a density property domain and Gravity Separation.
+The next major capability should establish a useful **fine-processing regime** rather than adding a Mill in isolation: Mill/Grinder behavior, finer particle-size classes, fine classification, and at least one downstream separation method that benefits from fine liberation should be designed together.
 
-Longer-term thermal, fluid, chemical, electrical, control, and logistics systems should extend the same boundaries rather than being packed into universal material objects or central machine engines.
+After that, density + Gravity Separation is a strong next property/process domain, followed by slurry/fluid/flotation, thermal, chemical, control, logistics, and reusable composite systems as gameplay requires them.
+
+Longer-term systems should extend the same boundaries rather than being packed into universal material objects or central machine engines.
 
 ---
 

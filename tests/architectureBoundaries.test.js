@@ -115,27 +115,41 @@ test('process definitions, pure kernels, and conservation policies have separate
 test('apparatus identity and runtime behavior are registry-backed', () => {
   assert.equal(APPARATUS_DEFINITIONS.crusher.catalog.label, 'Crusher');
   assert.equal(APPARATUS_DEFINITIONS.screen.catalog.label, 'Screen');
+  assert.equal(APPARATUS_DEFINITIONS.splitter.catalog.label, 'Splitter');
+  assert.equal(APPARATUS_DEFINITIONS.merger.catalog.label, 'Material Merger');
+  assert.equal(APPARATUS_DEFINITIONS.feeder.catalog.label, 'Feeder');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.crusher.create, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.screen.simulate, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.splitter.simulate, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.merger.simulate, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.feeder.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.magSep.simulate, 'function');
   assert.equal(apparatusRuntimeFor('crusher'), APPARATUS_RUNTIME_REGISTRY.crusher);
   assert.equal(apparatusRuntimeFor('screen'), APPARATUS_RUNTIME_REGISTRY.screen);
+  assert.equal(apparatusRuntimeFor('splitter'), APPARATUS_RUNTIME_REGISTRY.splitter);
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.id),
-    ['extractor', 'crusher', 'screen', 'magnetic-separator', 'hopper'],
+    ['extractor', 'crusher', 'screen', 'splitter', 'material-merger', 'feeder', 'magnetic-separator', 'hopper'],
   );
 
   _resetOrdinals();
   const blueprint = createBlueprint();
   const crusher = blueprintAddApparatus(blueprint, 'crusher');
   const screen = blueprintAddApparatus(blueprint, 'screen');
+  const splitter = blueprintAddApparatus(blueprint, 'splitter');
+  const merger = blueprintAddApparatus(blueprint, 'merger');
+  const feeder = blueprintAddApparatus(blueprint, 'feeder');
   assert.equal(crusher.throughputKgPerSecond, APPARATUS_DEFINITIONS.crusher.defaults.throughputKgPerSecond);
   assert.equal(screen.apertureSizeMm, APPARATUS_DEFINITIONS.screen.defaults.apertureSizeMm);
+  assert.equal(splitter.splitFractionToA, APPARATUS_DEFINITIONS.splitter.defaults.splitFractionToA);
+  assert.equal(feeder.flowRateKgPerSecond, APPARATUS_DEFINITIONS.feeder.defaults.flowRateKgPerSecond);
   assert.equal(
     getNodePortDefinitions(crusher).find(port => port.id === 'feed').accepts[0],
     'stored-solid-particulate',
   );
   assert.deepEqual(getNodePortDefinitions(screen).map(port => port.id), ['feed', 'undersize', 'oversize']);
+  assert.deepEqual(getNodePortDefinitions(splitter).map(port => port.id), ['feed', 'output-a', 'output-b']);
+  assert.deepEqual(getNodePortDefinitions(merger).map(port => port.id), ['input-a', 'input-b', 'product']);
 });
 
 test('resource and apparatus definitions are available from content registries', () => {
