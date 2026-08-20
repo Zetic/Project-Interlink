@@ -83,7 +83,7 @@ src/app.js
 Preferred dependency direction:
 
 ```text
-app → generator + workspace
+app → generator + core + workspace
 workspace → simulation + content + core
 simulation → content + core
 generator → content + core
