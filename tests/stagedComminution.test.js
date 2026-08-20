@@ -203,6 +203,21 @@ test('identical Ball Mill settings produce different liberation for coarse- and 
   assert.deepEqual(summarizeSolidMaterialByTextureProfile(fineProduct), { 'fine-texture': 100 });
 });
 
+test('Ball Mill consolidates sub-tolerance child allocations instead of losing conserved matter', () => {
+  const quantity = 2e-9;
+  const feed = singleFractionState({
+    sizeBinId: '15-25mm',
+    quantity,
+    texture: textureProfile('tiny-textured-population', 180),
+  });
+
+  const milled = millSolidMaterialState(feed, 0.25);
+  assert.ok(Math.abs(totalSolidQuantity(milled) - quantity) <= 1e-15);
+  assert.deepEqual(summarizeSolidMaterialByTextureProfile(milled), {
+    'tiny-textured-population': quantity,
+  });
+});
+
 test('mixed ores retain separate texture populations instead of collapsing identical fractions', () => {
   const easy = singleFractionState({
     sizeBinId: '15-25mm',
