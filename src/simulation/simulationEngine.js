@@ -27,7 +27,6 @@ import {
   scaleSolidMaterialState,
   totalSolidQuantity,
 } from '../core/materials/solidMaterialState.js';
-import { hasCrushableSolidFractions } from '../core/processes/processPhysics.js';
 import {
   getProcessDefinition,
   CRUSHING_PROCESS_ID,
@@ -470,11 +469,6 @@ function simulateCrusherNode(blueprint, node, dt) {
   }
 
   const candidateRates = proportionalSolidStateFromHopper(inputHopper, feasibleRate);
-  if (!hasCrushableSolidFractions(candidateRates, node.targetParticleSizeMm)) {
-    node.lastError = 'Feed already meets target particle size';
-    node.operatingState = 'idle';
-    return;
-  }
   try {
     applyContinuousCrushing(candidateRates, node.targetParticleSizeMm, node.throughputKgPerSecond);
   } catch (error) {
