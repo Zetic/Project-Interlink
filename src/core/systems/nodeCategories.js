@@ -1,0 +1,15 @@
+export const NODE_CATEGORIES = Object.freeze({
+  PLANET: Object.freeze({ key: 'planet', label: 'PLANET' }),
+  REGION: Object.freeze({ key: 'region', label: 'REGION' }),
+  SITE: Object.freeze({ key: 'site', label: 'SITE' }),
+  FACILITY: Object.freeze({ key: 'facility', label: 'FACILITY' }),
+  FEATURE: Object.freeze({ key: 'feature', label: 'FEATURE' }),
+  APPARATUS: Object.freeze({ key: 'apparatus', label: 'APPARATUS' }),
+  CONTAINER: Object.freeze({ key: 'container', label: 'CONTAINER' }),
+  BOUNDARY: Object.freeze({ key: 'boundary', label: 'BOUNDARY' }),
+  PROCESS: Object.freeze({ key: 'process', label: 'PROCESS' }),
+  SENSOR: Object.freeze({ key: 'sensor', label: 'SENSOR' }),
+  CONTROLLER: Object.freeze({ key: 'controller', label: 'CONTROLLER' }),
+  LOGISTICS: Object.freeze({ key: 'logistics', label: 'LOGISTICS' }),
+  SYSTEM: Object.freeze({ key: 'system', label: 'SYSTEM' }),
+});

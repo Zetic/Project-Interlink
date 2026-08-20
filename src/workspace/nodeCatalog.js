@@ -16,6 +16,7 @@ import {
   DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
   DEFAULT_MAG_SEP_FIELD_STRENGTH,
 } from '../simulation/simulationEngine.js';
+import { APPARATUS_DEFINITIONS } from '../content/apparatus/definitions.js';
 import { NODE_CATEGORIES } from './nodePresentation.js';
 
 function definition({
@@ -39,54 +40,34 @@ function definition({
 }
 
 export const NODE_DEFINITIONS = Object.freeze([
-  definition({
-    id: 'extractor',
-    label: 'Extractor',
-    nodeType: 'extractor',
-    category: NODE_CATEGORIES.APPARATUS.key,
-    description: 'Pulls compatible solid matter from a connected Feature resource source.',
-    searchTerms: ['extractor', 'extraction', 'resource access', 'source', 'feed', 'raw material'],
-    // Placement creates an unbound machine. The resource-access connection selects
-    // the source occurrence when the player connects a Feature to this Extractor.
-    create: (blueprint, context = {}) => blueprintAddExtractor(
-      blueprint,
-      null,
-      context.rateKgPerSecond,
-    ),
-  }),
-  definition({
-    id: 'crusher',
-    label: 'Crusher',
-    nodeType: 'crusher',
-    category: NODE_CATEGORIES.APPARATUS.key,
-    description: 'Reduces the particle size of solid material streams.',
-    searchTerms: ['crusher', 'crushing', 'grinding', 'size reduction', 'ore', 'solid', 'particle'],
-    create: blueprint => blueprintAddCrusher(blueprint, {
-      throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
-      targetParticleSizeMm: DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
-    }),
-  }),
-  definition({
-    id: 'magnetic-separator',
-    label: 'Magnetic Separator',
-    nodeType: 'magSep',
-    category: NODE_CATEGORIES.APPARATUS.key,
-    description: 'Separates material streams using magnetic response.',
-    searchTerms: ['magnetic separator', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings'],
-    create: blueprint => blueprintAddMagSep(blueprint, {
-      fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH,
-    }),
-  }),
-  definition({
-    id: 'hopper',
-    label: 'Hopper',
-    nodeType: 'hopper',
-    category: NODE_CATEGORIES.CONTAINER.key,
-    description: 'Stores discrete material constituents between processing nodes.',
-    searchTerms: ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'],
-    create: blueprint => blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG),
-  }),
+  placeableApparatus('extractor', (blueprint, context = {}) => blueprintAddExtractor(
+    blueprint,
+    null,
+    context.rateKgPerSecond,
+  )),
+  placeableApparatus('crusher', blueprint => blueprintAddCrusher(blueprint, {
+    throughputKgPerSecond: DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S,
+    targetParticleSizeMm: DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM,
+  })),
+  placeableApparatus('magSep', blueprint => blueprintAddMagSep(blueprint, {
+    fieldStrength: DEFAULT_MAG_SEP_FIELD_STRENGTH,
+  }), 'magnetic-separator'),
+  placeableApparatus('hopper', blueprint => blueprintAddHopper(blueprint, DEFAULT_HOPPER_CAPACITY_KG)),
 ]);
+
+function placeableApparatus(nodeType, create, id = nodeType) {
+  const apparatus = APPARATUS_DEFINITIONS[nodeType];
+  if (!apparatus?.catalog) throw new Error(`Apparatus '${nodeType}' is missing catalog metadata`);
+  return definition({
+    id,
+    nodeType: apparatus.nodeType,
+    category: apparatus.catalog.category,
+    label: apparatus.catalog.label,
+    description: apparatus.catalog.description,
+    searchTerms: apparatus.catalog.searchTerms,
+    create,
+  });
+}
 
 const CATEGORY_ORDER = Object.values(NODE_CATEGORIES)
   .map(category => category.key)

@@ -4,7 +4,7 @@
  * always derived; streams never allocate MaterialBatch objects per tick.
  */
 
-import { particleSizeBinIdForMm } from '../core/materials/particleSizeBins.js';
+import { particleSizeBinIdForMm } from '../core/materials/solids/particleSizeBins.js';
 import {
   SOLID_PARTICULATE_FORM,
   addSolidFractionDirect,
@@ -13,7 +13,7 @@ import {
   scaleSolidMaterialState,
   totalSolidQuantity,
   validateSolidMaterialState,
-} from '../core/materials/solidMaterialState.js';
+} from '../core/materials/solids/solidMaterialState.js';
 
 export const STREAM_FLOW_TOLERANCE = 1e-12;
 

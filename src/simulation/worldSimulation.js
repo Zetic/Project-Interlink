@@ -2,7 +2,7 @@
 import { simulationTick, SIMULATION_STEP_S } from './simulationEngine.js';
 import { createBoundaryBuffer } from './hopperNode.js';
 import { transferBoundaryMaterial, validateBoundaryTransfer } from './boundaryTransfer.js';
-import { createCompositeNode, createSystemPort, getSystemNodePort } from './systemNode.js';
+import { createCompositeNode, createSystemPort, getSystemNodePort } from '../core/systems/systemNode.js';
 
 export const DEFAULT_BOUNDARY_TRANSFER_RATE_KG_PER_SECOND = 10;
 export const DEFAULT_REGIONAL_BUFFER_CAPACITY_KG = 1000;

@@ -5,7 +5,7 @@ import {
   getLocalizedResources,
   getRegionalResources,
   getResourceDefinition,
-} from '../data/resourceDefinitions.js';
+} from '../content/resources/resourceDefinitions.js';
 
 export { resources, getLocalizedResources, getRegionalResources, getResourceDefinition };
 

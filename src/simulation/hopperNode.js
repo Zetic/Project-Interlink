@@ -1,6 +1,6 @@
 /** Hopper — finite-capacity solid-material storage node. */
 
-import { particleSizeBinIdForMm } from '../core/materials/particleSizeBins.js';
+import { particleSizeBinIdForMm } from '../core/materials/solids/particleSizeBins.js';
 import {
   SOLID_MATERIAL_TOLERANCE as HOPPER_TOLERANCE_KG,
   SOLID_PARTICULATE_FORM,
@@ -18,7 +18,7 @@ import {
   validateSolidMaterialBody,
   validateSolidMaterialState,
   withdrawSolidMaterialState,
-} from '../core/materials/solidMaterialState.js';
+} from '../core/materials/solids/solidMaterialState.js';
 
 function legacyMaterialBody(initialComponentsKg, initialParticleSizeMm, initialLiberationClassId = 'partial') {
   if (!initialComponentsKg || Object.keys(initialComponentsKg).length === 0) {

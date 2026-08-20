@@ -23,7 +23,7 @@ import {
   resumeWorldSimulation,
   worldSimulationTick,
 } from '../simulation/worldSimulation.js';
-import { getSystemNodePort } from '../simulation/systemNode.js';
+import { getSystemNodePort } from '../core/systems/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
 import {
@@ -80,65 +80,12 @@ import {
   nodeRemovalEligibility,
   removeBlueprintNode,
 } from './nodeRemoval.js';
-
-const wsState = {
-  currentLevel: 'planet',
-  selectedRegionId: null,
-  selectedSiteId: null,
-  selectedOccurrenceId: null,
-  world: null,
-  knowledge: null,
-  blueprint: null,
-  blueprintLayout: null,
-  siteSessions: {},
-  workspaceLayouts: {},
-  systemNodeElements: new Map(),
-  systemConnectionElements: new Map(),
-  simRunning: false,
-  simLastTime: null,
-  simAccumulatedS: 0,
-  simRafId: null,
-  nodeElements: new Map(),
-  connectionElements: new Map(),
-  connectionPreview: null,
-  viewports: {},
-  dragTrackingCleanup: null,
-  navigationOpen: false,
-  navigationQuery: '',
-  navigationHiddenCategories: new Set(),
-  navigationManualExpandedKeys: new Set(),
-  navigationEventsInstalled: false,
-  navigationEventController: null,
-  navigationIndexCache: null,
-  nodeCatalogOpen: false,
-  nodeCatalogQuery: '',
-  nodeCatalogHiddenCategories: new Set(),
-  nodeCatalogCollapsedCategories: new Set(),
-  placement: createPlacementState(),
-  catalogPointer: null,
-  suppressCatalogClick: false,
-};
+import { wsState, pendingGraphConnection, inspector } from './workspaceState.js';
 
 const NODE_WIDTH = 160;
 const NODE_HEIGHT = 100;
 const PORT_RADIUS = 7;
 
-const pendingGraphConnection = {
-  active: false,
-  source: null,
-  x: 0,
-  y: 0,
-  scopeId: null,
-  adapter: null,
-};
-const inspector = {
-  selectedNodeId: null,
-  selectedConnId: null,
-  selectedSystemId: null,
-  selectedTransferId: null,
-  message: '',
-  renderKey: null,
-};
 let dragState = null;
 let systemDragState = null;
 

@@ -6,10 +6,10 @@ import {
   hopperStoredMassKg,
 } from '../simulation/hopperNode.js';
 import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
-import { summarizeSolidMaterialByLiberationClass, summarizeSolidMaterialBySizeBin, summarizeSolidMaterialBySpecies } from '../core/materials/solidMaterialState.js';
-import { getParticleSizeBin } from '../core/materials/particleSizeBins.js';
-import { getLiberationClass } from '../core/materials/liberationClasses.js';
-import { getMaterialSpecies } from '../core/materials/materialSpecies.js';
+import { summarizeSolidMaterialByLiberationClass, summarizeSolidMaterialBySizeBin, summarizeSolidMaterialBySpecies } from '../core/materials/solids/solidMaterialState.js';
+import { getParticleSizeBin } from '../core/materials/solids/particleSizeBins.js';
+import { getLiberationClass } from '../core/materials/solids/liberationClasses.js';
+import { getMaterialSpecies } from '../core/materials/species/materialSpecies.js';
 import { getNodeOperatingState } from '../simulation/simulationEngine.js';
 import { apparatusParametersForNode, getApparatusDefinition } from '../simulation/apparatusDefinitions.js';
 

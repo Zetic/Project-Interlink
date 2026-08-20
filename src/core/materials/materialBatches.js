@@ -1,4 +1,4 @@
-import { particleSizeBinIdForMm } from './particleSizeBins.js';
+import { particleSizeBinIdForMm } from './solids/particleSizeBins.js';
 import {
   SOLID_MATERIAL_TOLERANCE as MASS_TOLERANCE_KG,
   addSolidFractionDirect,
@@ -11,7 +11,7 @@ import {
   summarizeSolidMaterialBySpecies,
   totalSolidQuantity,
   validateSolidMaterialBody,
-} from './solidMaterialState.js';
+} from './solids/solidMaterialState.js';
 
 function assertFiniteNonNegativeNumber(value, label) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {

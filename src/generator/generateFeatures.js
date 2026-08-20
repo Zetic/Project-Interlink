@@ -12,54 +12,12 @@ import {
   resourcesByFamilies,
 } from './generateResources.js';
 import { rngFor } from './random.js';
-import { OCCURRENCE_FAMILIES, OCCURRENCE_FAMILY_VALUES } from '../data/occurrence-families.js';
+import { OCCURRENCE_FAMILIES, OCCURRENCE_FAMILY_VALUES } from '../content/resources/occurrenceFamilies.js';
+import { FEATURE_TYPES, FEATURE_FALLBACK_RESOURCE } from '../content/features/featureTypes.js';
+import { FEATURE_NAME_PARTS, SITE_NAME_PARTS } from '../content/features/featureNames.js';
+import { FEATURE_ALLOWED_FAMILIES, allowedPhysicalStates } from '../content/features/featureCompatibility.js';
 
 export { OCCURRENCE_FAMILIES, OCCURRENCE_FAMILY_VALUES };
-
-const FEATURE_TYPES = [
-  'Mineral Deposit',
-  'Geological Formation',
-  'Aquifer',
-  'Gas Reservoir',
-  'Cave / Cavern',
-  'Ravine',
-  'Fault',
-  'Crater',
-  'Volcanic Vent',
-  'Hydrothermal System',
-  'Magma Chamber',
-  'Ice Body',
-  'Salt Basin',
-  'Outcrop',
-];
-
-const FEATURE_FALLBACK_RESOURCE = Object.freeze({
-  'Mineral Deposit': 'iron-ore',
-  'Geological Formation': 'carbonate-rock',
-  'Aquifer': 'groundwater',
-  'Gas Reservoir': 'natural-gas',
-  'Cave / Cavern': 'carbonate-rock',
-  'Ravine': 'mixed-sediment',
-  'Fault': 'quartz',
-  'Crater': 'mixed-sediment',
-  'Volcanic Vent': 'sulfur',
-  'Hydrothermal System': 'geothermal-fluid',
-  'Magma Chamber': 'magma',
-  'Ice Body': 'water-ice',
-  'Salt Basin': 'halite',
-  'Outcrop': 'carbonate-rock',
-});
-
-const FEATURE_NAME_PARTS = {
-  prefixes: ['Deep', 'High', 'Dark', 'Fire', 'Frost', 'Iron', 'Stone', 'Silent', 'Burning', 'Lost', 'Ancient', 'Bright', 'Salt', 'Red'],
-  middles: ['rock', 'fire', 'frost', 'vein', 'vault', 'crack', 'rift', 'sink', 'well', 'vent', 'pool', 'shelf', 'dome', 'bed'],
-  suffixes: ['Deposit', 'Formation', 'Chamber', 'Pocket', 'Seam', 'Rift', 'Hollow', 'Basin', 'Core', 'Lens', 'Body', 'System'],
-};
-
-const SITE_NAME_PARTS = {
-  adjectives: ['Ancientwell', 'Blackglass', 'Clearwater', 'Deepstone', 'Ironfall', 'Saltmere', 'Ashfield', 'Greyspine', 'Redvault', 'Frostbreak', 'Darkcleft', 'Highreach', 'Stonewatch', 'Coldseam'],
-  nouns: ['Rift', 'Outcrop', 'Basin', 'Hollow', 'Gorge', 'Shelf', 'Ridge', 'Cleft', 'Run', 'Cut', 'Spur', 'Sink', 'Reach', 'Draw'],
-};
 
 function generateFeatureName(rng) {
   return `${rng.pick(FEATURE_NAME_PARTS.prefixes)}${rng.pick(FEATURE_NAME_PARTS.middles)} ${rng.pick(FEATURE_NAME_PARTS.suffixes)}`;
@@ -106,34 +64,7 @@ function weightedFeatureTypes(region) {
   return pool;
 }
 
-/**
- * Physical occurrence-family taxonomy.
- * A Feature type maps to allowed families — this is a hard physical compatibility gate.
- * Tags are then used only for weighting/probability within the compatible pool.
- *
- * Families:
- *   solid: rock-mass, ore-body, mineral-body, sediment, evaporite, ice-body
- *   fluid: aqueous-fluid, hydrothermal-fluid, magma, reservoir-gas, atmosphere
- *   organic: vegetation, organic-soil
- *
- * Exported for test coverage of the compatibility contract.
- */
-export const FEATURE_ALLOWED_FAMILIES = Object.freeze({
-  'Mineral Deposit':      new Set([OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
-  'Geological Formation': new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT, OCCURRENCE_FAMILIES.MINERAL_BODY, OCCURRENCE_FAMILIES.HYDROCARBON_LIQUID]),
-  'Aquifer':              new Set([OCCURRENCE_FAMILIES.AQUEOUS_FLUID]),
-  'Gas Reservoir':        new Set([OCCURRENCE_FAMILIES.RESERVOIR_GAS]),
-  'Cave / Cavern':        new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT, OCCURRENCE_FAMILIES.MINERAL_BODY]),
-  'Ravine':               new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT]),
-  'Fault':                new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
-  'Crater':               new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.SEDIMENT, OCCURRENCE_FAMILIES.ORE_BODY]),
-  'Volcanic Vent':        new Set([OCCURRENCE_FAMILIES.MINERAL_BODY, OCCURRENCE_FAMILIES.ROCK_MASS]),
-  'Hydrothermal System':  new Set([OCCURRENCE_FAMILIES.AQUEOUS_FLUID, OCCURRENCE_FAMILIES.HYDROTHERMAL_FLUID, OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
-  'Magma Chamber':        new Set([OCCURRENCE_FAMILIES.MAGMA]),
-  'Ice Body':             new Set([OCCURRENCE_FAMILIES.ICE_BODY]),
-  'Salt Basin':           new Set([OCCURRENCE_FAMILIES.EVAPORITE, OCCURRENCE_FAMILIES.AQUEOUS_FLUID]),
-  'Outcrop':              new Set([OCCURRENCE_FAMILIES.ROCK_MASS, OCCURRENCE_FAMILIES.ORE_BODY, OCCURRENCE_FAMILIES.MINERAL_BODY]),
-});
+export { FEATURE_ALLOWED_FAMILIES };
 
 function featureAffinityTags(featureType, region, planetComposition) {
   const { heat, moisture } = region;
@@ -198,17 +129,6 @@ function selectFeatureResource(featureType, affinityTags, distribution, planet) 
     for (let w = 0; w < weight; w++) weighted.push(resource);
   }
   return weighted;
-}
-
-function allowedPhysicalStates(featureType) {
-  switch (featureType) {
-    case 'Aquifer': return ['Liquid', 'Mixed'];
-    case 'Gas Reservoir': return ['Gaseous', 'Mixed'];
-    case 'Magma Chamber': return ['Liquid'];
-    case 'Ice Body': return ['Solid'];
-    case 'Hydrothermal System': return ['Liquid', 'Mixed'];
-    default: return null;
-  }
 }
 
 function siteForFeature(feature, siteName = feature.name, siteKind = 'localized') {
