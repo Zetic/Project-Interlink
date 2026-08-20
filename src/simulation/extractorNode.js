@@ -1,5 +1,7 @@
 /** Extractor node — converts Feature resource access into an actual material stream. */
 
+import { createSolidMaterialBodyFromOccurrence } from '../core/materials/occurrenceMaterialization.js';
+
 export const DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND = 5;
 
 export function createExtractor({
@@ -40,23 +42,5 @@ export function createExtractor({
  */
 export function extractorOutputRates(extractor, occurrence, throttle = 1) {
   const effectiveRate = extractor.prototypeRateKgPerSecond * Math.max(0, Math.min(1, throttle));
-  const composition = occurrence?.composition;
-  const PROTOTYPE_FEED_PARTICLE_SIZE_MM = 80;
-  const componentMassFlowKgPerSecond = {};
-
-  if (composition && typeof composition === 'object' && !Array.isArray(composition)) {
-    const total = Object.values(composition).reduce((sum, pct) => sum + pct, 0);
-    if (total > 0) {
-      for (const [componentId, pct] of Object.entries(composition)) {
-        componentMassFlowKgPerSecond[componentId] = effectiveRate * (pct / total);
-      }
-    } else {
-      componentMassFlowKgPerSecond[occurrence.resourceId ?? 'raw-material'] = effectiveRate;
-    }
-  } else {
-    // Coarse resource identity is retained when chemistry for this feedstock is not modeled yet.
-    componentMassFlowKgPerSecond[occurrence?.resourceId ?? 'raw-material'] = effectiveRate;
-  }
-
-  return { componentMassFlowKgPerSecond, particleSizeMm: PROTOTYPE_FEED_PARTICLE_SIZE_MM };
+  return createSolidMaterialBodyFromOccurrence(occurrence, effectiveRate).solidState;
 }

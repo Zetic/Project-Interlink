@@ -10,6 +10,8 @@ import {
   hopperStoredMassKg,
   hopperReceiveInflow,
   hopperWithdraw,
+  cloneHopperMaterialState,
+  commitHopperMaterialState,
   HOPPER_TOLERANCE_KG,
 } from './hopperNode.js';
 import { applyContinuousCrushing, applyContinuousMagneticSeparation } from './continuousProcessing.js';
@@ -19,6 +21,12 @@ import {
   totalMassFlowKgPerSecond,
   scaleFlowRates,
 } from './materialStream.js';
+import {
+  createSolidMaterialState,
+  multiplySolidMaterialState,
+  scaleSolidMaterialState,
+  totalSolidQuantity,
+} from '../core/materials/solidMaterialState.js';
 import {
   getProcessDefinition,
   CRUSHING_PROCESS_ID,
@@ -317,34 +325,20 @@ function findOutboundConnection(blueprint, sourceNodeId, sourcePortId) {
   ) ?? null;
 }
 
-function updateConnectionStream(blueprint, connection, rates, particleSizeMm = null) {
+function updateConnectionStream(blueprint, connection, solidState) {
   if (!connection) return;
   const stream = getStreamForConnection(blueprint, connection.id);
-  if (stream) setMaterialStreamState(stream, rates, particleSizeMm);
+  if (stream) setMaterialStreamState(stream, solidState);
 }
 
 function zeroAllStreams(blueprint) {
-  for (const stream of Object.values(blueprint.streams)) setMaterialStreamState(stream, {}, null);
+  for (const stream of Object.values(blueprint.streams)) setMaterialStreamState(stream, createSolidMaterialState());
 }
 
-function proportionalRatesFromHopper(hopper, requestedTotalRateKgPerSecond) {
+function proportionalSolidStateFromHopper(hopper, requestedTotalRateKgPerSecond) {
   const storedMassKg = hopperStoredMassKg(hopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG || requestedTotalRateKgPerSecond <= 0) return {};
-  return Object.fromEntries(
-    Object.entries(hopper.storedComponentsKg).map(([componentId, kg]) => [
-      componentId,
-      (kg / storedMassKg) * requestedTotalRateKgPerSecond,
-    ])
-  );
-}
-
-function cloneHopperPhysicalState(hopper) {
-  return { ...hopper, storedComponentsKg: { ...hopper.storedComponentsKg } };
-}
-
-function commitHopperPhysicalState(target, staged) {
-  target.storedComponentsKg = { ...staged.storedComponentsKg };
-  target.particleSizeMm = staged.particleSizeMm;
+  if (storedMassKg <= HOPPER_TOLERANCE_KG || requestedTotalRateKgPerSecond <= 0) return createSolidMaterialState();
+  return multiplySolidMaterialState(hopper.materialBody.solidState, requestedTotalRateKgPerSecond / storedMassKg);
 }
 
 function assertTransferAccepted(expectedKg, acceptedKg, context) {
@@ -400,12 +394,19 @@ function simulateExtractorNode(blueprint, world, node, dt) {
     return 0;
   }
 
-  const baseOutput = extractorOutputRates(node, occurrence, 1);
-  const baseTotalRate = totalMassFlowKgPerSecond(baseOutput.componentMassFlowKgPerSecond);
+  let baseOutput;
+  try {
+    baseOutput = extractorOutputRates(node, occurrence, 1);
+  } catch (error) {
+    node.lastError = error.message;
+    node.operatingState = 'blocked';
+    return 0;
+  }
+  const baseTotalRate = totalMassFlowKgPerSecond(baseOutput);
   const requestedKg = baseTotalRate * dt;
   const freeKg = hopperFreeCapacityKg(targetHopper);
   const throttle = requestedKg > 0 ? Math.max(0, Math.min(1, freeKg / requestedKg)) : 0;
-  const plannedRates = scaleFlowRates(baseOutput.componentMassFlowKgPerSecond, throttle);
+  const plannedRates = scaleFlowRates(baseOutput, throttle);
   const plannedKg = totalMassFlowKgPerSecond(plannedRates) * dt;
   if (plannedKg <= TRANSFER_TOLERANCE_KG) {
     node.lastError = 'Extractor output storage is full';
@@ -413,10 +414,10 @@ function simulateExtractorNode(blueprint, world, node, dt) {
     return 0;
   }
 
-  const acceptedKg = hopperReceiveInflow(targetHopper, plannedRates, baseOutput.particleSizeMm, dt);
+  const acceptedKg = hopperReceiveInflow(targetHopper, plannedRates, dt);
   const acceptanceFactor = plannedKg > 0 ? Math.max(0, Math.min(1, acceptedKg / plannedKg)) : 0;
   const actualRates = scaleFlowRates(plannedRates, acceptanceFactor);
-  updateConnectionStream(blueprint, outputConnection, actualRates, baseOutput.particleSizeMm);
+  updateConnectionStream(blueprint, outputConnection, actualRates);
   node.lastError = acceptedKg > TRANSFER_TOLERANCE_KG ? null : 'Extractor output storage is full';
   node.operatingState = acceptedKg > TRANSFER_TOLERANCE_KG ? 'running' : 'blocked';
   return acceptedKg;
@@ -467,43 +468,37 @@ function simulateCrusherNode(blueprint, node, dt) {
     return;
   }
 
-  const particleSizeMm = inputHopper.particleSizeMm;
-  const candidateRates = proportionalRatesFromHopper(inputHopper, feasibleRate);
+  const candidateRates = proportionalSolidStateFromHopper(inputHopper, feasibleRate);
   try {
-    applyContinuousCrushing(
-      { componentMassFlowKgPerSecond: candidateRates, particleSizeMm },
-      node.targetParticleSizeMm,
-      node.throughputKgPerSecond
-    );
+    applyContinuousCrushing(candidateRates, node.targetParticleSizeMm, node.throughputKgPerSecond);
   } catch (error) {
     node.lastError = error.message;
     node.operatingState = 'blocked';
     return;
   }
 
-  const stagedInput = cloneHopperPhysicalState(inputHopper);
-  const stagedOutput = cloneHopperPhysicalState(outputHopper);
-  const withdrawal = hopperWithdraw(stagedInput, candidateRates, dt);
+  const stagedInput = cloneHopperMaterialState(inputHopper);
+  const stagedOutput = cloneHopperMaterialState(outputHopper);
+  const withdrawal = hopperWithdraw(stagedInput, feasibleRate, dt);
   if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) {
     node.operatingState = 'idle';
     return;
   }
 
-  const actualFeed = { componentMassFlowKgPerSecond: withdrawal.actualRates, particleSizeMm };
+  const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
   const result = applyContinuousCrushing(actualFeed, node.targetParticleSizeMm, node.throughputKgPerSecond);
-  const expectedOutputKg = totalMassFlowKgPerSecond(result.productRates.componentMassFlowKgPerSecond) * dt;
+  const expectedOutputKg = totalMassFlowKgPerSecond(result.productSolidState) * dt;
   const acceptedOutputKg = hopperReceiveInflow(
     stagedOutput,
-    result.productRates.componentMassFlowKgPerSecond,
-    result.productRates.particleSizeMm,
+    result.productSolidState,
     dt
   );
   assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Crusher');
 
-  commitHopperPhysicalState(inputHopper, stagedInput);
-  commitHopperPhysicalState(outputHopper, stagedOutput);
-  updateConnectionStream(blueprint, inputConnection, withdrawal.actualRates, particleSizeMm);
-  updateConnectionStream(blueprint, outputConnection, result.productRates.componentMassFlowKgPerSecond, result.productRates.particleSizeMm);
+  commitHopperMaterialState(inputHopper, stagedInput);
+  commitHopperMaterialState(outputHopper, stagedOutput);
+  updateConnectionStream(blueprint, inputConnection, actualFeed);
+  updateConnectionStream(blueprint, outputConnection, result.productSolidState);
   node.lastError = null;
   node.operatingState = 'running';
 }
@@ -542,13 +537,12 @@ function simulateMagSepNode(blueprint, node, dt) {
   }
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
-  const particleSizeMm = inputHopper.particleSizeMm;
   const candidateRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt);
-  let candidateFeedRates = proportionalRatesFromHopper(inputHopper, candidateRate);
+  let candidateFeedRates = proportionalSolidStateFromHopper(inputHopper, candidateRate);
   let candidateResult;
   try {
     candidateResult = applyContinuousMagneticSeparation(
-      { componentMassFlowKgPerSecond: candidateFeedRates, particleSizeMm },
+      candidateFeedRates,
       node.fieldStrength,
       node.maxFeedParticleSizeMm
     );
@@ -560,12 +554,12 @@ function simulateMagSepNode(blueprint, node, dt) {
 
   const concentrateScale = capacityScaleForOutput(
     hopperFreeCapacityKg(concentrateHopper),
-    candidateResult.concentrateRates.componentMassFlowKgPerSecond,
+    candidateResult.concentrateSolidState,
     dt
   );
   const tailingsScale = capacityScaleForOutput(
     hopperFreeCapacityKg(tailingsHopper),
-    candidateResult.tailingsRates.componentMassFlowKgPerSecond,
+    candidateResult.tailingsSolidState,
     dt
   );
   const capacityScale = Math.min(concentrateScale, tailingsScale);
@@ -577,44 +571,43 @@ function simulateMagSepNode(blueprint, node, dt) {
 
   if (capacityScale < 1) candidateFeedRates = scaleFlowRates(candidateFeedRates, capacityScale);
 
-  const stagedInput = cloneHopperPhysicalState(inputHopper);
-  const stagedConcentrate = cloneHopperPhysicalState(concentrateHopper);
-  const stagedTailings = cloneHopperPhysicalState(tailingsHopper);
-  const withdrawal = hopperWithdraw(stagedInput, candidateFeedRates, dt);
+  const stagedInput = cloneHopperMaterialState(inputHopper);
+  const stagedConcentrate = cloneHopperMaterialState(concentrateHopper);
+  const stagedTailings = cloneHopperMaterialState(tailingsHopper);
+  const withdrawal = hopperWithdraw(stagedInput, totalSolidQuantity(candidateFeedRates), dt);
   if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) {
     node.operatingState = 'idle';
     return;
   }
 
+  const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
   const result = applyContinuousMagneticSeparation(
-    { componentMassFlowKgPerSecond: withdrawal.actualRates, particleSizeMm },
+    actualFeed,
     node.fieldStrength,
     node.maxFeedParticleSizeMm
   );
-  const expectedConcentrateKg = totalMassFlowKgPerSecond(result.concentrateRates.componentMassFlowKgPerSecond) * dt;
+  const expectedConcentrateKg = totalMassFlowKgPerSecond(result.concentrateSolidState) * dt;
   const acceptedConcentrateKg = hopperReceiveInflow(
     stagedConcentrate,
-    result.concentrateRates.componentMassFlowKgPerSecond,
-    result.concentrateRates.particleSizeMm,
+    result.concentrateSolidState,
     dt
   );
   assertTransferAccepted(expectedConcentrateKg, acceptedConcentrateKg, 'Magnetic Separator concentrate');
 
-  const expectedTailingsKg = totalMassFlowKgPerSecond(result.tailingsRates.componentMassFlowKgPerSecond) * dt;
+  const expectedTailingsKg = totalMassFlowKgPerSecond(result.tailingsSolidState) * dt;
   const acceptedTailingsKg = hopperReceiveInflow(
     stagedTailings,
-    result.tailingsRates.componentMassFlowKgPerSecond,
-    result.tailingsRates.particleSizeMm,
+    result.tailingsSolidState,
     dt
   );
   assertTransferAccepted(expectedTailingsKg, acceptedTailingsKg, 'Magnetic Separator tailings');
 
-  commitHopperPhysicalState(inputHopper, stagedInput);
-  commitHopperPhysicalState(concentrateHopper, stagedConcentrate);
-  commitHopperPhysicalState(tailingsHopper, stagedTailings);
-  updateConnectionStream(blueprint, inputConnection, withdrawal.actualRates, particleSizeMm);
-  updateConnectionStream(blueprint, concentrateConnection, result.concentrateRates.componentMassFlowKgPerSecond, result.concentrateRates.particleSizeMm);
-  updateConnectionStream(blueprint, tailingsConnection, result.tailingsRates.componentMassFlowKgPerSecond, result.tailingsRates.particleSizeMm);
+  commitHopperMaterialState(inputHopper, stagedInput);
+  commitHopperMaterialState(concentrateHopper, stagedConcentrate);
+  commitHopperMaterialState(tailingsHopper, stagedTailings);
+  updateConnectionStream(blueprint, inputConnection, actualFeed);
+  updateConnectionStream(blueprint, concentrateConnection, result.concentrateSolidState);
+  updateConnectionStream(blueprint, tailingsConnection, result.tailingsSolidState);
   node.lastError = null;
   node.operatingState = 'running';
 }
@@ -633,18 +626,18 @@ function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
     const rate = Math.min(DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S, availableKg / dt, freeKg / dt);
     if (rate <= TRANSFER_TOLERANCE_KG) continue;
 
-    const rates = proportionalRatesFromHopper(source, rate);
-    const particleSizeMm = source.particleSizeMm;
-    const stagedSource = cloneHopperPhysicalState(source);
-    const stagedTarget = cloneHopperPhysicalState(target);
-    const withdrawal = hopperWithdraw(stagedSource, rates, dt);
+    const rates = proportionalSolidStateFromHopper(source, rate);
+    const stagedSource = cloneHopperMaterialState(source);
+    const stagedTarget = cloneHopperMaterialState(target);
+    const withdrawal = hopperWithdraw(stagedSource, rate, dt);
     if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) continue;
 
-    const acceptedKg = hopperReceiveInflow(stagedTarget, withdrawal.actualRates, particleSizeMm, dt);
+    const actualFlow = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
+    const acceptedKg = hopperReceiveInflow(stagedTarget, actualFlow, dt);
     assertTransferAccepted(withdrawal.actualTotalKg, acceptedKg, 'Boundary storage link');
-    commitHopperPhysicalState(source, stagedSource);
-    commitHopperPhysicalState(target, stagedTarget);
-    updateConnectionStream(blueprint, connection, withdrawal.actualRates, particleSizeMm);
+    commitHopperMaterialState(source, stagedSource);
+    commitHopperMaterialState(target, stagedTarget);
+    updateConnectionStream(blueprint, connection, actualFlow);
   }
 }
 

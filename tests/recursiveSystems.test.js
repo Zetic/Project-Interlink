@@ -75,9 +75,9 @@ function connectTestFeature(blueprint, world, extractor) {
   return node;
 }
 
-test('schema v7 records canonical Site Feature ResourceOccurrence ownership', () => {
-  assert.equal(SCHEMA_VERSION, 7);
-  assert.equal(createWorld('schema-seven').schemaVersion, 7);
+test('schema v8 records canonical Site Feature ResourceOccurrence ownership', () => {
+  assert.equal(SCHEMA_VERSION, 8);
+  assert.equal(createWorld('schema-eight').schemaVersion, 8);
 });
 
 test('active machinery starts disabled and reports off', () => {

@@ -1,6 +1,7 @@
 /** Schema and generator version constants. */
 
 // Schema v7: Regions own Sites, Sites own Features, and all ResourceOccurrences are Feature-owned.
-// Generator v4: each localized Feature defaults to exactly one ResourceOccurrence; independent sources at a Site become distinct Features.
-export const SCHEMA_VERSION = 7;
-export const GENERATOR_VERSION = 4;
+// Schema v8: MaterialBatch serialization requires canonical fraction-aware materialBody state.
+// Generator v5: deterministic iron-ore compositions use explicit quartz species in canonical occurrence composition.
+export const SCHEMA_VERSION = 8;
+export const GENERATOR_VERSION = 5;

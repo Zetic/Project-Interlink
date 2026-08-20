@@ -1,4 +1,17 @@
-const MASS_TOLERANCE_KG = 1e-9;
+import { particleSizeBinIdForMm } from './particleSizeBins.js';
+import {
+  SOLID_MATERIAL_TOLERANCE as MASS_TOLERANCE_KG,
+  addSolidFractionDirect,
+  cloneSolidMaterialBody,
+  createSolidMaterialBody,
+  createSolidMaterialState,
+  roundSolidQuantity,
+  summarizeSolidMaterialByLiberationClass,
+  summarizeSolidMaterialBySizeBin,
+  summarizeSolidMaterialBySpecies,
+  totalSolidQuantity,
+  validateSolidMaterialBody,
+} from './solidMaterialState.js';
 
 function assertFiniteNonNegativeNumber(value, label) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
@@ -9,7 +22,7 @@ function assertFiniteNonNegativeNumber(value, label) {
   }
 }
 
-function assertParticleSizeMm(value) {
+function assertLegacyParticleSizeMm(value) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
     throw new Error('particleSizeMm must be a finite number');
   }
@@ -53,7 +66,7 @@ export function normalizeMaterialProvenance(provenance = {}) {
 }
 
 export function roundKg(value) {
-  return parseFloat(value.toFixed(6));
+  return roundSolidQuantity(value);
 }
 
 export function sumComponentMassKg(componentsKg) {
@@ -75,14 +88,38 @@ export function validateComponentsKg(componentsKg) {
   }
 }
 
+function legacyMaterialBodyFromComponents(componentsKg, particleSizeMm, liberationClassId = 'partial') {
+  validateComponentsKg(componentsKg);
+  assertLegacyParticleSizeMm(particleSizeMm);
+  const solidState = createSolidMaterialState();
+  const sizeBinId = particleSizeBinIdForMm(particleSizeMm);
+  for (const [speciesId, massKg] of Object.entries(componentsKg)) {
+    addSolidFractionDirect(solidState, { speciesId, sizeBinId, liberationClassId, quantity: roundKg(massKg) });
+  }
+  return createSolidMaterialBody(solidState);
+}
+
+function summarizeMaterialBody(materialBody) {
+  validateSolidMaterialBody(materialBody);
+  const componentsKg = summarizeSolidMaterialBySpecies(materialBody.solidState);
+  const totalMassKg = roundKg(totalSolidQuantity(materialBody.solidState));
+  return {
+    componentsKg,
+    totalMassKg,
+    sizeDistributionKg: summarizeSolidMaterialBySizeBin(materialBody.solidState),
+    liberationDistributionKg: summarizeSolidMaterialByLiberationClass(materialBody.solidState),
+  };
+}
+
 export function createMaterialBatch({
   id,
   sourceOccurrenceId = null,
   resourceId = null,
-  particleSizeMm,
+  materialBody = null,
+  particleSizeMm = null,
   provenance = {},
   status = 'available',
-  componentsKg,
+  componentsKg = null,
 }) {
   if (!id || typeof id !== 'string') throw new Error('Material batch id must be a non-empty string');
   if (sourceOccurrenceId != null && (typeof sourceOccurrenceId !== 'string' || !sourceOccurrenceId)) {
@@ -92,28 +129,27 @@ export function createMaterialBatch({
     throw new Error('resourceId must be a non-empty string when provided');
   }
   if (!['available', 'consumed'].includes(status)) throw new Error(`Unsupported batch status '${status}'`);
-  assertParticleSizeMm(particleSizeMm);
 
-  validateComponentsKg(componentsKg);
+  const normalizedMaterialBody = materialBody
+    ? cloneSolidMaterialBody(materialBody)
+    : legacyMaterialBodyFromComponents(componentsKg, particleSizeMm);
   const normalizedProvenance = normalizeMaterialProvenance(provenance);
-
-  const normalizedComponentsKg = {};
-  for (const [componentId, massKg] of Object.entries(componentsKg)) {
-    normalizedComponentsKg[componentId] = roundKg(massKg);
-  }
-
-  const totalMassKg = roundKg(sumComponentMassKg(normalizedComponentsKg));
-  if (totalMassKg <= MASS_TOLERANCE_KG) throw new Error('Material batch total mass must be greater than zero');
+  const summary = summarizeMaterialBody(normalizedMaterialBody);
+  if (summary.totalMassKg <= MASS_TOLERANCE_KG) throw new Error('Material batch total mass must be greater than zero');
 
   return {
     id,
     sourceOccurrenceId,
     resourceId,
-    particleSizeMm: parseFloat(particleSizeMm.toFixed(3)),
+    physicalForm: normalizedMaterialBody.physicalForm,
+    particleSizeMm,
+    materialBody: normalizedMaterialBody,
     provenance: normalizedProvenance,
     status,
-    totalMassKg,
-    componentsKg: normalizedComponentsKg,
+    totalMassKg: summary.totalMassKg,
+    componentsKg: summary.componentsKg,
+    sizeDistributionKg: summary.sizeDistributionKg,
+    liberationDistributionKg: summary.liberationDistributionKg,
   };
 }
 

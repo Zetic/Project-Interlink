@@ -170,7 +170,7 @@ test('crushing conserves mass and constituents while reducing particle size', ()
   assert.strictEqual(crushed.provenance.createdByProcessRunId, result.id);
 });
 
-test('invalid crushing target fails clearly and committed state remains atomic', () => {
+test('invalid crushing parameters fail clearly and committed state remains atomic', () => {
   const { world, occurrence } = createWorldWithMagneticCompatibleOccurrence();
   const batch = acquireSampleFromOccurrence(world, occurrence.id, 10);
   const worldSnapshot = JSON.parse(JSON.stringify(world));
@@ -180,9 +180,9 @@ test('invalid crushing target fails clearly and committed state remains atomic',
       world,
       CRUSHING_PROCESS_ID,
       { feed: batch.id },
-      { targetParticleSizeMm: batch.particleSizeMm }
+      { targetParticleSizeMm: 0 }
     ),
-    /requires targetParticleSizeMm below current feed size/
+    /must be within \[1, 120\]/
   );
 
   assert.deepStrictEqual(world, worldSnapshot, 'Failed crushing commit must not consume input, create outputs, or advance counters');
@@ -415,7 +415,7 @@ test('invalid process parameters and unsupported components are rejected clearly
 
   assert.throws(
     () => executeProcess(processDefinition, { feed: fakeBatch }, { fieldStrength: 0.5 }),
-    /does not support component/
+    /does not support species 'chalcopyrite' without magnetic response data/
   );
 });
 

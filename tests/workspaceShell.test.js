@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  compactCompositionSummaryHtml,
   navigationFilterState,
   nodeCatalogFilterState,
   navigationVisibilityState,
@@ -159,4 +160,19 @@ test('navigation filter UI retains the canonical vocabulary while honoring hidde
   ]);
   assert.equal(state.visibleCategories.has('apparatus'), false);
   assert.equal(state.visibleCategories.has('container'), true);
+});
+
+test('compact composition summaries group overflow species behind an explicit reveal control', () => {
+  const html = compactCompositionSummaryHtml([
+    { label: 'Magnetite', quantity: 4, percentage: 40 },
+    { label: 'Hematite', quantity: 2.5, percentage: 25 },
+    { label: 'Quartz', quantity: 1.5, percentage: 15 },
+    { label: 'Goethite', quantity: 1, percentage: 10 },
+    { label: 'Pyrite', quantity: 0.7, percentage: 7 },
+    { label: 'Galena', quantity: 0.3, percentage: 3 },
+  ], 'no stored material');
+
+  assert.match(html, /Other/);
+  assert.match(html, /Show 2 more species/);
+  assert.equal((html.match(/ws-ins-comp-details/g) ?? []).length, 1);
 });

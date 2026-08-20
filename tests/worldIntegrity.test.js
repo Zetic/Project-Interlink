@@ -13,10 +13,10 @@ function buildWorld(seed = 'integrity-test') {
 
 test('world uses the Site/Feature resource schema and generator versions', () => {
   const world = buildWorld();
-  assert.equal(SCHEMA_VERSION, 7);
-  assert.equal(GENERATOR_VERSION, 4);
-  assert.equal(world.schemaVersion, 7);
-  assert.equal(world.generatorVersion, 4);
+  assert.equal(SCHEMA_VERSION, 8);
+  assert.equal(GENERATOR_VERSION, 5);
+  assert.equal(world.schemaVersion, 8);
+  assert.equal(world.generatorVersion, 5);
 });
 
 test('planetId and every planet region ID resolve', () => {
@@ -163,6 +163,18 @@ test('validateWorld returns no errors for a freshly generated world', () => {
   assert.deepStrictEqual(validateWorld(world), []);
 });
 
+test('validateWorld rejects stale schema versions clearly before structural validation', () => {
+  const world = buildWorld('stale-schema-version');
+  world.schemaVersion = SCHEMA_VERSION - 1;
+  assert.deepStrictEqual(validateWorld(world), [`Unsupported schemaVersion '${SCHEMA_VERSION - 1}'; expected ${SCHEMA_VERSION}`]);
+});
+
+test('validateWorld rejects stale generator versions clearly before structural validation', () => {
+  const world = buildWorld('stale-generator-version');
+  world.generatorVersion = GENERATOR_VERSION - 1;
+  assert.deepStrictEqual(validateWorld(world), [`Unsupported generatorVersion '${GENERATOR_VERSION - 1}'; expected ${GENERATOR_VERSION}`]);
+});
+
 test('generated localized Features each have exactly one ResourceOccurrence', () => {
   const world = buildWorld('one-occ-per-feature');
   const localizedFeatures = Object.values(world.features).filter(feature => !feature.regionalAccess);
@@ -191,9 +203,9 @@ test('a localized Site can contain multiple distinct Features', () => {
   assert.ok(foundMultiFeatureSite, 'At least one localized Site should contain multiple Features across tested seeds');
 });
 
-test('deterministic generation: same seed produces identical worlds under generator v4', () => {
-  const world1 = buildWorld('determinism-v4');
-  const world2 = buildWorld('determinism-v4');
+test('deterministic generation: same seed produces identical worlds under generator v5', () => {
+  const world1 = buildWorld('determinism-v5');
+  const world2 = buildWorld('determinism-v5');
   assert.deepStrictEqual(
     Object.keys(world1.features).sort(),
     Object.keys(world2.features).sort(),
