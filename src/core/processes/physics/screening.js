@@ -11,7 +11,7 @@ const SCREENING_TOLERANCE = 1e-9;
 
 /**
  * Ideal sharp-cut screening. Existing fractions are routed without changing
- * species, particle-size class, liberation class, or quantity.
+ * species, particle-size class, liberation class, texture lineage, or quantity.
  *
  * Fractions whose size-bin upper bound is at or below the aperture are routed
  * to undersize; coarser fractions are routed to oversize.
@@ -22,8 +22,9 @@ export function splitScreenedSolidState(solidState, apertureSizeMm) {
     throw new Error('Screen apertureSizeMm must be a finite positive number');
   }
 
-  const undersize = createSolidMaterialState();
-  const oversize = createSolidMaterialState();
+  const stateOptions = { textureProfiles: solidState.textureProfiles ?? {} };
+  const undersize = createSolidMaterialState([], stateOptions);
+  const oversize = createSolidMaterialState([], stateOptions);
 
   for (const fraction of iterateSolidFractions(solidState)) {
     const bin = requireParticleSizeBin(fraction.sizeBinId);
