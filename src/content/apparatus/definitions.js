@@ -3,6 +3,7 @@ import {
  defaultProcessParameters,
  getProcessDefinition,
  MAGNETIC_SEPARATION_PROCESS_ID,
+ SCREENING_PROCESS_ID,
  validateProcessParameters,
 } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
@@ -73,7 +74,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   }),
   hopper: Object.freeze({
     nodeType: 'hopper',
-    catalog: catalog('hopper', 'Hopper', 'container', 'Stores discrete material constituents between processing nodes.', ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'], 40),
+    catalog: catalog('hopper', 'Hopper', 'container', 'Stores discrete material constituents between processing nodes.', ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'], 50),
     defaults: Object.freeze({ capacityKg: 1000 }),
     ports: Object.freeze([
       solidInputPort('input', PORT_CAPABILITIES.SOLID_PARTICULATE, 'inputPortId', 'in'),
@@ -104,10 +105,28 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     ]),
     parameters: processParameters(CRUSHING_PROCESS_ID),
   }),
+  screen: Object.freeze({
+    nodeType: 'screen',
+    processId: SCREENING_PROCESS_ID,
+    catalog: catalog('screen', 'Screen', 'apparatus', 'Separates solid particulate material into undersize and oversize streams by particle-size cut.', ['screen', 'sieve', 'screening', 'size separation', 'undersize', 'oversize', 'particle'], 30),
+    defaults: Object.freeze({
+      ...defaultProcessParameters(SCREENING_PROCESS_ID),
+      throughputKgPerSecond: 4,
+    }),
+    ports: Object.freeze([
+      solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
+      solidOutputPort('undersize', undefined, 'undersizePortId'),
+      solidOutputPort('oversize', undefined, 'oversizePortId'),
+    ]),
+    capabilities: Object.freeze([
+      Object.freeze({ id: 'throughputKgPerSecond', label: 'Rated throughput', unit: 'kg/s' }),
+    ]),
+    parameters: processParameters(SCREENING_PROCESS_ID),
+  }),
   magSep: Object.freeze({
     nodeType: 'magSep',
     processId: MAGNETIC_SEPARATION_PROCESS_ID,
-    catalog: catalog('magnetic-separator', 'Magnetic Separator', 'apparatus', 'Separates material streams using magnetic response.', ['magnetic separator', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings'], 30),
+    catalog: catalog('magnetic-separator', 'Magnetic Separator', 'apparatus', 'Separates material streams using magnetic response.', ['magnetic separator', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings'], 40),
     defaults: Object.freeze({
       ...defaultProcessParameters(MAGNETIC_SEPARATION_PROCESS_ID),
       throughputKgPerSecond: 4,

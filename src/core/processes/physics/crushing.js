@@ -27,16 +27,38 @@ function requireCrusherTargetSizeBinId(targetParticleSizeMm) {
   return particleSizeBinIdForMm(targetParticleSizeMm);
 }
 
-function computedCrushingSizeShares(inputSizeBinId, targetSizeBinId) {
+function computedCrushingSizeShares(inputSizeBinId, targetSizeBinId, targetParticleSizeMm) {
   const inputIndex = particleSizeBinIndex(inputSizeBinId);
   const targetIndex = particleSizeBinIndex(targetSizeBinId);
   if (inputIndex <= targetIndex) return [{ sizeBinId: inputSizeBinId, share: 1 }];
-  const entries = [{ sizeBinId: targetSizeBinId, share: 0.65 }];
+
+  const orderedSizeBinIds = listOrderedSizeBinIds();
+
+  // Preserve historical behavior for persisted legacy 10/12 mm settings. New
+  // player-facing canonical settings model a nominal crusher product rather
+  // than a perfect maximum-size cutoff.
+  if ([10, 12].includes(targetParticleSizeMm)) {
+    const entries = [{ sizeBinId: targetSizeBinId, share: 0.65 }];
+    const finerIndex = Math.max(0, targetIndex - 1);
+    entries.push({ sizeBinId: orderedSizeBinIds[finerIndex], share: 0.25 });
+    const finestIndex = Math.max(0, targetIndex - 2);
+    entries.push({ sizeBinId: orderedSizeBinIds[finestIndex], share: 0.1 });
+    return mergeShares(entries);
+  }
+
+  // Crushers produce a particle-size distribution, not a perfect classifier.
+  // A nominal setting therefore leaves a deterministic oversize population
+  // for a downstream Screen to classify/recycle. Finer shares merge naturally
+  // at the lower end of the available size-bin vocabulary.
+  const coarserIndex = Math.min(orderedSizeBinIds.length - 1, targetIndex + 1);
   const finerIndex = Math.max(0, targetIndex - 1);
-  entries.push({ sizeBinId: listOrderedSizeBinIds()[finerIndex], share: 0.25 });
   const finestIndex = Math.max(0, targetIndex - 2);
-  entries.push({ sizeBinId: listOrderedSizeBinIds()[finestIndex], share: 0.1 });
-  return mergeShares(entries);
+  return mergeShares([
+    { sizeBinId: orderedSizeBinIds[coarserIndex], share: 0.10 },
+    { sizeBinId: targetSizeBinId, share: 0.55 },
+    { sizeBinId: orderedSizeBinIds[finerIndex], share: 0.25 },
+    { sizeBinId: orderedSizeBinIds[finestIndex], share: 0.10 },
+  ]);
 }
 
 function listOrderedSizeBinIds() {
@@ -122,7 +144,11 @@ export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
   let sawFeed = false;
   forEachSolidFraction(feedSolidState, (fraction) => {
     sawFeed = true;
-    const sizeShares = computedCrushingSizeShares(fraction.sizeBinId, targetSizeBinId);
+    const sizeShares = computedCrushingSizeShares(
+      fraction.sizeBinId,
+      targetSizeBinId,
+      targetParticleSizeMm,
+    );
     for (const outputShare of sizeShares) {
       distributeLiberationMass(
         product,

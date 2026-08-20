@@ -13,7 +13,7 @@ test('choice-backed apparatus parameters expose canonical dropdown options from 
 
   const options = apparatusParameterSelectionOptions('targetParticleSizeMm', 25);
   assert.deepEqual(options.map(option => option.value), [1, 5, 15, 25, 60, 120]);
-  assert.deepEqual(options.map(option => option.label), ['≤1', '≤5', '≤15', '≤25', '≤60', '≤120']);
+  assert.deepEqual(options.map(option => option.label), ['1', '5', '15', '25', '60', '120']);
   assert.equal(options.find(option => option.value === 25)?.selected, true);
 });
 

@@ -114,22 +114,28 @@ test('process definitions, pure kernels, and conservation policies have separate
 
 test('apparatus identity and runtime behavior are registry-backed', () => {
   assert.equal(APPARATUS_DEFINITIONS.crusher.catalog.label, 'Crusher');
+  assert.equal(APPARATUS_DEFINITIONS.screen.catalog.label, 'Screen');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.crusher.create, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.screen.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.magSep.simulate, 'function');
   assert.equal(apparatusRuntimeFor('crusher'), APPARATUS_RUNTIME_REGISTRY.crusher);
+  assert.equal(apparatusRuntimeFor('screen'), APPARATUS_RUNTIME_REGISTRY.screen);
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.id),
-    ['extractor', 'crusher', 'magnetic-separator', 'hopper'],
+    ['extractor', 'crusher', 'screen', 'magnetic-separator', 'hopper'],
   );
 
   _resetOrdinals();
   const blueprint = createBlueprint();
   const crusher = blueprintAddApparatus(blueprint, 'crusher');
+  const screen = blueprintAddApparatus(blueprint, 'screen');
   assert.equal(crusher.throughputKgPerSecond, APPARATUS_DEFINITIONS.crusher.defaults.throughputKgPerSecond);
+  assert.equal(screen.apertureSizeMm, APPARATUS_DEFINITIONS.screen.defaults.apertureSizeMm);
   assert.equal(
     getNodePortDefinitions(crusher).find(port => port.id === 'feed').accepts[0],
     'stored-solid-particulate',
   );
+  assert.deepEqual(getNodePortDefinitions(screen).map(port => port.id), ['feed', 'undersize', 'oversize']);
 });
 
 test('resource and apparatus definitions are available from content registries', () => {

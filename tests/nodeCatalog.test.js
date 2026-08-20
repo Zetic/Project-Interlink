@@ -10,14 +10,14 @@ import {
 
 const byId = id => NODE_DEFINITIONS.find(definition => definition.id === id);
 
-test('NODE catalog exposes the initial primitive definitions and existing categories', () => {
+test('NODE catalog exposes the current primitive definitions and existing categories', () => {
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.label),
-    ['Extractor', 'Crusher', 'Magnetic Separator', 'Hopper'],
+    ['Extractor', 'Crusher', 'Screen', 'Magnetic Separator', 'Hopper'],
   );
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.category),
-    ['apparatus', 'apparatus', 'apparatus', 'container'],
+    ['apparatus', 'apparatus', 'apparatus', 'apparatus', 'container'],
   );
   for (const definition of NODE_DEFINITIONS) {
     assert.equal(typeof definition.create, 'function');
@@ -32,16 +32,17 @@ test('catalog projection is independent of currently instantiated blueprint node
   byId('crusher').create(blueprint);
   const projected = projectNodeCatalog();
 
-  assert.equal(empty.matchCount, 4);
-  assert.equal(projected.matchCount, 4);
-  assert.equal(projected.rows.flatMap(row => row.definitions).length, 4);
+  assert.equal(empty.matchCount, NODE_DEFINITIONS.length);
+  assert.equal(projected.matchCount, NODE_DEFINITIONS.length);
+  assert.equal(projected.rows.flatMap(row => row.definitions).length, NODE_DEFINITIONS.length);
   assert.equal(Object.keys(blueprint.nodes).length, 1);
 });
 
 test('catalog search is case-insensitive and matches deliberate function synonyms', () => {
   assert.deepEqual(projectNodeCatalog({ query: 'CRUSHER' }).rows[0].definitions.map(item => item.id), ['crusher']);
   assert.deepEqual(projectNodeCatalog({ query: 'grinding' }).rows[0].definitions.map(item => item.id), ['crusher']);
-  assert.deepEqual(projectNodeCatalog({ query: 'separation' }).rows[0].definitions.map(item => item.id), ['magnetic-separator']);
+  assert.deepEqual(projectNodeCatalog({ query: 'sieve' }).rows[0].definitions.map(item => item.id), ['screen']);
+  assert.deepEqual(projectNodeCatalog({ query: 'separation' }).rows[0].definitions.map(item => item.id), ['screen', 'magnetic-separator']);
   assert.deepEqual(projectNodeCatalog({ query: 'storage' }).rows[0].definitions.map(item => item.id), ['hopper']);
 });
 
@@ -52,7 +53,7 @@ test('category filters affect projection without changing the catalog definition
 
   assert.deepEqual(categories, ['apparatus', 'container']);
   assert.deepEqual(projection.rows.flatMap(row => row.definitions).map(item => item.id), ['hopper']);
-  assert.equal(NODE_DEFINITIONS.length, 4);
+  assert.equal(NODE_DEFINITIONS.length, 5);
 });
 
 test('definitions create the expected authoritative blueprint node types', () => {
@@ -60,10 +61,11 @@ test('definitions create the expected authoritative blueprint node types', () =>
   const nodes = [
     byId('extractor').create(blueprint, { occurrenceId: 'occurrence-1' }),
     byId('crusher').create(blueprint),
+    byId('screen').create(blueprint),
     byId('magnetic-separator').create(blueprint),
     byId('hopper').create(blueprint),
   ];
 
-  assert.deepEqual(nodes.map(node => node.nodeType), ['extractor', 'crusher', 'magSep', 'hopper']);
-  assert.equal(Object.keys(blueprint.nodes).length, 4);
+  assert.deepEqual(nodes.map(node => node.nodeType), ['extractor', 'crusher', 'screen', 'magSep', 'hopper']);
+  assert.equal(Object.keys(blueprint.nodes).length, 5);
 });
