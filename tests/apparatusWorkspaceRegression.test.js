@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const workspaceSource = readFileSync(new URL('../src/workspace/workspaceUI.js', import.meta.url), 'utf8');
+const workspaceSource = readFileSync(new URL('../src/workspace/workspaceController.js', import.meta.url), 'utf8');
 
 function functionSection(name, nextName) {
   const start = workspaceSource.indexOf(`function ${name}`);
-  assert.ok(start >= 0, `expected ${name} in workspaceUI.js`);
+  assert.ok(start >= 0, `expected ${name} in workspaceController.js`);
   const end = nextName ? workspaceSource.indexOf(`function ${nextName}`, start + 1) : workspaceSource.length;
   assert.ok(end > start, `expected ${nextName ?? 'end of file'} after ${name}`);
   return workspaceSource.slice(start, end);

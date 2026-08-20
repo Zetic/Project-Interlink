@@ -1,24 +1,14 @@
 /**
  * DOM-independent catalog of player-placeable engineering node definitions.
- *
- * Definitions are intentionally separate from graph instances. A definition
- * describes what may be placed; its create callback adds the authoritative
- * simulation node to a blueprint.
+ * Definitions are projected from the canonical apparatus registry so adding a
+ * placeable machine does not require a second registration list here.
  */
 
 import { blueprintAddApparatus } from '../../simulation/simulationEngine.js';
 import { APPARATUS_DEFINITIONS } from '../../content/apparatus/definitions.js';
 import { NODE_CATEGORIES } from '../graph/nodePresentation.js';
 
-function definition({
-  id,
-  label,
-  nodeType,
-  category,
-  description,
-  searchTerms,
-  create,
-}) {
+function definition({ id, label, nodeType, category, description, searchTerms, create }) {
   return Object.freeze({
     id,
     label,
@@ -30,14 +20,7 @@ function definition({
   });
 }
 
-const PLACEABLE_APPARATUS_ORDER = Object.freeze(['extractor', 'crusher', 'magSep', 'hopper']);
-
-export const NODE_DEFINITIONS = Object.freeze(
-  PLACEABLE_APPARATUS_ORDER.map(nodeType => placeableApparatus(nodeType))
-);
-
-function placeableApparatus(nodeType) {
-  const apparatus = APPARATUS_DEFINITIONS[nodeType];
+function placeableApparatus([nodeType, apparatus]) {
   if (!apparatus?.catalog) throw new Error(`Apparatus '${nodeType}' is missing catalog metadata`);
   const placementParameterIds = new Set([
     ...Object.keys(apparatus.defaults ?? {}),
@@ -59,6 +42,13 @@ function placeableApparatus(nodeType) {
     ),
   });
 }
+
+export const NODE_DEFINITIONS = Object.freeze(
+  Object.entries(APPARATUS_DEFINITIONS)
+    .filter(([, apparatus]) => apparatus.catalog?.placeable !== false)
+    .sort(([, a], [, b]) => (a.catalog?.order ?? 0) - (b.catalog?.order ?? 0))
+    .map(placeableApparatus)
+);
 
 const CATEGORY_ORDER = Object.values(NODE_CATEGORIES)
   .map(category => category.key)
@@ -96,9 +86,6 @@ export function nodeCatalogVisibleCategories(
   return new Set(categories.filter(category => !hiddenCategories.has(category)));
 }
 
-/**
- * Project definitions into deterministic grouped rows for the NODE panel.
- */
 export function projectNodeCatalog({
   definitions = NODE_DEFINITIONS,
   query = '',
