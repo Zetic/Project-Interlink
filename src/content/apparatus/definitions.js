@@ -227,7 +227,7 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   magSep: Object.freeze({
     nodeType: 'magSep',
     processId: MAGNETIC_SEPARATION_PROCESS_ID,
-    catalog: catalog('magnetic-separator', 'Dry Drum Magnetic Separator', 'apparatus', 'Dry coarse magnetic preconcentrator for recovering strongly magnetic material before fine grinding.', ['magnetic separator', 'dry drum', 'lims', 'cobbing', 'separator', 'magnetic', 'concentrate', 'tailings'], 90),
+    catalog: catalog('magnetic-separator', 'Dry Drum Magnetic Separator', 'apparatus', 'Dry coarse magnetic preconcentrator for recovering strongly magnetic material before fine grinding.', ['magnetic separator', 'dry drum', 'lims', 'cobbing', 'separator', 'separation', 'magnetic', 'concentrate', 'tailings'], 90),
     defaults: Object.freeze({
       ...defaultProcessParameters(MAGNETIC_SEPARATION_PROCESS_ID),
       throughputKgPerSecond: 4,
