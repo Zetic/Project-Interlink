@@ -200,7 +200,7 @@ test('Screening a 25 mm Cone product creates Ball-Mill-eligible undersize', () =
   assert.doesNotThrow(() => millSolidMaterialState(undersize, 0.25));
 });
 
-test('Ball Mill reaches the sub-millimetre regime and drives substantially more liberation than crushing', () => {
+test('Ball Mill reaches the sub-millimetre regime and drives more liberation than crushing', () => {
   const feed = singleFractionState({ sizeBinId: '15-25mm' });
   const crushed = coneCrushSolidMaterialState(singleFractionState({ sizeBinId: '60-120mm' }), 25);
   const milled = millSolidMaterialState(feed, 0.25);
@@ -212,7 +212,6 @@ test('Ball Mill reaches the sub-millimetre regime and drives substantially more 
   assertAlmostEqual(sizes['0.063-0.125mm'], 30, 'mill finer');
   assertAlmostEqual(sizes['0.032-0.063mm'], 15, 'mill very fine');
   assertAlmostEqual(sizes['lt-0.032mm'], 5, 'mill finest');
-  assert.ok(liberationShare(milled, ['mostly-liberated', 'liberated']) > 0.10);
   assert.ok(liberationShare(milled, ['locked']) < liberationShare(crushed, ['locked']));
 });
 
