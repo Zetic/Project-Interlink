@@ -6,8 +6,7 @@ export const SOLID_MATERIAL_TOLERANCE = 1e-9;
 export const SOLID_PARTICULATE_FORM = 'solid-particulate';
 
 function fractionKey(speciesId, sizeBinId, liberationClassId) {
-  const canonicalSpeciesId = requireMaterialConstituentId(speciesId);
-  return `${canonicalSpeciesId}|${sizeBinId}|${liberationClassId}`;
+  return `${speciesId}|${sizeBinId}|${liberationClassId}`;
 }
 
 function parseFractionKey(key) {
@@ -128,10 +127,7 @@ export function validateSolidMaterialState(state) {
   }
   for (const [key, quantity] of Object.entries(state.fractions)) {
     const { speciesId, sizeBinId, liberationClassId } = parseFractionKey(key);
-    const canonicalSpeciesId = requireMaterialConstituentId(speciesId);
-    if (canonicalSpeciesId !== speciesId) {
-      throw new Error(`Solid material fraction '${key}' uses legacy constituent '${speciesId}'; expected concrete species '${canonicalSpeciesId}'`);
-    }
+    requireMaterialConstituentId(speciesId);
     requireParticleSizeBin(sizeBinId);
     requireLiberationClass(liberationClassId);
     assertFiniteNonNegative(quantity, `Fraction '${key}' quantity`);
