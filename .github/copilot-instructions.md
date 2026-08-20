@@ -41,15 +41,7 @@ Preserve the current lightweight architecture unless an issue explicitly require
 
 Do not introduce a framework, backend, database, ECS, dependency-injection framework, WebAssembly, or another large infrastructure layer without a concrete requirement.
 
-Do not recreate removed architecture such as:
-
-- separate Debug/Player modes
-- a special Engineering workspace
-- structural Feature discovery gating
-- hierarchy-specific graph renderers or interaction models
-- finite positive-only graph coordinates
-- machine-pair connection whitelists
-- duplicate machine catalogs
+Do not recreate removed architecture such as separate Debug/Player modes, a special Engineering workspace, structural Feature discovery gating, hierarchy-specific graph renderers, finite positive-only graph coordinates, machine-pair connection whitelists, or duplicate machine catalogs.
 
 ---
 
@@ -58,26 +50,15 @@ Do not recreate removed architecture such as:
 Canonical domains are:
 
 ```text
-src/content/
-    declarative resources, Features, apparatus definitions
-
-src/core/
-    materials, properties, process definitions/physics/conservation,
-    neutral system primitives, world model/validation
-
-src/generator/
-    deterministic world-generation algorithms
-
-src/simulation/
-    running apparatus, streams, storage, fixed-step simulation,
-    boundary transfers
-
-src/workspace/
-    graph, placement, catalog, navigation, Inspector,
-    layout/UI state and DOM orchestration
-
-src/app.js
-    browser composition root
+src/content/     declarative resources, Features, apparatus definitions
+src/core/        materials, properties, process definitions/physics/conservation,
+                 neutral system primitives, world model/validation
+src/generator/   deterministic world-generation algorithms
+src/simulation/  running apparatus, streams, storage, fixed-step simulation,
+                 boundary transfers
+src/workspace/   graph, placement, catalog, navigation, Inspector,
+                 layout/UI state and DOM orchestration
+src/app.js       browser composition root
 ```
 
 Preferred dependency direction:
@@ -102,14 +83,9 @@ See `ARCHITECTURE.md` for the full current file tree.
 Keep these concerns separate:
 
 ```text
-World / Simulation State
-→ objective physical truth
-
-Knowledge State
-→ measurements, analysis, estimates, confidence
-
-UI / Application State
-→ selection, layout, viewport, panels, temporary interaction state
+World / Simulation State → objective physical truth
+Knowledge State          → measurements, analysis, estimates, confidence
+UI / Application State   → selection, layout, viewport, panels, temporary interaction state
 ```
 
 Physical truth must not exist only in DOM/UI objects. Graph layout, pan, zoom, selection, and temporary gestures are UI state and must not mutate world matter.
@@ -121,11 +97,7 @@ Physical truth must not exist only in DOM/UI objects. Graph layout, pan, zoom, s
 Preserve:
 
 ```text
-Planet
-→ Region
-→ Site
-→ Feature
-→ ResourceOccurrence
+Planet → Region → Site → Feature → ResourceOccurrence
 ```
 
 - Region groups Sites and does not own natural resource inventory or Features directly.
@@ -180,13 +152,7 @@ speciesId × sizeBinId × liberationClassId → quantity
 
 A fraction represents a population, not one simulated particle.
 
-Do not conflate:
-
-- **composition** — which species are present and how much;
-- **liberation** — how physically detached constituent populations are;
-- **separation** — routing based on physical properties or classifications.
-
-A fully liberated material can still be a mixed collection of separate mineral grains. Liberation is not purity.
+Do not conflate composition, liberation, separation, and routing. A fully liberated material can still be a mixed collection of separate mineral grains. Liberation is not purity. Splitter/Merger/Feeder routing must not silently change material descriptors.
 
 Current solid generation emits registered concrete species. Do not reintroduce generic pseudo-species such as `gangue`, `gangue-mixture`, or `ironOxides` as new authoritative generated output. Legacy aliases may remain only where compatibility requires them.
 
@@ -231,20 +197,11 @@ src/core/processes/
 Keep responsibilities distinct:
 
 ```text
-Definition
-→ inputs, outputs, parameters, applicability, metadata, conservation policy
-
-Pure physics
-→ material transformation/routing only
-
-Executor
-→ discrete MaterialBatch adaptation
-
-Continuous runtime
-→ placed-machine flow/backpressure adaptation
-
-Conservation
-→ validates conserved quantities appropriate to the process family
+Definition          → inputs, outputs, parameters, applicability, metadata, conservation policy
+Pure physics        → material transformation/routing only
+Executor            → discrete MaterialBatch adaptation
+Continuous runtime  → placed-machine flow/backpressure adaptation
+Conservation        → validates conserved quantities appropriate to the process family
 ```
 
 Pure physics must not depend on DOM/UI or placed graph nodes. Do not duplicate transformation algorithms between batch and continuous execution when both can call one physical kernel.
@@ -255,27 +212,9 @@ Current mechanical processes conserve species mass. Future chemical/thermal work
 
 ## Apparatus Architecture
 
-Canonical apparatus metadata lives in:
+Canonical apparatus metadata lives in `src/content/apparatus/definitions.js`. Runtime behavior lives under `src/simulation/apparatus/`, and runtime dispatch lives in `src/simulation/apparatus/registry.js`.
 
-```text
-src/content/apparatus/definitions.js
-```
-
-Definitions own identity, catalog metadata/order, placeability, canonical ports/capabilities, associated process, fixed capabilities, defaults, and configurable parameter metadata.
-
-Runtime behavior lives under:
-
-```text
-src/simulation/apparatus/
-```
-
-Runtime dispatch lives in:
-
-```text
-src/simulation/apparatus/registry.js
-```
-
-Current registry-backed node types include Extractor, Hopper, Crusher, Screen, and Magnetic Separator.
+Current registry-backed node types include Extractor, Hopper, Crusher, Screen, Splitter, Material Merger, Feeder, and Magnetic Separator.
 
 ### Adding a new apparatus
 
@@ -289,13 +228,7 @@ A future process apparatus such as Mill should normally require:
 6. runtime registry entry;
 7. focused tests.
 
-It should **not** normally require:
-
-- a machine-pair connection whitelist;
-- an independently authored NODE catalog entry;
-- a hardcoded removable-node type list;
-- a generic-Inspector eligibility type list;
-- a central simulation `if/switch` dispatch branch.
+It should **not** normally require a machine-pair whitelist, independently authored NODE catalog entry, hardcoded removable-node list, generic-Inspector eligibility list, or central simulation `if/switch` dispatch branch.
 
 Machine-specific Inspector presentation is allowed only as an enhancement; a newly registered active apparatus must remain functional/configurable through generic paths.
 
@@ -319,8 +252,9 @@ Rules:
 
 - do not reintroduce topology tables such as `hopper → crusher` or `hopper → screen`;
 - keep material and non-material relationships distinct;
-- one material output cannot fan out until an explicit Splitter exists;
-- one material input cannot silently combine multiple streams without an explicit merger/mixer contract;
+- an ordinary material output remains single-connection; explicit branching uses distinct Splitter output ports;
+- an ordinary material input remains single-source; explicit recombination uses distinct Material Merger input ports;
+- do not make the Material Merger a hidden physical Mixer — it only combines conserved particulate state;
 - do not apply material fan-out rules to `resource-access`.
 
 ---
@@ -350,7 +284,7 @@ Extraction preserves occurrence composition and materializes only the amount act
 - `MaterialStream` represents transfer-rate state, not stored inventory.
 - Storage integrates inflow/outflow over `dt`.
 - Missing/full required outputs block or throttle; never silently delete matter.
-- Multi-output processes commit atomically.
+- Multi-output and multi-input routing commits atomically.
 - Preserve per-species conservation for current mechanical processes.
 
 ---
@@ -359,38 +293,37 @@ Extraction preserves occurrence composition and materializes only the amount act
 
 ### Crusher
 
-Canonical target cuts:
+Canonical nominal product settings are `1, 5, 15, 25, 60, 120 mm`. Legacy noncanonical values may remain accepted only for old compatibility; do not expose them as new player choices.
 
-```text
-1, 5, 15, 25, 60, 120 mm
-```
-
-Legacy noncanonical values may remain accepted only for old compatibility; do not expose them as new player choices.
-
-An enabled connected Crusher with feed and capacity moves feasible material even if feed is already at/below target. Already-sized fractions pass unchanged.
+A canonical Crusher setting produces a nominal distribution rather than a perfect maximum cutoff. Coarse feed currently produces 10% one bin coarser, 55% in the nominal bin, 25% one bin finer, and 10% two bins finer. Already-sized fractions pass unchanged.
 
 ### Screen
 
-Screen has one stored particulate feed and two explicit outputs:
+Screen has one stored particulate feed and two explicit outputs. Canonical aperture choices are `1, 5, 15, 25, 60, 120 mm`.
 
-```text
-feed → Screen → undersize
-              → oversize
-```
+Current physics is an ideal sharp split: size-bin upper bound at/below aperture → undersize; coarser → oversize. Screening is routing only and must not change species, size-bin ID, liberation class, or quantity.
 
-Canonical aperture choices are:
+Both outputs are required. Continuous Screen execution must stage both outputs and feed transactionally.
 
-```text
-1, 5, 15, 25, 60, 120 mm
-```
+### Splitter
 
-Current physics is an ideal sharp split. A fraction whose size-bin upper bound is at/below the aperture routes to `undersize`; coarser fractions route to `oversize`.
+Splitter has one stored particulate feed and two explicit outputs. `splitFractionToA` is a player-configurable fraction in `[0,1]`. Apply the same split ratio to every existing fraction; do not alter species, size, liberation, or total mass.
 
-Screening is routing only: do not change species, size-bin ID, liberation class, or quantity while screening.
+Both outputs are currently required even when one configured share is zero. Downstream capacity must throttle the whole split transaction rather than allow partial branch loss.
 
-Both outputs are required. Continuous Screen execution must stage both outputs and feed transactionally so an unavailable required destination cannot cause partial consumption/loss.
+### Material Merger
 
-Do not add realistic near-cut misplacement, moisture effects, deck loading, shape effects, vibration, or other screen-efficiency physics unless the active task calls for them.
+Material Merger has two distinct stored-particulate inputs and one product output. It combines sparse material populations without changing fraction identity.
+
+Both input ports and the product port are connected interfaces; a connected input may be temporarily empty while the other continues. When combined availability exceeds the rating, current runtime draws both inputs proportionally to stored mass. Output backpressure scales both withdrawals together.
+
+Do not add homogeneity, residence-time, mixing intensity, viscosity, or other Mixer physics to this apparatus unless the active task explicitly evolves it into a different physical process.
+
+### Feeder
+
+Feeder meters particulate flow without transforming material. Current rated throughput is `10 kg/s`; player `flowRateKgPerSecond` ranges from `0` to `10` and defaults to `4`.
+
+A zero setpoint idles without consuming feed. Composition, particle-size distribution, and liberation pass unchanged. Downstream capacity applies normal backpressure.
 
 ### Magnetic Separator
 
@@ -425,18 +358,7 @@ Composite matter exchange uses explicit boundary storage/ports.
 
 ## Shared Graph and Workspace
 
-Planet, Region, Site, and future recursive systems use the same graph language:
-
-```text
-nodes
-ports
-edges
-selection
-inspection
-drag / rearrange
-connect / disconnect
-drill-down for composites
-```
+Planet, Region, Site, and future recursive systems use the same graph language: nodes, ports, edges, selection, inspection, drag/rearrange, connect/disconnect, and drill-down for composites.
 
 - persistent relationships in the current workspace must have visible edges;
 - edge meaning is typed;
@@ -460,14 +382,7 @@ src/workspace/shell/
 
 ## Compatibility Entry Points
 
-The restructure retained thin forwarding/compatibility modules in portions of:
-
-- `src/core/materials/`
-- `src/core/processes/`
-- `src/core/world/worldState.js`
-- `src/simulation/`
-- `src/workspace/`
-- `src/data/`
+The restructure retained thin forwarding/compatibility modules in portions of `src/core/materials/`, `src/core/processes/`, `src/core/world/worldState.js`, `src/simulation/`, `src/workspace/`, and `src/data/`.
 
 A compatibility file must not become a second implementation home. Do not add authoritative content, machine behavior, or duplicate physics there when a canonical location exists.
 
@@ -475,18 +390,9 @@ A compatibility file must not become a second implementation home. Do not add au
 
 ## Scope Control
 
-Unless the active task explicitly requires them, do not add:
+Unless the active task explicitly requires them, do not add full chemistry/speciation, giant resource/mineral databases, power/energy networks, logistics systems, sensors/controllers, multiplayer/backend infrastructure, star/system expansion, reserve/depletion systems, speculative material properties with no active process consumer, or unrelated gameplay features.
 
-- full chemistry/speciation
-- giant resource/mineral databases
-- power/energy networks
-- logistics systems
-- sensors/controllers
-- multiplayer/backend infrastructure
-- star/system generation expansion
-- reserve/depletion systems
-- speculative material properties with no active process consumer
-- unrelated gameplay features
+The next major fine-processing work should be treated as a coherent capability package where practical: Mill/Grinder behavior, finer particle-size classes, fine classification, and a downstream separation method that actually benefits from fine liberation should be considered together rather than introducing an isolated Mill with no useful consumer.
 
 ---
 
