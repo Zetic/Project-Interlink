@@ -12,8 +12,7 @@ import {
   HOPPER_TOLERANCE_KG,
   hopperStoredMassKg,
 } from '../../simulation/hopperNode.js';
-
-const REMOVABLE_NODE_TYPES = new Set(['extractor', 'crusher', 'magSep', 'hopper']);
+import { getApparatusDefinition } from '../../content/apparatus/definitions.js';
 
 function resolveNode(blueprint, nodeOrId) {
   if (typeof nodeOrId === 'string') return blueprint?.nodes?.[nodeOrId] ?? null;
@@ -21,15 +20,16 @@ function resolveNode(blueprint, nodeOrId) {
 }
 
 function isPlayerRemovableNode(node) {
-  return Boolean(node)
-    && REMOVABLE_NODE_TYPES.has(node.nodeType)
-    && !node.boundaryRole
-    && node.systemType !== 'boundary-buffer';
+  if (!node || node.boundaryRole || node.systemType === 'boundary-buffer') return false;
+  const definition = getApparatusDefinition(node.nodeType);
+  return Boolean(definition?.catalog && definition.catalog.placeable !== false);
 }
 
 /**
  * Return the persistent material owned by a node. Add future storage owners
- * here rather than spreading node-type checks through UI event handlers.
+ * here when they are introduced rather than spreading ownership checks through
+ * UI event handlers. Stateless/transactional process apparatus own no material
+ * between simulation steps and therefore return zero.
  */
 export function nodeOwnedMatterKg(node) {
   if (node?.nodeType === 'hopper') return hopperStoredMassKg(node);
@@ -81,5 +81,3 @@ export function removeBlueprintNode(blueprint, layout, nodeOrId) {
   if (layout?.nodePositions) delete layout.nodePositions[nodeId];
   return { removed: true, ...eligibility };
 }
-
-export { REMOVABLE_NODE_TYPES };
