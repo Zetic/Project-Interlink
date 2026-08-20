@@ -32,7 +32,7 @@ content + deterministic RNG + core world assembly
                generated world
 ```
 
-The application composes generation and the workspace; the core model does not need to know about browser rendering.
+The application composes generation, Knowledge State, and the workspace; the core model does not need to know about browser rendering.
 
 ---
 
@@ -43,6 +43,7 @@ New code should preserve this broad dependency direction:
 ```text
 src/app.js
 ├── generator
+├── core
 └── workspace
 
 workspace
@@ -67,12 +68,12 @@ core
 
 ### Rules
 
-- `core` contains reusable physical, process, world-model, validation, and neutral system abstractions. It must not depend on workspace/UI or simulation runtime code.
+- `core` contains reusable physical, process, world-model, validation, Knowledge-State, and neutral system abstractions. It must not depend on workspace/UI or simulation runtime code.
 - `content` defines what resources, Features, apparatus, and similar catalog entries exist. It may reference core contracts but should not contain running simulation behavior.
 - `generator` decides what deterministic world content appears from physical conditions and seeded RNG. It consumes content definitions rather than owning those definitions.
 - `simulation` owns continuous runtime behavior, inventories, streams, apparatus execution, world-time advancement, and boundary transfer.
 - `workspace` owns player-facing graph projection, layout, navigation, catalog interaction, Inspector presentation, and DOM orchestration. It does not own physical truth.
-- `src/app.js` is the composition root for the browser application.
+- `src/app.js` is the composition root for the browser application and may compose generator, core application-facing state such as Knowledge State, and workspace modules.
 
 ### Legacy compatibility exception
 
@@ -116,7 +117,7 @@ Project-Interlink/
 └── tests/
 ```
 
-The sections below describe the `src/` tree in detail.
+The sections below describe the `src/` tree in detail. `tests/` is intentionally organized by behavior/domain rather than mirroring source folders one-for-one; architecture, simulation, material, generation, navigation, catalog, and UI contracts all have regression coverage there.
 
 ---
 
