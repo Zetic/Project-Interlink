@@ -33,11 +33,12 @@ const solidInputPort = (
   id,
   accepts = PORT_CAPABILITIES.SOLID_PARTICULATE,
   runtimePortField = 'inputPortId',
+  label = id,
 ) => Object.freeze({
   id,
   direction: 'input',
   kind: 'material',
-  label: id,
+  label,
   accepts: Object.freeze([accepts]),
   runtimePortField,
 });
@@ -45,11 +46,12 @@ const solidOutputPort = (
   id,
   provides = [PORT_CAPABILITIES.SOLID_PARTICULATE],
   runtimePortField = 'outputPortId',
+  label = id,
 ) => Object.freeze({
   id,
   direction: 'output',
   kind: 'material',
-  label: id,
+  label,
   provides: Object.freeze(Array.isArray(provides) ? [...provides] : [provides]),
   runtimePortField,
 });
@@ -74,11 +76,11 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
     catalog: catalog('hopper', 'Hopper', 'container', 'Stores discrete material constituents between processing nodes.', ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'], 40),
     defaults: Object.freeze({ capacityKg: 1000 }),
     ports: Object.freeze([
-      solidInputPort('input'),
+      solidInputPort('input', PORT_CAPABILITIES.SOLID_PARTICULATE, 'inputPortId', 'in'),
       solidOutputPort('output', [
         PORT_CAPABILITIES.SOLID_PARTICULATE,
         PORT_CAPABILITIES.STORED_SOLID_PARTICULATE,
-      ]),
+      ], 'outputPortId', 'out'),
     ]),
     capabilities: Object.freeze([
       Object.freeze({ id: 'capacityKg', label: 'Capacity', unit: 'kg' }),
