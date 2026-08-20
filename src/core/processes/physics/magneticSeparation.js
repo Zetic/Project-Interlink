@@ -22,9 +22,15 @@ const MAGNETIC_SEPARATOR_BASE_CARRYOVER = 0.02;
 
 function particleSizeSuitability(binId) {
   switch (binId) {
-    case 'lt-1mm': return 0.4;
+    case 'lt-0.032mm': return 0.05;
+    case '0.032-0.063mm': return 0.10;
+    case '0.063-0.125mm': return 0.15;
+    case '0.125-0.25mm': return 0.20;
+    case '0.25-0.5mm': return 0.30;
+    case '0.5-1mm':
+    case 'lt-1mm': return 0.40;
     case '1-5mm': return 0.65;
-    case '5-15mm': return 0.9;
+    case '5-15mm': return 0.90;
     case '15-25mm': return 1;
     default: return 0;
   }
