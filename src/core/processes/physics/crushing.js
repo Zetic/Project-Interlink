@@ -76,6 +76,7 @@ function distributeLiberationMass(
   outputState,
   speciesId,
   inputLiberationClassId,
+  textureProfileId,
   inputSizeBinId,
   outputSizeBinId,
   massKg,
@@ -88,47 +89,28 @@ function distributeLiberationMass(
   const sizeImprovement = Math.max(0, inputSizeIndex - outputSizeIndex);
   const maxLift = Math.min(maxIndex - inputIndex, sizeImprovement >= 2 ? 2 : sizeImprovement >= 1 ? 1 : 0);
 
+  const add = (liberationClassId, quantity) => addSolidFractionDirect(outputState, {
+    speciesId,
+    sizeBinId: outputSizeBinId,
+    liberationClassId,
+    textureProfileId,
+    quantity,
+  });
+
   if (maxLift <= 0 || inputIndex >= maxIndex) {
-    addSolidFractionDirect(outputState, {
-      speciesId,
-      sizeBinId: outputSizeBinId,
-      liberationClassId: inputLiberationClassId,
-      quantity: massKg,
-    });
+    add(inputLiberationClassId, massKg);
     return;
   }
 
   const improvedShare = clamp(0.2 + 0.2 * sizeImprovement, 0, maxLift >= 2 ? 0.8 : 0.65);
   const sameShare = 1 - improvedShare;
-  if (sameShare > 0) {
-    addSolidFractionDirect(outputState, {
-      speciesId,
-      sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex].id,
-      quantity: massKg * sameShare,
-    });
-  }
+  if (sameShare > 0) add(liberationClasses[inputIndex].id, massKg * sameShare);
   if (maxLift === 1) {
-    addSolidFractionDirect(outputState, {
-      speciesId,
-      sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex + 1].id,
-      quantity: massKg * improvedShare,
-    });
+    add(liberationClasses[inputIndex + 1].id, massKg * improvedShare);
     return;
   }
-  addSolidFractionDirect(outputState, {
-    speciesId,
-    sizeBinId: outputSizeBinId,
-    liberationClassId: liberationClasses[inputIndex + 1].id,
-    quantity: massKg * improvedShare * 0.65,
-  });
-  addSolidFractionDirect(outputState, {
-    speciesId,
-    sizeBinId: outputSizeBinId,
-    liberationClassId: liberationClasses[inputIndex + 2].id,
-    quantity: massKg * improvedShare * 0.35,
-  });
+  add(liberationClasses[inputIndex + 1].id, massKg * improvedShare * 0.65);
+  add(liberationClasses[inputIndex + 2].id, massKg * improvedShare * 0.35);
 }
 
 export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm) {
@@ -143,7 +125,9 @@ export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm)
 export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
   validateSolidMaterialState(feedSolidState);
   const targetSizeBinId = requireCrusherTargetSizeBinId(targetParticleSizeMm);
-  const product = createSolidMaterialState();
+  const product = createSolidMaterialState([], {
+    textureProfiles: feedSolidState.textureProfiles ?? {},
+  });
   let sawFeed = false;
   forEachSolidFraction(feedSolidState, (fraction) => {
     sawFeed = true;
@@ -157,6 +141,7 @@ export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
         product,
         fraction.speciesId,
         fraction.liberationClassId,
+        fraction.textureProfileId,
         fraction.sizeBinId,
         outputShare.sizeBinId,
         fraction.quantity * outputShare.share,
