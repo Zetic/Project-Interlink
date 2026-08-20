@@ -5,10 +5,12 @@ import {
   particleSizeBinIdForMm,
   particleSizeBinIndex,
 } from '../../materials/solids/particleSizeBins.js';
+import { liberationPotentialAtParticleSize } from '../../materials/solids/mineralTextures.js';
 import {
   addSolidFractionDirect,
   createSolidMaterialState,
   forEachSolidFraction,
+  solidTextureProfile,
   totalSolidQuantity,
   validateSolidMaterialState,
 } from '../../materials/solids/solidMaterialState.js';
@@ -54,6 +56,16 @@ const EQUIPMENT_PROFILES = Object.freeze({
     ]),
     liberationMode: 'grinding',
   }),
+});
+
+// Compatibility fallback for manually-created or legacy material without an
+// occurrence texture lineage. Newly generated ore carries its own profile.
+const GENERIC_MINERAL_TEXTURE = Object.freeze({
+  id: 'generic-mineral-texture',
+  fallbackLiberationSizeUm: 125,
+  curveSpread: 0.6,
+  boundaryBreakageAffinity: 0.2,
+  speciesLiberationSizeUm: Object.freeze({}),
 });
 
 function clamp(value, min, max) {
@@ -106,92 +118,124 @@ function oversizedFeedSummary(feedSolidState, maxFeedParticleSizeMm) {
   };
 }
 
-function grindingLiberationShare(outputSizeBinId, sizeReductionBins) {
-  const maxMm = getParticleSizeBin(outputSizeBinId)?.maxMm ?? Infinity;
-  let base = 0.10;
-  if (maxMm <= 0.032) base = 0.95;
-  else if (maxMm <= 0.063) base = 0.90;
-  else if (maxMm <= 0.125) base = 0.82;
-  else if (maxMm <= 0.25) base = 0.72;
-  else if (maxMm <= 0.5) base = 0.58;
-  else if (maxMm <= 1) base = 0.42;
-  else if (maxMm <= 5) base = 0.25;
-  return clamp(base * (0.60 + 0.08 * Math.min(sizeReductionBins, 4)), 0, 0.95);
+function textureForFraction(feedSolidState, fraction) {
+  return fraction.textureProfileId
+    ? solidTextureProfile(feedSolidState, fraction.textureProfileId)
+    : GENERIC_MINERAL_TEXTURE;
 }
 
-function liberationAdvancement(profile, inputSizeBinId, outputSizeBinId) {
+/**
+ * Liberation is an emergent response to particle size relative to the source
+ * ore's mineral texture. Crushers mostly reduce size; grinding becomes
+ * effective when particles approach the characteristic mineral-grain scale.
+ */
+function liberationAdvancement(
+  equipmentProfile,
+  textureProfile,
+  speciesId,
+  inputSizeBinId,
+  outputSizeBinId,
+) {
   const inputIndex = particleSizeBinIndex(inputSizeBinId);
   const outputIndex = particleSizeBinIndex(outputSizeBinId);
   const sizeReductionBins = Math.max(0, inputIndex - outputIndex);
   if (sizeReductionBins <= 0) return { improvedShare: 0, maxLift: 0 };
 
-  if (profile.liberationMode === 'coarse-crushing') {
+  const outputBin = getParticleSizeBin(outputSizeBinId);
+  const liberationPotential = liberationPotentialAtParticleSize(
+    textureProfile,
+    speciesId,
+    outputBin.representativeMm,
+  );
+  const reductionFactor = clamp(0.45 + 0.11 * sizeReductionBins, 0, 1);
+  const boundaryAffinity = textureProfile.boundaryBreakageAffinity;
+
+  if (equipmentProfile.liberationMode === 'coarse-crushing') {
     return {
-      improvedShare: Math.min(0.04, 0.01 + 0.01 * sizeReductionBins),
+      improvedShare: clamp(
+        reductionFactor * (0.002 + 0.015 * boundaryAffinity + 0.01 * liberationPotential),
+        0,
+        0.025,
+      ),
       maxLift: 1,
     };
   }
-  if (profile.liberationMode === 'fine-crushing') {
+  if (equipmentProfile.liberationMode === 'fine-crushing') {
     return {
-      improvedShare: Math.min(0.12, 0.03 + 0.025 * sizeReductionBins),
+      improvedShare: clamp(
+        reductionFactor * (0.005 + 0.04 * boundaryAffinity + 0.12 * liberationPotential),
+        0,
+        0.12,
+      ),
       maxLift: 1,
     };
   }
 
-  const maxMm = getParticleSizeBin(outputSizeBinId)?.maxMm ?? Infinity;
   return {
-    improvedShare: grindingLiberationShare(outputSizeBinId, sizeReductionBins),
-    maxLift: maxMm <= 0.063 ? 3 : maxMm <= 1 ? 2 : 1,
+    improvedShare: clamp(liberationPotential * reductionFactor, 0, 0.95),
+    maxLift: liberationPotential >= 0.75 ? 3 : liberationPotential >= 0.30 ? 2 : 1,
   };
 }
 
-function addFraction(outputState, speciesId, sizeBinId, liberationClassId, quantity) {
+function addFraction(outputState, fraction, sizeBinId, liberationClassId, quantity) {
   if (quantity <= 0) return;
-  addSolidFractionDirect(outputState, { speciesId, sizeBinId, liberationClassId, quantity });
+  addSolidFractionDirect(outputState, {
+    speciesId: fraction.speciesId,
+    sizeBinId,
+    liberationClassId,
+    textureProfileId: fraction.textureProfileId,
+    quantity,
+  });
 }
 
 function distributeLiberationMass(
   outputState,
-  speciesId,
-  inputLiberationClassId,
-  inputSizeBinId,
+  feedSolidState,
+  fraction,
   outputSizeBinId,
   massKg,
-  profile,
+  equipmentProfile,
 ) {
   const liberationClasses = listLiberationClasses();
-  const inputIndex = liberationClassIndex(inputLiberationClassId);
+  const inputIndex = liberationClassIndex(fraction.liberationClassId);
   const lastIndex = liberationClasses.length - 1;
-  const advancement = liberationAdvancement(profile, inputSizeBinId, outputSizeBinId);
+  const textureProfile = textureForFraction(feedSolidState, fraction);
+  const advancement = liberationAdvancement(
+    equipmentProfile,
+    textureProfile,
+    fraction.speciesId,
+    fraction.sizeBinId,
+    outputSizeBinId,
+  );
   const maxLift = Math.min(advancement.maxLift, lastIndex - inputIndex);
 
   if (maxLift <= 0 || advancement.improvedShare <= 0 || inputIndex >= lastIndex) {
-    addFraction(outputState, speciesId, outputSizeBinId, inputLiberationClassId, massKg);
+    addFraction(outputState, fraction, outputSizeBinId, fraction.liberationClassId, massKg);
     return;
   }
 
   const improvedMass = massKg * advancement.improvedShare;
   addFraction(
     outputState,
-    speciesId,
+    fraction,
     outputSizeBinId,
     liberationClasses[inputIndex].id,
     massKg - improvedMass,
   );
 
   if (maxLift === 1) {
-    addFraction(outputState, speciesId, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass);
+    addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass);
     return;
   }
   if (maxLift === 2) {
-    addFraction(outputState, speciesId, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass * 0.65);
-    addFraction(outputState, speciesId, outputSizeBinId, liberationClasses[inputIndex + 2].id, improvedMass * 0.35);
+    addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass * 0.65);
+    addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 2].id, improvedMass * 0.35);
     return;
   }
 
-  addFraction(outputState, speciesId, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass * 0.45);
-  addFraction(outputState, speciesId, outputSizeBinId, liberationClasses[inputIndex + 2].id, improvedMass * 0.35);
-  addFraction(outputState, speciesId, outputSizeBinId, liberationClasses[inputIndex + 3].id, improvedMass * 0.20);
+  addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 1].id, improvedMass * 0.45);
+  addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 2].id, improvedMass * 0.35);
+  addFraction(outputState, fraction, outputSizeBinId, liberationClasses[inputIndex + 3].id, improvedMass * 0.20);
 }
 
 export function comminuteSolidMaterialState(feedSolidState, targetParticleSizeMm, equipmentId) {
@@ -200,38 +244,39 @@ export function comminuteSolidMaterialState(feedSolidState, targetParticleSizeMm
     throw new Error('Comminution target particle size must be a finite positive number');
   }
 
-  const profile = requireEquipmentProfile(equipmentId);
-  const oversized = oversizedFeedSummary(feedSolidState, profile.maxFeedParticleSizeMm);
+  const equipmentProfile = requireEquipmentProfile(equipmentId);
+  const oversized = oversizedFeedSummary(feedSolidState, equipmentProfile.maxFeedParticleSizeMm);
   if (oversized.oversized > 0) {
     throw new Error(
-      `${profile.label} requires feed particle size <= ${profile.maxFeedParticleSizeMm} mm; blocked because feed contains ${oversized.percentage.toFixed(1)}% oversized material (largest class ${oversized.largestBin?.name ?? 'unknown'})`
+      `${equipmentProfile.label} requires feed particle size <= ${equipmentProfile.maxFeedParticleSizeMm} mm; blocked because feed contains ${oversized.percentage.toFixed(1)}% oversized material (largest class ${oversized.largestBin?.name ?? 'unknown'})`
     );
   }
 
   const targetSizeBinId = particleSizeBinIdForMm(targetParticleSizeMm);
-  const product = createSolidMaterialState();
+  const product = createSolidMaterialState([], {
+    textureProfiles: feedSolidState.textureProfiles ?? {},
+  });
   let sawFeed = false;
 
   forEachSolidFraction(feedSolidState, fraction => {
     sawFeed = true;
-    for (const outputShare of outputSizeShares(fraction.sizeBinId, targetSizeBinId, profile)) {
+    for (const outputShare of outputSizeShares(fraction.sizeBinId, targetSizeBinId, equipmentProfile)) {
       distributeLiberationMass(
         product,
-        fraction.speciesId,
-        fraction.liberationClassId,
-        fraction.sizeBinId,
+        feedSolidState,
+        fraction,
         outputShare.sizeBinId,
         fraction.quantity * outputShare.share,
-        profile,
+        equipmentProfile,
       );
     }
   });
 
-  if (!sawFeed) throw new Error(`${profile.label} requires non-empty feed`);
+  if (!sawFeed) throw new Error(`${equipmentProfile.label} requires non-empty feed`);
   const inputTotal = totalSolidQuantity(feedSolidState);
   const outputTotal = totalSolidQuantity(product);
   if (Math.abs(inputTotal - outputTotal) > 1e-9 * Math.max(1, inputTotal)) {
-    throw new Error(`${profile.label} violated solid-matter conservation`);
+    throw new Error(`${equipmentProfile.label} violated solid-matter conservation`);
   }
   return product;
 }
