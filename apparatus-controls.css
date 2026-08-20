@@ -1,0 +1,21 @@
+/* Definition-driven apparatus Inspector controls. */
+.ws-ins-row .ws-apparatus-parameter {
+  min-width: 82px;
+  max-width: 140px;
+  margin-left: 4px;
+  padding: 3px 5px;
+  background: #101820;
+  border: 1px solid #3a4d5f;
+  color: #d4e2f0;
+  font: inherit;
+  font-size: 11px;
+}
+
+.ws-ins-row select.ws-apparatus-parameter {
+  cursor: pointer;
+}
+
+.ws-ins-row .ws-apparatus-parameter:focus {
+  outline: 1px solid #6699cc;
+  border-color: #6699cc;
+}

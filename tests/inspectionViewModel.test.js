@@ -9,6 +9,7 @@ import {
   blueprintAddCrusher,
   blueprintAddMagSep,
   blueprintConnect,
+  setApparatusParameter,
   setNodeEnabled,
   simulationTick,
 } from '../src/simulation/simulationEngine.js';
@@ -135,6 +136,26 @@ test('crusher inspection reports configured and actual feed/product flow', () =>
   assert.equal(details.actualFeedKgPerSecond, 4);
   assert.equal(details.actualProductKgPerSecond, 4);
   assert.equal(details.targetParticleSizeMm, 10);
+  assert.deepEqual(
+    details.parameters.map(parameter => [parameter.id, parameter.value]),
+    [['targetParticleSizeMm', 10]],
+  );
+  assert.deepEqual(
+    details.capabilities.map(capability => [capability.id, capability.value]),
+    [['throughputKgPerSecond', 4]],
+  );
+});
+
+test('machine inspection projects committed apparatus settings rather than UI state', () => {
+  const blueprint = createBlueprint();
+  const separator = blueprintAddMagSep(blueprint);
+  setApparatusParameter(blueprint, separator.id, 'fieldStrength', 0.8);
+  const details = machineInspection(blueprint, separator);
+  assert.equal(details.fieldStrength, 0.8);
+  assert.deepEqual(
+    details.parameters.map(parameter => [parameter.id, parameter.value]),
+    [['fieldStrength', 0.8]],
+  );
 });
 
 test('magnetic separator inspection reports total product as concentrate plus tailings', () => {

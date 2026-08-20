@@ -5,7 +5,6 @@ import {
   listParticleSizeBins,
   particleSizeBinIdForMm,
   particleSizeBinIndex,
-  representativeParticleSizeMm,
 } from '../materials/particleSizeBins.js';
 import {
   addSolidFractionDirect,
@@ -25,14 +24,6 @@ function mergeShares(entries) {
     merged.set(entry.sizeBinId, (merged.get(entry.sizeBinId) ?? 0) + entry.share);
   }
   return [...merged.entries()].map(([sizeBinId, share]) => ({ sizeBinId, share }));
-}
-
-function coarsestActiveBinIndex(solidState) {
-  let coarsestIndex = -1;
-  forEachSolidFraction(solidState, fraction => {
-    coarsestIndex = Math.max(coarsestIndex, particleSizeBinIndex(fraction.sizeBinId));
-  });
-  return coarsestIndex;
 }
 
 function requireCrusherTargetSizeBinId(targetParticleSizeMm) {
@@ -144,19 +135,41 @@ export function magneticRecoveryForFraction(speciesId, sizeBinId, liberationClas
   return clamp(magneticRecovery + entrainment, 0, 1);
 }
 
-export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedParticleSizeMm = 25) {
-  validateSolidMaterialState(feedSolidState);
-  const concentrate = createSolidMaterialState();
-  const tailings = createSolidMaterialState();
+function oversizedFeedSummary(feedSolidState, maxFeedParticleSizeMm) {
+  const total = totalSolidQuantity(feedSolidState);
+  let oversized = 0;
+  let largestBin = null;
 
   forEachSolidFraction(feedSolidState, (fraction) => {
     const bin = getParticleSizeBin(fraction.sizeBinId);
     if (!bin) throw new Error(`Unknown particle-size bin '${fraction.sizeBinId}'`);
-    if (bin.maxMm > maxFeedParticleSizeMm) {
-      throw new Error(
-        `Magnetic Separator requires feed particle size <= ${maxFeedParticleSizeMm} mm (got ${representativeParticleSizeMm(fraction.sizeBinId)} mm representative)`
-      );
+    if (bin.maxMm <= maxFeedParticleSizeMm) return;
+    oversized += fraction.quantity;
+    if (!largestBin || particleSizeBinIndex(bin.id) > particleSizeBinIndex(largestBin.id)) {
+      largestBin = bin;
     }
+  });
+
+  return {
+    oversized,
+    percentage: total > 0 ? oversized / total * 100 : 0,
+    largestBin,
+  };
+}
+
+export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedParticleSizeMm = 25) {
+  validateSolidMaterialState(feedSolidState);
+  const oversized = oversizedFeedSummary(feedSolidState, maxFeedParticleSizeMm);
+  if (oversized.oversized > 0) {
+    throw new Error(
+      `Magnetic Separator requires feed particle size <= ${maxFeedParticleSizeMm} mm; blocked because feed contains ${oversized.percentage.toFixed(1)}% oversized material (largest class ${oversized.largestBin?.name ?? 'unknown'})`
+    );
+  }
+
+  const concentrate = createSolidMaterialState();
+  const tailings = createSolidMaterialState();
+
+  forEachSolidFraction(feedSolidState, (fraction) => {
     const recovery = magneticRecoveryForFraction(
       fraction.speciesId,
       fraction.sizeBinId,
@@ -168,20 +181,6 @@ export function splitMagneticSolidState(feedSolidState, fieldStrength, maxFeedPa
   });
 
   return { concentrate, tailings };
-}
-
-export function assertCrushingTarget(feedSolidState, targetParticleSizeMm) {
-  validateSolidMaterialState(feedSolidState);
-  const targetIndex = particleSizeBinIndex(requireCrusherTargetSizeBinId(targetParticleSizeMm));
-  const coarsestIndex = coarsestActiveBinIndex(feedSolidState);
-  if (coarsestIndex < 0) {
-    throw new Error('Crusher requires non-empty feed');
-  }
-  if (targetIndex >= coarsestIndex) {
-    throw new Error(
-      `Crusher requires targetParticleSizeMm below current feed size (${representativeParticleSizeMm(listOrderedSizeBinIds()[coarsestIndex])} mm representative); got ${targetParticleSizeMm} mm`
-    );
-  }
 }
 
 export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm) {

@@ -17,6 +17,7 @@ import {
   CRUSHING_PROCESS_ID,
   getProcessDefinition,
   MAGNETIC_SEPARATION_PROCESS_ID,
+  validateProcessParameters,
 } from './processDefinitions.js';
 import { crushSolidMaterialState, splitMagneticSolidState } from './processPhysics.js';
 
@@ -29,39 +30,7 @@ function assertWorldOrdinals(world) {
   }
 }
 
-function assertParameterWithinRange(parameterDefinition, value) {
-  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
-    throw new Error(`Process parameter '${parameterDefinition.id}' must be a finite number`);
-  }
-  if (value < parameterDefinition.min || value > parameterDefinition.max) {
-    throw new Error(
-      `Process parameter '${parameterDefinition.id}' must be within [${parameterDefinition.min}, ${parameterDefinition.max}]`
-    );
-  }
-}
-
-export function validateProcessParameters(processDefinition, parameters = {}) {
-  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
-    throw new Error('Process parameters must be an object keyed by parameter id');
-  }
-
-  const parameterDefinitions = processDefinition.parameters ?? [];
-  const definedParameterIds = new Set(parameterDefinitions.map(parameter => parameter.id));
-
-  for (const providedParameterId of Object.keys(parameters)) {
-    if (!definedParameterIds.has(providedParameterId)) {
-      throw new Error(`Unknown process parameter '${providedParameterId}' for process '${processDefinition.id}'`);
-    }
-  }
-
-  const normalized = {};
-  for (const parameterDefinition of parameterDefinitions) {
-    const providedValue = parameters[parameterDefinition.id] ?? parameterDefinition.defaultValue;
-    assertParameterWithinRange(parameterDefinition, providedValue);
-    normalized[parameterDefinition.id] = providedValue;
-  }
-  return normalized;
-}
+export { validateProcessParameters };
 
 function validateInputBindings(processDefinition, inputBindings) {
   if (!inputBindings || typeof inputBindings !== 'object' || Array.isArray(inputBindings)) {

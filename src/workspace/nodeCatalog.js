@@ -44,13 +44,15 @@ export const NODE_DEFINITIONS = Object.freeze([
     label: 'Extractor',
     nodeType: 'extractor',
     category: NODE_CATEGORIES.APPARATUS.key,
-    description: 'Converts explicit Feature resource access into a material stream.',
+    description: 'Pulls compatible solid matter from a connected Feature resource source.',
     searchTerms: ['extractor', 'extraction', 'resource access', 'source', 'feed', 'raw material'],
-    create: (blueprint, context = {}) => {
-      const occurrenceId = context.occurrenceId ?? context.occurrenceIds?.[0];
-      if (!occurrenceId) throw new Error('Extractor placement requires a Site resource occurrence');
-      return blueprintAddExtractor(blueprint, occurrenceId, context.rateKgPerSecond);
-    },
+    // Placement creates an unbound machine. The resource-access connection selects
+    // the source occurrence when the player connects a Feature to this Extractor.
+    create: (blueprint, context = {}) => blueprintAddExtractor(
+      blueprint,
+      null,
+      context.rateKgPerSecond,
+    ),
   }),
   definition({
     id: 'crusher',

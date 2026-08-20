@@ -6,11 +6,13 @@ import {
   checkBlueprintConnection,
   getNodePortDefinitions,
   getStreamForConnection,
+  setApparatusParameter,
   setNodeEnabled,
   getNodeOperatingState,
   layoutMoveNode,
   SIMULATION_STEP_S,
 } from '../simulation/simulationEngine.js';
+import { apparatusParametersForNode } from '../simulation/apparatusDefinitions.js';
 import {
   createWorldSimulation,
   registerSimulationSession,
@@ -1626,6 +1628,7 @@ function renderSiteWorkspace(container) {
   });
   el('ws-sim-reset')?.addEventListener('click', onResetSite);
   el('ws-inspector-body')?.addEventListener('click', onInspectorClick);
+  el('ws-inspector-body')?.addEventListener('change', onInspectorParameterChange);
   renderSiteNodes();
   installWindowDragTracking(onCanvasMouseMove, onCanvasMouseUp);
   installViewport(
@@ -1783,8 +1786,11 @@ function formatNodeInspector(node) {
   if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
     const details = machineInspection(wsState.blueprint, node);
     html += `<div class="ws-ins-row"><b>State:</b> <span data-live="state">${escHtml(details.operatingState)}</span></div>
-      <div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${details.enabled ? 'On' : 'Off'}</button></div>
-      <div class="ws-ins-row"><b>Configured throughput:</b> ${details.configuredThroughputKgPerSecond} kg/s</div>`;
+      <div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${details.enabled ? 'On' : 'Off'}</button></div>`;
+    for (const capability of details.capabilities ?? []) {
+      const unit = capability.unit ? ` ${escHtml(capability.unit)}` : '';
+      html += `<div class="ws-ins-row"><b>${escHtml(capability.label)}:</b> ${escHtml(capability.value)}${unit}</div>`;
+    }
     if (node.nodeType === 'extractor') {
       const sourceNode = details.resourceAccess ? wsState.blueprint.nodes[details.resourceAccess.sourceNodeId] : null;
       const sourceFeature = sourceNode ? wsState.world?.features?.[sourceNode.featureId] : null;
@@ -1794,11 +1800,13 @@ function formatNodeInspector(node) {
       html += `<div class="ws-ins-row"><b>Actual feed:</b> <span data-live="machine-feed">${details.actualFeedKgPerSecond.toFixed(3)}</span> kg/s</div>`;
     }
     html += `<div class="ws-ins-row"><b>Actual product:</b> <span data-live="machine-product">${details.actualProductKgPerSecond.toFixed(3)}</span> kg/s</div>`;
-    if (node.nodeType === 'crusher') html += `<div class="ws-ins-row"><b>Target size:</b> ${node.targetParticleSizeMm} mm</div>`;
+    for (const parameter of apparatusParametersForNode(node)) {
+      if (!parameter.playerConfigurable) continue;
+      const unit = parameter.unit ? ` ${escHtml(parameter.unit)}` : '';
+      html += `<div class="ws-ins-row"><label><b>${escHtml(parameter.label)}:</b> <input class="ws-apparatus-parameter" data-node-id="${escHtml(node.id)}" data-parameter-id="${escHtml(parameter.id)}" type="${escHtml(parameter.controlType ?? 'number')}" min="${parameter.min}" max="${parameter.max}" step="any" value="${node[parameter.id]}">${unit}</label></div>`;
+    }
     if (node.nodeType === 'magSep') {
-      html += `<div class="ws-ins-row"><b>Field strength:</b> ${node.fieldStrength}</div>
-        <div class="ws-ins-row"><b>Max feed size:</b> ${node.maxFeedParticleSizeMm} mm</div>
-        <div class="ws-ins-row"><b>Feed:</b> <span data-live="feed-flow">${(details.feed?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>
+      html += `<div class="ws-ins-row"><b>Feed:</b> <span data-live="feed-flow">${(details.feed?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>
         <div class="ws-ins-row"><b>Concentrate:</b> <span data-live="concentrate-flow">${(details.concentrate?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>
         <div class="ws-ins-row"><b>Tailings:</b> <span data-live="tailings-flow">${(details.tailings?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>`;
     }
@@ -1918,6 +1926,24 @@ function updateInspector(force = false) {
   }
 }
 
+function onInspectorParameterChange(event) {
+  const input = event.target.closest('.ws-apparatus-parameter');
+  if (!input) return;
+  try {
+    setApparatusParameter(
+      wsState.blueprint,
+      input.dataset.nodeId,
+      input.dataset.parameterId,
+      Number(input.value),
+    );
+    inspector.message = '';
+  } catch (error) {
+    inspector.message = error.message;
+  }
+  inspector.renderKey = null;
+  updateInspector(true);
+}
+
 function onInspectorClick(event) {
   const enable = event.target.closest('.ws-btn-enable');
   if (enable) {
@@ -1927,6 +1953,7 @@ function onInspectorClick(event) {
     updateInspector(true);
     return;
   }
+
   const deleteButton = event.target.closest('.ws-btn-delete-node');
   if (deleteButton) {
     attemptNodeRemoval(deleteButton.dataset.nodeId);

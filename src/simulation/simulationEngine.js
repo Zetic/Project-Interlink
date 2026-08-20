@@ -3,7 +3,12 @@
  * runtime objects; node layout and viewport state live separately in UI state.
  */
 
-import { createExtractor, extractorOutputRates, DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND } from './extractorNode.js';
+import {
+  createExtractor,
+  extractorOccurrenceEligibility,
+  extractorOutputRates,
+  DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND,
+} from './extractorNode.js';
 import {
   createHopper,
   hopperFreeCapacityKg,
@@ -28,17 +33,19 @@ import {
   totalSolidQuantity,
 } from '../core/materials/solidMaterialState.js';
 import {
+  defaultProcessParameters,
   getProcessDefinition,
   CRUSHING_PROCESS_ID,
   MAGNETIC_SEPARATION_PROCESS_ID,
 } from '../core/processes/processDefinitions.js';
+import { validateApparatusParameters } from './apparatusDefinitions.js';
 
 export const SIMULATION_STEP_S = 0.1;
 export const DEFAULT_HOPPER_CAPACITY_KG = 1000;
 export const DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S = 4;
-export const DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM = 15;
+export const DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM = defaultProcessParameters(CRUSHING_PROCESS_ID).targetParticleSizeMm;
 export const DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S = 4;
-export const DEFAULT_MAG_SEP_FIELD_STRENGTH = 0.6;
+export const DEFAULT_MAG_SEP_FIELD_STRENGTH = defaultProcessParameters(MAGNETIC_SEPARATION_PROCESS_ID).fieldStrength;
 export const DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S = 10;
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
@@ -97,7 +104,7 @@ export function blueprintAddFeatureSource(blueprint, {
 
 export function blueprintAddExtractor(
   blueprint,
-  occurrenceId,
+  occurrenceId = null,
   rateKgPerSecond = DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND,
   { enabled = false } = {}
 ) {
@@ -144,6 +151,7 @@ export function blueprintAddCrusher(blueprint, {
     enabled,
     operatingState: enabled ? 'idle' : 'off',
   };
+  validateApparatusParameters(node);
   blueprint.nodes[id] = node;
   return node;
 }
@@ -176,6 +184,7 @@ export function blueprintAddMagSep(blueprint, {
     enabled,
     operatingState: enabled ? 'idle' : 'off',
   };
+  validateApparatusParameters(node);
   blueprint.nodes[id] = node;
   return node;
 }
@@ -233,7 +242,32 @@ function supportedNodeTransition(sourceNode, targetNode, kind) {
   ]).has(`${sourceNode.nodeType}->${targetNode.nodeType}`);
 }
 
-export function checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId) {
+function resolveResourceAccessOccurrence(sourceNode, targetNode, requestedOccurrenceId = null) {
+  const availableOccurrenceIds = [...new Set(sourceNode?.resourceOccurrenceIds ?? [])];
+  if (!availableOccurrenceIds.length) {
+    return { ok: false, reason: 'Feature exposes no ResourceOccurrence for extraction', occurrenceId: null };
+  }
+
+  const preferredOccurrenceId = requestedOccurrenceId ?? targetNode?.requestedOccurrenceId ?? null;
+  if (preferredOccurrenceId) {
+    if (!availableOccurrenceIds.includes(preferredOccurrenceId)) {
+      return { ok: false, reason: 'Selected ResourceOccurrence is not available from this Feature', occurrenceId: null };
+    }
+    return { ok: true, reason: '', occurrenceId: preferredOccurrenceId };
+  }
+
+  if (availableOccurrenceIds.length === 1) {
+    return { ok: true, reason: '', occurrenceId: availableOccurrenceIds[0] };
+  }
+
+  return {
+    ok: false,
+    reason: 'Feature exposes multiple ResourceOccurrences; select one for this resource-access connection',
+    occurrenceId: null,
+  };
+}
+
+export function checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId, options = {}) {
   const sourceNode = blueprint?.nodes?.[sourceNodeId];
   const targetNode = blueprint?.nodes?.[targetNodeId];
   if (!sourceNode) return { ok: false, reason: `Unknown source node '${sourceNodeId}'` };
@@ -268,23 +302,45 @@ export function checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, 
   }
 
   if (sourcePort.kind === 'resource-access') {
-    if (!sourceNode.resourceOccurrenceIds?.includes(targetNode.occurrenceId)) {
-      return { ok: false, reason: 'Extractor target occurrence is not available from this Feature' };
-    }
+    const resourceAccess = resolveResourceAccessOccurrence(sourceNode, targetNode, options.occurrenceId);
+    if (!resourceAccess.ok) return resourceAccess;
+    return { ok: true, reason: '', occurrenceId: resourceAccess.occurrenceId };
   }
 
   return { ok: true, reason: '' };
 }
 
-export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId) {
-  const compatibility = checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId);
+export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId, options = {}) {
+  const compatibility = checkBlueprintConnection(
+    blueprint,
+    sourceNodeId,
+    sourcePortId,
+    targetNodeId,
+    targetPortId,
+    options,
+  );
   if (!compatibility.ok) return null;
 
   const sourceNode = blueprint.nodes[sourceNodeId];
+  const targetNode = blueprint.nodes[targetNodeId];
   const sourcePort = getNodePortDefinitions(sourceNode).find(port => port.id === sourcePortId);
   const id = nextConnectionId();
-  const connection = { id, sourceNodeId, sourcePortId, targetNodeId, targetPortId, kind: sourcePort.kind };
+  const connection = {
+    id,
+    sourceNodeId,
+    sourcePortId,
+    targetNodeId,
+    targetPortId,
+    kind: sourcePort.kind,
+    ...(sourcePort.kind === 'resource-access' ? { occurrenceId: compatibility.occurrenceId } : {}),
+  };
   blueprint.connections[id] = connection;
+
+  // The connection is authoritative for source selection. occurrenceId on the
+  // Extractor is only a synchronized presentation value for existing UI code.
+  if (sourcePort.kind === 'resource-access' && targetNode?.nodeType === 'extractor') {
+    targetNode.occurrenceId = compatibility.occurrenceId;
+  }
 
   // Resource-access edges are relationships, not matter in transit. Only a material
   // connection owns a MaterialStream rate/state object.
@@ -303,6 +359,13 @@ export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNo
 }
 
 export function blueprintDisconnect(blueprint, connectionId) {
+  const connection = blueprint.connections?.[connectionId];
+  if (connection?.kind === 'resource-access') {
+    const targetNode = blueprint.nodes?.[connection.targetNodeId];
+    if (targetNode?.nodeType === 'extractor' && targetNode.occurrenceId === connection.occurrenceId) {
+      targetNode.occurrenceId = null;
+    }
+  }
   delete blueprint.connections[connectionId];
   for (const [streamId, stream] of Object.entries(blueprint.streams)) {
     if (stream.connectionId === connectionId) delete blueprint.streams[streamId];
@@ -367,15 +430,23 @@ function simulateExtractorNode(blueprint, world, node, dt) {
     return 0;
   }
   const sourceFeature = blueprint.nodes[accessConnection.sourceNodeId];
-  const occurrence = world?.resourceOccurrences?.[node.occurrenceId];
+  const occurrenceId = accessConnection.occurrenceId;
+  const occurrence = world?.resourceOccurrences?.[occurrenceId];
   if (
     sourceFeature?.nodeType !== 'feature'
-    || !sourceFeature.resourceOccurrenceIds?.includes(node.occurrenceId)
+    || !sourceFeature.resourceOccurrenceIds?.includes(occurrenceId)
     || !occurrence
     || occurrence.sourceType !== 'feature'
     || occurrence.sourceId !== sourceFeature.featureId
   ) {
-    node.lastError = 'Connected Feature does not own the configured ResourceOccurrence';
+    node.lastError = 'Connected Feature does not own the selected ResourceOccurrence';
+    node.operatingState = 'blocked';
+    return 0;
+  }
+
+  const eligibility = extractorOccurrenceEligibility(occurrence);
+  if (!eligibility.ok) {
+    node.lastError = eligibility.reason;
     node.operatingState = 'blocked';
     return 0;
   }
@@ -680,6 +751,17 @@ export function setNodeEnabled(blueprint, nodeId, enabled) {
   node.enabled = enabled;
   if (!enabled) node.operatingState = 'off';
   else if (node.operatingState === 'off') node.operatingState = 'idle';
+  return node;
+}
+
+export function setApparatusParameter(blueprint, nodeId, parameterId, value) {
+  const node = blueprint?.nodes?.[nodeId];
+  if (!node) throw new Error(`Unknown node '${nodeId}'`);
+  const normalized = validateApparatusParameters(node, { [parameterId]: value });
+  if (!Object.hasOwn(normalized, parameterId)) {
+    throw new Error(`Unknown apparatus parameter '${parameterId}' for '${node.nodeType}'`);
+  }
+  node[parameterId] = normalized[parameterId];
   return node;
 }
 

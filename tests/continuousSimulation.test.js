@@ -30,12 +30,17 @@ import {
   getStreamForConnection,
   simulationTick,
   simulationAdvance,
+  setApparatusParameter,
   setNodeEnabled,
   createBlueprintLayout,
   layoutMoveNode,
   SIMULATION_STEP_S,
   _resetOrdinals,
 } from '../src/simulation/simulationEngine.js';
+import {
+  defaultProcessParameters,
+  getProcessDefinition,
+} from '../src/core/processes/processDefinitions.js';
 import { createWorld } from '../src/core/world/worldState.js';
 
 const MASS_TOL = 1e-6;
@@ -125,8 +130,68 @@ test('stream: total flow is derived from constituent rates', () => {
     id: 's1', sourceNodeId: 'n1', sourcePortId: 'out', targetNodeId: 'n2', targetPortId: 'in',
     componentMassFlowKgPerSecond: { hematite: 2, magnetite: 1 }, particleSizeMm: 80,
   });
+
   assert.equal(totalMassFlowKgPerSecond(stream.componentMassFlowKgPerSecond), 3);
   assert.equal(Object.hasOwn(stream, 'totalMassFlowKgPerSecond'), false);
+});
+
+test('apparatus process settings use canonical defaults and reject invalid authoritative state', () => {
+  const blueprint = createBlueprint();
+  const crusher = blueprintAddCrusher(blueprint);
+  const separator = blueprintAddMagSep(blueprint);
+  assert.equal(crusher.targetParticleSizeMm, defaultProcessParameters(crusher.processId).targetParticleSizeMm);
+  assert.equal(separator.fieldStrength, defaultProcessParameters(separator.processId).fieldStrength);
+
+  for (const invalidTarget of [0, 121, NaN, Infinity]) {
+    assert.throws(
+      () => blueprintAddCrusher(blueprint, { targetParticleSizeMm: invalidTarget }),
+      /Process parameter 'targetParticleSizeMm'/,
+    );
+  }
+  for (const invalidStrength of [-0.1, 1.1, NaN, Infinity]) {
+    assert.throws(
+      () => blueprintAddMagSep(blueprint, { fieldStrength: invalidStrength }),
+      /Process parameter 'fieldStrength'/,
+    );
+  }
+  assert.throws(() => blueprintAddCrusher(blueprint, { throughputKgPerSecond: 0 }), /finite positive/);
+  assert.throws(() => blueprintAddMagSep(blueprint, { throughputKgPerSecond: Infinity }), /finite positive/);
+  assert.equal(getProcessDefinition(crusher.processId).parameters[0].playerConfigurable, true);
+});
+
+test('apparatus settings commit to existing nodes and survive command changes', () => {
+  const blueprint = createBlueprint();
+  const crusher = blueprintAddCrusher(blueprint);
+  const separator = blueprintAddMagSep(blueprint);
+
+  setApparatusParameter(blueprint, crusher.id, 'targetParticleSizeMm', 10);
+  setApparatusParameter(blueprint, separator.id, 'fieldStrength', 0.8);
+  setNodeEnabled(blueprint, crusher.id, true);
+  setNodeEnabled(blueprint, crusher.id, false);
+  setNodeEnabled(blueprint, separator.id, true);
+  setNodeEnabled(blueprint, separator.id, false);
+  assert.equal(blueprint.nodes[crusher.id], crusher);
+  assert.equal(crusher.targetParticleSizeMm, 10);
+  assert.equal(separator.fieldStrength, 0.8);
+
+  assert.throws(
+    () => setApparatusParameter(blueprint, crusher.id, 'targetParticleSizeMm', 0),
+    /Process parameter 'targetParticleSizeMm'/,
+  );
+  assert.throws(
+    () => setApparatusParameter(blueprint, separator.id, 'fieldStrength', Infinity),
+    /Process parameter 'fieldStrength'/,
+  );
+  assert.equal(crusher.targetParticleSizeMm, 10);
+  assert.equal(separator.fieldStrength, 0.8);
+});
+
+test('crusher passes already-sized material through successive same-target stages', () => {
+  const feed = { componentMassFlowKgPerSecond: { hematite: 3, magnetite: 1 }, particleSizeMm: 10 };
+  const first = applyContinuousCrushing(feed, 15, 10);
+  const second = applyContinuousCrushing(first.productSolidState, 15, 10);
+  assert.deepEqual(second.productSolidState, first.productSolidState);
+  assert.equal(totalMassFlowKgPerSecond(second.productSolidState), 4);
 });
 
 test('stream: inactive connections use the same contract with zero flow', () => {
