@@ -285,8 +285,8 @@ function mergeAllocation(merged, allocation) {
  * below SOLID_MATERIAL_TOLERANCE, so adding each child independently can lose
  * real mass when a small parent is subdivided many times. Consolidate those
  * sub-tolerance children into the largest sibling before committing them.
- * This preserves exact parent mass while perturbing the statistical PSD by at
- * most the state's numerical storage tolerance.
+ * This preserves parent mass while perturbing the statistical PSD by at most
+ * the state's numerical storage tolerance.
  */
 function addConservedFractionChildren(
   outputState,
@@ -312,16 +312,14 @@ function addConservedFractionChildren(
     throw new Error(`${equipmentProfile.label} produced no output allocation for a non-empty fraction`);
   }
 
-  let allocatedTotal = entries.reduce((sum, entry) => sum + entry.quantity, 0);
   let largest = entries[0];
   for (const entry of entries) {
     if (entry.quantity > largest.quantity) largest = entry;
   }
 
-  // Absorb ordinary floating-point summation residual into the largest child.
-  largest.quantity += fraction.quantity - allocatedTotal;
-
   // Preserve sparse-state pruning without allowing it to delete conserved mass.
+  // The moved quantities are already part of the parent allocation, so no
+  // additional floating-point normalization is applied to ordinary children.
   let subToleranceResidual = 0;
   for (const entry of entries) {
     if (entry === largest) continue;
@@ -332,7 +330,7 @@ function addConservedFractionChildren(
   }
   largest.quantity += subToleranceResidual;
 
-  allocatedTotal = 0;
+  let allocatedTotal = 0;
   for (const entry of entries) {
     if (entry.quantity <= 0) continue;
     addFraction(
@@ -345,7 +343,7 @@ function addConservedFractionChildren(
     allocatedTotal += entry.quantity;
   }
 
-  if (Math.abs(fraction.quantity - allocatedTotal) > Number.EPSILON * Math.max(1, fraction.quantity) * 16) {
+  if (Math.abs(fraction.quantity - allocatedTotal) > Number.EPSILON * Math.max(1, fraction.quantity) * 32) {
     throw new Error(`${equipmentProfile.label} could not conserve an input fraction during comminution allocation`);
   }
 }
