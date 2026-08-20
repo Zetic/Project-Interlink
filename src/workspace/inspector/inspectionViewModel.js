@@ -43,6 +43,61 @@ function liberationLabel(liberationClassId) {
   return getLiberationClass(liberationClassId)?.name ?? liberationClassId;
 }
 
+function occurrenceMineralDensityKgPerM3(occurrence) {
+  const entries = Object.entries(occurrence?.composition ?? {});
+  const total = entries.reduce((sum, [, amount]) => sum + amount, 0);
+  if (total <= 0) return null;
+  let specificVolume = 0;
+  for (const [speciesId, amount] of entries) {
+    const density = getMaterialSpecies(speciesId)?.physicalProperties?.densityKgPerM3;
+    if (!density) return null;
+    specificVolume += (amount / total) / density;
+  }
+  return specificVolume > 0 ? 1 / specificVolume : null;
+}
+
+function occurrencePropertyDetails(occurrence) {
+  const properties = [];
+  const comminution = occurrence?.comminutionProperties;
+  if (comminution) {
+    properties.push(
+      { id: 'bond-cwi', label: 'Bond Crushing Work Index', value: comminution.bondCrushingWorkIndexKWhPerT, unit: 'kWh/t' },
+      { id: 'bond-bwi', label: 'Bond Ball Mill Work Index', value: comminution.bondBallMillWorkIndexKWhPerT, unit: 'kWh/t' },
+      { id: 'bond-ai', label: 'Bond Abrasion Index', value: comminution.bondAbrasionIndex, unit: '' },
+    );
+  }
+  const density = occurrenceMineralDensityKgPerM3(occurrence);
+  if (density) properties.push({ id: 'mineral-density', label: 'Mineral mixture density', value: density, unit: 'kg/m³' });
+
+  const mineralTextures = Object.entries(occurrence?.mineralTexture?.speciesTextures ?? {}).map(([speciesId, texture]) => ({
+    speciesId,
+    label: speciesLabel(speciesId),
+    grainSizeUm: { ...texture.grainSizeUm },
+    occurrenceModes: { ...texture.occurrenceModes },
+  }));
+  return { properties, mineralTextures };
+}
+
+function compactOccurrencePropertyText(occurrence, details) {
+  const parts = [];
+  for (const property of details.properties) {
+    const value = property.id === 'mineral-density'
+      ? Math.round(property.value).toLocaleString('en-US')
+      : Number(property.value).toFixed(property.id === 'bond-ai' ? 3 : 2);
+    parts.push(`${property.label}: ${value}${property.unit ? ` ${property.unit}` : ''}`);
+  }
+  for (const texture of details.mineralTextures) {
+    const { d10, d50, d90 } = texture.grainSizeUm;
+    const modes = texture.occurrenceModes;
+    parts.push(
+      `${texture.label} grains D10/D50/D90: ${d10}/${d50}/${d90} µm; `
+      + `modes free ${(modes.free * 100).toFixed(0)}%, boundary ${(modes.boundary * 100).toFixed(0)}%, `
+      + `intergrown ${(modes.intergrown * 100).toFixed(0)}%, included ${(modes.included * 100).toFixed(0)}%`,
+    );
+  }
+  return [occurrence?.descriptor, ...parts].filter(Boolean).join(' · ');
+}
+
 export function hopperInspection(hopper) {
   const storedMassKg = hopperStoredMassKg(hopper);
   return {
@@ -104,13 +159,18 @@ export function featureInspection(world, blueprint, node) {
   const feature = world?.features?.[node?.featureId];
   const resources = (feature?.resourceOccurrences ?? []).map(occurrenceId => {
     const occurrence = world?.resourceOccurrences?.[occurrenceId];
+    const propertyDetails = occurrencePropertyDetails(occurrence);
     return {
       id: occurrenceId,
       name: occurrence?.name ?? occurrence?.resourceId ?? occurrenceId,
       resourceId: occurrence?.resourceId ?? null,
       availabilityClass: occurrence?.availabilityClass ?? occurrence?.quantityClass ?? 'Available',
-      descriptor: occurrence?.descriptor ?? null,
+      descriptor: compactOccurrencePropertyText(occurrence, propertyDetails),
       accessScope: occurrence?.accessScope ?? 'localized',
+      concentrationPercent: occurrence?.concentrationPercent ?? null,
+      composition: { ...(occurrence?.composition ?? {}) },
+      occurrenceProperties: propertyDetails.properties,
+      mineralTextures: propertyDetails.mineralTextures,
     };
   });
   const connections = Object.values(blueprint?.connections ?? {}).filter(connection =>
@@ -204,9 +264,16 @@ export function machineInspection(blueprint, node) {
     })),
   };
 
+  if (['jawCrusher', 'coneCrusher', 'ballMill'].includes(node?.nodeType)) {
+    result.comminution = {
+      specificEnergyKWhPerT: node.lastSpecificEnergyKWhPerT ?? 0,
+      actualPowerKw: node.lastPowerKw ?? 0,
+      bondAbrasionIndex: node.lastBondAbrasionIndex ?? 0,
+      abrasionExposureTonneAi: node.abrasionExposureTonneAi ?? 0,
+    };
+  }
+
   // Compatibility fields used by the richer current-machine Inspector views.
-  // Product/feed totals above are deliberately port-generic so future multi-output
-  // apparatus (for example Screen undersize/oversize) need no type-specific math.
   if (node?.nodeType === 'crusher') result.targetParticleSizeMm = node.targetParticleSizeMm;
   if (node?.nodeType === 'magSep') {
     result.fieldStrength = node.fieldStrength;
