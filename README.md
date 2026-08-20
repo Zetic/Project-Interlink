@@ -60,16 +60,16 @@ World generation exists to create meaningful physical starting conditions for th
 
 # Current Project State
 
-The current build has a coherent vertical slice from deterministic planet generation through natural resource sources, player-authored Site construction, continuous particulate processing and routing, recursive boundaries, and a shared graph workspace.
+The current build has a coherent vertical slice from deterministic planet generation through natural resource sources, player-authored Site construction, staged ore comminution, continuous particulate processing/routing, recursive boundaries, and a shared graph workspace.
 
 Current serialized versions are:
 
 ```text
-schemaVersion: 8
-generatorVersion: 6
+schemaVersion: 9
+generatorVersion: 7
 ```
 
-`schemaVersion: 8` represents canonical fraction-aware `MaterialBody` serialization. `generatorVersion: 6` represents generated solid resources using concrete registered species compositions rather than coarse placeholder constituents.
+`schemaVersion: 9` adds persistent mineral-texture lineage to ore-body ResourceOccurrences and textured solid populations. `generatorVersion: 7` generates deterministic occurrence-specific mineral texture profiles in addition to concrete registered species compositions.
 
 ## Implemented foundation
 
@@ -80,6 +80,7 @@ generatorVersion: 6
 - explicit World / Knowledge / UI state separation
 - canonical Region → Site → Feature → `ResourceOccurrence` ownership beneath Planet
 - broad regional resource potential materialized as physical access Sites/Features rather than Region inventory
+- ore-body ResourceOccurrences with deterministic species-aware mineral texture profiles
 - independent hierarchy, occurrence, and process-history validation domains
 - deterministic generation separated from declarative content definitions
 
@@ -92,35 +93,42 @@ Current placeable definitions are:
 ```text
 APPARATUS
   Extractor
-  Crusher
+  Jaw Crusher
+  Cone Crusher
+  Ball Mill
   Screen
   Splitter
   Material Merger
   Feeder
-  Magnetic Separator
+  Dry Drum Magnetic Separator
 
 CONTAINER
   Hopper
 ```
 
+The old generic `Crusher` node remains compatibility-only and is not player-placeable.
+
 Apparatus/catalog metadata is definition-driven and runtime behavior is registry-driven. The NODE catalog, generic Inspector, typed-port compatibility, and removal policy derive from shared definitions rather than independent machine lists.
 
 ### Matter and processing
 
-The implemented solid-particulate model stores aggregate fractions as:
+The implemented solid-particulate model stores aggregate populations as:
 
 ```text
-speciesId × particleSizeBinId × liberationClassId → quantity
+speciesId × particleSizeBinId × liberationClassId × textureProfileId → quantity
 ```
 
-A fraction represents a population of material, not an individually simulated particle.
+`textureProfileId` is present for textured ore-derived populations. Legacy/untextured material remains valid without that fourth segment. A fraction represents a statistical material population, not an individually simulated particle.
+
+The solid state carries a small `textureProfiles` registry so different ores do not lose physically relevant geological lineage when they are blended in one Hopper. Two otherwise identical hematite populations with different source textures therefore remain distinct internally.
 
 Current solid state includes:
 
 - concrete registered material/mineral species
 - mass/quantity
-- particle-size distribution
+- particle-size distribution from `<32 µm` through run-of-mine rock above 1 m
 - liberation distribution
+- persistent ore texture lineage
 - magnetic-response property coverage
 - `MaterialBody` physical form
 
@@ -128,7 +136,8 @@ Generated solid resources use concrete constituent compositions. Legacy coarse a
 
 Mechanical process physics currently includes:
 
-- Crushing
+- staged Jaw/Cone crushing
+- Ball Mill grinding
 - Screening
 - Material Splitting
 - Material Merging
@@ -148,35 +157,61 @@ Mechanical process physics currently includes:
 
 An Extractor is placed unbound. A typed `resource-access` connection from a Feature selects/authorizes the Feature-owned natural occurrence being exploited.
 
-`resource-access` carries no matter and no kg/s. Actual material flow begins at the Extractor material-output port, and extraction preserves the source occurrence's composition.
+`resource-access` carries no matter and no kg/s. Actual material flow begins at the Extractor material-output port. Ore-body extraction materializes mostly locked run-of-mine rock and preserves both source composition and mineral-texture lineage.
 
-## Crusher
+## Jaw Crusher
 
-Current player-configurable canonical **nominal product settings** are:
+The Jaw Crusher represents primary crushing. It accepts run-of-mine feed up to `1000 mm` and performs large coarse size reduction at `8 kg/s` prototype rated throughput.
 
-```text
-1 mm
-5 mm
-15 mm
-25 mm
-60 mm
-120 mm
-```
-
-A Crusher setting is not a guaranteed maximum particle size. Coarser feed produces a deterministic prototype particle-size distribution containing some oversize material:
+Its current deterministic nominal-product distribution is:
 
 ```text
-10% → one size bin coarser than the nominal setting
-55% → nominal setting bin
-25% → one size bin finer
+15% → one size bin coarser than nominal
+55% → nominal size bin
+20% → one size bin finer
 10% → two size bins finer
 ```
 
-Shares merge naturally where the particulate model reaches its finest available bin. This prototype distribution is intentionally simple; future crusher type, feed properties, loading, wear, and operating conditions can replace the fixed curve when those variables create useful gameplay decisions.
+Primary crushing is intentionally modeled as **predominantly size reduction**. Jaw crushing can create a small liberation increase, especially for unusually coarse/easy-boundary ore textures, but it does not grant large universal liberation gains merely because many size bins were crossed.
 
-A Crusher remains a throughput device. Feed already at or below its configured nominal setting passes through unchanged rather than causing the machine to infer that no processing is needed. Coarser fractions are redistributed and gain liberation while preserving species mass.
+## Cone Crusher
 
-Legacy 10/12 mm settings remain accepted only for persisted/test compatibility and preserve their historical product behavior; they are not player-facing canonical choices.
+The Cone Crusher represents secondary/tertiary crushing. It accepts feed up to `250 mm`, is rated at `5 kg/s`, and provides the current `5 / 15 / 25 / 60 mm` nominal product settings.
+
+For the 25 mm setting, coarse feed uses the existing prototype distribution:
+
+```text
+10% → 25–60 mm
+55% → 15–25 mm
+25% → 5–15 mm
+10% → 1–5 mm
+```
+
+The Cone Crusher still produces oversize, so screening/recycle remains physically meaningful. Like the Jaw Crusher, its direct liberation effect is deliberately limited and depends on the source ore texture rather than a generic crusher bonus.
+
+## Ball Mill
+
+The Ball Mill is the first true fine-grinding apparatus. It accepts feed no coarser than `25 mm`, is rated at `2 kg/s`, and exposes nominal grinding settings in the fine regime:
+
+```text
+500 µm
+250 µm
+125 µm
+63 µm
+32 µm
+```
+
+A 250 µm nominal setting currently produces the prototype PSD:
+
+```text
+ 5% → 250–500 µm
+45% → 125–250 µm
+30% → 63–125 µm
+15% → 32–63 µm
+ 5% → <32 µm
+```
+
+Grinding does **not** apply one universal liberation result. Liberation depends on each material population's particle size relative to its occurrence-specific characteristic mineral-grain/liberation scale. The same Ball Mill and PSD can therefore produce substantially different liberation distributions for coarse-textured and finely disseminated ores.
 
 ## Screen
 
@@ -190,17 +225,6 @@ Screen
   └── oversize
 ```
 
-The player chooses an aperture from the same canonical cuts used by the current particulate size model:
-
-```text
-1 mm
-5 mm
-15 mm
-25 mm
-60 mm
-120 mm
-```
-
 Current screening is an intentionally ideal sharp cut:
 
 ```text
@@ -211,11 +235,7 @@ coarser fraction
     → oversize
 ```
 
-Screening does **not** change species, particle-size class, liberation class, or quantity. It only routes existing fractions.
-
-Because the Crusher produces a nominal distribution rather than a perfect cutoff, the Screen has an immediate classification role. For coarse feed processed by a Crusher at 25 mm, the prototype curve leaves 10% in the 25–60 mm oversize class; a 25 mm Screen routes that fraction to `oversize` while the remaining 90% can proceed to a process that requires <=25 mm feed.
-
-Both outputs are required. Output handling is transactional: a disconnected required output or insufficient required output capacity prevents feed consumption rather than deleting one side of the split.
+Screening does **not** change species, particle-size class, liberation class, texture lineage, or quantity. It only routes existing fractions. Both outputs are required and output handling is transactional.
 
 Real screening inefficiency, near-cut misplacement, moisture effects, screen area/loading, particle shape, deck angle, and vibration are deferred until they create useful process decisions.
 
@@ -231,11 +251,9 @@ stored feed
  └── output B
 ```
 
-The player configures `splitFractionToA` from `0` to `1`. Every species/size/liberation fraction is divided by the same ratio, so the Splitter changes ownership and flow only; it does not alter material state.
+The player configures `splitFractionToA` from `0` to `1`. Every existing material population is divided by the same ratio. Species, size, liberation, and texture lineage are preserved.
 
-Both outputs are explicit and required. Downstream capacity throttles the whole planned split transactionally rather than allowing one branch to consume matter while the other branch is lost or blocked.
-
-Ordinary material outputs still cannot fan out. A Splitter creates two independent physical output ports, each of which remains subject to the normal one-connection rule.
+Both outputs are explicit and required. Downstream capacity throttles the whole planned split transactionally. Ordinary material outputs still cannot fan out.
 
 ## Material Merger
 
@@ -247,31 +265,21 @@ input A ─┐
 input B ─┘
 ```
 
-It combines two stored particulate populations into one conserved output without changing species, particle size, or liberation. It is deliberately **not** called a Mixer: no mixing intensity, homogeneity, residence-time, viscosity, or other physical mixing model is implied.
+It combines two stored particulate populations into one conserved output without changing physical descriptors. It is deliberately **not** called a Mixer: no mixing intensity, homogeneity, residence-time, viscosity, or other physical mixing model is implied.
 
-Both input ports and the product port must be connected. If one connected input is temporarily empty, material available from the other input can continue through. When combined availability exceeds the rated throughput, both inputs are drawn proportionally from their currently stored masses.
-
-Output capacity backpressures both source withdrawals as one transaction.
+Critically, merging two ores does not erase their texture identities. If otherwise identical fractions came from different geological texture profiles, both populations remain distinct inside the merged material state so later grinding can affect them differently.
 
 ## Feeder
 
-The Feeder separates a requested material-flow setpoint from the rated capacity of downstream machinery:
+The Feeder separates a requested material-flow setpoint from the rated capacity of downstream machinery. The current prototype is rated at `10 kg/s`; the player-configurable setpoint ranges from `0` to `10 kg/s` and defaults to `4 kg/s`.
 
-```text
-Hopper
-  ↓
-Feeder @ requested kg/s
-  ↓
-downstream process
-```
+The Feeder does not transform material. It preserves composition, particle-size distribution, liberation, and texture lineage while metering feasible flow.
 
-The current prototype Feeder is rated at `10 kg/s`. The player-configurable `flowRateKgPerSecond` setpoint ranges from `0` to `10 kg/s` and defaults to `4 kg/s`.
+## Dry Drum Magnetic Separator
 
-The Feeder does not transform material. It preserves composition, particle-size distribution, and liberation exactly while metering the feasible flow. A zero setpoint leaves the machine idle without consuming feed. Downstream storage capacity applies normal backpressure.
+The current magnetic-separation apparatus represents a coarse dry magnetic preconcentrator/cobber rather than universal final beneficiation.
 
-## Magnetic Separator
-
-The current magnetic-separation model depends on:
+Its model depends on:
 
 ```text
 species magnetic response
@@ -281,23 +289,36 @@ species magnetic response
 + process entrainment/carryover
 ```
 
-The current prototype requires all feed to be in particle-size classes at or below 25 mm. Oversized mixed feed blocks the process rather than being silently screened.
-
-Screen therefore provides the explicit way to classify a Crusher product before a size-limited downstream process.
+It requires all feed to be at or below `25 mm`; oversized mixed feed blocks the process rather than being silently screened. It is therefore a plausible early dry preconcentration step for suitable strongly magnetic ore, not a substitute for future fine/wet beneficiation technology.
 
 ---
 
-# Composition, Liberation, and Separation
+# Composition, Texture, Liberation, and Separation
 
-Interlink keeps three different concepts separate.
+Interlink keeps four related concepts separate.
 
 ### Composition
 
 Composition answers **which species are present and how much?** An iron ore source can contain hematite, magnetite, goethite, and quartz. Extraction preserves that mixture.
 
+### Mineral texture
+
+Mineral texture answers **how are those minerals originally distributed/intergrown in this particular occurrence?** It belongs to the `ResourceOccurrence`, not to `MaterialSpecies`.
+
+An ore texture profile currently contains:
+
+```text
+fallback characteristic liberation size
+species-specific characteristic liberation sizes
+liberation-curve spread
+boundary-breakage affinity
+```
+
+The profile is immutable geological lineage. The physical particles change during comminution, but the lineage remains attached so the simulation still knows which source texture governs their liberation response.
+
 ### Liberation
 
-Liberation answers **how physically detached are constituent mineral populations?** Current classes are:
+Liberation answers **how physically detached are constituent mineral populations now?** Current classes are:
 
 ```text
 locked
@@ -308,29 +329,41 @@ liberated
 
 A fully liberated body may still be a mixed collection of separate mineral grains. Liberation is not purity.
 
+Crushing/grinding changes particle size; the combination of resulting particle size, source mineral texture, and equipment breakage regime determines liberation advancement. Particle size alone no longer determines the result for generated ore.
+
 ### Separation
 
-Separation routes material according to physical differences or classifications. The current Screen separates by particle size; the Magnetic Separator separates according to magnetic response plus size/liberation/process effects. Splitter and Material Merger are routing operations rather than property-based separation processes.
+Separation routes material according to physical differences or classifications. The Screen separates by particle size; the Dry Drum Magnetic Separator separates according to magnetic response plus size/liberation/process effects. Splitter and Material Merger are routing operations rather than property-based separation processes.
 
-A developing mineral-processing path can now include explicit recycle and controlled feed:
+A current ore-processing path can be built as:
 
 ```text
-fresh ore ───────────────┐
-                         ↓
-                  Material Merger
-                         ↓
-                      Feeder
-                         ↓
-                      Crusher
-                         ↓
-                       Screen
-                    ┌────┴────┐
-              undersize     oversize
-                  ↓             │
-             downstream         └── storage / recycle path
+Feature / orebody
+      ↓
+  Extractor
+      ↓
+   Hopper
+      ↓
+ Jaw Crusher
+      ↓
+   Hopper
+      ↓
+ Cone Crusher
+      ↓
+   Hopper
+      ↓
+   Screen ───── oversize → recycle
+      ↓ undersize
+   Hopper
+      ↓
+  Ball Mill
+      ↓
+   Hopper
+      ↓
+future fine beneficiation
 ```
 
-A complete automatic recycle loop still depends on the chosen graph topology and storage/throughput balance; no implicit routing occurs merely because compatible machines exist.
+For suitable magnetite-rich ore, coarse dry magnetic preconcentration can instead be inserted before expensive fine grinding.
 
 ---
 
@@ -415,9 +448,10 @@ Ordinary material outputs cannot fan out to multiple consumers. Explicit branchi
 The current runtime provides:
 
 - fixed-step simulation independent from render FPS
-- continuous Extractor, Crusher, Screen, Splitter, Material Merger, Feeder, and Magnetic Separator execution
+- continuous Extractor, Jaw Crusher, Cone Crusher, Ball Mill, Screen, Splitter, Material Merger, Feeder, and Dry Drum Magnetic Separator execution
 - Hopper buffering and finite capacity
 - material streams represented as mass-flow state rather than per-tick batches
+- persistent mineral-texture lineage through storage, routing, comminution, screening, and magnetic separation
 - explicit player-configurable branching and feed-rate control
 - transactional multi-input/multi-output routing
 - global world Pause/Resume
@@ -442,12 +476,13 @@ species identity
 mass / quantity
 particle size
 liberation
+occurrence mineral texture / characteristic liberation scale
 magnetic response
 ```
 
-Likely future property domains include density, hardness/grindability, moisture/liquid fraction, surface chemistry, temperature/internal energy, phase, pressure/viscosity/EOS data, and chemical equilibrium/reaction data.
+Texture is a particulate-population identity dimension because losing it when ores mix would lose physically relevant future behavior. That does **not** imply that temperature, pressure, moisture, or every future property should be appended to the fraction key. Broader body/phase/thermal state should remain around the particulate population where appropriate.
 
-Do not turn all of these into universal fraction-key dimensions. Intrinsic species data, material structure, body state, process conditions, and derived properties should remain distinct where physically useful.
+Likely future property domains include density, hardness/grindability, moisture/liquid fraction, surface chemistry, temperature/internal energy, phase, pressure/viscosity/EOS data, and chemical equilibrium/reaction data.
 
 > **A material property enters the simulation when an apparatus or process needs it to determine a physical outcome.**
 
@@ -488,7 +523,7 @@ runtime registration
 tests
 ```
 
-Screen, Splitter, Material Merger, and Feeder have all been added through this path without adding machine-pair connection whitelists, a second NODE catalog, removable-node type lists, generic-Inspector type lists, or central simulation dispatch branches.
+New process machinery should continue to use this path without adding machine-pair connection whitelists, duplicate NODE catalogs, removable-node type lists, generic-Inspector type lists, or central simulation type dispatch branches.
 
 ---
 
@@ -514,16 +549,17 @@ The viewport is finite. Logical graph space is effectively unbounded and support
 
 # Near-Term Development Direction
 
-The routing/flow-control layer now provides explicit branching, recombination, and feed-rate control. The next major processing addition should create a complete new physical regime rather than adding an isolated machine with no useful downstream consumer.
+Staged coarse crushing and fine grinding now exist, and liberation is occurrence-texture-dependent instead of a universal size-reduction bonus. The next processing additions should build on the physical state already present rather than inventing machinery to compensate for missing comminution physics.
 
 Likely sequence:
 
-1. **Fine-processing package: Mill / Grinder + finer particle-size bins + fine classification + a separation method that benefits from fine liberated material** — avoids making milling an isolated step that only worsens the current coarse Magnetic Separator.
-2. **Density property + Gravity Separation** — first major new process-driven property domain beyond magnetic response.
+1. **Decide the next beneficiation family from the now-meaningful fine product state** — likely density/Gravity Separation or the first fine magnetic/wet route when supporting properties justify it.
+2. **Density property + Gravity Separation** — a major new property-driven processing domain beyond magnetic response.
 3. **Slurry/liquid handling and Hydrocyclone / Flotation-style processing** when the material model supports them.
-4. **Thermal state and thermal apparatus** once internal-energy/phase modeling has a concrete process need.
-5. **Chemical transformation** after elemental/stoichiometric conservation and thermal foundations are ready.
-6. **Sensors, controllers, logistics, energy networks, and reusable composite systems** incrementally as real gameplay demands them.
+4. **Hardness/grindability and energy demand** when comminution power/throughput tradeoffs become gameplay-relevant; HPGR/microfracture can then have a real physical role.
+5. **Thermal state and thermal apparatus** once internal-energy/phase modeling has a concrete process need.
+6. **Chemical transformation** after elemental/stoichiometric conservation and thermal foundations are ready.
+7. **Sensors, controllers, logistics, energy networks, and reusable composite systems** incrementally as real gameplay demands them.
 
 This is direction, not a commitment to implement every system immediately. Each addition should justify the physical state and complexity it introduces.
 
