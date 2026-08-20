@@ -21,8 +21,10 @@ function resolveNode(blueprint, nodeOrId) {
 
 function isPlayerRemovableNode(node) {
   if (!node || node.boundaryRole || node.systemType === 'boundary-buffer') return false;
-  const definition = getApparatusDefinition(node.nodeType);
-  return Boolean(definition?.catalog && definition.catalog.placeable !== false);
+  // Any registered apparatus may be removed, including compatibility apparatus
+  // that is intentionally hidden from new placement. Catalog visibility is a
+  // construction policy, not a reason to trap a legacy node in an existing Site.
+  return Boolean(getApparatusDefinition(node.nodeType));
 }
 
 /**
