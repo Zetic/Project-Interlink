@@ -257,7 +257,7 @@ test('particle-size bin boundary mapping treats exact cut points as belonging to
   assert.equal(particleSizeBinIdForMm(120), '60-120mm');
 });
 
-test('crusher preserves already-fine fractions, crushes only coarser fractions, and idles cleanly when nothing is crushable', () => {
+test('crusher preserves already-fine fractions and crushes only coarser fractions', () => {
   const mixedFeed = createSolidMaterialState([
     { speciesId: 'hematite', sizeBinId: '60-120mm', liberationClassId: 'locked', quantity: 6 },
     { speciesId: 'quartz', sizeBinId: '5-15mm', liberationClassId: 'liberated', quantity: 2 },
@@ -385,7 +385,7 @@ test('continuous chained crushers with progressively finer targets run sequentia
   );
 });
 
-test('continuous crusher with feed already at the configured target idles instead of reporting a blocked transport failure', () => {
+test('continuous crusher passes feed already at the configured target instead of acting as an implicit size sensor', () => {
   _resetOrdinals();
   const blueprint = createBlueprint();
   const world = { resourceOccurrences: {} };
@@ -404,10 +404,50 @@ test('continuous crusher with feed already at the configured target idles instea
   const feedBefore = hopperStoredMassKg(feed);
   simulationTick(blueprint, world, 0.1);
 
-  assert.equal(crusher.operatingState, 'idle');
-  assert.equal(crusher.lastError, 'Feed already meets target particle size');
-  assertAlmostEqual(hopperStoredMassKg(feed), feedBefore, 'already-fine feed remains in place');
-  assertAlmostEqual(hopperStoredMassKg(output), 0, 'idle crusher should not report product transfer');
+  const feedDecrease = feedBefore - hopperStoredMassKg(feed);
+  const outputMass = hopperStoredMassKg(output);
+  assert.equal(crusher.operatingState, 'running');
+  assert.equal(crusher.lastError, null);
+  assertAlmostEqual(feedDecrease, 0.4, 'already-sized feed moves at configured throughput');
+  assertAlmostEqual(outputMass, feedDecrease, 'pass-through feed remains mass-conserving');
+  assertAlmostEqual(output.materialBody.solidState.fractions['hematite|5-15mm|partial'] ?? 0, 0.3, 'at-target hematite remains unchanged');
+  assertAlmostEqual(output.materialBody.solidState.fractions['quartz|1-5mm|liberated'] ?? 0, 0.1, 'finer quartz remains unchanged');
+});
+
+test('two same-target crushers continue material flow without built-in size-control logic', () => {
+  _resetOrdinals();
+  const blueprint = createBlueprint();
+  const world = { resourceOccurrences: {} };
+  const feed = blueprintAddHopper(blueprint, 100);
+  const crusherA = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 4, targetParticleSizeMm: 15 });
+  const middle = blueprintAddHopper(blueprint, 100);
+  const crusherB = blueprintAddCrusher(blueprint, { throughputKgPerSecond: 2, targetParticleSizeMm: 15 });
+  const output = blueprintAddHopper(blueprint, 100);
+  const initialTotal = 12;
+
+  hopperReceiveInflow(feed, createSolidMaterialState([
+    { speciesId: 'hematite', sizeBinId: '120mm-plus', liberationClassId: 'locked', quantity: initialTotal },
+  ]), 1);
+  blueprintConnect(blueprint, feed.id, feed.outputPortId, crusherA.id, crusherA.inputPortId);
+  blueprintConnect(blueprint, crusherA.id, crusherA.outputPortId, middle.id, middle.inputPortId);
+  blueprintConnect(blueprint, middle.id, middle.outputPortId, crusherB.id, crusherB.inputPortId);
+  blueprintConnect(blueprint, crusherB.id, crusherB.outputPortId, output.id, output.inputPortId);
+  setNodeEnabled(blueprint, crusherA.id, true);
+  setNodeEnabled(blueprint, crusherB.id, true);
+
+  for (let i = 0; i < 5; i += 1) simulationTick(blueprint, world, 0.1);
+
+  assert.equal(crusherB.operatingState, 'running');
+  assert.equal(crusherB.lastError, null);
+  assert.ok(hopperStoredMassKg(output) > 0, 'same-target second crusher should continue passing material');
+  const outputSizeSummary = summarizeSolidMaterialBySizeBin(output.materialBody.solidState);
+  assert.ok((outputSizeSummary['5-15mm'] ?? 0) > 0, 'at-target fraction should pass through unchanged');
+  assert.ok((outputSizeSummary['1-5mm'] ?? 0) > 0, 'finer fraction should pass through unchanged');
+  assertAlmostEqual(
+    hopperStoredMassKg(feed) + hopperStoredMassKg(middle) + hopperStoredMassKg(output),
+    initialTotal,
+    'same-target crusher chain conservation'
+  );
 });
 
 test('continuous fraction-aware magnetic separator backpressure remains atomic', () => {
