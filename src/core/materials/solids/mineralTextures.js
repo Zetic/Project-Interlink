@@ -51,9 +51,12 @@ export function cloneMineralTextureProfile(profile) {
   };
 }
 
+/**
+ * Callers that accept external/untrusted profiles should validate them once at
+ * the state/occurrence boundary. Hot-path comminution lookups are intentionally
+ * O(1) and do not revalidate the whole species map for every fraction.
+ */
 export function characteristicLiberationSizeUm(profile, speciesId) {
-  validateMineralTextureProfile(profile);
-  requireMaterialConstituentId(speciesId);
   return profile.speciesLiberationSizeUm[speciesId] ?? profile.fallbackLiberationSizeUm;
 }
 
