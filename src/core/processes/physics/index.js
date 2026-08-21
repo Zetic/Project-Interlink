@@ -1,4 +1,12 @@
 export {
+  COMMINUTION_EQUIPMENT,
+  comminuteSolidMaterialState,
+  comminutionEquipmentProfile,
+  coneCrushSolidMaterialState,
+  jawCrushSolidMaterialState,
+  millSolidMaterialState,
+} from './comminution.js';
+export {
   crushSolidMaterialState,
   hasCrushableSolidFractions,
 } from './crushing.js';

@@ -243,7 +243,7 @@ test('hidden categories stay hidden when a later index adds matching nodes', () 
   commitNodePlacement(
     session.blueprint,
     session.blueprintLayout,
-    NODE_DEFINITIONS.find(definition => definition.id === 'crusher'),
+    NODE_DEFINITIONS.find(definition => definition.id === 'cone-crusher'),
     {},
     { x: 240, y: 120 },
   );

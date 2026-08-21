@@ -1,8 +1,12 @@
 /** Extractor node — converts Feature resource access into an actual material stream. */
 
-import { createSolidMaterialBodyFromOccurrence } from '../core/materials/occurrenceMaterialization.js';
+import {
+  createSolidMaterialBodyFromOccurrence,
+  OCCURRENCE_FRAGMENTATION_PROFILES,
+} from '../core/materials/occurrenceMaterialization.js';
 import { MATERIAL_FORMS, physicalFormForOccurrence } from '../core/materials/materialForms.js';
 import { PORT_CAPABILITIES } from '../core/systems/ports.js';
+import { getResourceDefinition } from '../content/resources/resourceDefinitions.js';
 
 export const DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND = 5;
 export const EXTRACTOR_SUPPORTED_PHYSICAL_FORMS = Object.freeze([
@@ -76,13 +80,24 @@ export function extractorOccurrenceEligibility(occurrence) {
   return { ok: true, physicalForm, reason: '' };
 }
 
+function fragmentationProfileForOccurrence(occurrence) {
+  const resource = getResourceDefinition(occurrence?.resourceId);
+  return resource?.occurrenceFamily === 'ore-body'
+    ? OCCURRENCE_FRAGMENTATION_PROFILES.RUN_OF_MINE_ROCK
+    : OCCURRENCE_FRAGMENTATION_PROFILES.COARSE_SOLID;
+}
+
 /**
  * Produce the actual occurrence mixture. Extraction never purifies the source:
  * detailed occurrence composition is preserved proportionally in the output.
+ * Ore bodies enter the engineering graph as blasted run-of-mine rock so primary
+ * crushing has a real physical role before secondary crushing and grinding.
  */
 export function extractorOutputRates(extractor, occurrence, throttle = 1) {
   const eligibility = extractorOccurrenceEligibility(occurrence);
   if (!eligibility.ok) throw new Error(eligibility.reason);
   const effectiveRate = extractor.prototypeRateKgPerSecond * Math.max(0, Math.min(1, throttle));
-  return createSolidMaterialBodyFromOccurrence(occurrence, effectiveRate).solidState;
+  return createSolidMaterialBodyFromOccurrence(occurrence, effectiveRate, {
+    fragmentationProfile: fragmentationProfileForOccurrence(occurrence),
+  }).solidState;
 }

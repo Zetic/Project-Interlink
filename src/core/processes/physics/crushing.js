@@ -35,14 +35,17 @@ function computedCrushingSizeShares(inputSizeBinId, targetSizeBinId, targetParti
   const orderedSizeBinIds = listOrderedSizeBinIds();
 
   // Preserve historical behavior for persisted legacy 10/12 mm settings. New
-  // player-facing canonical settings model a nominal crusher product rather
-  // than a perfect maximum-size cutoff.
+  // player-facing staged comminution uses the expanded canonical vocabulary,
+  // while old generic Crusher results retain their broad <1 mm bucket.
   if ([10, 12].includes(targetParticleSizeMm)) {
     const entries = [{ sizeBinId: targetSizeBinId, share: 0.65 }];
     const finerIndex = Math.max(0, targetIndex - 1);
     entries.push({ sizeBinId: orderedSizeBinIds[finerIndex], share: 0.25 });
     const finestIndex = Math.max(0, targetIndex - 2);
-    entries.push({ sizeBinId: orderedSizeBinIds[finestIndex], share: 0.1 });
+    const finestBinId = orderedSizeBinIds[finestIndex] === '0.5-1mm'
+      ? 'lt-1mm'
+      : orderedSizeBinIds[finestIndex];
+    entries.push({ sizeBinId: finestBinId, share: 0.1 });
     return mergeShares(entries);
   }
 
@@ -73,6 +76,7 @@ function distributeLiberationMass(
   outputState,
   speciesId,
   inputLiberationClassId,
+  textureProfileId,
   inputSizeBinId,
   outputSizeBinId,
   massKg,
@@ -85,47 +89,28 @@ function distributeLiberationMass(
   const sizeImprovement = Math.max(0, inputSizeIndex - outputSizeIndex);
   const maxLift = Math.min(maxIndex - inputIndex, sizeImprovement >= 2 ? 2 : sizeImprovement >= 1 ? 1 : 0);
 
+  const add = (liberationClassId, quantity) => addSolidFractionDirect(outputState, {
+    speciesId,
+    sizeBinId: outputSizeBinId,
+    liberationClassId,
+    textureProfileId,
+    quantity,
+  });
+
   if (maxLift <= 0 || inputIndex >= maxIndex) {
-    addSolidFractionDirect(outputState, {
-      speciesId,
-      sizeBinId: outputSizeBinId,
-      liberationClassId: inputLiberationClassId,
-      quantity: massKg,
-    });
+    add(inputLiberationClassId, massKg);
     return;
   }
 
   const improvedShare = clamp(0.2 + 0.2 * sizeImprovement, 0, maxLift >= 2 ? 0.8 : 0.65);
   const sameShare = 1 - improvedShare;
-  if (sameShare > 0) {
-    addSolidFractionDirect(outputState, {
-      speciesId,
-      sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex].id,
-      quantity: massKg * sameShare,
-    });
-  }
+  if (sameShare > 0) add(liberationClasses[inputIndex].id, massKg * sameShare);
   if (maxLift === 1) {
-    addSolidFractionDirect(outputState, {
-      speciesId,
-      sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex + 1].id,
-      quantity: massKg * improvedShare,
-    });
+    add(liberationClasses[inputIndex + 1].id, massKg * improvedShare);
     return;
   }
-  addSolidFractionDirect(outputState, {
-    speciesId,
-    sizeBinId: outputSizeBinId,
-    liberationClassId: liberationClasses[inputIndex + 1].id,
-    quantity: massKg * improvedShare * 0.65,
-  });
-  addSolidFractionDirect(outputState, {
-    speciesId,
-    sizeBinId: outputSizeBinId,
-    liberationClassId: liberationClasses[inputIndex + 2].id,
-    quantity: massKg * improvedShare * 0.35,
-  });
+  add(liberationClasses[inputIndex + 1].id, massKg * improvedShare * 0.65);
+  add(liberationClasses[inputIndex + 2].id, massKg * improvedShare * 0.35);
 }
 
 export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm) {
@@ -140,7 +125,9 @@ export function hasCrushableSolidFractions(feedSolidState, targetParticleSizeMm)
 export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
   validateSolidMaterialState(feedSolidState);
   const targetSizeBinId = requireCrusherTargetSizeBinId(targetParticleSizeMm);
-  const product = createSolidMaterialState();
+  const product = createSolidMaterialState([], {
+    textureProfiles: feedSolidState.textureProfiles ?? {},
+  });
   let sawFeed = false;
   forEachSolidFraction(feedSolidState, (fraction) => {
     sawFeed = true;
@@ -154,6 +141,7 @@ export function crushSolidMaterialState(feedSolidState, targetParticleSizeMm) {
         product,
         fraction.speciesId,
         fraction.liberationClassId,
+        fraction.textureProfileId,
         fraction.sizeBinId,
         outputShare.sizeBinId,
         fraction.quantity * outputShare.share,

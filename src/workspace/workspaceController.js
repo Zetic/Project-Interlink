@@ -33,6 +33,7 @@ import {
   featureInspection,
   connectionInspection,
 } from './inspector/inspectionViewModel.js';
+import { renderFeatureResources } from './inspector/featureInspectorUI.js';
 import {
   projectBlueprintGraph,
   projectBoundaryGraph,
@@ -1665,8 +1666,7 @@ function attemptNodeRemoval(nodeId) {
 }
 
 function featureResourcesHtml(details) {
-  if (!details.resources.length) return '<div class="ws-ins-note">No resource access is currently exposed.</div>';
-  return details.resources.map(resource => `<div class="ws-ins-comp-row"><span>${escHtml(resource.name)}</span><span>${escHtml(resource.availabilityClass)}</span></div>${resource.descriptor ? `<div class="ws-ins-resource-note">${escHtml(resource.descriptor)}</div>` : ''}`).join('');
+  return renderFeatureResources(details);
 }
 
 function formatNodeInspector(node) {
