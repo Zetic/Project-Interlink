@@ -5,6 +5,6 @@
 // Schema v9: ore-body ResourceOccurrences carry mineralTexture and textured solid fractions preserve that geological lineage.
 // Generator v5: deterministic iron-ore compositions use explicit quartz species in canonical occurrence composition.
 // Generator v6: all generated solid resources use concrete species compositions with property coverage; placeholder gangue/oxide constituents are no longer emitted.
-// Generator v7: ore-body occurrences generate deterministic mineral texture / characteristic liberation-size profiles.
+// Generator v7: ore-body occurrences generate deterministic species D10/D50/D90 grain distributions, mineral occurrence modes, and comminution engineering properties.
 export const SCHEMA_VERSION = 9;
 export const GENERATOR_VERSION = 7;
