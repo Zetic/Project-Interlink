@@ -14,6 +14,13 @@ import {
   totalSolidQuantity,
   validateSolidMaterialState,
 } from '../core/materials/solids/solidMaterialState.js';
+import { MATERIAL_FORMS } from '../core/materials/materialForms.js';
+import {
+  cloneGasMaterialState,
+  createGasMaterialState,
+  totalGasMassKg,
+  validateGasMaterialState,
+} from '../core/materials/gas/gasMaterialState.js';
 
 export const STREAM_FLOW_TOLERANCE = 1e-12;
 
@@ -65,6 +72,9 @@ export function createMaterialStream({
   targetNodeId,
   targetPortId,
   solidState = null,
+  gasState = null,
+  physicalForm = SOLID_PARTICULATE_FORM,
+  specificSensibleEnthalpyJPerKg = 0,
   componentMassFlowKgPerSecond = null,
   particleSizeMm = null,
   connectionId = null,
@@ -75,13 +85,24 @@ export function createMaterialStream({
   if (!targetNodeId || typeof targetNodeId !== 'string') throw new Error('Stream targetNodeId must be a non-empty string');
   if (!targetPortId || typeof targetPortId !== 'string') throw new Error('Stream targetPortId must be a non-empty string');
 
-  const normalizedSolidState = solidState
-    ? cloneSolidMaterialState(solidState)
-    : (componentMassFlowKgPerSecond && Object.keys(componentMassFlowKgPerSecond).length > 0
-      ? legacySolidFlow(componentMassFlowKgPerSecond, particleSizeMm)
-      : createSolidMaterialState());
-
-  validateSolidMaterialFlowRates(normalizedSolidState);
+  if (!Number.isFinite(specificSensibleEnthalpyJPerKg)) {
+    throw new Error('specificSensibleEnthalpyJPerKg must be finite');
+  }
+  if (![MATERIAL_FORMS.SOLID_PARTICULATE, MATERIAL_FORMS.GAS].includes(physicalForm)) {
+    throw new Error(`Unsupported material stream physical form '${physicalForm}'`);
+  }
+  const normalizedSolidState = physicalForm === MATERIAL_FORMS.SOLID_PARTICULATE
+    ? (solidState
+      ? cloneSolidMaterialState(solidState)
+      : (componentMassFlowKgPerSecond && Object.keys(componentMassFlowKgPerSecond).length > 0
+        ? legacySolidFlow(componentMassFlowKgPerSecond, particleSizeMm)
+        : createSolidMaterialState()))
+    : null;
+  const normalizedGasState = physicalForm === MATERIAL_FORMS.GAS
+    ? cloneGasMaterialState(gasState ?? createGasMaterialState())
+    : null;
+  if (normalizedSolidState) validateSolidMaterialFlowRates(normalizedSolidState);
+  if (normalizedGasState) validateGasMaterialState(normalizedGasState);
 
   const stream = {
     id,
@@ -90,14 +111,18 @@ export function createMaterialStream({
     sourcePortId,
     targetNodeId,
     targetPortId,
-    physicalForm: SOLID_PARTICULATE_FORM,
+    physicalForm,
     nominalParticleSizeMm: particleSizeMm,
-    solidState: normalizedSolidState,
+    ...(normalizedSolidState ? { solidState: normalizedSolidState } : { gasState: normalizedGasState }),
+    specificSensibleEnthalpyJPerKg,
   };
   Object.defineProperty(stream, 'componentMassFlowKgPerSecond', {
     enumerable: true,
     get() {
       const totals = new Map();
+      if (stream.physicalForm === MATERIAL_FORMS.GAS) {
+        return { ...stream.gasState.speciesMassKg };
+      }
       for (const [key, quantity] of Object.entries(stream.solidState.fractions)) {
         const speciesId = key.split('|')[0];
         totals.set(speciesId, Number(((totals.get(speciesId) ?? 0) + quantity).toFixed(12)));
@@ -119,10 +144,35 @@ export function setMaterialStreamState(stream, solidStateOrRates = createSolidMa
   stream.physicalForm = SOLID_PARTICULATE_FORM;
   if (arguments.length >= 3) stream.nominalParticleSizeMm = particleSizeMm;
   stream.solidState = cloneSolidMaterialState(solidState);
+  delete stream.gasState;
+  stream.specificSensibleEnthalpyJPerKg = arguments.length >= 4 ? arguments[3] : 0;
+  if (!Number.isFinite(stream.specificSensibleEnthalpyJPerKg)) {
+    throw new Error('specificSensibleEnthalpyJPerKg must be finite');
+  }
   return stream;
 }
 
-export function createZeroStream({ id, connectionId = null, sourceNodeId, sourcePortId, targetNodeId, targetPortId }) {
+export function setGasMaterialStreamState(stream, gasState = createGasMaterialState(), specificSensibleEnthalpyJPerKg = 0) {
+  validateGasMaterialState(gasState);
+  if (!Number.isFinite(specificSensibleEnthalpyJPerKg)) {
+    throw new Error('specificSensibleEnthalpyJPerKg must be finite');
+  }
+  stream.physicalForm = MATERIAL_FORMS.GAS;
+  stream.gasState = cloneGasMaterialState(gasState);
+  stream.specificSensibleEnthalpyJPerKg = specificSensibleEnthalpyJPerKg;
+  delete stream.solidState;
+  return stream;
+}
+
+export function createZeroStream({
+  id,
+  connectionId = null,
+  sourceNodeId,
+  sourcePortId,
+  targetNodeId,
+  targetPortId,
+  physicalForm = SOLID_PARTICULATE_FORM,
+}) {
   return createMaterialStream({
     id,
     connectionId,
@@ -130,8 +180,24 @@ export function createZeroStream({ id, connectionId = null, sourceNodeId, source
     sourcePortId,
     targetNodeId,
     targetPortId,
-    solidState: createSolidMaterialState(),
+    physicalForm,
+    ...(physicalForm === MATERIAL_FORMS.GAS
+      ? { gasState: createGasMaterialState() }
+      : { solidState: createSolidMaterialState() }),
   });
+}
+
+export function clearMaterialStream(stream) {
+  if (stream.physicalForm === MATERIAL_FORMS.GAS) {
+    return setGasMaterialStreamState(stream, createGasMaterialState());
+  }
+  return setMaterialStreamState(stream, createSolidMaterialState());
+}
+
+export function totalMaterialStreamMassFlowKgPerSecond(stream) {
+  return stream.physicalForm === MATERIAL_FORMS.GAS
+    ? totalGasMassKg(stream.gasState)
+    : totalSolidQuantity(stream.solidState);
 }
 
 export function scaleFlowRates(solidState, factor) {

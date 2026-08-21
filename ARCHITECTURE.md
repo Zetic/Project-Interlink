@@ -114,6 +114,8 @@ Splitter
 Material Merger
 Feeder
 Dry Drum Magnetic Separator
+Electric Roasting Furnace
+Exhaust Vent
 Hopper
 ```
 
@@ -147,7 +149,13 @@ src/core/materials/
 ├── occurrenceMaterialization.js
 ├── sampleAcquisition.js
 ├── properties/
-│   └── magneticProperties.js
+│   ├── magneticProperties.js
+│   └── thermalProperties.js
+├── thermal/
+│   ├── thermalMaterial.js
+│   └── thermalState.js
+├── gas/
+│   └── gasMaterialState.js
 ├── solids/
 │   ├── comminutionProperties.js
 │   ├── liberationClasses.js
@@ -203,6 +211,8 @@ The source texture profile remains immutable lineage while particle size and lib
 
 Do **not** generalize this into appending every future property to the fraction key. Temperature, pressure, moisture, phase state, and similar body-scale/phase-scale variables should remain outside the sparse particulate identity unless loss of that axis would genuinely merge populations with different future particulate behavior.
 
+`MaterialBody.thermalState.sensibleEnthalpyJ` is the authoritative thermal inventory. Temperature is derived from body composition heat capacity and the named `298.15 K` reference, never added to the particulate fraction key. Withdrawal scales energy with well-mixed mass; additions conserve joules and derive an equilibrium temperature. `gas/gasMaterialState.js` provides the matching minimal composition-and-energy state for gaseous process products.
+
 `properties/` remains the intended home for domain-specific intrinsic/reference property resolution. Process physics should use property APIs when a resolver exists rather than reaching directly into species registry internals.
 
 The canonical particle-size vocabulary now resolves fine grinding through the following lower bins:
@@ -252,8 +262,9 @@ Current mechanical process behavior:
 - **Material Merging** — combines sparse populations while retaining distinct texture lineages.
 - **Controlled Feeding** — preserves material state while runtime meters requested mass flow.
 - **Magnetic Separation** — routes fractions according to magnetic response plus size, liberation, field strength, and entrainment/carryover.
+- **Thermochemical Roasting** — applies declarative reaction definitions to heated body state, with elemental rather than species conservation.
 
-All current mechanical transformations preserve species mass. Routing/classification also preserves texture lineage.
+Mechanical transformations preserve species mass. Thermochemical transformations conserve total mass and explicitly declared elemental masses. Routing/classification also preserves texture lineage.
 
 ### 5.3 Texture-aware liberation rule
 
@@ -285,7 +296,7 @@ Two ores with the same bulk composition and the same Ball Mill PSD may therefore
 
 Connection eligibility derives from edge kind plus interface/physical capabilities, not explicit machine-pair whitelists.
 
-Important current concepts include `resource-access`, `material`, `resource-source`, `solid-particulate`, and `stored-solid-particulate`.
+Important current concepts include `resource-access`, `material`, `resource-source`, `solid-particulate`, `gas`, and `stored-solid-particulate`.
 
 `stored-solid-particulate` means the receiving process requires a buffered/withdrawable particulate owner. It is an interface requirement, not material provenance or a distinct physical form.
 
@@ -326,7 +337,7 @@ Generation changes that alter same-seed world truth must follow generator-versio
 
 `simulation` owns continuous time evolution and placed-system behavior.
 
-Runtime behavior remains registry-driven. Current active apparatus include Extractor, Jaw Crusher, Cone Crusher, Ball Mill, Screen, Splitter, Material Merger, Feeder, and Dry Drum Magnetic Separator; Hopper is the current storage owner.
+Runtime behavior remains registry-driven. Current active apparatus include Extractor, Jaw Crusher, Cone Crusher, Ball Mill, Screen, Splitter, Material Merger, Feeder, Dry Drum Magnetic Separator, and Electric Roasting Furnace. Hopper is solid storage; Exhaust Vent is the explicit environmental gas boundary.
 
 ### Routing/material-state preservation
 
@@ -348,7 +359,7 @@ Screen and Splitter remain explicit multi-output apparatus with transactional co
 
 `simulationEngine.js` remains a graph/simulation orchestrator. Machine-specific transformations belong in process kernels and runtime modules rather than central type switches.
 
-`MaterialStream` represents transfer rates, not inventory. Hoppers/boundary buffers own stored matter.
+`MaterialStream` represents transfer rates, not inventory. Solid/gas streams preserve physical-form-appropriate composition plus specific sensible enthalpy; Hoppers, furnace charge, and Exhaust Vent inventories own matter.
 
 ### Comminution energy and throughput
 

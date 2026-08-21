@@ -21,10 +21,9 @@ export function runCrushing(processDefinition, inputBatchesByPort, normalizedPar
   return {
     outputPortBatches: [{
       outputId: 'product',
-      materialBody: {
-        physicalForm: inputMaterialBody.physicalForm,
-        solidState: crushSolidMaterialState(inputMaterialBody.solidState, targetParticleSizeMm),
-      },
+      materialBody: createSolidMaterialBody(
+        crushSolidMaterialState(inputMaterialBody.solidState, targetParticleSizeMm)
+      ),
       particleSizeMm: targetParticleSizeMm,
       resourceId: null,
     }],

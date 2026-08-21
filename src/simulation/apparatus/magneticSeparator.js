@@ -19,6 +19,10 @@ import {
   findOutboundConnection,
   updateConnectionStream,
 } from './blueprintHelpers.js';
+import {
+  outputSpecificSensibleEnthalpies,
+  solidBodyForWithdrawal,
+} from './materialTransferHelpers.js';
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
 
@@ -164,19 +168,43 @@ export function simulateMagSepNode(blueprint, node, dt) {
 
   const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
   const result = applyContinuousMagneticSeparation(actualFeed, node.fieldStrength, node.maxFeedParticleSizeMm);
+  const [concentrateSpecificSensibleEnthalpyJPerKg, tailingsSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
+    [solidBodyForWithdrawal(withdrawal)],
+    [result.concentrateSolidState, result.tailingsSolidState],
+  );
   const expectedConcentrateKg = totalSolidQuantity(result.concentrateSolidState) * dt;
-  const acceptedConcentrateKg = hopperReceiveInflow(stagedConcentrate, result.concentrateSolidState, dt);
+  const acceptedConcentrateKg = hopperReceiveInflow(
+    stagedConcentrate,
+    result.concentrateSolidState,
+    dt,
+    concentrateSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedConcentrateKg, acceptedConcentrateKg, 'Magnetic Separator concentrate');
   const expectedTailingsKg = totalSolidQuantity(result.tailingsSolidState) * dt;
-  const acceptedTailingsKg = hopperReceiveInflow(stagedTailings, result.tailingsSolidState, dt);
+  const acceptedTailingsKg = hopperReceiveInflow(
+    stagedTailings,
+    result.tailingsSolidState,
+    dt,
+    tailingsSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedTailingsKg, acceptedTailingsKg, 'Magnetic Separator tailings');
 
   commitHopperMaterialState(inputHopper, stagedInput);
   commitHopperMaterialState(concentrateHopper, stagedConcentrate);
   commitHopperMaterialState(tailingsHopper, stagedTailings);
-  updateConnectionStream(blueprint, inputConnection, actualFeed);
-  updateConnectionStream(blueprint, concentrateConnection, result.concentrateSolidState);
-  updateConnectionStream(blueprint, tailingsConnection, result.tailingsSolidState);
+  updateConnectionStream(blueprint, inputConnection, actualFeed, withdrawal.actualSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(
+    blueprint,
+    concentrateConnection,
+    result.concentrateSolidState,
+    concentrateSpecificSensibleEnthalpyJPerKg,
+  );
+  updateConnectionStream(
+    blueprint,
+    tailingsConnection,
+    result.tailingsSolidState,
+    tailingsSpecificSensibleEnthalpyJPerKg,
+  );
   node.lastError = null;
   node.operatingState = 'running';
 }

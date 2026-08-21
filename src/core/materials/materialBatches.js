@@ -12,6 +12,12 @@ import {
   totalSolidQuantity,
   validateSolidMaterialBody,
 } from './solids/solidMaterialState.js';
+import { cloneMaterialBody, validateMaterialBody } from './materialBody.js';
+import { MATERIAL_FORMS } from './materialForms.js';
+import {
+  materialBodyMassKg,
+  materialBodySpeciesMassesKg,
+} from './thermal/thermalMaterial.js';
 
 function assertFiniteNonNegativeNumber(value, label) {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
@@ -100,9 +106,17 @@ function legacyMaterialBodyFromComponents(componentsKg, particleSizeMm, liberati
 }
 
 function summarizeMaterialBody(materialBody) {
-  validateSolidMaterialBody(materialBody);
-  const componentsKg = summarizeSolidMaterialBySpecies(materialBody.solidState);
-  const totalMassKg = roundKg(totalSolidQuantity(materialBody.solidState));
+  validateMaterialBody(materialBody);
+  const componentsKg = materialBodySpeciesMassesKg(materialBody);
+  const totalMassKg = roundKg(materialBodyMassKg(materialBody));
+  if (materialBody.physicalForm !== MATERIAL_FORMS.SOLID_PARTICULATE) {
+    return {
+      componentsKg,
+      totalMassKg,
+      sizeDistributionKg: {},
+      liberationDistributionKg: {},
+    };
+  }
   return {
     componentsKg,
     totalMassKg,
@@ -131,11 +145,13 @@ export function createMaterialBatch({
   if (!['available', 'consumed'].includes(status)) throw new Error(`Unsupported batch status '${status}'`);
 
   const normalizedMaterialBody = materialBody
-    ? cloneSolidMaterialBody(materialBody)
+    ? cloneMaterialBody(materialBody)
     : legacyMaterialBodyFromComponents(componentsKg, particleSizeMm);
   const normalizedProvenance = normalizeMaterialProvenance(provenance);
   const summary = summarizeMaterialBody(normalizedMaterialBody);
-  if (summary.totalMassKg <= MASS_TOLERANCE_KG) throw new Error('Material batch total mass must be greater than zero');
+  if (summary.totalMassKg <= MASS_TOLERANCE_KG && normalizedMaterialBody.physicalForm !== MATERIAL_FORMS.GAS) {
+    throw new Error('Material batch total mass must be greater than zero');
+  }
 
   return {
     id,

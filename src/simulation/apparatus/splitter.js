@@ -23,7 +23,9 @@ import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
   capacityScaleForOutput,
+  outputSpecificSensibleEnthalpies,
   proportionalSolidStateFromHopper,
+  solidBodyForWithdrawal,
 } from './materialTransferHelpers.js';
 
 export function createSplitter({
@@ -137,19 +139,33 @@ export function simulateSplitterNode(blueprint, node, dt) {
 
   const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
   const result = applyContinuousSplitting(actualFeed, node.splitFractionToA, node.throughputKgPerSecond);
+  const [outputASpecificSensibleEnthalpyJPerKg, outputBSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
+    [solidBodyForWithdrawal(withdrawal)],
+    [result.outputASolidState, result.outputBSolidState],
+  );
   const expectedAKg = totalSolidQuantity(result.outputASolidState) * dt;
-  const acceptedAKg = hopperReceiveInflow(stagedA, result.outputASolidState, dt);
+  const acceptedAKg = hopperReceiveInflow(
+    stagedA,
+    result.outputASolidState,
+    dt,
+    outputASpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedAKg, acceptedAKg, 'Splitter output A');
   const expectedBKg = totalSolidQuantity(result.outputBSolidState) * dt;
-  const acceptedBKg = hopperReceiveInflow(stagedB, result.outputBSolidState, dt);
+  const acceptedBKg = hopperReceiveInflow(
+    stagedB,
+    result.outputBSolidState,
+    dt,
+    outputBSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedBKg, acceptedBKg, 'Splitter output B');
 
   commitHopperMaterialState(inputHopper, stagedInput);
   commitHopperMaterialState(outputAHopper, stagedA);
   commitHopperMaterialState(outputBHopper, stagedB);
-  updateConnectionStream(blueprint, inputConnection, actualFeed);
-  updateConnectionStream(blueprint, outputAConnection, result.outputASolidState);
-  updateConnectionStream(blueprint, outputBConnection, result.outputBSolidState);
+  updateConnectionStream(blueprint, inputConnection, actualFeed, withdrawal.actualSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, outputAConnection, result.outputASolidState, outputASpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, outputBConnection, result.outputBSolidState, outputBSpecificSensibleEnthalpyJPerKg);
   node.lastError = null;
   node.operatingState = 'running';
 }

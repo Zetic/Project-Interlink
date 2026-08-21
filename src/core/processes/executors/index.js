@@ -6,6 +6,7 @@ import {
   MAGNETIC_SEPARATION_PROCESS_ID,
   MERGING_PROCESS_ID,
   MILLING_PROCESS_ID,
+  ROASTING_PROCESS_ID,
   SCREENING_PROCESS_ID,
   SPLITTING_PROCESS_ID,
 } from '../definitions/index.js';
@@ -16,6 +17,7 @@ import { runMagneticSeparation } from './magneticSeparation.js';
 import { runMerging } from './merging.js';
 import { runScreening } from './screening.js';
 import { runSplitting } from './splitting.js';
+import { runRoasting } from './roasting.js';
 
 export const PROCESS_EXECUTOR_REGISTRY = Object.freeze({
   [CONE_CRUSHING_PROCESS_ID]: runStagedComminution,
@@ -25,6 +27,7 @@ export const PROCESS_EXECUTOR_REGISTRY = Object.freeze({
   [MAGNETIC_SEPARATION_PROCESS_ID]: runMagneticSeparation,
   [MERGING_PROCESS_ID]: runMerging,
   [MILLING_PROCESS_ID]: runStagedComminution,
+  [ROASTING_PROCESS_ID]: runRoasting,
   [SCREENING_PROCESS_ID]: runScreening,
   [SPLITTING_PROCESS_ID]: runSplitting,
 });

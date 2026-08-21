@@ -27,13 +27,13 @@ export function runMagneticSeparation(processDefinition, inputBatchesByPort, nor
     outputPortBatches: [
       {
         outputId: 'concentrate',
-        materialBody: { physicalForm: inputMaterialBody.physicalForm, solidState: concentrate },
+        materialBody: createSolidMaterialBody(concentrate),
         particleSizeMm: inputBatch.particleSizeMm ?? null,
         resourceId: null,
       },
       {
         outputId: 'tailings',
-        materialBody: { physicalForm: inputMaterialBody.physicalForm, solidState: tailings },
+        materialBody: createSolidMaterialBody(tailings),
         particleSizeMm: inputBatch.particleSizeMm ?? null,
         resourceId: null,
       },

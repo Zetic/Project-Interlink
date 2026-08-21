@@ -122,6 +122,8 @@ test('apparatus identity and runtime behavior are registry-backed', () => {
   assert.equal(APPARATUS_DEFINITIONS.merger.catalog.label, 'Material Merger');
   assert.equal(APPARATUS_DEFINITIONS.feeder.catalog.label, 'Feeder');
   assert.equal(APPARATUS_DEFINITIONS.magSep.catalog.label, 'Dry Drum Magnetic Separator');
+  assert.equal(APPARATUS_DEFINITIONS.roastingFurnace.catalog.label, 'Electric Roasting Furnace');
+  assert.equal(APPARATUS_DEFINITIONS.exhaustVent.catalog.label, 'Exhaust Vent');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.crusher.create, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.jawCrusher.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.coneCrusher.simulate, 'function');
@@ -131,12 +133,13 @@ test('apparatus identity and runtime behavior are registry-backed', () => {
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.merger.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.feeder.simulate, 'function');
   assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.magSep.simulate, 'function');
+  assert.equal(typeof APPARATUS_RUNTIME_REGISTRY.roastingFurnace.simulate, 'function');
   assert.equal(apparatusRuntimeFor('jawCrusher'), APPARATUS_RUNTIME_REGISTRY.jawCrusher);
   assert.equal(apparatusRuntimeFor('coneCrusher'), APPARATUS_RUNTIME_REGISTRY.coneCrusher);
   assert.equal(apparatusRuntimeFor('ballMill'), APPARATUS_RUNTIME_REGISTRY.ballMill);
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.id),
-    ['extractor', 'jaw-crusher', 'cone-crusher', 'ball-mill', 'screen', 'splitter', 'material-merger', 'feeder', 'magnetic-separator', 'hopper'],
+    ['extractor', 'jaw-crusher', 'cone-crusher', 'ball-mill', 'screen', 'splitter', 'material-merger', 'feeder', 'magnetic-separator', 'electric-roasting-furnace', 'exhaust-vent', 'hopper'],
   );
 
   _resetOrdinals();

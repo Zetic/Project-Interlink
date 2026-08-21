@@ -1,10 +1,32 @@
-function defineSpecies({ id, name, formula = null, kind = 'mineral', magneticResponse = 0, densityKgPerM3 }) {
+function defineSpecies({
+  id,
+  name,
+  formula = null,
+  kind = 'mineral',
+  magneticResponse = 0,
+  densityKgPerM3 = null,
+  thermal = null,
+  chemistry = null,
+}) {
   if (!id || typeof id !== 'string') throw new Error('Material species id must be a non-empty string');
   if (!Number.isFinite(magneticResponse) || magneticResponse < 0 || magneticResponse > 1) {
     throw new Error(`Material species '${id}' magnetic response must be within [0, 1]`);
   }
-  if (!Number.isFinite(densityKgPerM3) || densityKgPerM3 <= 0) {
+  if (densityKgPerM3 != null && (!Number.isFinite(densityKgPerM3) || densityKgPerM3 <= 0)) {
     throw new Error(`Material species '${id}' densityKgPerM3 must be a finite positive number`);
+  }
+  if (thermal != null && (!Number.isFinite(thermal.specificHeatCapacityJPerKgK) || thermal.specificHeatCapacityJPerKgK <= 0)) {
+    throw new Error(`Material species '${id}' thermal specificHeatCapacityJPerKgK must be a finite positive number`);
+  }
+  if (chemistry != null) {
+    if (!Number.isFinite(chemistry.molarMassKgPerMol) || chemistry.molarMassKgPerMol <= 0) {
+      throw new Error(`Material species '${id}' chemistry molarMassKgPerMol must be a finite positive number`);
+    }
+    for (const [element, atoms] of Object.entries(chemistry.elementalComposition ?? {})) {
+      if (!element || !Number.isFinite(atoms) || atoms <= 0) {
+        throw new Error(`Material species '${id}' chemistry elementalComposition must contain positive atom counts`);
+      }
+    }
   }
   return Object.freeze({
     id,
@@ -13,19 +35,29 @@ function defineSpecies({ id, name, formula = null, kind = 'mineral', magneticRes
     kind,
     physicalProperties: Object.freeze({
       // Nominal intrinsic solid density, not loose bulk density or porosity-adjusted density.
-      densityKgPerM3,
+      ...(densityKgPerM3 == null ? {} : { densityKgPerM3 }),
       // Gameplay-normalized magnetic-separation response. These coefficients are
       // deliberately not literal SI magnetic susceptibility values.
       magneticResponse: Object.freeze({ normalizedSeparationCoefficient: magneticResponse }),
+      ...(thermal ? { thermal: Object.freeze({ ...thermal }) } : {}),
     }),
+    ...(chemistry ? {
+      chemistry: Object.freeze({
+        molarMassKgPerMol: chemistry.molarMassKgPerMol,
+        elementalComposition: Object.freeze({ ...chemistry.elementalComposition }),
+      }),
+    } : {}),
   });
 }
 
 const SPECIES = [
-  defineSpecies({ id: 'hematite', name: 'Hematite', formula: 'Fe2O3', magneticResponse: 0.55, densityKgPerM3: 5260 }),
-  defineSpecies({ id: 'magnetite', name: 'Magnetite', formula: 'Fe3O4', magneticResponse: 1, densityKgPerM3: 5170 }),
-  defineSpecies({ id: 'goethite', name: 'Goethite', formula: 'FeO(OH)', magneticResponse: 0.35, densityKgPerM3: 4000 }),
-  defineSpecies({ id: 'quartz', name: 'Quartz', formula: 'SiO2', magneticResponse: 0, densityKgPerM3: 2650 }),
+  // Rounded constant-Cp prototype values near roasting temperatures. These are
+  // intentionally coarse engineering assumptions, not polynomial fits.
+  defineSpecies({ id: 'hematite', name: 'Hematite', formula: 'Fe2O3', magneticResponse: 0.55, densityKgPerM3: 5260, thermal: { specificHeatCapacityJPerKgK: 650 }, chemistry: { molarMassKgPerMol: 0.159687, elementalComposition: { Fe: 2, O: 3 } } }),
+  defineSpecies({ id: 'magnetite', name: 'Magnetite', formula: 'Fe3O4', magneticResponse: 1, densityKgPerM3: 5170, thermal: { specificHeatCapacityJPerKgK: 670 }, chemistry: { molarMassKgPerMol: 0.231531, elementalComposition: { Fe: 3, O: 4 } } }),
+  defineSpecies({ id: 'goethite', name: 'Goethite', formula: 'FeO(OH)', magneticResponse: 0.35, densityKgPerM3: 4000, thermal: { specificHeatCapacityJPerKgK: 650 }, chemistry: { molarMassKgPerMol: 0.088851, elementalComposition: { Fe: 1, O: 2, H: 1 } } }),
+  defineSpecies({ id: 'quartz', name: 'Quartz', formula: 'SiO2', magneticResponse: 0, densityKgPerM3: 2650, thermal: { specificHeatCapacityJPerKgK: 740 }, chemistry: { molarMassKgPerMol: 0.0600843, elementalComposition: { Si: 1, O: 2 } } }),
+  defineSpecies({ id: 'waterVapor', name: 'Water Vapor', formula: 'H2O', kind: 'molecular-gas', magneticResponse: 0, thermal: { specificHeatCapacityJPerKgK: 1900 }, chemistry: { molarMassKgPerMol: 0.018015, elementalComposition: { H: 2, O: 1 } } }),
   defineSpecies({ id: 'chalcopyrite', name: 'Chalcopyrite', formula: 'CuFeS2', magneticResponse: 0.05, densityKgPerM3: 4200 }),
   defineSpecies({ id: 'bornite', name: 'Bornite', formula: 'Cu5FeS4', magneticResponse: 0.03, densityKgPerM3: 5100 }),
   defineSpecies({ id: 'pyrite', name: 'Pyrite', formula: 'FeS2', magneticResponse: 0.02, densityKgPerM3: 5010 }),

@@ -5,13 +5,43 @@ import {
   hopperParticleSizeDistributionKg,
   hopperStoredMassKg,
 } from '../../simulation/hopperNode.js';
-import { totalMassFlowKgPerSecond } from '../../simulation/materialStream.js';
-import { summarizeSolidMaterialByLiberationClass, summarizeSolidMaterialBySizeBin, summarizeSolidMaterialBySpecies } from '../../core/materials/solids/solidMaterialState.js';
+import { totalMaterialStreamMassFlowKgPerSecond } from '../../simulation/materialStream.js';
+import {
+  createSolidMaterialBody,
+  summarizeSolidMaterialByLiberationClass,
+  summarizeSolidMaterialBySizeBin,
+  summarizeSolidMaterialBySpecies,
+  totalSolidQuantity,
+} from '../../core/materials/solids/solidMaterialState.js';
+import {
+  createGasMaterialBody,
+  createGasMaterialState,
+  totalGasMassKg,
+} from '../../core/materials/gas/gasMaterialState.js';
+import {
+  materialBodyHeatCapacityJPerK,
+  materialBodyTemperatureK,
+} from '../../core/materials/thermal/thermalMaterial.js';
 import { getParticleSizeBin } from '../../core/materials/solids/particleSizeBins.js';
 import { getLiberationClass } from '../../core/materials/solids/liberationClasses.js';
 import { getMaterialSpecies } from '../../core/materials/species/materialSpecies.js';
+import { MATERIAL_FORMS } from '../../core/materials/materialForms.js';
 import { getNodeOperatingState } from '../../simulation/simulationEngine.js';
 import { apparatusParametersForNode, getApparatusDefinition } from '../../content/apparatus/definitions.js';
+import {
+  roastingFurnaceChargeMassKg,
+  roastingFurnacePendingFeedMassKg,
+  roastingFurnaceZoneCapacityKg,
+} from '../../simulation/apparatus/roastingFurnace.js';
+
+// The workspace is rendered from requestAnimationFrame while physical state
+// advances at a fixed lower rate. These caches prevent unchanged authoritative
+// material from being re-summarized and re-validated on every display frame.
+// They are presentation caches only; simulation truth remains on the bodies.
+const HOPPER_INSPECTION_CACHE = new WeakMap();
+const STREAM_INSPECTION_CACHE = new WeakMap();
+const FURNACE_ZONE_INSPECTION_CACHE = new WeakMap();
+const EXHAUST_BODY_INSPECTION_CACHE = new WeakMap();
 
 function summaryRows(summary, total, labelFor) {
   return Object.entries(summary ?? {})
@@ -41,6 +71,51 @@ function sizeBinLabel(sizeBinId) {
 
 function liberationLabel(liberationClassId) {
   return getLiberationClass(liberationClassId)?.name ?? liberationClassId;
+}
+
+function thermalDetailsForBody(body, mass) {
+  if (!body || mass <= 0) {
+    return { temperatureK: null, sensibleEnthalpyJ: body?.thermalState?.sensibleEnthalpyJ ?? 0, thermalError: null };
+  }
+  try {
+    // Deliberately resolve heat capacity even when sensible enthalpy is zero so
+    // the Inspector does not present an apparently characterized temperature
+    // for species that lack thermal-property coverage.
+    materialBodyHeatCapacityJPerK(body);
+    return {
+      temperatureK: materialBodyTemperatureK(body),
+      sensibleEnthalpyJ: body.thermalState?.sensibleEnthalpyJ ?? 0,
+      thermalError: null,
+    };
+  } catch (error) {
+    return {
+      temperatureK: null,
+      sensibleEnthalpyJ: body.thermalState?.sensibleEnthalpyJ ?? 0,
+      thermalError: error.message,
+    };
+  }
+}
+
+function streamThermalDetails(stream, totalFlowKgPerSecond) {
+  if (!stream || totalFlowKgPerSecond <= 0) {
+    return { temperatureK: null, specificSensibleEnthalpyJPerKg: stream?.specificSensibleEnthalpyJPerKg ?? 0, thermalError: null };
+  }
+  const sensibleEnthalpyFlowJPerSecond = totalFlowKgPerSecond * (stream.specificSensibleEnthalpyJPerKg ?? 0);
+  const body = stream.physicalForm === MATERIAL_FORMS.GAS
+    ? createGasMaterialBody(
+      createGasMaterialState(stream.gasState?.speciesMassKg ?? {}),
+      { sensibleEnthalpyJ: sensibleEnthalpyFlowJPerSecond },
+    )
+    : createSolidMaterialBody(
+      stream.solidState,
+      { sensibleEnthalpyJ: sensibleEnthalpyFlowJPerSecond },
+    );
+  const details = thermalDetailsForBody(body, totalFlowKgPerSecond);
+  return {
+    temperatureK: details.temperatureK,
+    specificSensibleEnthalpyJPerKg: stream.specificSensibleEnthalpyJPerKg ?? 0,
+    thermalError: details.thermalError,
+  };
 }
 
 function occurrenceMineralDensityKgPerM3(occurrence) {
@@ -79,25 +154,82 @@ function occurrencePropertyDetails(occurrence) {
 }
 
 export function hopperInspection(hopper) {
+  const revision = hopper?.materialRevision ?? 0;
+  const materialBody = hopper?.materialBody ?? null;
+  const cached = HOPPER_INSPECTION_CACHE.get(hopper);
+  if (
+    cached
+    && cached.revision === revision
+    && cached.materialBody === materialBody
+    && cached.capacityKg === hopper?.capacityKg
+    && cached.nominalParticleSizeMm === hopper?.nominalParticleSizeMm
+  ) {
+    return cached.value;
+  }
+
   const storedMassKg = hopperStoredMassKg(hopper);
-  return {
+  const thermal = thermalDetailsForBody(materialBody, storedMassKg);
+  const compositionSummary = hopperCompositionKg(hopper);
+  const compositionRows = summaryRows(compositionSummary, storedMassKg, speciesLabel);
+  const value = {
     kind: hopper?.systemType === 'boundary-buffer' ? 'boundaryBuffer' : 'hopper',
     id: hopper?.id ?? null,
     storedMassKg,
     capacityKg: hopper?.capacityKg ?? 0,
-    freeCapacityKg: hopperFreeCapacityKg(hopper),
-    physicalForm: hopper?.materialBody?.physicalForm ?? null,
+    freeCapacityKg: Math.max(0, (hopper?.capacityKg ?? 0) - storedMassKg),
+    physicalForm: materialBody?.physicalForm ?? null,
     particleSizeMm: hopper?.nominalParticleSizeMm ?? null,
-    components: summaryRows(hopperCompositionKg(hopper), storedMassKg, speciesLabel),
-    composition: summaryRows(hopperCompositionKg(hopper), storedMassKg, speciesLabel),
+    temperatureK: thermal.temperatureK,
+    sensibleEnthalpyJ: thermal.sensibleEnthalpyJ,
+    thermalError: thermal.thermalError,
+    // Historical components and current composition intentionally expose the
+    // same summary rows; compute them once rather than traversing twice.
+    components: compositionRows,
+    composition: compositionRows,
     particleSizeDistribution: summaryRows(hopperParticleSizeDistributionKg(hopper), storedMassKg, sizeBinLabel),
     liberationDistribution: summaryRows(hopperLiberationDistributionKg(hopper), storedMassKg, liberationLabel),
   };
+  HOPPER_INSPECTION_CACHE.set(hopper, {
+    revision,
+    materialBody,
+    capacityKg: hopper?.capacityKg,
+    nominalParticleSizeMm: hopper?.nominalParticleSizeMm,
+    value,
+  });
+  return value;
 }
 
 export function streamInspection(stream) {
-  const totalFlowKgPerSecond = totalMassFlowKgPerSecond(stream?.solidState ?? { fractions: {} });
-  return {
+  if (!stream) {
+    return {
+      kind: 'stream', id: null, totalFlowKgPerSecond: 0, physicalForm: null,
+      componentMassFlowKgPerSecond: {}, composition: [], particleSizeDistribution: [], liberationDistribution: [],
+      temperatureK: null, specificSensibleEnthalpyJPerKg: 0, thermalError: null,
+    };
+  }
+
+  // setMaterialStreamState/setGasMaterialStreamState replace the physical state
+  // object when simulation advances. Object identity is therefore a cheap,
+  // deterministic presentation revision between fixed simulation steps.
+  const stateRef = stream.physicalForm === MATERIAL_FORMS.GAS ? stream.gasState : stream.solidState;
+  const cached = STREAM_INSPECTION_CACHE.get(stream);
+  if (
+    cached
+    && cached.stateRef === stateRef
+    && cached.physicalForm === stream.physicalForm
+    && cached.specificSensibleEnthalpyJPerKg === stream.specificSensibleEnthalpyJPerKg
+    && cached.nominalParticleSizeMm === stream.nominalParticleSizeMm
+  ) {
+    return cached.value;
+  }
+
+  const totalFlowKgPerSecond = totalMaterialStreamMassFlowKgPerSecond(stream);
+  const gas = stream.physicalForm === MATERIAL_FORMS.GAS;
+  const compositionSummary = gas
+    ? { ...(stream.gasState?.speciesMassKg ?? {}) }
+    : summarizeSolidMaterialBySpecies(stream.solidState);
+  const thermal = streamThermalDetails(stream, totalFlowKgPerSecond);
+  const value = {
     kind: 'stream',
     id: stream?.id ?? null,
     sourceNodeId: stream?.sourceNodeId ?? null,
@@ -106,12 +238,27 @@ export function streamInspection(stream) {
     targetPortId: stream?.targetPortId ?? null,
     totalFlowKgPerSecond,
     physicalForm: stream?.physicalForm ?? null,
-    particleSizeMm: stream?.nominalParticleSizeMm ?? null,
-    componentMassFlowKgPerSecond: summaryObject(summarizeSolidMaterialBySpecies(stream?.solidState ?? { fractions: {} })),
-    composition: summaryRows(summarizeSolidMaterialBySpecies(stream?.solidState ?? { fractions: {} }), totalFlowKgPerSecond, speciesLabel),
-    particleSizeDistribution: summaryRows(summarizeSolidMaterialBySizeBin(stream?.solidState ?? { fractions: {} }), totalFlowKgPerSecond, sizeBinLabel),
-    liberationDistribution: summaryRows(summarizeSolidMaterialByLiberationClass(stream?.solidState ?? { fractions: {} }), totalFlowKgPerSecond, liberationLabel),
+    particleSizeMm: gas ? null : (stream?.nominalParticleSizeMm ?? null),
+    componentMassFlowKgPerSecond: summaryObject(compositionSummary),
+    composition: summaryRows(compositionSummary, totalFlowKgPerSecond, speciesLabel),
+    particleSizeDistribution: gas
+      ? []
+      : summaryRows(summarizeSolidMaterialBySizeBin(stream.solidState), totalFlowKgPerSecond, sizeBinLabel),
+    liberationDistribution: gas
+      ? []
+      : summaryRows(summarizeSolidMaterialByLiberationClass(stream.solidState), totalFlowKgPerSecond, liberationLabel),
+    temperatureK: thermal.temperatureK,
+    specificSensibleEnthalpyJPerKg: thermal.specificSensibleEnthalpyJPerKg,
+    thermalError: thermal.thermalError,
   };
+  STREAM_INSPECTION_CACHE.set(stream, {
+    stateRef,
+    physicalForm: stream.physicalForm,
+    specificSensibleEnthalpyJPerKg: stream.specificSensibleEnthalpyJPerKg,
+    nominalParticleSizeMm: stream.nominalParticleSizeMm,
+    value,
+  });
+  return value;
 }
 
 export function connectionInspection(blueprint, connection) {
@@ -132,6 +279,9 @@ export function connectionInspection(blueprint, connection) {
     composition: [],
     particleSizeDistribution: [],
     liberationDistribution: [],
+    temperatureK: null,
+    specificSensibleEnthalpyJPerKg: 0,
+    thermalError: null,
   };
 }
 
@@ -145,8 +295,6 @@ export function featureInspection(world, blueprint, node) {
       name: occurrence?.name ?? occurrence?.resourceId ?? occurrenceId,
       resourceId: occurrence?.resourceId ?? null,
       availabilityClass: occurrence?.availabilityClass ?? occurrence?.quantityClass ?? 'Available',
-      // Keep the geological descriptor concise. Engineering and mineral-texture
-      // values are already exposed below as structured fields for the Inspector.
       descriptor: occurrence?.descriptor ?? null,
       accessScope: occurrence?.accessScope ?? 'localized',
       concentrationPercent: occurrence?.concentrationPercent ?? null,
@@ -187,6 +335,58 @@ function inspectedConnectionsByPort(blueprint, connections, portKey) {
     connection[portKey],
     connectionInspection(blueprint, connection),
   ]));
+}
+
+function furnaceZoneInspection(zone, index, zoneCapacityKg) {
+  const cached = FURNACE_ZONE_INSPECTION_CACHE.get(zone);
+  if (cached && cached.index === index && cached.zoneCapacityKg === zoneCapacityKg) return cached.value;
+
+  const massKg = totalSolidQuantity(zone.solidState);
+  const thermal = thermalDetailsForBody(zone, massKg);
+  const composition = summarizeSolidMaterialBySpecies(zone.solidState);
+  const value = {
+    index: index + 1,
+    massKg,
+    capacityKg: zoneCapacityKg,
+    temperatureK: thermal.temperatureK,
+    thermalError: thermal.thermalError,
+    goethiteKg: composition.goethite ?? 0,
+    hematiteKg: composition.hematite ?? 0,
+  };
+  FURNACE_ZONE_INSPECTION_CACHE.set(zone, { index, zoneCapacityKg, value });
+  return value;
+}
+
+function exhaustBodyInspection(gasBody) {
+  const cached = EXHAUST_BODY_INSPECTION_CACHE.get(gasBody);
+  if (cached) return cached;
+  const totalEmittedMassKg = totalGasMassKg(gasBody.gasState);
+  const thermal = thermalDetailsForBody(gasBody, totalEmittedMassKg);
+  const value = {
+    totalEmittedMassKg,
+    composition: summaryRows(gasBody.gasState.speciesMassKg, totalEmittedMassKg, speciesLabel),
+    temperatureK: thermal.temperatureK,
+    sensibleEnthalpyJ: thermal.sensibleEnthalpyJ,
+    thermalError: thermal.thermalError,
+  };
+  EXHAUST_BODY_INSPECTION_CACHE.set(gasBody, value);
+  return value;
+}
+
+export function exhaustVentInspection(blueprint, vent) {
+  const gasBody = vent?.emittedGasBody ?? createGasMaterialBody(createGasMaterialState());
+  const bodyDetails = exhaustBodyInspection(gasBody);
+  const inputConnection = Object.values(blueprint?.connections ?? {}).find(connection =>
+    connection.kind === 'material'
+      && connection.targetNodeId === vent?.id
+      && connection.targetPortId === vent?.gasInputPortId
+  );
+  return {
+    kind: 'exhaustVent',
+    id: vent?.id ?? null,
+    ...bodyDetails,
+    input: inputConnection ? connectionInspection(blueprint, inputConnection) : null,
+  };
 }
 
 export function machineInspection(blueprint, node) {
@@ -252,6 +452,33 @@ export function machineInspection(blueprint, node) {
       actualPowerKw: node.lastPowerKw ?? 0,
       bondAbrasionIndex: node.lastBondAbrasionIndex ?? 0,
       abrasionExposureTonneAi: node.abrasionExposureTonneAi ?? 0,
+    };
+  }
+
+  if (node?.nodeType === 'roastingFurnace') {
+    const chargeMassKg = roastingFurnaceChargeMassKg(node);
+    const pendingFeedMassKg = roastingFurnacePendingFeedMassKg(node);
+    const feedRateKgPerSecond = actualFeedKgPerSecond > 0
+      ? actualFeedKgPerSecond
+      : (node.lastFeedRateKgPerSecond ?? 0);
+    const zoneCapacityKg = roastingFurnaceZoneCapacityKg(node);
+    result.thermochemical = {
+      chargeMassKg,
+      pendingFeedMassKg,
+      chargeTemperatureK: chargeMassKg > 0 ? (node.actualChargeTemperatureK ?? null) : null,
+      temperatureSetpointK: node.temperatureSetpointK,
+      ratedHeaterPowerKw: node.ratedHeaterPowerKw,
+      actualHeaterPowerKw: node.lastHeaterPowerKw ?? 0,
+      heatLossPowerKw: node.lastHeatLossPowerKw ?? 0,
+      reactionPowerKw: node.lastReactionPowerKw ?? 0,
+      goethiteConversionPercent: (node.lastGoethiteConversionFraction ?? 0) * 100,
+      meanResidenceTimeSeconds: feedRateKgPerSecond > 0
+        ? node.effectiveChamberHoldUpKg / feedRateKgPerSecond
+        : null,
+      solidProductRateKgPerSecond: outputByPort[node.solidProductPortId]?.totalFlowKgPerSecond ?? 0,
+      exhaustRateKgPerSecond: outputByPort[node.gasExhaustPortId]?.totalFlowKgPerSecond ?? 0,
+      solverEvaluationCount: node.lastSolverEvaluationCount ?? 0,
+      zones: (node.zones ?? []).map((zone, index) => furnaceZoneInspection(zone, index, zoneCapacityKg)),
     };
   }
 

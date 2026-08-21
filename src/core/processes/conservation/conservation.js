@@ -1,7 +1,9 @@
 import { validateSpeciesConservation } from './speciesConservation.js';
+import { validateElementalConservation } from './elementalConservation.js';
 
 export const CONSERVATION_POLICIES = Object.freeze({
   species: validateSpeciesConservation,
+  elemental: validateElementalConservation,
 });
 
 export function conservationPolicyFor(processDefinition) {

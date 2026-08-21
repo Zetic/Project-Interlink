@@ -24,7 +24,9 @@ import {
 import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
+  outputSpecificSensibleEnthalpies,
   proportionalSolidStateFromHopper,
+  solidBodyForWithdrawal,
 } from './materialTransferHelpers.js';
 
 const MACHINE_CONFIG = Object.freeze({
@@ -224,13 +226,32 @@ function simulateComminutionNode(blueprint, node, dt, config) {
   }
 
   const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
-  const acceptedOutputKg = hopperReceiveInflow(stagedOutput, result.productSolidState, dt);
+  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
+    [solidBodyForWithdrawal(withdrawal)],
+    [result.productSolidState],
+  );
+  const acceptedOutputKg = hopperReceiveInflow(
+    stagedOutput,
+    result.productSolidState,
+    dt,
+    productSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedOutputKg, acceptedOutputKg, config.label);
 
   commitHopperMaterialState(inputHopper, stagedInput);
   commitHopperMaterialState(outputHopper, stagedOutput);
-  updateConnectionStream(blueprint, inputConnection, result.actualFeedSolidState);
-  updateConnectionStream(blueprint, outputConnection, result.productSolidState);
+  updateConnectionStream(
+    blueprint,
+    inputConnection,
+    result.actualFeedSolidState,
+    withdrawal.actualSpecificSensibleEnthalpyJPerKg,
+  );
+  updateConnectionStream(
+    blueprint,
+    outputConnection,
+    result.productSolidState,
+    productSpecificSensibleEnthalpyJPerKg,
+  );
   node.lastSpecificEnergyKWhPerT = result.specificEnergyKWhPerT;
   node.lastPowerKw = result.actualPowerKw;
   node.lastBondAbrasionIndex = result.comminutionProperties.bondAbrasionIndex;

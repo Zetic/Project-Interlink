@@ -8,6 +8,7 @@ import {
  MAGNETIC_SEPARATION_PROCESS_ID,
  MERGING_PROCESS_ID,
  MILLING_PROCESS_ID,
+ ROASTING_PROCESS_ID,
  SCREENING_PROCESS_ID,
  SPLITTING_PROCESS_ID,
  validateProcessParameters,
@@ -47,7 +48,7 @@ const solidInputPort = (
   direction: 'input',
   kind: 'material',
   label,
-  accepts: Object.freeze([accepts]),
+  accepts: Object.freeze(Array.isArray(accepts) ? [...accepts] : [accepts]),
   runtimePortField,
 });
 const solidOutputPort = (
@@ -61,6 +62,30 @@ const solidOutputPort = (
   kind: 'material',
   label,
   provides: Object.freeze(Array.isArray(provides) ? [...provides] : [provides]),
+  runtimePortField,
+});
+const gasInputPort = (
+  id,
+  runtimePortField = 'gasInputPortId',
+  label = id,
+) => Object.freeze({
+  id,
+  direction: 'input',
+  kind: 'material',
+  label,
+  accepts: Object.freeze([PORT_CAPABILITIES.GAS]),
+  runtimePortField,
+});
+const gasOutputPort = (
+  id,
+  runtimePortField = 'gasOutputPortId',
+  label = id,
+) => Object.freeze({
+  id,
+  direction: 'output',
+  kind: 'material',
+  label,
+  provides: Object.freeze([PORT_CAPABILITIES.GAS]),
   runtimePortField,
 });
 
@@ -214,14 +239,17 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
   feeder: Object.freeze({
     nodeType: 'feeder',
     processId: FEEDING_PROCESS_ID,
-    catalog: catalog('feeder', 'Feeder', 'apparatus', 'Meters stored particulate material into a downstream process at a configured mass-flow setpoint.', ['feeder', 'feed', 'meter', 'flow control', 'rate', 'throughput'], 80),
+    catalog: catalog('feeder', 'Feeder', 'apparatus', 'Meters stored particulate material into downstream transport or reaction equipment at a configured mass-flow setpoint.', ['feeder', 'feed', 'meter', 'flow control', 'rate', 'throughput'], 80),
     defaults: Object.freeze({
       ...defaultProcessParameters(FEEDING_PROCESS_ID),
       throughputKgPerSecond: FEEDER_RATED_THROUGHPUT_KG_PER_SECOND,
     }),
     ports: Object.freeze([
       solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
-      solidOutputPort('product'),
+      solidOutputPort('product', [
+        PORT_CAPABILITIES.SOLID_PARTICULATE,
+        PORT_CAPABILITIES.METERED_SOLID_PARTICULATE,
+      ]),
     ]),
     capabilities: Object.freeze([
       Object.freeze({ id: 'throughputKgPerSecond', label: 'Rated throughput', unit: 'kg/s' }),
@@ -246,6 +274,47 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
       Object.freeze({ id: 'maxFeedParticleSizeMm', label: 'Maximum supported feed particle size', unit: 'mm' }),
     ]),
     parameters: processParameters(MAGNETIC_SEPARATION_PROCESS_ID),
+  }),
+  roastingFurnace: Object.freeze({
+    nodeType: 'roastingFurnace',
+    processId: ROASTING_PROCESS_ID,
+    catalog: catalog('electric-roasting-furnace', 'Electric Roasting Furnace', 'apparatus', 'Four-stage continuous electric roaster. Feed rate controls residence time while each retained zone heats and reacts the material before discharge.', ['roasting furnace', 'furnace', 'roast', 'thermal', 'thermochemical', 'goethite', 'dehydroxylation'], 95),
+    defaults: Object.freeze({
+      ...defaultProcessParameters(ROASTING_PROCESS_ID),
+      ratedHeaterPowerKw: 60,
+      maximumOperatingTemperatureK: 1200,
+      maximumSolidThroughputKgPerSecond: 4,
+      effectiveChamberHoldUpKg: 20,
+      heatLossCoefficientWPerK: 25,
+      internalZoneCount: 4,
+    }),
+    ports: Object.freeze([
+      solidInputPort('feed', PORT_CAPABILITIES.METERED_SOLID_PARTICULATE),
+      solidOutputPort('solid-product', [
+        PORT_CAPABILITIES.SOLID_PARTICULATE,
+        PORT_CAPABILITIES.METERED_SOLID_PARTICULATE,
+      ], 'solidProductPortId', 'solid product'),
+      gasOutputPort('gas-exhaust', 'gasExhaustPortId', 'gas exhaust'),
+    ]),
+    capabilities: Object.freeze([
+      Object.freeze({ id: 'ratedHeaterPowerKw', label: 'Rated heater power', unit: 'kW' }),
+      Object.freeze({ id: 'maximumOperatingTemperatureK', label: 'Maximum operating temperature', unit: 'K' }),
+      Object.freeze({ id: 'maximumSolidThroughputKgPerSecond', label: 'Maximum solid throughput', unit: 'kg/s' }),
+      Object.freeze({ id: 'effectiveChamberHoldUpKg', label: 'Effective chamber hold-up', unit: 'kg' }),
+      Object.freeze({ id: 'internalZoneCount', label: 'Internal process zones', unit: '' }),
+      Object.freeze({ id: 'heatLossCoefficientWPerK', label: 'Heat-loss coefficient', unit: 'W/K' }),
+    ]),
+    parameters: processParameters(ROASTING_PROCESS_ID),
+  }),
+  exhaustVent: Object.freeze({
+    nodeType: 'exhaustVent',
+    catalog: catalog('exhaust-vent', 'Exhaust Vent', 'container', 'Auditable environmental boundary that records discharged process gas.', ['exhaust', 'vent', 'gas', 'off-gas', 'emissions'], 96),
+    defaults: Object.freeze({}),
+    ports: Object.freeze([
+      gasInputPort('gas-in', 'gasInputPortId', 'gas in'),
+    ]),
+    capabilities: Object.freeze([]),
+    parameters: Object.freeze([]),
   }),
   hopper: Object.freeze({
     nodeType: 'hopper',
