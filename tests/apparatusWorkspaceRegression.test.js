@@ -35,9 +35,12 @@ test('Site activation keeps and reuses the cached authoritative session', () => 
   assert.match(activateSite, /wsState\.blueprintLayout = session\.blueprintLayout/);
 });
 
-test('machine Inspector renders fixed ratings from capability definitions rather than configurable-throughput copy', () => {
+test('machine Inspector renders fixed ratings through the shared controls helper', () => {
+  const controlsSection = functionSection('machineControlsHtml', 'formatNodeInspector');
   const inspectorSection = functionSection('formatNodeInspector', 'formatConnectionInspector');
-  assert.match(inspectorSection, /for \(const capability of details\.capabilities \?\? \[\]\)/);
-  assert.match(inspectorSection, /capability\.label/);
+  assert.match(controlsSection, /for \(const capability of details\.capabilities \?\? \[\]\)/);
+  assert.match(controlsSection, /capability\.label/);
+  assert.match(inspectorSection, /machineControlsHtml\(node, details\)/);
+  assert.doesNotMatch(controlsSection, /Configured throughput/);
   assert.doesNotMatch(inspectorSection, /Configured throughput/);
 });
