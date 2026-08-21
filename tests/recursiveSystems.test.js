@@ -75,9 +75,9 @@ function connectTestFeature(blueprint, world, extractor) {
   return node;
 }
 
-test('schema v9 records canonical ownership plus persistent ore texture state', () => {
-  assert.equal(SCHEMA_VERSION, 9);
-  assert.equal(createWorld('schema-nine').schemaVersion, 9);
+test('schema v10 records thermal material-body and staged-furnace state', () => {
+  assert.equal(SCHEMA_VERSION, 10);
+  assert.equal(createWorld('schema-ten').schemaVersion, 10);
 });
 
 test('active machinery starts disabled and reports off', () => {
