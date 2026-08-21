@@ -63,6 +63,31 @@ function legacyFlowView(solidState, particleSizeMm) {
   };
 }
 
+/**
+ * Compatibility projections are intentionally lazy. Simulation apparatus use
+ * the canonical sparse solid-state outputs directly; eagerly summarizing every
+ * process input/output by species made routing machines pay substantial work
+ * for fields that were never read during normal ticks.
+ */
+function attachLegacyViews(result, views) {
+  for (const [property, factory] of Object.entries(views)) {
+    let resolved = false;
+    let value;
+    Object.defineProperty(result, property, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        if (!resolved) {
+          value = factory();
+          resolved = true;
+        }
+        return value;
+      },
+    });
+  }
+  return result;
+}
+
 function assertRateConservation(inputRate, outputRate, label) {
   if (Math.abs(inputRate - outputRate) > STREAM_FLOW_TOLERANCE * Math.max(1, inputRate)) {
     throw new Error(`${label} violated constituent conservation`);
@@ -84,12 +109,10 @@ export function applyContinuousCrushing(feed, targetParticleSizeMm, throughputCa
   const actualFeedSolidState = scaleSolidMaterialState(feedSolidState, factor);
   const productSolidState = crushSolidMaterialState(actualFeedSolidState, targetParticleSizeMm);
 
-  return {
-    actualFeedSolidState,
-    productSolidState,
-    actualFeedRates: legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
-    productRates: legacyFlowView(productSolidState, targetParticleSizeMm),
-  };
+  return attachLegacyViews({ actualFeedSolidState, productSolidState }, {
+    actualFeedRates: () => legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
+    productRates: () => legacyFlowView(productSolidState, targetParticleSizeMm),
+  });
 }
 
 export function applyContinuousScreening(feed, apertureSizeMm, throughputCapacityKgPerSecond) {
@@ -111,14 +134,15 @@ export function applyContinuousScreening(feed, apertureSizeMm, throughputCapacit
   const actualFeedRate = totalSolidQuantity(actualFeedSolidState);
   assertRateConservation(actualFeedRate, outputRate, 'Screen');
 
-  return {
+  return attachLegacyViews({
     actualFeedSolidState,
     undersizeSolidState: undersize,
     oversizeSolidState: oversize,
-    actualFeedRates: legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
-    undersizeRates: legacyFlowView(undersize, apertureSizeMm),
-    oversizeRates: legacyFlowView(oversize, null),
-  };
+  }, {
+    actualFeedRates: () => legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
+    undersizeRates: () => legacyFlowView(undersize, apertureSizeMm),
+    oversizeRates: () => legacyFlowView(oversize, null),
+  });
 }
 
 export function applyContinuousSplitting(feed, splitFractionToA, throughputCapacityKgPerSecond) {
@@ -141,14 +165,15 @@ export function applyContinuousSplitting(feed, splitFractionToA, throughputCapac
     'Splitter',
   );
 
-  return {
+  return attachLegacyViews({
     actualFeedSolidState,
     outputASolidState: outputA,
     outputBSolidState: outputB,
-    actualFeedRates: legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
-    outputARates: legacyFlowView(outputA, normalizedFeed.nominalParticleSizeMm),
-    outputBRates: legacyFlowView(outputB, normalizedFeed.nominalParticleSizeMm),
-  };
+  }, {
+    actualFeedRates: () => legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
+    outputARates: () => legacyFlowView(outputA, normalizedFeed.nominalParticleSizeMm),
+    outputBRates: () => legacyFlowView(outputB, normalizedFeed.nominalParticleSizeMm),
+  });
 }
 
 export function applyContinuousMerging(feedA, feedB, throughputCapacityKgPerSecond) {
@@ -169,14 +194,11 @@ export function applyContinuousMerging(feedA, feedB, throughputCapacityKgPerSeco
     'Merger',
   );
 
-  return {
-    actualInputASolidState,
-    actualInputBSolidState,
-    productSolidState,
-    actualInputARates: legacyFlowView(actualInputASolidState, normalizedA.nominalParticleSizeMm),
-    actualInputBRates: legacyFlowView(actualInputBSolidState, normalizedB.nominalParticleSizeMm),
-    productRates: legacyFlowView(productSolidState, null),
-  };
+  return attachLegacyViews({ actualInputASolidState, actualInputBSolidState, productSolidState }, {
+    actualInputARates: () => legacyFlowView(actualInputASolidState, normalizedA.nominalParticleSizeMm),
+    actualInputBRates: () => legacyFlowView(actualInputBSolidState, normalizedB.nominalParticleSizeMm),
+    productRates: () => legacyFlowView(productSolidState, null),
+  });
 }
 
 export function applyContinuousFeeding(feed, flowRateKgPerSecond, throughputCapacityKgPerSecond) {
@@ -196,12 +218,10 @@ export function applyContinuousFeeding(feed, flowRateKgPerSecond, throughputCapa
   const productSolidState = feedSolidMaterialState(actualFeedSolidState);
   assertRateConservation(totalSolidQuantity(actualFeedSolidState), totalSolidQuantity(productSolidState), 'Feeder');
 
-  return {
-    actualFeedSolidState,
-    productSolidState,
-    actualFeedRates: legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
-    productRates: legacyFlowView(productSolidState, normalizedFeed.nominalParticleSizeMm),
-  };
+  return attachLegacyViews({ actualFeedSolidState, productSolidState }, {
+    actualFeedRates: () => legacyFlowView(actualFeedSolidState, normalizedFeed.nominalParticleSizeMm),
+    productRates: () => legacyFlowView(productSolidState, normalizedFeed.nominalParticleSizeMm),
+  });
 }
 
 export function applyContinuousMagneticSeparation(feed, fieldStrength, maxFeedParticleSizeMm = 25) {
@@ -218,14 +238,16 @@ export function applyContinuousMagneticSeparation(feed, fieldStrength, maxFeedPa
   const outputRate = totalSolidQuantity(concentrate) + totalSolidQuantity(tailings);
   assertRateConservation(inputRate, outputRate, 'Magnetic Separator');
 
-  return {
-    actualFeedSolidState: scaleSolidMaterialState(feedSolidState, 1),
+  const actualFeedSolidState = scaleSolidMaterialState(feedSolidState, 1);
+  return attachLegacyViews({
+    actualFeedSolidState,
     concentrateSolidState: concentrate,
     tailingsSolidState: tailings,
-    actualFeedRates: legacyFlowView(feedSolidState, normalizedFeed.nominalParticleSizeMm),
-    concentrateRates: legacyFlowView(concentrate, normalizedFeed.nominalParticleSizeMm),
-    tailingsRates: legacyFlowView(tailings, normalizedFeed.nominalParticleSizeMm),
-  };
+  }, {
+    actualFeedRates: () => legacyFlowView(feedSolidState, normalizedFeed.nominalParticleSizeMm),
+    concentrateRates: () => legacyFlowView(concentrate, normalizedFeed.nominalParticleSizeMm),
+    tailingsRates: () => legacyFlowView(tailings, normalizedFeed.nominalParticleSizeMm),
+  });
 }
 
 export { STREAM_FLOW_TOLERANCE, magneticRecoveryForFraction };

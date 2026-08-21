@@ -1,12 +1,6 @@
 import { SCREENING_PROCESS_ID } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
 import {
-  multiplySolidMaterialState,
-  totalSolidQuantity,
-} from '../../core/materials/solids/solidMaterialState.js';
-import {
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
   hopperFreeCapacityKg,
   hopperReceiveInflow,
   hopperStoredMassKg,
@@ -20,34 +14,15 @@ import {
   updateConnectionStream,
 } from './blueprintHelpers.js';
 import {
-  outputSpecificSensibleEnthalpies,
-  solidBodyForWithdrawal,
+  APPARATUS_TRANSFER_TOLERANCE_KG,
+  assertTransferAccepted,
+  capacityScaleForOutput,
+  outputSpecificSensibleEnthalpiesFromWithdrawals,
+  proportionalSolidStateFromHopper,
+  scaleSolidStateForRuntime,
+  solidStateMassForRuntime,
 } from './materialTransferHelpers.js';
-
-const TRANSFER_TOLERANCE_KG = 1e-8;
-
-function proportionalSolidStateFromHopper(hopper, requestedTotalRateKgPerSecond) {
-  const storedMassKg = hopperStoredMassKg(hopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG || requestedTotalRateKgPerSecond <= 0) {
-    return { fractions: {} };
-  }
-  return multiplySolidMaterialState(
-    hopper.materialBody.solidState,
-    requestedTotalRateKgPerSecond / storedMassKg,
-  );
-}
-
-function capacityScaleForOutput(freeCapacityKg, solidState, dt) {
-  const requiredKg = totalSolidQuantity(solidState) * dt;
-  if (requiredKg <= TRANSFER_TOLERANCE_KG) return 1;
-  return Math.max(0, Math.min(1, freeCapacityKg / requiredKg));
-}
-
-function assertTransferAccepted(expectedKg, acceptedKg, context) {
-  if (Math.abs(expectedKg - acceptedKg) > TRANSFER_TOLERANCE_KG * Math.max(1, expectedKg)) {
-    throw new Error(`${context} could not commit its planned output atomically`);
-  }
-}
+import { assertHopperCanReceivePlannedSolidState } from './transactionHelpers.js';
 
 export function createScreen({
   id,
@@ -72,27 +47,9 @@ export function createScreen({
     undersizePortId: 'undersize',
     oversizePortId: 'oversize',
     ports: [
-      {
-        id: 'feed',
-        direction: 'input',
-        kind: 'material',
-        label: 'feed',
-        accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE],
-      },
-      {
-        id: 'undersize',
-        direction: 'output',
-        kind: 'material',
-        label: 'undersize',
-        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
-      },
-      {
-        id: 'oversize',
-        direction: 'output',
-        kind: 'material',
-        label: 'oversize',
-        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
-      },
+      { id: 'feed', direction: 'input', kind: 'material', label: 'feed', accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE] },
+      { id: 'undersize', direction: 'output', kind: 'material', label: 'undersize', provides: [PORT_CAPABILITIES.SOLID_PARTICULATE] },
+      { id: 'oversize', direction: 'output', kind: 'material', label: 'oversize', provides: [PORT_CAPABILITIES.SOLID_PARTICULATE] },
     ],
     lastError: null,
     enabled,
@@ -109,7 +66,6 @@ export function simulateScreenNode(blueprint, node, dt) {
   const inputConnection = findInboundConnection(blueprint, node.id, node.inputPortId);
   const undersizeConnection = findOutboundConnection(blueprint, node.id, node.undersizePortId);
   const oversizeConnection = findOutboundConnection(blueprint, node.id, node.oversizePortId);
-
   if (!inputConnection) {
     node.lastError = null;
     node.operatingState = 'idle';
@@ -122,7 +78,6 @@ export function simulateScreenNode(blueprint, node, dt) {
     node.operatingState = 'idle';
     return;
   }
-
   if (!undersizeConnection || !oversizeConnection) {
     node.lastError = 'Screen requires feed, undersize, and oversize connections';
     node.operatingState = 'blocked';
@@ -131,19 +86,11 @@ export function simulateScreenNode(blueprint, node, dt) {
 
   const undersizeHopper = blueprint.nodes[undersizeConnection.targetNodeId];
   const oversizeHopper = blueprint.nodes[oversizeConnection.targetNodeId];
-  if (
-    inputHopper?.nodeType !== 'hopper'
-    || undersizeHopper?.nodeType !== 'hopper'
-    || oversizeHopper?.nodeType !== 'hopper'
-  ) {
+  if (inputHopper?.nodeType !== 'hopper' || undersizeHopper?.nodeType !== 'hopper' || oversizeHopper?.nodeType !== 'hopper') {
     node.lastError = 'Screen requires Hopper-compatible storage on feed and both outputs';
     node.operatingState = 'blocked';
     return;
   }
-
-  // A single Hopper cannot be staged as both feed and output without a separate
-  // recirculation/transport contract. Reject that topology rather than risk an
-  // ambiguous double-commit to one inventory owner.
   if (inputHopper.id === undersizeHopper.id || inputHopper.id === oversizeHopper.id) {
     node.lastError = 'Screen outputs must use storage distinct from the feed Hopper';
     node.operatingState = 'blocked';
@@ -152,7 +99,7 @@ export function simulateScreenNode(blueprint, node, dt) {
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
   const candidateRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt);
-  let candidateFeed = proportionalSolidStateFromHopper(inputHopper, candidateRate);
+  const candidateFeed = proportionalSolidStateFromHopper(inputHopper, candidateRate);
   let candidateResult;
   try {
     candidateResult = applyContinuousScreening(candidateFeed, node.apertureSizeMm, node.throughputKgPerSecond);
@@ -166,65 +113,63 @@ export function simulateScreenNode(blueprint, node, dt) {
     capacityScaleForOutput(hopperFreeCapacityKg(undersizeHopper), candidateResult.undersizeSolidState, dt),
     capacityScaleForOutput(hopperFreeCapacityKg(oversizeHopper), candidateResult.oversizeSolidState, dt),
   );
-
-  if (capacityScale <= TRANSFER_TOLERANCE_KG) {
+  if (capacityScale <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = 'One or more required Screen outputs are full';
     node.operatingState = 'blocked';
     return;
   }
-  if (capacityScale < 1) candidateFeed = multiplySolidMaterialState(candidateFeed, capacityScale);
 
-  const stagedInput = cloneHopperMaterialState(inputHopper);
-  const stagedUndersize = cloneHopperMaterialState(undersizeHopper);
-  const stagedOversize = cloneHopperMaterialState(oversizeHopper);
-  const withdrawal = hopperWithdraw(stagedInput, totalSolidQuantity(candidateFeed), dt);
-  if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) {
+  const actualFeedSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.actualFeedSolidState, capacityScale)
+    : candidateResult.actualFeedSolidState;
+  const undersizeSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.undersizeSolidState, capacityScale)
+    : candidateResult.undersizeSolidState;
+  const oversizeSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.oversizeSolidState, capacityScale)
+    : candidateResult.oversizeSolidState;
+  const plannedRate = solidStateMassForRuntime(actualFeedSolidState);
+  const expectedUndersizeKg = solidStateMassForRuntime(undersizeSolidState) * dt;
+  const expectedOversizeKg = solidStateMassForRuntime(oversizeSolidState) * dt;
+
+  try {
+    assertHopperCanReceivePlannedSolidState(undersizeHopper, undersizeSolidState, expectedUndersizeKg, 'Screen undersize');
+    assertHopperCanReceivePlannedSolidState(oversizeHopper, oversizeSolidState, expectedOversizeKg, 'Screen oversize');
+  } catch (error) {
+    node.lastError = error.message;
+    node.operatingState = 'blocked';
+    return;
+  }
+
+  const withdrawal = hopperWithdraw(inputHopper, plannedRate, dt);
+  if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = null;
     node.operatingState = 'idle';
     return;
   }
-
-  const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-  const result = applyContinuousScreening(actualFeed, node.apertureSizeMm, node.throughputKgPerSecond);
-  const [undersizeSpecificSensibleEnthalpyJPerKg, oversizeSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
-    [solidBodyForWithdrawal(withdrawal)],
-    [result.undersizeSolidState, result.oversizeSolidState],
+  const actualFeed = scaleSolidStateForRuntime(withdrawal.actualSolidState, 1 / dt);
+  const [undersizeSpecificSensibleEnthalpyJPerKg, oversizeSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpiesFromWithdrawals(
+    [withdrawal],
+    [undersizeSolidState, oversizeSolidState],
   );
-
-  const expectedUndersizeKg = totalSolidQuantity(result.undersizeSolidState) * dt;
   const acceptedUndersizeKg = hopperReceiveInflow(
-    stagedUndersize,
-    result.undersizeSolidState,
+    undersizeHopper,
+    undersizeSolidState,
     dt,
     undersizeSpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedUndersizeKg, acceptedUndersizeKg, 'Screen undersize');
-
-  const expectedOversizeKg = totalSolidQuantity(result.oversizeSolidState) * dt;
   const acceptedOversizeKg = hopperReceiveInflow(
-    stagedOversize,
-    result.oversizeSolidState,
+    oversizeHopper,
+    oversizeSolidState,
     dt,
     oversizeSpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedOversizeKg, acceptedOversizeKg, 'Screen oversize');
 
-  commitHopperMaterialState(inputHopper, stagedInput);
-  commitHopperMaterialState(undersizeHopper, stagedUndersize);
-  commitHopperMaterialState(oversizeHopper, stagedOversize);
   updateConnectionStream(blueprint, inputConnection, actualFeed, withdrawal.actualSpecificSensibleEnthalpyJPerKg);
-  updateConnectionStream(
-    blueprint,
-    undersizeConnection,
-    result.undersizeSolidState,
-    undersizeSpecificSensibleEnthalpyJPerKg,
-  );
-  updateConnectionStream(
-    blueprint,
-    oversizeConnection,
-    result.oversizeSolidState,
-    oversizeSpecificSensibleEnthalpyJPerKg,
-  );
+  updateConnectionStream(blueprint, undersizeConnection, undersizeSolidState, undersizeSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, oversizeConnection, oversizeSolidState, oversizeSpecificSensibleEnthalpyJPerKg);
   node.lastError = null;
   node.operatingState = 'running';
 }

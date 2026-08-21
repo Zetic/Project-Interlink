@@ -3,8 +3,6 @@ import { totalGasMassKg } from '../gas/gasMaterialState.js';
 import {
   createSolidMaterialBody,
   createSolidMaterialState,
-  iterateSolidFractions,
-  totalSolidQuantity,
 } from '../solids/solidMaterialState.js';
 import { createGasMaterialBody, createGasMaterialState } from '../gas/gasMaterialState.js';
 import { cloneMaterialBody, validateMaterialBody } from '../materialBody.js';
@@ -17,6 +15,8 @@ import {
   temperatureKFromSensibleEnthalpy,
 } from './thermalState.js';
 
+const SOLID_QUANTITY_TOLERANCE = 1e-9;
+
 function bodySensibleEnthalpyJ(body) {
   return body?.thermalState?.sensibleEnthalpyJ ?? 0;
 }
@@ -26,25 +26,49 @@ function ensureBodyThermalState(body) {
   return body.thermalState;
 }
 
+function speciesIdFromFractionKey(key) {
+  const separator = key.indexOf('|');
+  return separator < 0 ? key : key.slice(0, separator);
+}
+
+/** Private reducers used only after the enclosing MaterialBody was validated. */
+function solidSpeciesMassesUnchecked(state) {
+  const masses = {};
+  for (const [key, quantity] of Object.entries(state?.fractions ?? {})) {
+    if (quantity <= SOLID_QUANTITY_TOLERANCE) continue;
+    const speciesId = speciesIdFromFractionKey(key);
+    masses[speciesId] = (masses[speciesId] ?? 0) + quantity;
+  }
+  return masses;
+}
+
+function solidMassUnchecked(state) {
+  let total = 0;
+  for (const quantity of Object.values(state?.fractions ?? {})) {
+    if (quantity > SOLID_QUANTITY_TOLERANCE) total += quantity;
+  }
+  return total;
+}
+
 export function materialBodySpeciesMassesKg(body) {
   validateMaterialBody(body);
   if (body.physicalForm === MATERIAL_FORMS.GAS) return { ...body.gasState.speciesMassKg };
-  const masses = {};
-  for (const fraction of iterateSolidFractions(body.solidState)) {
-    masses[fraction.speciesId] = (masses[fraction.speciesId] ?? 0) + fraction.quantity;
-  }
-  return masses;
+  return solidSpeciesMassesUnchecked(body.solidState);
 }
 
 export function materialBodyMassKg(body) {
   validateMaterialBody(body);
   return body.physicalForm === MATERIAL_FORMS.GAS
     ? totalGasMassKg(body.gasState)
-    : totalSolidQuantity(body.solidState);
+    : solidMassUnchecked(body.solidState);
 }
 
 export function materialBodyHeatCapacityJPerK(body) {
-  return heatCapacityJPerKForSpeciesMasses(materialBodySpeciesMassesKg(body));
+  validateMaterialBody(body);
+  const speciesMasses = body.physicalForm === MATERIAL_FORMS.GAS
+    ? body.gasState.speciesMassKg
+    : solidSpeciesMassesUnchecked(body.solidState);
+  return heatCapacityJPerKForSpeciesMasses(speciesMasses);
 }
 
 export function materialBodyTemperatureK(body) {
@@ -67,7 +91,9 @@ export function proportionalMaterialBodyShare(body, requestedMassKg) {
   if (!Number.isFinite(requestedMassKg) || requestedMassKg < 0) {
     throw new Error('requested material mass must be finite and non-negative');
   }
-  const totalMassKg = materialBodyMassKg(body);
+  const totalMassKg = body.physicalForm === MATERIAL_FORMS.GAS
+    ? totalGasMassKg(body.gasState)
+    : solidMassUnchecked(body.solidState);
   const factor = totalMassKg <= 0 ? 0 : Math.min(1, requestedMassKg / totalMassKg);
   if (body.physicalForm === MATERIAL_FORMS.GAS) {
     const result = createGasMaterialBody(createGasMaterialState());
@@ -80,11 +106,8 @@ export function proportionalMaterialBodyShare(body, requestedMassKg) {
   const result = createSolidMaterialBody(createSolidMaterialState([], {
     textureProfiles: body.solidState.textureProfiles ?? {},
   }));
-  for (const fraction of iterateSolidFractions(body.solidState)) {
-    const key = fraction.textureProfileId
-      ? `${fraction.speciesId}|${fraction.sizeBinId}|${fraction.liberationClassId}|${fraction.textureProfileId}`
-      : `${fraction.speciesId}|${fraction.sizeBinId}|${fraction.liberationClassId}`;
-    result.solidState.fractions[key] = fraction.quantity * factor;
+  for (const [key, quantity] of Object.entries(body.solidState.fractions ?? {})) {
+    if (quantity > SOLID_QUANTITY_TOLERANCE) result.solidState.fractions[key] = quantity * factor;
   }
   result.thermalState.sensibleEnthalpyJ = bodySensibleEnthalpyJ(body) * factor;
   return result;

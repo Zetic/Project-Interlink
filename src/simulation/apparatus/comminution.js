@@ -5,10 +5,7 @@ import {
   getProcessDefinition,
 } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
-import { multiplySolidMaterialState, totalSolidQuantity } from '../../core/materials/solids/solidMaterialState.js';
 import {
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
   hopperFreeCapacityKg,
   hopperReceiveInflow,
   hopperStoredMassKg,
@@ -24,10 +21,12 @@ import {
 import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
-  outputSpecificSensibleEnthalpies,
+  outputSpecificSensibleEnthalpiesFromWithdrawals,
   proportionalSolidStateFromHopper,
-  solidBodyForWithdrawal,
+  scaleSolidStateForRuntime,
+  solidStateMassForRuntime,
 } from './materialTransferHelpers.js';
+import { assertHopperCanReceivePlannedSolidState } from './transactionHelpers.js';
 
 const MACHINE_CONFIG = Object.freeze({
   jawCrusher: Object.freeze({
@@ -169,9 +168,13 @@ function simulateComminutionNode(blueprint, node, dt, config) {
 
   const candidateFeed = proportionalSolidStateFromHopper(inputHopper, mechanicalRate);
   const targetParticleSizeMm = node[config.parameterId];
-  let planned;
+  let result;
   try {
-    planned = applyContinuousStagedComminution(
+    // The process kernel is deterministic for this feed and machine state. The
+    // old runtime ran it once to plan power/throughput and then again after
+    // cloning/withdrawing an identical proportional feed. Execute it once and
+    // preflight the resulting transaction before authoritative withdrawal.
+    result = applyContinuousStagedComminution(
       candidateFeed,
       config.processId,
       targetParticleSizeMm,
@@ -185,34 +188,16 @@ function simulateComminutionNode(blueprint, node, dt, config) {
     return;
   }
 
-  const plannedRate = totalSolidQuantity(planned.actualFeedSolidState);
+  const plannedRate = solidStateMassForRuntime(result.actualFeedSolidState);
   if (plannedRate <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = null;
     node.operatingState = 'idle';
     setIdleDiagnostics(node);
     return;
   }
-
-  const stagedInput = cloneHopperMaterialState(inputHopper);
-  const stagedOutput = cloneHopperMaterialState(outputHopper);
-  const withdrawal = hopperWithdraw(stagedInput, plannedRate, dt);
-  if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
-    node.lastError = null;
-    node.operatingState = 'idle';
-    setIdleDiagnostics(node);
-    return;
-  }
-
-  const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-  let result;
+  const expectedOutputKg = solidStateMassForRuntime(result.productSolidState) * dt;
   try {
-    result = applyContinuousStagedComminution(
-      actualFeed,
-      config.processId,
-      targetParticleSizeMm,
-      node.throughputKgPerSecond,
-      node.ratedPowerKw,
-    );
+    assertHopperCanReceivePlannedSolidState(outputHopper, result.productSolidState, expectedOutputKg, config.label);
   } catch (error) {
     node.lastError = error.message;
     node.operatingState = 'blocked';
@@ -220,30 +205,33 @@ function simulateComminutionNode(blueprint, node, dt, config) {
     return;
   }
 
-  const actuallyProcessedRate = totalSolidQuantity(result.actualFeedSolidState);
-  if (Math.abs(actuallyProcessedRate - totalSolidQuantity(actualFeed)) > APPARATUS_TRANSFER_TOLERANCE_KG) {
-    throw new Error(`${config.label} power planning changed after staged withdrawal`);
+  const withdrawal = hopperWithdraw(inputHopper, plannedRate, dt);
+  if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+    node.lastError = null;
+    node.operatingState = 'idle';
+    setIdleDiagnostics(node);
+    return;
   }
-
-  const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
-  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
-    [solidBodyForWithdrawal(withdrawal)],
+  if (Math.abs(withdrawal.actualTotalKg / dt - plannedRate) > APPARATUS_TRANSFER_TOLERANCE_KG) {
+    throw new Error(`${config.label} staged withdrawal no longer matches its deterministic plan`);
+  }
+  const actualFeed = scaleSolidStateForRuntime(withdrawal.actualSolidState, 1 / dt);
+  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpiesFromWithdrawals(
+    [withdrawal],
     [result.productSolidState],
   );
   const acceptedOutputKg = hopperReceiveInflow(
-    stagedOutput,
+    outputHopper,
     result.productSolidState,
     dt,
     productSpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedOutputKg, acceptedOutputKg, config.label);
 
-  commitHopperMaterialState(inputHopper, stagedInput);
-  commitHopperMaterialState(outputHopper, stagedOutput);
   updateConnectionStream(
     blueprint,
     inputConnection,
-    result.actualFeedSolidState,
+    actualFeed,
     withdrawal.actualSpecificSensibleEnthalpyJPerKg,
   );
   updateConnectionStream(
