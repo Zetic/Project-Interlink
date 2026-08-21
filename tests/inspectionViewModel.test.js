@@ -55,7 +55,7 @@ test('stream inspection exposes endpoints, particle size, and constituent rates'
   assert.deepEqual(details.componentMassFlowKgPerSecond, { hematite: 2, magnetite: 1 });
 });
 
-test('Feature inspection exposes resource identity, connected extraction, and occurrence-specific physical properties', () => {
+test('Feature inspection exposes concise resource identity plus structured occurrence properties', () => {
   const world = {
     features: {
       feature: {
@@ -117,6 +117,7 @@ test('Feature inspection exposes resource identity, connected extraction, and oc
   assert.deepEqual(details.resources.map(item => [item.name, item.availabilityClass]), [['Iron Ore', 'Abundant']]);
   assert.deepEqual(details.connectedExtractors, [{ id: extractor.id, occurrenceId: 'iron' }]);
   const resource = details.resources[0];
+  assert.equal(resource.descriptor, 'Hematite-rich');
   assert.equal(resource.concentrationPercent, 63.5);
   assert.deepEqual(resource.composition, { hematite: 60, quartz: 40 });
   assert.deepEqual(
@@ -129,8 +130,12 @@ test('Feature inspection exposes resource identity, connected extraction, and oc
   );
   assert.ok(resource.occurrenceProperties.find(property => property.id === 'mineral-density')?.value > 0);
   assert.deepEqual(resource.mineralTextures[0].grainSizeUm, { d10: 45, d50: 120, d90: 310 });
-  assert.match(resource.descriptor, /Bond Ball Mill Work Index/);
-  assert.match(resource.descriptor, /Hematite grains D10\/D50\/D90: 45\/120\/310 µm/);
+  assert.deepEqual(resource.mineralTextures[0].occurrenceModes, {
+    free: 0.15,
+    boundary: 0.35,
+    intergrown: 0.35,
+    included: 0.15,
+  });
 });
 
 test('resource-access inspection is a relationship and does not invent material flow', () => {
