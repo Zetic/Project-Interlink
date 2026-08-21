@@ -104,9 +104,14 @@ test('generated ResourceOccurrences resolve to registered definitions and use co
   }
 });
 
-test('every generated Feature family is compatible with its resource occurrence family', () => {
+test('every localized generated Feature family is compatible with its resource occurrence family', () => {
   const world = buildWorld('feature-family-integrity');
   for (const feature of Object.values(world.features)) {
+    // Regional-access Features are presentation wrappers around resources that
+    // were already selected by regional generation. Their types (Forest,
+    // Water Body, Atmospheric Zone, etc.) intentionally do not use the
+    // localized Feature compatibility registry.
+    if (feature.regionalAccess) continue;
     const allowed = FEATURE_ALLOWED_FAMILIES[feature.type];
     assert.ok(allowed instanceof Set);
     for (const occurrenceId of feature.resourceOccurrences) {
