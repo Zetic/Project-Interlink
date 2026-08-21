@@ -1,5 +1,5 @@
 import { wsState, inspector } from '../workspaceState.js';
-import { SIMULATION_STEP_S } from '../../simulation/simulationEngine.js';
+import { SIMULATION_STEP_S, simulationTick } from '../../simulation/simulationEngine.js';
 import {
   pauseWorldSimulation,
   resumeWorldSimulation,
@@ -52,10 +52,6 @@ function mean(values) {
 
 function formatMs(value) {
   return Number.isFinite(value) ? `${value.toFixed(2)} ms` : '—';
-}
-
-function formatNumber(value, digits = 0) {
-  return Number.isFinite(value) ? value.toFixed(digits) : '—';
 }
 
 function setText(root, name, value) {
@@ -342,6 +338,10 @@ function yieldToBrowser() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
+function benchmarkTick(fixture) {
+  return simulationTick(fixture.blueprint, fixture.world, SIMULATION_STEP_S);
+}
+
 async function runHeadlessBenchmark(root) {
   if (benchmarkRunning) return;
   benchmarkRunning = true;
@@ -353,14 +353,14 @@ async function runHeadlessBenchmark(root) {
   try {
     const fixture = createRoastingBenchmarkFixture({ count });
     for (let index = 0; index < BENCHMARK_WARMUP_TICKS; index += 1) {
-      worldlessTick(fixture);
+      benchmarkTick(fixture);
       if (index % 5 === 4) await yieldToBrowser();
     }
 
     const samples = [];
     for (let index = 0; index < BENCHMARK_SAMPLE_TICKS; index += 1) {
       const start = nowMs();
-      worldlessTick(fixture);
+      benchmarkTick(fixture);
       samples.push(nowMs() - start);
       if (index % 5 === 4) await yieldToBrowser();
     }
@@ -385,22 +385,6 @@ async function runHeadlessBenchmark(root) {
     setDeepProfilingEnabled(profilingWasEnabled);
     benchmarkRunning = false;
   }
-}
-
-function worldlessTick(fixture) {
-  // Headless benchmark intentionally times the same Blueprint physics kernel used
-  // by live Sites without graph projection or DOM rendering.
-  const blueprint = fixture.blueprint;
-  return import('../../simulation/simulationEngine.js').then;
-}
-
-function runBlueprintTick(fixture) {
-  return fixture;
-}
-
-function installBenchmarkTickImplementation() {
-  // Replaced below at module initialization; split out to keep benchmark intent
-  // explicit while avoiding any alternate debug-only simulation path.
 }
 
 function resetStats(root) {
