@@ -13,25 +13,19 @@ import {
   createSolidMaterialBody,
   createSolidMaterialState,
   multiplySolidMaterialState,
-  summarizeSolidMaterialBySpecies,
-  totalSolidQuantity,
   withdrawSolidMaterialState,
 } from '../../core/materials/solids/solidMaterialState.js';
 import { applyGoethiteDehydroxylation } from '../../core/processes/physics/thermochemicalReactions.js';
-import {
-  materialBodyHeatCapacityJPerK,
-  materialBodyTemperatureK,
-} from '../../core/materials/thermal/thermalMaterial.js';
+import { materialBodyHeatCapacityJPerK } from '../../core/materials/thermal/thermalMaterial.js';
 import {
   THERMAL_REFERENCE_TEMPERATURE_K,
   sensibleEnthalpyJAtTemperature,
+  temperatureKFromSensibleEnthalpy,
 } from '../../core/materials/thermal/thermalState.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
 import {
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
   hopperFreeCapacityKg,
-  hopperReceiveInflow,
+  hopperReceiveMaterialBody,
 } from '../hopperNode.js';
 import {
   findInboundConnection,
@@ -56,8 +50,27 @@ function emptySolidBody() {
   return createSolidMaterialBody(createSolidMaterialState());
 }
 
+/**
+ * Furnace runtime bodies are already canonical simulation-owned states. Mass is
+ * needed many times per tick, so do not repeatedly invoke public whole-state
+ * validation just to sum quantities. Process/material boundaries still perform
+ * full validation and conservation checks.
+ */
 function solidBodyMassKg(body) {
-  return totalSolidQuantity(body.solidState);
+  let total = 0;
+  for (const quantity of Object.values(body?.solidState?.fractions ?? {})) {
+    if (quantity > TRANSFER_TOLERANCE_KG) total += quantity;
+  }
+  return total;
+}
+
+function solidSpeciesMassKg(body, speciesId) {
+  const prefix = `${speciesId}|`;
+  let total = 0;
+  for (const [key, quantity] of Object.entries(body?.solidState?.fractions ?? {})) {
+    if (quantity > TRANSFER_TOLERANCE_KG && key.startsWith(prefix)) total += quantity;
+  }
+  return total;
 }
 
 function addSolidBody(target, source) {
@@ -69,7 +82,10 @@ function addSolidBody(target, source) {
 function withdrawSolidBody(body, requestedMassKg) {
   const storedMassKg = solidBodyMassKg(body);
   const solidState = withdrawSolidMaterialState(body.solidState, requestedMassKg);
-  const massKg = totalSolidQuantity(solidState);
+  let massKg = 0;
+  for (const quantity of Object.values(solidState.fractions ?? {})) {
+    if (quantity > TRANSFER_TOLERANCE_KG) massKg += quantity;
+  }
   const sensibleEnthalpyJ = storedMassKg <= 0
     ? 0
     : body.thermalState.sensibleEnthalpyJ * (massKg / storedMassKg);
@@ -162,9 +178,8 @@ export function furnaceHeatLossEnergyJ(
   return heatLossCoefficientWPerK * (temperatureK - ambientTemperatureK) * dt;
 }
 
-function boundedHeatLossEnergyJ(body, requestedHeatLossEnergyJ) {
+function boundedHeatLossEnergyJ(body, heatCapacityJPerK, requestedHeatLossEnergyJ) {
   if (requestedHeatLossEnergyJ <= 0) return requestedHeatLossEnergyJ;
-  const heatCapacityJPerK = materialBodyHeatCapacityJPerK(body);
   const minimumSensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(1, heatCapacityJPerK);
   return Math.min(
     requestedHeatLossEnergyJ,
@@ -184,18 +199,30 @@ function heatZones(node, zones, dt) {
       requests.push({ zone, requestedHeaterEnergyJ: 0 });
       continue;
     }
-    const temperatureBeforeK = materialBodyTemperatureK(zone);
+    // Resolve heat capacity once for the purely sensible-heat portion of this
+    // tick. Composition does not change until the later reaction stage.
+    const heatCapacityJPerK = materialBodyHeatCapacityJPerK(zone);
+    const temperatureBeforeK = temperatureKFromSensibleEnthalpy(
+      zone.thermalState.sensibleEnthalpyJ,
+      heatCapacityJPerK,
+    );
     const requestedHeatLossEnergyJ = furnaceHeatLossEnergyJ(
       temperatureBeforeK,
       zoneHeatLossCoefficientWPerK,
       dt,
     );
-    const heatLossEnergyJ = boundedHeatLossEnergyJ(zone, requestedHeatLossEnergyJ);
+    const heatLossEnergyJ = boundedHeatLossEnergyJ(
+      zone,
+      heatCapacityJPerK,
+      requestedHeatLossEnergyJ,
+    );
     zone.thermalState.sensibleEnthalpyJ -= heatLossEnergyJ;
     totalHeatLossEnergyJ += heatLossEnergyJ;
 
-    const heatCapacityJPerK = materialBodyHeatCapacityJPerK(zone);
-    const temperatureAfterLossK = materialBodyTemperatureK(zone);
+    const temperatureAfterLossK = temperatureKFromSensibleEnthalpy(
+      zone.thermalState.sensibleEnthalpyJ,
+      heatCapacityJPerK,
+    );
     const requestedHeaterEnergyJ = Math.max(
       0,
       (setpointK - temperatureAfterLossK) * heatCapacityJPerK,
@@ -230,48 +257,63 @@ function reactZones(zones, gasInventory, dt) {
   let totalReactionEnergyDemandJ = 0;
   let totalGoethiteBeforeKg = 0;
   let totalGoethiteConsumedKg = 0;
+  let totalSolverEvaluations = 0;
 
   for (let index = 0; index < zones.length; index += 1) {
     const zone = zones[index];
     if (solidBodyMassKg(zone) <= TRANSFER_TOLERANCE_KG) continue;
-    const before = cloneSolidMaterialBody(zone);
-    const goethiteBeforeKg = summarizeSolidMaterialBySpecies(before.solidState).goethite ?? 0;
-    const reaction = applyGoethiteDehydroxylation(before, dt);
+    const goethiteBeforeKg = solidSpeciesMassKg(zone, 'goethite');
+    // applyGoethiteDehydroxylation is pure; avoid a redundant deep clone before
+    // invoking a kernel that already materializes its output independently.
+    const reaction = applyGoethiteDehydroxylation(zone, dt);
     validateElementalConservation(
-      [before],
+      [zone],
       [reaction.solidProductBody, reaction.gasProductBody],
       ROASTING_PROCESS_ID,
     );
-    if (!reactionEnergyCloses(before, reaction)) {
+    if (!reactionEnergyCloses(zone, reaction)) {
       throw new Error('Thermochemical reaction violates the furnace energy balance');
     }
     zones[index] = reaction.solidProductBody;
     addGasMaterialState(gasInventory.gasState, reaction.gasProductBody.gasState);
     gasInventory.thermalState.sensibleEnthalpyJ += reaction.gasProductBody.thermalState.sensibleEnthalpyJ;
     totalReactionEnergyDemandJ += reaction.reactionEnergyDemandJ;
-    const goethiteAfterKg = summarizeSolidMaterialBySpecies(reaction.solidProductBody.solidState).goethite ?? 0;
+    totalSolverEvaluations += reaction.solverEvaluationCount ?? 0;
+    const goethiteAfterKg = solidSpeciesMassKg(reaction.solidProductBody, 'goethite');
     totalGoethiteBeforeKg += goethiteBeforeKg;
     totalGoethiteConsumedKg += Math.max(0, goethiteBeforeKg - goethiteAfterKg);
   }
 
   return {
     totalReactionEnergyDemandJ,
+    totalSolverEvaluations,
     goethiteConversionFraction: totalGoethiteBeforeKg <= TRANSFER_TOLERANCE_KG
       ? 0
       : totalGoethiteConsumedKg / totalGoethiteBeforeKg,
   };
 }
 
-function averageZoneTemperatureK(zones) {
+function zoneThermalDiagnostics(zones) {
   let totalCapacityJPerK = 0;
   let totalSensibleEnthalpyJ = 0;
+  const temperaturesK = [];
   for (const zone of zones) {
-    if (solidBodyMassKg(zone) <= TRANSFER_TOLERANCE_KG) continue;
-    totalCapacityJPerK += materialBodyHeatCapacityJPerK(zone);
-    totalSensibleEnthalpyJ += zone.thermalState.sensibleEnthalpyJ;
+    if (solidBodyMassKg(zone) <= TRANSFER_TOLERANCE_KG) {
+      temperaturesK.push(THERMAL_REFERENCE_TEMPERATURE_K);
+      continue;
+    }
+    const heatCapacityJPerK = materialBodyHeatCapacityJPerK(zone);
+    const sensibleEnthalpyJ = zone.thermalState.sensibleEnthalpyJ;
+    totalCapacityJPerK += heatCapacityJPerK;
+    totalSensibleEnthalpyJ += sensibleEnthalpyJ;
+    temperaturesK.push(temperatureKFromSensibleEnthalpy(sensibleEnthalpyJ, heatCapacityJPerK));
   }
-  if (totalCapacityJPerK <= 0) return THERMAL_REFERENCE_TEMPERATURE_K;
-  return THERMAL_REFERENCE_TEMPERATURE_K + totalSensibleEnthalpyJ / totalCapacityJPerK;
+  return {
+    averageTemperatureK: totalCapacityJPerK <= 0
+      ? THERMAL_REFERENCE_TEMPERATURE_K
+      : THERMAL_REFERENCE_TEMPERATURE_K + totalSensibleEnthalpyJ / totalCapacityJPerK,
+    temperaturesK,
+  };
 }
 
 function productTargetStage(blueprint, connection, sourceNode, dt) {
@@ -282,7 +324,6 @@ function productTargetStage(blueprint, connection, sourceNode, dt) {
     return {
       kind: 'hopper',
       target,
-      stagedHopper: cloneHopperMaterialState(target),
       capacityKg: hopperFreeCapacityKg(target),
     };
   }
@@ -291,45 +332,29 @@ function productTargetStage(blueprint, connection, sourceNode, dt) {
     return {
       kind: 'furnace',
       target,
-      stagedPendingFeed: cloneSolidMaterialBody(target.pendingFeed),
       capacityKg: roastingFurnaceInputCapacityKg(target, dt),
     };
   }
   return null;
 }
 
-function receiveProductIntoStage(stage, body, dt) {
+function commitProductStage(stage, body) {
+  if (!stage) return 0;
   const massKg = solidBodyMassKg(body);
   if (massKg <= TRANSFER_TOLERANCE_KG) return 0;
-  if (!stage || massKg > stage.capacityKg + TRANSFER_TOLERANCE_KG) {
+  if (massKg > stage.capacityKg + TRANSFER_TOLERANCE_KG) {
     throw new Error('Furnace solid product could not commit atomically');
   }
   if (stage.kind === 'hopper') {
-    const productFlow = multiplySolidMaterialState(body.solidState, 1 / dt);
-    const specificSensibleEnthalpyJPerKg = body.thermalState.sensibleEnthalpyJ / massKg;
-    const acceptedKg = hopperReceiveInflow(
-      stage.stagedHopper,
-      productFlow,
-      dt,
-      specificSensibleEnthalpyJPerKg,
-    );
+    const acceptedKg = hopperReceiveMaterialBody(stage.target, body);
     if (Math.abs(acceptedKg - massKg) > TRANSFER_TOLERANCE_KG) {
       throw new Error('Furnace solid product could not commit atomically');
     }
     return acceptedKg;
   }
-  addSolidBody(stage.stagedPendingFeed, body);
+  addSolidBody(stage.target.pendingFeed, body);
+  stage.target.incomingMassSinceLastSimulationKg += massKg;
   return massKg;
-}
-
-function commitProductStage(stage, receivedMassKg) {
-  if (!stage) return;
-  if (stage.kind === 'hopper') {
-    commitHopperMaterialState(stage.target, stage.stagedHopper);
-    return;
-  }
-  stage.target.pendingFeed = cloneSolidMaterialBody(stage.stagedPendingFeed);
-  stage.target.incomingMassSinceLastSimulationKg += receivedMassKg;
 }
 
 function advancePendingFeed(node, zones, pendingFeed, productStage, dt) {
@@ -448,6 +473,7 @@ export function createRoastingFurnace({
     lastFeedRateKgPerSecond: 0,
     lastProductRateKgPerSecond: 0,
     lastGoethiteConversionFraction: 0,
+    lastSolverEvaluationCount: 0,
     incomingMassSinceLastSimulationKg: 0,
     lastError: null,
     enabled,
@@ -461,6 +487,7 @@ export function simulateRoastingFurnaceNode(blueprint, _world, node, dt) {
     node.operatingState = 'off';
     node.lastFeedRateKgPerSecond = 0;
     node.lastProductRateKgPerSecond = 0;
+    node.lastSolverEvaluationCount = 0;
     node.incomingMassSinceLastSimulationKg = 0;
     return;
   }
@@ -480,6 +507,9 @@ export function simulateRoastingFurnaceNode(blueprint, _world, node, dt) {
   const ventReady = vent?.nodeType === 'exhaustVent';
   const outputsReady = Boolean(productStage && ventReady);
 
+  // Stage only furnace-owned state. Destination Hoppers are no longer deep-
+  // cloned every tick; a finite discharged MaterialBody is preflighted and
+  // committed directly after all process calculations succeed.
   const stagedZones = node.zones.map(zone => cloneSolidMaterialBody(zone));
   const stagedPendingFeed = cloneSolidMaterialBody(node.pendingFeed);
   const stagedGas = cloneGasMaterialBody(node.gasInventory);
@@ -494,19 +524,21 @@ export function simulateRoastingFurnaceNode(blueprint, _world, node, dt) {
     node.lastHeaterEnergyJ = thermal.totalHeaterEnergyJ;
     node.lastHeatLossEnergyJ = thermal.totalHeatLossEnergyJ;
 
-    if (outputsReady && roastingFurnaceChargeMassKg({ ...node, zones: stagedZones, pendingFeed: stagedPendingFeed }) > TRANSFER_TOLERANCE_KG) {
+    const stagedChargeMassKg = stagedZones.reduce((sum, zone) => sum + solidBodyMassKg(zone), 0);
+    if (outputsReady && stagedChargeMassKg > TRANSFER_TOLERANCE_KG) {
       const reaction = reactZones(stagedZones, stagedGas, dt);
       node.lastReactionEnergyDemandJ = reaction.totalReactionEnergyDemandJ;
       node.lastGoethiteConversionFraction = reaction.goethiteConversionFraction;
+      node.lastSolverEvaluationCount = reaction.totalSolverEvaluations;
     } else {
       node.lastReactionEnergyDemandJ = 0;
       node.lastGoethiteConversionFraction = 0;
+      node.lastSolverEvaluationCount = 0;
     }
 
     const movement = advancePendingFeed(node, stagedZones, stagedPendingFeed, productStage, dt);
     const dischargedMassKg = solidBodyMassKg(movement.dischargedBody);
     if (dischargedMassKg > TRANSFER_TOLERANCE_KG) {
-      receiveProductIntoStage(productStage, movement.dischargedBody, dt);
       productFlow = multiplySolidMaterialState(movement.dischargedBody.solidState, 1 / dt);
       productSpecificSensibleEnthalpyJPerKg = movement.dischargedBody.thermalState.sensibleEnthalpyJ
         / dischargedMassKg;
@@ -521,11 +553,15 @@ export function simulateRoastingFurnaceNode(blueprint, _world, node, dt) {
       stagedGas.thermalState.sensibleEnthalpyJ = 0;
     }
 
+    // All calculations and capacity checks have succeeded. Commit external
+    // destinations, then replace staged furnace-owned state.
+    if (dischargedMassKg > TRANSFER_TOLERANCE_KG) {
+      commitProductStage(productStage, movement.dischargedBody);
+    }
+    if (stagedVentGas) commitExhaustVentGasState(vent, stagedVentGas);
     node.zones = stagedZones;
     node.pendingFeed = stagedPendingFeed;
     node.gasInventory = stagedGas;
-    if (dischargedMassKg > TRANSFER_TOLERANCE_KG) commitProductStage(productStage, dischargedMassKg);
-    if (stagedVentGas) commitExhaustVentGasState(vent, stagedVentGas);
 
     if (solidProductConnection) {
       updateConnectionStream(
@@ -549,12 +585,9 @@ export function simulateRoastingFurnaceNode(blueprint, _world, node, dt) {
     node.lastHeaterPowerKw = node.lastHeaterEnergyJ / dt / 1000;
     node.lastHeatLossPowerKw = node.lastHeatLossEnergyJ / dt / 1000;
     node.lastReactionPowerKw = node.lastReactionEnergyDemandJ / dt / 1000;
-    node.actualChargeTemperatureK = averageZoneTemperatureK(node.zones);
-    node.zoneTemperaturesK = node.zones.map(zone => (
-      solidBodyMassKg(zone) <= TRANSFER_TOLERANCE_KG
-        ? THERMAL_REFERENCE_TEMPERATURE_K
-        : materialBodyTemperatureK(zone)
-    ));
+    const zoneThermal = zoneThermalDiagnostics(node.zones);
+    node.actualChargeTemperatureK = zoneThermal.averageTemperatureK;
+    node.zoneTemperaturesK = zoneThermal.temperaturesK;
 
     const hasMatter = roastingFurnaceChargeMassKg(node) + roastingFurnacePendingFeedMassKg(node)
       > TRANSFER_TOLERANCE_KG;
