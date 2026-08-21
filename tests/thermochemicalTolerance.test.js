@@ -18,7 +18,7 @@ function lowTemperatureGoethiteBody() {
   for (const [sizeBinId, quantity] of [
     ['0.032-0.063mm', 4],
     ['0.063-0.125mm', 3],
-    ['0.125-0.250mm', 3],
+    ['0.125-0.25mm', 3],
   ]) {
     addSolidFractionDirect(state, {
       speciesId: 'goethite',
