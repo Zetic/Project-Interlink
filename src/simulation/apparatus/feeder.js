@@ -1,20 +1,13 @@
 import { FEEDING_PROCESS_ID } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
+import { createSolidMaterialBody } from '../../core/materials/solids/solidMaterialState.js';
 import {
-  createSolidMaterialBody,
-  multiplySolidMaterialState,
-  totalSolidQuantity,
-} from '../../core/materials/solids/solidMaterialState.js';
-import {
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
   hopperFreeCapacityKg,
   hopperReceiveInflow,
   hopperStoredMassKg,
   hopperWithdraw,
   HOPPER_TOLERANCE_KG,
 } from '../hopperNode.js';
-import { applyContinuousFeeding } from '../continuousProcessing.js';
 import {
   findInboundConnection,
   findOutboundConnection,
@@ -23,11 +16,10 @@ import {
 import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
-  capacityScaleForOutput,
-  outputSpecificSensibleEnthalpies,
-  proportionalSolidStateFromHopper,
-  solidBodyForWithdrawal,
+  scaleSolidStateForRuntime,
+  solidStateMassForRuntime,
 } from './materialTransferHelpers.js';
+import { assertHopperCanReceivePlannedSolidState } from './transactionHelpers.js';
 import {
   roastingFurnaceInputCapacityKg,
   roastingFurnaceReceiveFeed,
@@ -122,6 +114,7 @@ export function simulateFeederNode(blueprint, node, dt) {
     return;
   }
 
+  const storedMassKg = hopperStoredMassKg(inputHopper);
   const availableOutputCapacityKg = targetCapacityKg(outputTarget, dt);
   if (availableOutputCapacityKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = outputTarget.nodeType === 'roastingFurnace'
@@ -131,60 +124,56 @@ export function simulateFeederNode(blueprint, node, dt) {
     return;
   }
 
-  const candidateRate = Math.min(
+  const plannedRate = Math.min(
     node.flowRateKgPerSecond,
     node.throughputKgPerSecond,
-    hopperStoredMassKg(inputHopper) / dt,
+    storedMassKg / dt,
     availableOutputCapacityKg / dt,
   );
-  let candidateFeed = proportionalSolidStateFromHopper(inputHopper, candidateRate);
-  const candidateResult = applyContinuousFeeding(
-    candidateFeed,
-    node.flowRateKgPerSecond,
-    node.throughputKgPerSecond,
-  );
-  if (outputTarget.nodeType === 'hopper') {
-    const capacityScale = capacityScaleForOutput(
-      hopperFreeCapacityKg(outputTarget),
-      candidateResult.productSolidState,
-      dt,
-    );
-    if (capacityScale <= APPARATUS_TRANSFER_TOLERANCE_KG) {
-      node.lastError = 'Feeder product output is full';
-      node.operatingState = 'blocked';
-      return;
-    }
-    if (capacityScale < 1) candidateFeed = multiplySolidMaterialState(candidateFeed, capacityScale);
-  }
-
-  const stagedInput = cloneHopperMaterialState(inputHopper);
-  const withdrawal = hopperWithdraw(stagedInput, totalSolidQuantity(candidateFeed), dt);
-  if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+  if (plannedRate <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = null;
     node.operatingState = 'idle';
     return;
   }
 
-  const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-  const result = applyContinuousFeeding(actualFeed, node.flowRateKgPerSecond, node.throughputKgPerSecond);
-  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
-    [solidBodyForWithdrawal(withdrawal)],
-    [result.productSolidState],
+  const plannedProduct = scaleSolidStateForRuntime(
+    inputHopper.materialBody.solidState,
+    plannedRate / storedMassKg,
   );
-  const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
+  const plannedOutputKg = solidStateMassForRuntime(plannedProduct) * dt;
+  if (outputTarget.nodeType === 'hopper') {
+    try {
+      assertHopperCanReceivePlannedSolidState(outputTarget, plannedProduct, plannedOutputKg, 'Feeder product');
+    } catch (error) {
+      node.lastError = error.message;
+      node.operatingState = 'blocked';
+      return;
+    }
+  }
+
+  const withdrawal = hopperWithdraw(inputHopper, plannedRate, dt);
+  if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+    node.lastError = null;
+    node.operatingState = 'idle';
+    return;
+  }
+  const actualFeed = scaleSolidStateForRuntime(withdrawal.actualSolidState, 1 / dt);
+  // Feeding is an identity process: the product composition and specific
+  // sensible enthalpy are exactly those of the withdrawn feed.
+  const productSolidState = actualFeed;
+  const productSpecificSensibleEnthalpyJPerKg = withdrawal.actualSpecificSensibleEnthalpyJPerKg;
+  const expectedOutputKg = withdrawal.actualTotalKg;
 
   if (outputTarget.nodeType === 'hopper') {
-    const stagedOutput = cloneHopperMaterialState(outputTarget);
     const acceptedOutputKg = hopperReceiveInflow(
-      stagedOutput,
-      result.productSolidState,
+      outputTarget,
+      productSolidState,
       dt,
       productSpecificSensibleEnthalpyJPerKg,
     );
     assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Feeder product');
-    commitHopperMaterialState(outputTarget, stagedOutput);
   } else {
-    const productInventoryState = multiplySolidMaterialState(result.productSolidState, dt);
+    const productInventoryState = scaleSolidStateForRuntime(productSolidState, dt);
     const productBody = createSolidMaterialBody(productInventoryState, {
       sensibleEnthalpyJ: expectedOutputKg * productSpecificSensibleEnthalpyJPerKg,
     });
@@ -192,7 +181,6 @@ export function simulateFeederNode(blueprint, node, dt) {
     assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Feeder furnace feed');
   }
 
-  commitHopperMaterialState(inputHopper, stagedInput);
   updateConnectionStream(
     blueprint,
     inputConnection,
@@ -202,7 +190,7 @@ export function simulateFeederNode(blueprint, node, dt) {
   updateConnectionStream(
     blueprint,
     outputConnection,
-    result.productSolidState,
+    productSolidState,
     productSpecificSensibleEnthalpyJPerKg,
   );
   node.lastError = null;
