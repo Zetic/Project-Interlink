@@ -30,6 +30,23 @@ function ironTexture(id = 'iron-texture') {
   };
 }
 
+function complexIronTexture(id = 'complex-iron-texture') {
+  return {
+    id,
+    speciesTextures: {
+      hematite: {
+        grainSizeUm: { d10: 67.9, d50: 164.6, d90: 563.7 },
+        occurrenceModes: { free: 0.25, boundary: 0.25, intergrown: 0.32, included: 0.18 },
+      },
+    },
+    comminutionProperties: {
+      bondCrushingWorkIndexKWhPerT: 11.13,
+      bondBallMillWorkIndexKWhPerT: 21.12,
+      bondAbrasionIndex: 0.633,
+    },
+  };
+}
+
 function texturedHematiteFeed({
   liberationClassId = 'locked',
   sizeBinId = '15-25mm',
@@ -74,6 +91,19 @@ test('fine Ball Mill grinding approaches texture-defined states instead of a fix
   assert.ok(share(liberation, 'partial', total) < 0.30);
   assert.ok(share(liberation, 'locked', total) < 0.10);
   assert.ok(Math.abs(total - 100) < 1e-9);
+});
+
+test('fully liberated remains stricter than mostly-liberated for fine complex ore', () => {
+  const feed = texturedHematiteFeed({ texture: complexIronTexture() });
+  const product = millSolidMaterialState(feed, 0.032);
+  const liberation = summarizeSolidMaterialByLiberationClass(product);
+  const total = totalSolidQuantity(product);
+  const fullyLiberated = share(liberation, 'liberated', total);
+  const mostlyLiberated = share(liberation, 'mostly-liberated', total);
+
+  assert.ok(fullyLiberated > 0.75 && fullyLiberated < 0.90);
+  assert.ok(mostlyLiberated > 0.08);
+  assert.ok(fullyLiberated + mostlyLiberated > 0.90);
 });
 
 test('finer grinding produces materially higher full liberation for the same ore texture', () => {
