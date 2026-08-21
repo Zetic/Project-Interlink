@@ -17,6 +17,10 @@ export const PORT_CAPABILITIES = Object.freeze({
   RESOURCE_SOURCE: 'resource-source',
   SOLID_PARTICULATE: 'solid-particulate',
   GAS: 'gas',
+  // Solid flow whose rate is explicitly governed by upstream transport/process
+  // machinery. Continuous reactors can require this interface so residence time
+  // derives from controlled flow instead of the reactor pulling from storage.
+  METERED_SOLID_PARTICULATE: 'metered-solid-particulate',
   // Interface requirement, not provenance: the receiving process requires a
   // buffered/withdrawable particulate owner. Matter does not become a different
   // physical form merely because it is stored in a Hopper or boundary buffer.
