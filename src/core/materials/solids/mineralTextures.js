@@ -19,6 +19,17 @@ const MODE_REQUIRED_SIZE_MULTIPLIER = Object.freeze({
   included: 4,
 });
 
+// Liberation classes are derived from particle size relative to effective mineral
+// grain size rather than reached through fixed ordinal jumps. A particle can be
+// partially liberated while still several effective grain diameters across; as it
+// approaches one effective grain diameter, the probability of a mono-mineral
+// particle rises. These ratios define the meanings of the aggregate classes.
+const LIBERATION_CLASS_GRAIN_RATIO = Object.freeze({
+  partialOrBetter: 0.25,
+  mostlyLiberatedOrBetter: 0.5,
+  liberated: 1,
+});
+
 function assertFinitePositive(value, label) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new Error(`${label} must be a finite positive number`);
@@ -166,26 +177,76 @@ export function grainSizeCdfAtUm(grainSizeUm, particleSizeUm) {
   return clamp(a[1] + slope * (x - a[0]), 0, 1);
 }
 
+function cumulativeLiberationShare(texture, particleSizeUm, grainRatio) {
+  let share = 0;
+  for (const mode of OCCURRENCE_MODE_KEYS) {
+    const requiredGrainSizeUm = particleSizeUm
+      * MODE_REQUIRED_SIZE_MULTIPLIER[mode]
+      * grainRatio;
+    const fractionOfGrainsLargeEnough = 1 - grainSizeCdfAtUm(
+      texture.grainSizeUm,
+      requiredGrainSizeUm,
+    );
+    share += texture.occurrenceModes[mode] * fractionOfGrainsLargeEnough;
+  }
+  return clamp(share, 0, 1);
+}
+
 /**
- * Statistical liberation potential derived from physical mineral texture.
- * Potential rises as product particles become small relative to the measured
- * mineral grain-size distribution. Mineral occurrence mode shifts the required
- * particle/grain scale: inclusions and complex intergrowths require finer breakage
- * than free or boundary-hosted grains. No occurrence-specific liberation-size or
- * curve-width tuning property is stored.
+ * Texture-equilibrium liberation distribution for a species population at one
+ * particle size. The result is a probability/mass-share distribution over the
+ * aggregate liberation classes. It is derived directly from measured mineral
+ * D10/D50/D90 and association mode; it does not depend on the population's prior
+ * liberation class or on a fixed class-step transition table.
+ *
+ * Equipment decides how far a comminution event approaches this texture-defined
+ * equilibrium. That separation lets fine grinding move locked feed directly into
+ * mostly-liberated/liberated populations when particle size is physically far
+ * below the mineral grain scale, while crushers can realize only a small part of
+ * the same potential.
  */
-export function liberationPotentialAtParticleSize(profile, speciesId, particleSizeMm) {
+export function liberationClassDistributionAtParticleSize(profile, speciesId, particleSizeMm) {
   assertFinitePositive(particleSizeMm, 'particleSizeMm');
   const texture = speciesMineralTexture(profile, speciesId);
   if (!texture) {
     throw new Error(`Mineral texture '${profile?.id ?? 'unknown'}' is missing species '${speciesId}'`);
   }
+
   const particleSizeUm = particleSizeMm * 1000;
-  let potential = 0;
-  for (const mode of OCCURRENCE_MODE_KEYS) {
-    const requiredSizeUm = particleSizeUm * MODE_REQUIRED_SIZE_MULTIPLIER[mode];
-    const fractionOfGrainsLargerThanParticle = 1 - grainSizeCdfAtUm(texture.grainSizeUm, requiredSizeUm);
-    potential += texture.occurrenceModes[mode] * fractionOfGrainsLargerThanParticle;
-  }
-  return clamp(potential, 0, 1);
+  const partialOrBetter = cumulativeLiberationShare(
+    texture,
+    particleSizeUm,
+    LIBERATION_CLASS_GRAIN_RATIO.partialOrBetter,
+  );
+  const mostlyLiberatedOrBetter = Math.min(
+    partialOrBetter,
+    cumulativeLiberationShare(
+      texture,
+      particleSizeUm,
+      LIBERATION_CLASS_GRAIN_RATIO.mostlyLiberatedOrBetter,
+    ),
+  );
+  const liberated = Math.min(
+    mostlyLiberatedOrBetter,
+    cumulativeLiberationShare(
+      texture,
+      particleSizeUm,
+      LIBERATION_CLASS_GRAIN_RATIO.liberated,
+    ),
+  );
+
+  return {
+    locked: clamp(1 - partialOrBetter, 0, 1),
+    partial: clamp(partialOrBetter - mostlyLiberatedOrBetter, 0, 1),
+    'mostly-liberated': clamp(mostlyLiberatedOrBetter - liberated, 0, 1),
+    liberated: clamp(liberated, 0, 1),
+  };
+}
+
+/**
+ * Compatibility scalar for callers that only need the fully liberated share.
+ * New comminution physics consumes the full class distribution above.
+ */
+export function liberationPotentialAtParticleSize(profile, speciesId, particleSizeMm) {
+  return liberationClassDistributionAtParticleSize(profile, speciesId, particleSizeMm).liberated;
 }
