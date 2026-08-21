@@ -6,6 +6,7 @@ import { createWorld, validateWorld } from '../src/core/world/worldState.js';
 import { SCHEMA_VERSION, GENERATOR_VERSION } from '../src/core/world/versions.js';
 import { FEATURE_ALLOWED_FAMILIES } from '../src/generator/generateFeatures.js';
 import { getResourceDefinition } from '../src/generator/generateResources.js';
+import { RESOURCE_COMPOSITION_TEMPLATES } from '../src/content/resources/resourceCompositions.js';
 
 function buildWorld(seed = 'integrity-test') {
   return createWorld(seed);
@@ -91,24 +92,31 @@ test('every Site belongs to exactly one Region and every Region site resolves', 
   for (const siteId of Object.keys(world.sites)) assert.equal(owners.get(siteId), 1);
 });
 
-test('generated ResourceOccurrences resolve to registered definitions and concrete compositions', () => {
+test('generated ResourceOccurrences resolve to registered definitions and use concrete composition when modeled', () => {
   const world = buildWorld('registered-occurrences');
   for (const occurrence of Object.values(world.resourceOccurrences)) {
-    assert.ok(getResourceDefinition(occurrence.resourceId));
-    assert.ok(occurrence.composition && Object.keys(occurrence.composition).length > 0);
+    const resource = getResourceDefinition(occurrence.resourceId);
+    assert.ok(resource);
+    if (RESOURCE_COMPOSITION_TEMPLATES[resource.id]) {
+      assert.ok(occurrence.composition && Object.keys(occurrence.composition).length > 0);
+    }
     assert.equal('components' in occurrence, false);
   }
 });
 
-test('every generated Feature family is compatible with its resource family', () => {
+test('every generated Feature family is compatible with its resource occurrence family', () => {
   const world = buildWorld('feature-family-integrity');
   for (const feature of Object.values(world.features)) {
     const allowed = FEATURE_ALLOWED_FAMILIES[feature.type];
-    assert.ok(allowed);
+    assert.ok(allowed instanceof Set);
     for (const occurrenceId of feature.resourceOccurrences) {
       const occurrence = world.resourceOccurrences[occurrenceId];
       const resource = getResourceDefinition(occurrence.resourceId);
-      assert.ok(allowed.includes(resource.family), `${feature.type} cannot host ${resource.family}`);
+      assert.ok(resource);
+      assert.ok(
+        allowed.has(resource.occurrenceFamily),
+        `${feature.type} cannot host ${resource.occurrenceFamily}`,
+      );
     }
   }
 });
