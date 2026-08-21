@@ -8,6 +8,7 @@ import {
   blueprintDisconnect,
   createBlueprint,
   getStreamForConnection,
+  SIMULATION_STEP_S,
 } from '../src/simulation/simulationEngine.js';
 import {
   findOutboundConnection,
@@ -23,6 +24,7 @@ import {
   solidStateMassForRuntime,
 } from '../src/simulation/apparatus/materialTransferHelpers.js';
 import { totalMaterialStreamMassFlowKgPerSecond } from '../src/simulation/materialStream.js';
+import { createWorkspaceState } from '../src/workspace/workspaceState.js';
 
 test('positive topology caches invalidate safely across disconnect and reconnect', () => {
   _resetOrdinals();
@@ -84,4 +86,17 @@ test('runtime sparse scaling preserves the canonical solid-state numerical resul
   assert.deepEqual(runtime.fractions, canonical.fractions);
   assert.deepEqual(Object.keys(runtime.textureProfiles), Object.keys(canonical.textureProfiles));
   assert.ok(Math.abs(solidStateMassForRuntime(runtime) - 1.85) < 1e-12);
+});
+
+test('workspace simulation debt never queues more than one authoritative physics step', () => {
+  const state = createWorkspaceState();
+  state.simAccumulatedS = 10;
+  assert.equal(state.simAccumulatedS, SIMULATION_STEP_S);
+
+  state.simAccumulatedS -= SIMULATION_STEP_S;
+  assert.equal(state.simAccumulatedS, 0);
+
+  state.simAccumulatedS = 0.04;
+  state.simAccumulatedS += 0.03;
+  assert.ok(Math.abs(state.simAccumulatedS - 0.07) < 1e-12);
 });
