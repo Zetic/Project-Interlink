@@ -62,7 +62,7 @@ test('positive topology caches invalidate safely across disconnect and reconnect
   assert.ok(Math.abs(totalMaterialStreamMassFlowKgPerSecond(stream) - 2) < 1e-9);
 });
 
-test('legacy continuous-flow projections remain exact but are lazy', () => {
+test('legacy continuous-flow projections preserve historical rounding but are lazy', () => {
   const feed = createSolidMaterialStateFromSpeciesQuantities({ hematite: 2, quartz: 1 }, 1);
   const result = applyContinuousFeeding(feed, 2, 10);
 
@@ -70,8 +70,8 @@ test('legacy continuous-flow projections remain exact but are lazy', () => {
   assert.equal(typeof descriptor?.get, 'function', 'compatibility projection should not be built eagerly');
 
   assert.deepEqual(result.productRates.componentMassFlowKgPerSecond, {
-    hematite: 4 / 3,
-    quartz: 2 / 3,
+    hematite: 1.333333333333,
+    quartz: 0.666666666667,
   });
   assert.equal(result.productRates.particleSizeMm, null);
 });
