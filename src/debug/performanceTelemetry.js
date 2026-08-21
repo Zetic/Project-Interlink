@@ -1,5 +1,7 @@
 /** Debug-only performance telemetry. Never participates in simulation decisions or serialization. */
 
+import { setApparatusProfiler } from '../simulation/telemetry/apparatusProfiling.js';
+
 const MAX_SAMPLES_PER_TYPE = 512;
 
 let deepProfilingEnabled = false;
@@ -48,26 +50,28 @@ function recordSample(nodeType, nodeId, durationMs) {
   totalProfileDurationMs += durationMs;
 }
 
-export function setDeepProfilingEnabled(enabled) {
-  deepProfilingEnabled = Boolean(enabled);
-}
-
-export function isDeepProfilingEnabled() {
-  return deepProfilingEnabled;
-}
-
-/**
- * Time one apparatus call only when deep profiling is explicitly enabled.
- * The disabled path deliberately avoids even reading the clock.
- */
-export function profileApparatusCall(nodeType, nodeId, simulate, args) {
-  if (!deepProfilingEnabled) return simulate(...args);
+function timedApparatusCall(nodeType, nodeId, simulate, args) {
   const start = nowMs();
   try {
     return simulate(...args);
   } finally {
     recordSample(nodeType, nodeId, nowMs() - start);
   }
+}
+
+export function setDeepProfilingEnabled(enabled) {
+  deepProfilingEnabled = Boolean(enabled);
+  setApparatusProfiler(deepProfilingEnabled ? timedApparatusCall : null);
+}
+
+export function isDeepProfilingEnabled() {
+  return deepProfilingEnabled;
+}
+
+/** Direct entry point used by focused tests and future non-registry debug probes. */
+export function profileApparatusCall(nodeType, nodeId, simulate, args) {
+  if (!deepProfilingEnabled) return simulate(...args);
+  return timedApparatusCall(nodeType, nodeId, simulate, args);
 }
 
 export function resetPerformanceTelemetry() {
