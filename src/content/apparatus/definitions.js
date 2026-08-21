@@ -8,6 +8,7 @@ import {
  MAGNETIC_SEPARATION_PROCESS_ID,
  MERGING_PROCESS_ID,
  MILLING_PROCESS_ID,
+ ROASTING_PROCESS_ID,
  SCREENING_PROCESS_ID,
  SPLITTING_PROCESS_ID,
  validateProcessParameters,
@@ -61,6 +62,30 @@ const solidOutputPort = (
   kind: 'material',
   label,
   provides: Object.freeze(Array.isArray(provides) ? [...provides] : [provides]),
+  runtimePortField,
+});
+const gasInputPort = (
+  id,
+  runtimePortField = 'gasInputPortId',
+  label = id,
+) => Object.freeze({
+  id,
+  direction: 'input',
+  kind: 'material',
+  label,
+  accepts: Object.freeze([PORT_CAPABILITIES.GAS]),
+  runtimePortField,
+});
+const gasOutputPort = (
+  id,
+  runtimePortField = 'gasOutputPortId',
+  label = id,
+) => Object.freeze({
+  id,
+  direction: 'output',
+  kind: 'material',
+  label,
+  provides: Object.freeze([PORT_CAPABILITIES.GAS]),
   runtimePortField,
 });
 
@@ -246,6 +271,42 @@ export const APPARATUS_DEFINITIONS = Object.freeze({
       Object.freeze({ id: 'maxFeedParticleSizeMm', label: 'Maximum supported feed particle size', unit: 'mm' }),
     ]),
     parameters: processParameters(MAGNETIC_SEPARATION_PROCESS_ID),
+  }),
+  roastingFurnace: Object.freeze({
+    nodeType: 'roastingFurnace',
+    processId: ROASTING_PROCESS_ID,
+    catalog: catalog('electric-roasting-furnace', 'Electric Roasting Furnace', 'apparatus', 'Electrically heats a retained solid charge so declarative thermochemical reactions can proceed and route their gaseous products.', ['roasting furnace', 'furnace', 'roast', 'thermal', 'thermochemical', 'goethite', 'dehydroxylation'], 95),
+    defaults: Object.freeze({
+      ...defaultProcessParameters(ROASTING_PROCESS_ID),
+      ratedHeaterPowerKw: 60,
+      maximumOperatingTemperatureK: 1200,
+      maximumSolidThroughputKgPerSecond: 4,
+      effectiveChamberHoldUpKg: 5,
+      heatLossCoefficientWPerK: 25,
+    }),
+    ports: Object.freeze([
+      solidInputPort('feed', PORT_CAPABILITIES.STORED_SOLID_PARTICULATE),
+      solidOutputPort('solid-product', undefined, 'solidProductPortId', 'solid product'),
+      gasOutputPort('gas-exhaust', 'gasExhaustPortId', 'gas exhaust'),
+    ]),
+    capabilities: Object.freeze([
+      Object.freeze({ id: 'ratedHeaterPowerKw', label: 'Rated heater power', unit: 'kW' }),
+      Object.freeze({ id: 'maximumOperatingTemperatureK', label: 'Maximum operating temperature', unit: 'K' }),
+      Object.freeze({ id: 'maximumSolidThroughputKgPerSecond', label: 'Maximum solid throughput', unit: 'kg/s' }),
+      Object.freeze({ id: 'effectiveChamberHoldUpKg', label: 'Effective chamber hold-up', unit: 'kg' }),
+      Object.freeze({ id: 'heatLossCoefficientWPerK', label: 'Heat-loss coefficient', unit: 'W/K' }),
+    ]),
+    parameters: processParameters(ROASTING_PROCESS_ID),
+  }),
+  exhaustVent: Object.freeze({
+    nodeType: 'exhaustVent',
+    catalog: catalog('exhaust-vent', 'Exhaust Vent', 'container', 'Auditable environmental boundary that records discharged process gas.', ['exhaust', 'vent', 'gas', 'off-gas', 'emissions'], 96),
+    defaults: Object.freeze({}),
+    ports: Object.freeze([
+      gasInputPort('gas-in', 'gasInputPortId', 'gas in'),
+    ]),
+    capabilities: Object.freeze([]),
+    parameters: Object.freeze([]),
   }),
   hopper: Object.freeze({
     nodeType: 'hopper',

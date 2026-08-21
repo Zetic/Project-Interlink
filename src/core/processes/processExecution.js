@@ -7,8 +7,9 @@ import {
 import {
   createSolidMaterialBody,
   createSolidMaterialStateFromSpeciesQuantities,
-  validateSolidMaterialBody,
 } from '../materials/solids/solidMaterialState.js';
+import { validateMaterialBody } from '../materials/materialBody.js';
+import { distributeSensibleEnthalpyAtEquilibrium } from '../materials/thermal/thermalMaterial.js';
 import {
   getProcessDefinition,
   validateProcessParameters,
@@ -74,7 +75,7 @@ function resolveInputBatches(world, processDefinition, inputBindings) {
     if (!isMaterialBatchAvailable(inputBatch)) {
       throw new Error(`Input batch '${inputBatch.id}' is not available for processing`);
     }
-    validateSolidMaterialBody(materialBodyForBatchLike(inputBatch));
+    validateMaterialBody(materialBodyForBatchLike(inputBatch));
     if (!inputBatch.materialBody) inputBatch.materialBody = materialBodyForBatchLike(inputBatch);
     validateComponentsKg(inputBatch.componentsKg);
     resolved[input.id] = inputBatch;
@@ -106,7 +107,7 @@ function validateOutputPortBatches(processDefinition, outputPortBatches) {
       throw new Error(`Process '${processDefinition.id}' returned duplicate output port '${output.outputId}'`);
     }
     seenOutputIds.add(output.outputId);
-    validateSolidMaterialBody(output.materialBody);
+    validateMaterialBody(output.materialBody);
   }
 
   for (const expectedOutputId of expectedOutputIds) {
@@ -128,6 +129,15 @@ export function executeProcess(processDefinition, inputBatchesByPort, parameters
   validateOutputPortBatches(processDefinition, execution.outputPortBatches);
 
   const inputBatches = (processDefinition.inputs ?? []).map(input => inputBatchesByPort[input.id]);
+  if ((processDefinition.conservationPolicy ?? 'species') === 'species') {
+    const thermalOutputs = distributeSensibleEnthalpyAtEquilibrium(
+      inputBatches.map(batch => batch.materialBody),
+      execution.outputPortBatches.map(output => output.materialBody),
+    );
+    execution.outputPortBatches.forEach((output, index) => {
+      output.materialBody = thermalOutputs[index];
+    });
+  }
   const metrics = validateProcessConservation(
     processDefinition,
     inputBatches.map(batch => batch.materialBody),

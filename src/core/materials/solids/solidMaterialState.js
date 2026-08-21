@@ -6,6 +6,11 @@ import {
   mineralTextureProfilesEqual,
   validateMineralTextureProfile,
 } from './mineralTextures.js';
+import {
+  cloneThermalState,
+  createThermalState,
+  validateThermalState,
+} from '../thermal/thermalState.js';
 
 export const SOLID_MATERIAL_TOLERANCE = 1e-9;
 export const SOLID_PARTICULATE_FORM = 'solid-particulate';
@@ -172,22 +177,27 @@ export function commitSolidMaterialState(target, staged) {
   return target;
 }
 
-export function createSolidMaterialBody(solidState = createSolidMaterialState()) {
+export function createSolidMaterialBody(
+  solidState = createSolidMaterialState(),
+  thermalState = createThermalState(),
+) {
   return {
     physicalForm: SOLID_PARTICULATE_FORM,
     solidState: cloneSolidMaterialState(solidState),
+    thermalState: cloneThermalState(thermalState),
   };
 }
 
 export function cloneSolidMaterialBody(body) {
   validateSolidMaterialBody(body);
-  return createSolidMaterialBody(body.solidState);
+  return createSolidMaterialBody(body.solidState, body.thermalState ?? createThermalState());
 }
 
 export function commitSolidMaterialBody(target, staged) {
   validateSolidMaterialBody(staged);
   target.physicalForm = staged.physicalForm;
   target.solidState = cloneSolidMaterialState(staged.solidState);
+  target.thermalState = cloneThermalState(staged.thermalState);
   return target;
 }
 
@@ -227,6 +237,9 @@ export function validateSolidMaterialBody(body) {
     throw new Error(`Unsupported material body physical form '${body.physicalForm}'`);
   }
   validateSolidMaterialState(body.solidState);
+  // Older serialized solid bodies predate thermal state. They remain readable
+  // at the named reference condition and are normalized on their next clone.
+  if (body.thermalState != null) validateThermalState(body.thermalState);
 }
 
 export function iterateSolidFractions(state) {

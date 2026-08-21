@@ -148,14 +148,21 @@ export function hopperLiberationDistributionKg(hopper) {
 }
 
 export function hopperReceiveInflow(hopper, inflowSolidStateOrComponents, particleSizeMmOrDt, maybeDt) {
-  const usingLegacySignature = typeof maybeDt === 'number';
+  const incomingIsSolidState = Boolean(inflowSolidStateOrComponents?.fractions);
+  const usingLegacySignature = !incomingIsSolidState && typeof maybeDt === 'number';
   const inflowSolidState = usingLegacySignature
     ? createSolidMaterialStateFromSpeciesQuantities(inflowSolidStateOrComponents, particleSizeMmOrDt)
     : inflowSolidStateOrComponents;
   const dt = usingLegacySignature ? maybeDt : particleSizeMmOrDt;
+  const specificSensibleEnthalpyJPerKg = usingLegacySignature
+    ? (arguments[4] ?? 0)
+    : (maybeDt ?? 0);
   validateSolidMaterialState(inflowSolidState);
   if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
     throw new Error('hopperReceiveInflow: dt must be a finite positive number');
+  }
+  if (typeof specificSensibleEnthalpyJPerKg !== 'number' || !Number.isFinite(specificSensibleEnthalpyJPerKg)) {
+    throw new Error('hopperReceiveInflow: specificSensibleEnthalpyJPerKg must be finite');
   }
   const freeKg = hopperFreeCapacityKg(hopper);
   if (freeKg <= HOPPER_TOLERANCE_KG) return 0;
@@ -165,7 +172,9 @@ export function hopperReceiveInflow(hopper, inflowSolidStateOrComponents, partic
   hopper.materialBody.physicalForm = SOLID_PARTICULATE_FORM;
   if (usingLegacySignature) hopper.nominalParticleSizeMm = particleSizeMmOrDt;
   addSolidMaterialState(hopper.materialBody.solidState, acceptedState, dt);
-  return totalSolidQuantity(acceptedState) * dt;
+  const acceptedKg = totalSolidQuantity(acceptedState) * dt;
+  hopper.materialBody.thermalState.sensibleEnthalpyJ += acceptedKg * specificSensibleEnthalpyJPerKg;
+  return acceptedKg;
 }
 
 export function hopperWithdraw(hopper, requestedTotalRateKgPerSecond, dt) {
@@ -188,10 +197,20 @@ export function hopperWithdraw(hopper, requestedTotalRateKgPerSecond, dt) {
   }
   const actualSolidState = withdrawSolidMaterialState(hopper.materialBody.solidState, requestedTotalKg);
   const actualTotalKg = totalSolidQuantity(actualSolidState);
+  const actualSensibleEnthalpyJ = storedMassKg <= 0
+    ? 0
+    : hopper.materialBody.thermalState.sensibleEnthalpyJ * (actualTotalKg / storedMassKg);
+  hopper.materialBody.thermalState.sensibleEnthalpyJ -= actualSensibleEnthalpyJ;
   const actualRates = Object.fromEntries(
     Object.entries(summarizeSolidMaterialBySpecies(actualSolidState)).map(([speciesId, quantity]) => [speciesId, quantity / dt])
   );
-  return { actualSolidState, actualRates, actualTotalKg };
+  return {
+    actualSolidState,
+    actualRates,
+    actualTotalKg,
+    actualSensibleEnthalpyJ,
+    actualSpecificSensibleEnthalpyJPerKg: actualTotalKg <= 0 ? 0 : actualSensibleEnthalpyJ / actualTotalKg,
+  };
 }
 
 export function cloneHopperMaterialState(hopper) {

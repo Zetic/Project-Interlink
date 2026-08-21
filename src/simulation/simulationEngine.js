@@ -14,6 +14,7 @@ import {
   HOPPER_TOLERANCE_KG,
 } from './hopperNode.js';
 import {
+  clearMaterialStream,
   createZeroStream,
   setMaterialStreamState,
 } from './materialStream.js';
@@ -33,6 +34,7 @@ import {
 } from '../content/apparatus/definitions.js';
 import { createApparatusRuntime, apparatusRuntimeFor } from './apparatus/registry.js';
 import { PORT_CAPABILITIES, portCapabilityMatches } from '../core/systems/ports.js';
+import { MATERIAL_FORMS } from '../core/materials/materialForms.js';
 
 export const SIMULATION_STEP_S = 0.1;
 export const DEFAULT_HOPPER_CAPACITY_KG = 1000;
@@ -360,6 +362,9 @@ export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNo
       sourcePortId,
       targetNodeId,
       targetPortId,
+      physicalForm: sourcePort.provides?.includes(PORT_CAPABILITIES.GAS)
+        ? MATERIAL_FORMS.GAS
+        : MATERIAL_FORMS.SOLID_PARTICULATE,
     });
   }
   return connection;
@@ -402,7 +407,7 @@ function updateConnectionStream(blueprint, connection, solidState) {
 }
 
 function zeroAllStreams(blueprint) {
-  for (const stream of Object.values(blueprint.streams)) setMaterialStreamState(stream, createSolidMaterialState());
+  for (const stream of Object.values(blueprint.streams)) clearMaterialStream(stream);
 }
 
 function proportionalSolidStateFromHopper(hopper, requestedTotalRateKgPerSecond) {
@@ -444,11 +449,21 @@ function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
     if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) continue;
 
     const actualFlow = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-    const acceptedKg = hopperReceiveInflow(stagedTarget, actualFlow, dt);
+    const acceptedKg = hopperReceiveInflow(
+      stagedTarget,
+      actualFlow,
+      dt,
+      withdrawal.actualSpecificSensibleEnthalpyJPerKg,
+    );
     assertTransferAccepted(withdrawal.actualTotalKg, acceptedKg, 'Boundary storage link');
     commitHopperMaterialState(source, stagedSource);
     commitHopperMaterialState(target, stagedTarget);
-    updateConnectionStream(blueprint, connection, actualFlow);
+    updateConnectionStream(
+      blueprint,
+      connection,
+      actualFlow,
+      withdrawal.actualSpecificSensibleEnthalpyJPerKg,
+    );
   }
 }
 

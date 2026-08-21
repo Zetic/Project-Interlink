@@ -16,6 +16,10 @@ import {
   findOutboundConnection,
   updateConnectionStream,
 } from './blueprintHelpers.js';
+import {
+  outputSpecificSensibleEnthalpies,
+  solidBodyForWithdrawal,
+} from './materialTransferHelpers.js';
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
 
@@ -142,14 +146,23 @@ export function simulateCrusherNode(blueprint, node, dt) {
 
   const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
   const result = applyContinuousCrushing(actualFeed, node.targetParticleSizeMm, node.throughputKgPerSecond);
+  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
+    [solidBodyForWithdrawal(withdrawal)],
+    [result.productSolidState],
+  );
   const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
-  const acceptedOutputKg = hopperReceiveInflow(stagedOutput, result.productSolidState, dt);
+  const acceptedOutputKg = hopperReceiveInflow(
+    stagedOutput,
+    result.productSolidState,
+    dt,
+    productSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedOutputKg, acceptedOutputKg);
 
   commitHopperMaterialState(inputHopper, stagedInput);
   commitHopperMaterialState(outputHopper, stagedOutput);
-  updateConnectionStream(blueprint, inputConnection, actualFeed);
-  updateConnectionStream(blueprint, outputConnection, result.productSolidState);
+  updateConnectionStream(blueprint, inputConnection, actualFeed, withdrawal.actualSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, outputConnection, result.productSolidState, productSpecificSensibleEnthalpyJPerKg);
   node.lastError = null;
   node.operatingState = 'running';
 }

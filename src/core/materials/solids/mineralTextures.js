@@ -130,6 +130,26 @@ export function cloneMineralTextureProfile(profile) {
   };
 }
 
+/**
+ * A reaction product retains the source population's structural history without
+ * becoming indistinguishable from naturally occurring product mineral grains.
+ */
+export function deriveReactionTextureProfile(profile, reactionId, sourceSpeciesId, productSpeciesId) {
+  if (!profile) return null;
+  validateMineralTextureProfile(profile);
+  if (![reactionId, sourceSpeciesId, productSpeciesId].every(value => typeof value === 'string' && value)) {
+    throw new Error('Reaction-derived texture requires non-empty reaction and species ids');
+  }
+  const sourceTexture = profile.speciesTextures[sourceSpeciesId];
+  if (!sourceTexture) {
+    throw new Error(`Mineral texture '${profile.id}' is missing species '${sourceSpeciesId}'`);
+  }
+  const derived = cloneMineralTextureProfile(profile);
+  derived.id = `${profile.id}--${reactionId}--${sourceSpeciesId}-to-${productSpeciesId}`;
+  derived.speciesTextures[productSpeciesId] = cloneSpeciesTexture(sourceTexture);
+  return derived;
+}
+
 export function mineralTextureProfilesEqual(a, b) {
   if (!a || !b) return a === b;
   if (a.id !== b.id) return false;

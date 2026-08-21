@@ -23,7 +23,9 @@ import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
   capacityScaleForOutput,
+  outputSpecificSensibleEnthalpies,
   proportionalSolidStateFromHopper,
+  solidBodyForWithdrawal,
 } from './materialTransferHelpers.js';
 
 export function createMerger({
@@ -131,16 +133,25 @@ export function simulateMergerNode(blueprint, node, dt) {
   const actualA = multiplySolidMaterialState(withdrawalA.actualSolidState, 1 / dt);
   const actualB = multiplySolidMaterialState(withdrawalB.actualSolidState, 1 / dt);
   const result = applyContinuousMerging(actualA, actualB, node.throughputKgPerSecond);
+  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
+    [solidBodyForWithdrawal(withdrawalA), solidBodyForWithdrawal(withdrawalB)],
+    [result.productSolidState],
+  );
   const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
-  const acceptedOutputKg = hopperReceiveInflow(stagedOutput, result.productSolidState, dt);
+  const acceptedOutputKg = hopperReceiveInflow(
+    stagedOutput,
+    result.productSolidState,
+    dt,
+    productSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Material Merger product');
 
   commitHopperMaterialState(inputAHopper, stagedA);
   commitHopperMaterialState(inputBHopper, stagedB);
   commitHopperMaterialState(outputHopper, stagedOutput);
-  updateConnectionStream(blueprint, inputAConnection, actualA);
-  updateConnectionStream(blueprint, inputBConnection, actualB);
-  updateConnectionStream(blueprint, outputConnection, result.productSolidState);
+  updateConnectionStream(blueprint, inputAConnection, actualA, withdrawalA.actualSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, inputBConnection, actualB, withdrawalB.actualSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, outputConnection, result.productSolidState, productSpecificSensibleEnthalpyJPerKg);
   node.lastError = null;
   node.operatingState = 'running';
 }

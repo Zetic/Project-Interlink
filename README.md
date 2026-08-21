@@ -60,7 +60,7 @@ World generation exists to create meaningful physical starting conditions for th
 
 # Current Project State
 
-The current build has a coherent vertical slice from deterministic planet generation through natural resource sources, player-authored Site construction, staged ore comminution, continuous particulate processing/routing, recursive boundaries, and a shared graph workspace.
+The current build has a coherent vertical slice from deterministic planet generation through natural resource sources, player-authored Site construction, staged ore comminution, continuous thermochemical roasting, recursive boundaries, and a shared graph workspace.
 
 Current serialized versions are:
 
@@ -101,8 +101,10 @@ APPARATUS
   Material Merger
   Feeder
   Dry Drum Magnetic Separator
+  Electric Roasting Furnace
 
 CONTAINER
+  Exhaust Vent
   Hopper
 ```
 
@@ -130,6 +132,8 @@ Current solid state includes:
 - liberation distribution
 - persistent ore texture lineage
 - magnetic-response property coverage
+- body-level conserved sensible enthalpy with derived temperature
+- minimal gas composition/thermal state for process exhaust
 - `MaterialBody` physical form
 
 Generated solid resources use concrete constituent compositions. Legacy coarse aliases may still be accepted for compatibility, but current generation does not emit pseudo-species such as generic gangue or iron-oxide mixture entries.
@@ -143,6 +147,7 @@ Mechanical process physics currently includes:
 - Material Merging
 - Controlled Feeding
 - Magnetic Separation
+- temperature-dependent Goethite dehydroxylation / roasting
 - shared discrete and continuous physical kernels
 - replaceable process-conservation policies
 - transactional backpressure and atomic multi-output commits
@@ -301,6 +306,18 @@ species magnetic response
 
 It requires all feed to be at or below `25 mm`; oversized mixed feed blocks the process rather than being silently screened. It is therefore a plausible early dry preconcentration step for suitable strongly magnetic ore, not a substitute for future fine/wet beneficiation technology.
 
+## Electric Roasting Furnace and Exhaust Vent
+
+The Electric Roasting Furnace owns a well-mixed internal solid charge. Its heater is power-limited, loses heat through `UA × (charge temperature − reference ambient)`, and is controlled by a player temperature setpoint rather than a conversion setting. Feed rate, hold-up, heat capacity, particle size, heat loss, and endothermic reaction demand therefore determine the achieved charge temperature and gradual conversion.
+
+The initial declarative reaction is:
+
+```text
+2 FeO(OH) → Fe₂O₃ + H₂O(g)
+```
+
+Goethite becomes hematite in the same size/liberation class under Arrhenius kinetics; a deterministic reaction-derived texture profile retains its distinct structural lineage. The H₂O exhaust must connect to an Exhaust Vent, which records emitted gas mass rather than silently deleting it. Solid product and exhaust handling remain explicit graph connections.
+
 ---
 
 # Composition, Texture, Liberation, and Separation
@@ -441,7 +458,7 @@ selection / layout / viewport / panels / temporary gestures
 
 Every modeled unit of matter has one physical owner/location at a time, such as a natural occurrence, Hopper, explicit machine body/buffer, boundary buffer, future transport inventory, or meaningful discrete sample/package.
 
-A `MaterialStream` represents transfer rates between owners; it is not inventory. `MaterialBatch` is for meaningful discrete lots/experiments and is not allocated every simulation tick.
+A `MaterialStream` represents transfer rates between owners; it is not inventory. Solid and gas streams carry physical-form-appropriate composition rates plus specific sensible enthalpy, while stored bodies own finite joules. `MaterialBatch` is for meaningful discrete lots/experiments and is not allocated every simulation tick.
 
 Feasible throughput is constrained by:
 
@@ -464,7 +481,7 @@ Ordinary material outputs cannot fan out to multiple consumers. Explicit branchi
 The current runtime provides:
 
 - fixed-step simulation independent from render FPS
-- continuous Extractor, Jaw Crusher, Cone Crusher, Ball Mill, Screen, Splitter, Material Merger, Feeder, and Dry Drum Magnetic Separator execution
+- continuous Extractor, Jaw Crusher, Cone Crusher, Ball Mill, Screen, Splitter, Material Merger, Feeder, Dry Drum Magnetic Separator, and Electric Roasting Furnace execution
 - Hopper buffering and finite capacity
 - material streams represented as mass-flow state rather than per-tick batches
 - persistent mineral-texture lineage through storage, routing, comminution, screening, and magnetic separation
@@ -496,11 +513,13 @@ occurrence mineral D10/D50/D90 and association modes
 Bond crushing / milling work indices and abrasion index
 intrinsic solid density
 magnetic response
+specific heat capacity for the roasting species
+explicit elemental composition and molar mass for reaction participants
 ```
 
 Texture is a particulate-population identity dimension because losing it when ores mix would lose physically relevant future behavior. That does **not** imply that temperature, pressure, moisture, or every future property should be appended to the fraction key. Broader body/phase/thermal state should remain around the particulate population where appropriate.
 
-Likely future property domains include hardness beyond the current Bond test properties, moisture/liquid fraction, surface chemistry, temperature/internal energy, phase, pressure/viscosity/EOS data, and chemical equilibrium/reaction data.
+Likely future property domains include hardness beyond the current Bond test properties, moisture/liquid fraction, surface chemistry, phase, pressure/viscosity/EOS data, and additional chemical equilibrium/reaction data.
 
 > **A material property enters the simulation when an apparatus or process needs it to determine a physical outcome.**
 

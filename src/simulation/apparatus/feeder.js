@@ -23,7 +23,9 @@ import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
   capacityScaleForOutput,
+  outputSpecificSensibleEnthalpies,
   proportionalSolidStateFromHopper,
+  solidBodyForWithdrawal,
 } from './materialTransferHelpers.js';
 
 export function createFeeder({
@@ -137,14 +139,33 @@ export function simulateFeederNode(blueprint, node, dt) {
 
   const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
   const result = applyContinuousFeeding(actualFeed, node.flowRateKgPerSecond, node.throughputKgPerSecond);
+  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
+    [solidBodyForWithdrawal(withdrawal)],
+    [result.productSolidState],
+  );
   const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
-  const acceptedOutputKg = hopperReceiveInflow(stagedOutput, result.productSolidState, dt);
+  const acceptedOutputKg = hopperReceiveInflow(
+    stagedOutput,
+    result.productSolidState,
+    dt,
+    productSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Feeder product');
 
   commitHopperMaterialState(inputHopper, stagedInput);
   commitHopperMaterialState(outputHopper, stagedOutput);
-  updateConnectionStream(blueprint, inputConnection, actualFeed);
-  updateConnectionStream(blueprint, outputConnection, result.productSolidState);
+  updateConnectionStream(
+    blueprint,
+    inputConnection,
+    actualFeed,
+    withdrawal.actualSpecificSensibleEnthalpyJPerKg,
+  );
+  updateConnectionStream(
+    blueprint,
+    outputConnection,
+    result.productSolidState,
+    productSpecificSensibleEnthalpyJPerKg,
+  );
   node.lastError = null;
   node.operatingState = 'running';
 }

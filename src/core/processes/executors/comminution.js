@@ -47,10 +47,9 @@ export function runStagedComminution(processDefinition, inputBatchesByPort, norm
   return {
     outputPortBatches: [{
       outputId: 'product',
-      materialBody: {
-        physicalForm: inputMaterialBody.physicalForm,
-        solidState: config.execute(inputMaterialBody.solidState, targetParticleSizeMm),
-      },
+      materialBody: createSolidMaterialBody(
+        config.execute(inputMaterialBody.solidState, targetParticleSizeMm)
+      ),
       particleSizeMm: targetParticleSizeMm,
       resourceId: null,
     }],

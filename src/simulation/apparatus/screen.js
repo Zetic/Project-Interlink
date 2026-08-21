@@ -19,6 +19,10 @@ import {
   findOutboundConnection,
   updateConnectionStream,
 } from './blueprintHelpers.js';
+import {
+  outputSpecificSensibleEnthalpies,
+  solidBodyForWithdrawal,
+} from './materialTransferHelpers.js';
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
 
@@ -182,21 +186,45 @@ export function simulateScreenNode(blueprint, node, dt) {
 
   const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
   const result = applyContinuousScreening(actualFeed, node.apertureSizeMm, node.throughputKgPerSecond);
+  const [undersizeSpecificSensibleEnthalpyJPerKg, oversizeSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
+    [solidBodyForWithdrawal(withdrawal)],
+    [result.undersizeSolidState, result.oversizeSolidState],
+  );
 
   const expectedUndersizeKg = totalSolidQuantity(result.undersizeSolidState) * dt;
-  const acceptedUndersizeKg = hopperReceiveInflow(stagedUndersize, result.undersizeSolidState, dt);
+  const acceptedUndersizeKg = hopperReceiveInflow(
+    stagedUndersize,
+    result.undersizeSolidState,
+    dt,
+    undersizeSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedUndersizeKg, acceptedUndersizeKg, 'Screen undersize');
 
   const expectedOversizeKg = totalSolidQuantity(result.oversizeSolidState) * dt;
-  const acceptedOversizeKg = hopperReceiveInflow(stagedOversize, result.oversizeSolidState, dt);
+  const acceptedOversizeKg = hopperReceiveInflow(
+    stagedOversize,
+    result.oversizeSolidState,
+    dt,
+    oversizeSpecificSensibleEnthalpyJPerKg,
+  );
   assertTransferAccepted(expectedOversizeKg, acceptedOversizeKg, 'Screen oversize');
 
   commitHopperMaterialState(inputHopper, stagedInput);
   commitHopperMaterialState(undersizeHopper, stagedUndersize);
   commitHopperMaterialState(oversizeHopper, stagedOversize);
-  updateConnectionStream(blueprint, inputConnection, actualFeed);
-  updateConnectionStream(blueprint, undersizeConnection, result.undersizeSolidState);
-  updateConnectionStream(blueprint, oversizeConnection, result.oversizeSolidState);
+  updateConnectionStream(blueprint, inputConnection, actualFeed, withdrawal.actualSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(
+    blueprint,
+    undersizeConnection,
+    result.undersizeSolidState,
+    undersizeSpecificSensibleEnthalpyJPerKg,
+  );
+  updateConnectionStream(
+    blueprint,
+    oversizeConnection,
+    result.oversizeSolidState,
+    oversizeSpecificSensibleEnthalpyJPerKg,
+  );
   node.lastError = null;
   node.operatingState = 'running';
 }

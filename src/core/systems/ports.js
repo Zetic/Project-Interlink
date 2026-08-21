@@ -16,6 +16,7 @@ export function portCapabilityMatches(sourcePort, targetPort) {
 export const PORT_CAPABILITIES = Object.freeze({
   RESOURCE_SOURCE: 'resource-source',
   SOLID_PARTICULATE: 'solid-particulate',
+  GAS: 'gas',
   // Interface requirement, not provenance: the receiving process requires a
   // buffered/withdrawable particulate owner. Matter does not become a different
   // physical form merely because it is stored in a Hopper or boundary buffer.

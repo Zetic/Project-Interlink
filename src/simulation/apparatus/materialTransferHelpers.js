@@ -1,8 +1,13 @@
 import {
+  createSolidMaterialBody,
   createSolidMaterialState,
   multiplySolidMaterialState,
   totalSolidQuantity,
 } from '../../core/materials/solids/solidMaterialState.js';
+import {
+  distributeSensibleEnthalpyAtEquilibrium,
+  materialBodyMassKg,
+} from '../../core/materials/thermal/thermalMaterial.js';
 import {
   hopperStoredMassKg,
   HOPPER_TOLERANCE_KG,
@@ -31,4 +36,21 @@ export function assertTransferAccepted(expectedKg, acceptedKg, context) {
   if (Math.abs(expectedKg - acceptedKg) > APPARATUS_TRANSFER_TOLERANCE_KG * Math.max(1, expectedKg)) {
     throw new Error(`${context} could not commit its planned output atomically`);
   }
+}
+
+export function solidBodyForWithdrawal(withdrawal) {
+  return createSolidMaterialBody(withdrawal.actualSolidState, {
+    sensibleEnthalpyJ: withdrawal.actualSensibleEnthalpyJ ?? 0,
+  });
+}
+
+export function outputSpecificSensibleEnthalpies(inputBodies, outputSolidStates) {
+  const outputBodies = distributeSensibleEnthalpyAtEquilibrium(
+    inputBodies,
+    outputSolidStates.map(state => createSolidMaterialBody(state)),
+  );
+  return outputBodies.map(body => {
+    const massKg = materialBodyMassKg(body);
+    return massKg <= 0 ? 0 : body.thermalState.sensibleEnthalpyJ / massKg;
+  });
 }

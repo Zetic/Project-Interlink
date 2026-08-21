@@ -1,4 +1,7 @@
-import { setMaterialStreamState } from '../materialStream.js';
+import {
+  setGasMaterialStreamState,
+  setMaterialStreamState,
+} from '../materialStream.js';
 
 export function findInboundConnection(blueprint, targetNodeId, targetPortId) {
   return Object.values(blueprint.connections).find(
@@ -12,8 +15,18 @@ export function findOutboundConnection(blueprint, sourceNodeId, sourcePortId) {
   ) ?? null;
 }
 
-export function updateConnectionStream(blueprint, connection, solidState) {
+export function updateConnectionStream(
+  blueprint,
+  connection,
+  materialState,
+  specificSensibleEnthalpyJPerKg = 0,
+) {
   if (!connection) return;
   const stream = Object.values(blueprint.streams).find(item => item.connectionId === connection.id);
-  if (stream) setMaterialStreamState(stream, solidState);
+  if (!stream) return;
+  if (materialState?.speciesMassKg) {
+    setGasMaterialStreamState(stream, materialState, specificSensibleEnthalpyJPerKg);
+  } else {
+    setMaterialStreamState(stream, materialState, null, specificSensibleEnthalpyJPerKg);
+  }
 }

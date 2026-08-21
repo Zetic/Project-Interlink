@@ -23,12 +23,14 @@ test('NODE catalog exposes the current primitive definitions and existing catego
       'Material Merger',
       'Feeder',
       'Dry Drum Magnetic Separator',
+      'Electric Roasting Furnace',
+      'Exhaust Vent',
       'Hopper',
     ],
   );
   assert.deepEqual(
     NODE_DEFINITIONS.map(definition => definition.category),
-    ['apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'container'],
+    ['apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'apparatus', 'container', 'container'],
   );
   for (const definition of NODE_DEFINITIONS) {
     assert.equal(typeof definition.create, 'function');
@@ -70,8 +72,8 @@ test('category filters affect projection without changing the catalog definition
   const projection = projectNodeCatalog({ visibleCategories: visible });
 
   assert.deepEqual(categories, ['apparatus', 'container']);
-  assert.deepEqual(projection.rows.flatMap(row => row.definitions).map(item => item.id), ['hopper']);
-  assert.equal(NODE_DEFINITIONS.length, 10);
+  assert.deepEqual(projection.rows.flatMap(row => row.definitions).map(item => item.id), ['exhaust-vent', 'hopper']);
+  assert.equal(NODE_DEFINITIONS.length, 12);
 });
 
 test('definitions create the expected authoritative blueprint node types', () => {
@@ -86,12 +88,14 @@ test('definitions create the expected authoritative blueprint node types', () =>
     byId('material-merger').create(blueprint),
     byId('feeder').create(blueprint),
     byId('magnetic-separator').create(blueprint),
+    byId('electric-roasting-furnace').create(blueprint),
+    byId('exhaust-vent').create(blueprint),
     byId('hopper').create(blueprint),
   ];
 
   assert.deepEqual(
     nodes.map(node => node.nodeType),
-    ['extractor', 'jawCrusher', 'coneCrusher', 'ballMill', 'screen', 'splitter', 'merger', 'feeder', 'magSep', 'hopper'],
+    ['extractor', 'jawCrusher', 'coneCrusher', 'ballMill', 'screen', 'splitter', 'merger', 'feeder', 'magSep', 'roastingFurnace', 'exhaustVent', 'hopper'],
   );
-  assert.equal(Object.keys(blueprint.nodes).length, 10);
+  assert.equal(Object.keys(blueprint.nodes).length, 12);
 });

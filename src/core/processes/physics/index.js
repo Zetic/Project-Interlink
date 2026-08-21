@@ -18,3 +18,4 @@ export {
 } from './magneticSeparation.js';
 export { splitScreenedSolidState } from './screening.js';
 export { splitSolidMaterialState } from './splitting.js';
+export { applyGoethiteDehydroxylation } from './thermochemicalReactions.js';

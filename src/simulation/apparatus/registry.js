@@ -13,6 +13,8 @@ import {
 import { createScreen, simulateScreenNode } from './screen.js';
 import { createSplitter, simulateSplitterNode } from './splitter.js';
 import { createMagneticSeparator, simulateMagSepNode } from './magneticSeparator.js';
+import { createExhaustVent } from './exhaustVent.js';
+import { createRoastingFurnace, simulateRoastingFurnaceNode } from './roastingFurnace.js';
 import { createHopper } from '../hopperNode.js';
 import { apparatusPortsForNode } from '../../content/apparatus/definitions.js';
 
@@ -29,6 +31,8 @@ export const APPARATUS_RUNTIME_REGISTRY = Object.freeze({
   screen: Object.freeze({ phase: 30, create: createScreen, simulate: (blueprint, _world, node, dt) => simulateScreenNode(blueprint, node, dt) }),
   splitter: Object.freeze({ phase: 35, create: createSplitter, simulate: (blueprint, _world, node, dt) => simulateSplitterNode(blueprint, node, dt) }),
   magSep: Object.freeze({ phase: 40, create: createMagneticSeparator, simulate: (blueprint, _world, node, dt) => simulateMagSepNode(blueprint, node, dt) }),
+  roastingFurnace: Object.freeze({ phase: 45, create: createRoastingFurnace, simulate: simulateRoastingFurnaceNode }),
+  exhaustVent: Object.freeze({ create: createExhaustVent }),
 });
 
 export function apparatusRuntimeFor(nodeType) {

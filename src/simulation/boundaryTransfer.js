@@ -82,7 +82,12 @@ export function transferBoundaryMaterial({
   const stagedTarget = cloneHopperMaterialState(target);
   const withdrawal = hopperWithdraw(stagedSource, rate, dt);
   const acceptedFlow = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-  const acceptedKg = hopperReceiveInflow(stagedTarget, acceptedFlow, dt);
+  const acceptedKg = hopperReceiveInflow(
+    stagedTarget,
+    acceptedFlow,
+    dt,
+    withdrawal.actualSpecificSensibleEnthalpyJPerKg,
+  );
   if (Math.abs(acceptedKg - withdrawal.actualTotalKg) > TRANSFER_TOLERANCE_KG * Math.max(1, acceptedKg)) {
     throw new Error('Boundary transfer could not commit atomically');
   }
