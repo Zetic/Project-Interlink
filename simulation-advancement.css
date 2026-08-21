@@ -1,0 +1,59 @@
+.ws-advance-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.ws-advance-mode {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+}
+
+.ws-advance-clock {
+  min-width: 62px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.ws-advance-controls button,
+.ws-advance-custom {
+  min-height: 26px;
+}
+
+.ws-advance-custom-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.ws-advance-custom {
+  width: 78px;
+}
+
+.ws-advance-status {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+#ws-world-toggle:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+@media (max-width: 1100px) {
+  .ws-advance-status,
+  .ws-advance-mode {
+    display: none;
+  }
+}
