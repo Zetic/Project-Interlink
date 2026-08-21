@@ -1,8 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GOETHITE_DEHYDROXYLATION_REACTION_ID, getReactionDefinition } from '../src/content/reactions/reactionDefinitions.js';
-import { createSolidMaterialBody, createSolidMaterialState, addSolidFractionDirect, addSolidMaterialState, iterateSolidFractions, summarizeSolidMaterialBySpecies, totalSolidQuantity } from '../src/core/materials/solids/solidMaterialState.js';
+import {
+  GOETHITE_DEHYDROXYLATION_REACTION_ID,
+  getReactionDefinition,
+} from '../src/content/reactions/reactionDefinitions.js';
+import {
+  addSolidFractionDirect,
+  addSolidMaterialState,
+  cloneSolidMaterialBody,
+  createSolidMaterialBody,
+  createSolidMaterialState,
+  iterateSolidFractions,
+  summarizeSolidMaterialBySpecies,
+  totalSolidQuantity,
+} from '../src/core/materials/solids/solidMaterialState.js';
 import { createHopper, hopperReceiveInflow, hopperWithdraw } from '../src/simulation/hopperNode.js';
 import {
   distributeSensibleEnthalpyAtEquilibrium,
@@ -16,11 +28,17 @@ import { validateElementalConservation } from '../src/core/processes/conservatio
 import {
   blueprintAddApparatus,
   blueprintConnect,
+  checkBlueprintConnection,
   createBlueprint,
   simulationAdvance,
+  simulationTick,
 } from '../src/simulation/simulationEngine.js';
 import { ventedGasMassKg } from '../src/simulation/apparatus/exhaustVent.js';
-import { furnaceHeatLossEnergyJ } from '../src/simulation/apparatus/roastingFurnace.js';
+import {
+  furnaceHeatLossEnergyJ,
+  roastingFurnaceChargeMassKg,
+  roastingFurnaceZoneCapacityKg,
+} from '../src/simulation/apparatus/roastingFurnace.js';
 
 const EPSILON = 1e-6;
 
@@ -38,7 +56,16 @@ function solidBody(speciesMassesKg, sizeBinId = '0.032-0.063mm') {
 }
 
 function connect(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId) {
-  assert.ok(blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId));
+  const connection = blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId);
+  assert.ok(connection);
+  return connection;
+}
+
+function hematiteShareOfReactiveSolids(hopper) {
+  const composition = summarizeSolidMaterialBySpecies(hopper.materialBody.solidState);
+  const hematite = composition.hematite ?? 0;
+  const goethite = composition.goethite ?? 0;
+  return hematite + goethite <= 0 ? 0 : hematite / (hematite + goethite);
 }
 
 test('body-level sensible energy derives temperature and conserves energy through withdrawal and mixing', () => {
@@ -86,6 +113,14 @@ test('body-level sensible energy derives temperature and conserves energy throug
   assert.ok(materialBodyTemperatureK(receivingHopper.materialBody) < 900);
 });
 
+test('legacy solid bodies without thermal state normalize at the named reference temperature', () => {
+  const legacy = solidBody({ goethite: 1 });
+  delete legacy.thermalState;
+  assert.equal(materialBodyTemperatureK(legacy), THERMAL_REFERENCE_TEMPERATURE_K);
+  const normalized = cloneSolidMaterialBody(legacy);
+  assert.deepEqual(normalized.thermalState, { sensibleEnthalpyJ: 0 });
+});
+
 test('thermal property coverage is explicit instead of using a silent fallback', () => {
   const unsupported = solidBody({ chalcopyrite: 1 });
   assert.throws(
@@ -98,7 +133,7 @@ test('furnace heat loss increases with charge temperature', () => {
   assert.ok(furnaceHeatLossEnergyJ(900, 25, 1) > furnaceHeatLossEnergyJ(500, 25, 1));
 });
 
-test('goethite dehydroxylation is gradual, stoichiometric, elemental, and endothermic', () => {
+test('goethite solve is gradual, thermally self-consistent, stoichiometric, elemental, and endothermic', () => {
   const feed = solidBody({ goethite: 10 });
   setMaterialBodyTemperatureK(feed, 900);
   const result = applyGoethiteDehydroxylation(feed, 10);
@@ -109,7 +144,9 @@ test('goethite dehydroxylation is gradual, stoichiometric, elemental, and endoth
   const extentMol = consumedGoethiteKg / (2 * 0.088851);
 
   assert.ok(consumedGoethiteKg > 0);
-  assert.ok(consumedGoethiteKg < 10);
+  assert.ok(consumedGoethiteKg < 8, 'energy coupling must prevent the old near-total-conversion / cryogenic oscillation state');
+  assert.ok(result.temperatureK > 400);
+  assert.ok(result.temperatureK < 900);
   assert.ok(Math.abs((solid.hematite ?? 0) - extentMol * 0.159687) < EPSILON);
   assert.ok(Math.abs((gas.waterVapor ?? 0) - extentMol * 0.018015) < EPSILON);
   assert.ok(Math.abs(
@@ -181,39 +218,116 @@ test('roasting kinetics increase with temperature, residence time, and finer par
   assert.ok(conversion(900, 3, '0.004-0.008mm') > conversion(900, 3, '1-5mm'));
 });
 
-function runFurnacePlant(maximumSolidThroughputKgPerSecond) {
+test('feeder preserves hot material temperature rather than losing dt-scaled thermal energy', () => {
+  const blueprint = createBlueprint();
+  const hotBody = solidBody({ goethite: 10 });
+  setMaterialBodyTemperatureK(hotBody, 700);
+  const feed = createHopper({ id: 'feed', capacityKg: 20, initialMaterialBody: hotBody });
+  blueprint.nodes[feed.id] = feed;
+  const feeder = blueprintAddApparatus(blueprint, 'feeder', {
+    id: 'feeder', enabled: true, flowRateKgPerSecond: 1,
+  });
+  const output = blueprintAddApparatus(blueprint, 'hopper', { id: 'output', capacityKg: 20 });
+  connect(blueprint, feed.id, 'output', feeder.id, 'feed');
+  connect(blueprint, feeder.id, 'product', output.id, 'input');
+  simulationTick(blueprint, {}, 0.1);
+  assert.ok(Math.abs(materialBodyTemperatureK(output.materialBody) - 700) < 1e-6);
+});
+
+test('roasting furnace requires metered feed, supports furnace chaining, and keeps zone count a fixed equipment capability', () => {
+  const blueprint = createBlueprint();
+  const hopper = blueprintAddApparatus(blueprint, 'hopper', { id: 'hopper', capacityKg: 100 });
+  const feeder = blueprintAddApparatus(blueprint, 'feeder', { id: 'feeder', enabled: true, flowRateKgPerSecond: 1 });
+  const furnaceA = blueprintAddApparatus(blueprint, 'roastingFurnace', { id: 'furnace-a', enabled: true });
+  const furnaceB = blueprintAddApparatus(blueprint, 'roastingFurnace', { id: 'furnace-b', enabled: true });
+  const product = blueprintAddApparatus(blueprint, 'hopper', { id: 'product', capacityKg: 100 });
+
+  assert.equal(checkBlueprintConnection(blueprint, hopper.id, 'output', furnaceA.id, 'feed').ok, false);
+  assert.equal(checkBlueprintConnection(blueprint, feeder.id, 'product', furnaceA.id, 'feed').ok, true);
+  assert.equal(checkBlueprintConnection(blueprint, furnaceA.id, 'solid-product', furnaceB.id, 'feed').ok, true);
+  assert.equal(checkBlueprintConnection(blueprint, furnaceB.id, 'solid-product', product.id, 'input').ok, true);
+  assert.equal(furnaceA.internalZoneCount, 4);
+  assert.equal(roastingFurnaceZoneCapacityKg(furnaceA), 5);
+});
+
+function buildFurnacePlant({ flowRateKgPerSecond, holdUpKg = 2, maximumThroughputKgPerSecond = 4 } = {}) {
   const blueprint = createBlueprint();
   const feed = createHopper({ id: 'feed', capacityKg: 200, initialMaterialBody: solidBody({ goethite: 100 }) });
   blueprint.nodes[feed.id] = feed;
+  const feeder = blueprintAddApparatus(blueprint, 'feeder', {
+    id: 'feeder', enabled: true, flowRateKgPerSecond,
+  });
   const furnace = blueprintAddApparatus(blueprint, 'roastingFurnace', {
     id: 'furnace',
     enabled: true,
     temperatureSetpointK: 900,
-    maximumSolidThroughputKgPerSecond,
-    effectiveChamberHoldUpKg: 0.1,
+    maximumSolidThroughputKgPerSecond: maximumThroughputKgPerSecond,
+    effectiveChamberHoldUpKg: holdUpKg,
   });
   const product = blueprintAddApparatus(blueprint, 'hopper', { id: 'product', capacityKg: 200 });
   const vent = blueprintAddApparatus(blueprint, 'exhaustVent', { id: 'vent' });
-  connect(blueprint, feed.id, 'output', furnace.id, 'feed');
+  connect(blueprint, feed.id, 'output', feeder.id, 'feed');
+  connect(blueprint, feeder.id, 'product', furnace.id, 'feed');
   connect(blueprint, furnace.id, 'solid-product', product.id, 'input');
   connect(blueprint, furnace.id, 'gas-exhaust', vent.id, 'gas-in');
-  simulationAdvance(blueprint, {}, 35, 0.1);
-  return { furnace, product, vent, blueprint };
+  return { blueprint, feed, feeder, furnace, product, vent };
 }
 
-test('continuous furnace power limitation couples throughput, conversion, and explicit exhaust routing', () => {
-  const lowFeed = runFurnacePlant(0.02);
-  const highFeed = runFurnacePlant(4);
-  assert.ok(lowFeed.furnace.actualChargeTemperatureK > 850);
-  assert.ok(highFeed.furnace.actualChargeTemperatureK < lowFeed.furnace.actualChargeTemperatureK);
+test('four staged furnace zones create physical startup residence before product discharge', () => {
+  const plant = buildFurnacePlant({ flowRateKgPerSecond: 1, holdUpKg: 2 });
+  simulationAdvance(plant.blueprint, {}, 1.5, 0.1);
+  assert.equal(totalSolidQuantity(plant.product.materialBody.solidState), 0);
+  assert.ok(roastingFurnaceChargeMassKg(plant.furnace) > 1);
 
-  const lowProduct = summarizeSolidMaterialBySpecies(lowFeed.product.materialBody.solidState);
-  const highProduct = summarizeSolidMaterialBySpecies(highFeed.product.materialBody.solidState);
-  assert.ok((lowProduct.hematite ?? 0) > (highProduct.hematite ?? 0));
-  assert.ok(ventedGasMassKg(lowFeed.vent) > ventedGasMassKg(highFeed.vent));
-  assert.ok(ventedGasMassKg(lowFeed.vent) > 0);
+  simulationAdvance(plant.blueprint, {}, 1.0, 0.1);
+  assert.ok(totalSolidQuantity(plant.product.materialBody.solidState) > 0);
+  assert.ok(plant.furnace.zones.every(zone => totalSolidQuantity(zone.solidState) <= 0.5 + EPSILON));
+});
+
+test('feeder setpoint controls emergent residence time and conversion while furnace transport limit backpressures excess feed', () => {
+  const slow = buildFurnacePlant({ flowRateKgPerSecond: 0.5, holdUpKg: 2 });
+  const fast = buildFurnacePlant({ flowRateKgPerSecond: 2, holdUpKg: 2 });
+  const capped = buildFurnacePlant({ flowRateKgPerSecond: 8, holdUpKg: 2, maximumThroughputKgPerSecond: 1 });
+
+  simulationAdvance(slow.blueprint, {}, 12, 0.1);
+  simulationAdvance(fast.blueprint, {}, 12, 0.1);
+  simulationAdvance(capped.blueprint, {}, 2, 0.1);
+
+  assert.ok(hematiteShareOfReactiveSolids(slow.product) > hematiteShareOfReactiveSolids(fast.product));
+  assert.ok(slow.furnace.actualChargeTemperatureK >= fast.furnace.actualChargeTemperatureK - 1e-6);
+  assert.ok(capped.furnace.lastFeedRateKgPerSecond <= 1 + EPSILON);
+  assert.ok(ventedGasMassKg(slow.vent) > 0);
   assert.equal(
-    Object.values(lowFeed.blueprint.streams).find(stream => stream.sourceNodeId === lowFeed.furnace.id && stream.sourcePortId === 'gas-exhaust').physicalForm,
+    Object.values(slow.blueprint.streams).find(stream => stream.sourceNodeId === slow.furnace.id && stream.sourcePortId === 'gas-exhaust').physicalForm,
     'gas',
   );
+});
+
+test('two furnaces can be chained without an intermediate Hopper or Feeder', () => {
+  const blueprint = createBlueprint();
+  const feed = createHopper({ id: 'feed', capacityKg: 50, initialMaterialBody: solidBody({ goethite: 20 }) });
+  blueprint.nodes[feed.id] = feed;
+  const feeder = blueprintAddApparatus(blueprint, 'feeder', {
+    id: 'feeder', enabled: true, flowRateKgPerSecond: 1,
+  });
+  const first = blueprintAddApparatus(blueprint, 'roastingFurnace', {
+    id: 'first', enabled: true, effectiveChamberHoldUpKg: 0.4, maximumSolidThroughputKgPerSecond: 1,
+  });
+  const second = blueprintAddApparatus(blueprint, 'roastingFurnace', {
+    id: 'second', enabled: true, effectiveChamberHoldUpKg: 0.4, maximumSolidThroughputKgPerSecond: 1,
+  });
+  const product = blueprintAddApparatus(blueprint, 'hopper', { id: 'product', capacityKg: 50 });
+  const ventA = blueprintAddApparatus(blueprint, 'exhaustVent', { id: 'vent-a' });
+  const ventB = blueprintAddApparatus(blueprint, 'exhaustVent', { id: 'vent-b' });
+
+  connect(blueprint, feed.id, 'output', feeder.id, 'feed');
+  connect(blueprint, feeder.id, 'product', first.id, 'feed');
+  connect(blueprint, first.id, 'solid-product', second.id, 'feed');
+  connect(blueprint, first.id, 'gas-exhaust', ventA.id, 'gas-in');
+  connect(blueprint, second.id, 'solid-product', product.id, 'input');
+  connect(blueprint, second.id, 'gas-exhaust', ventB.id, 'gas-in');
+
+  simulationAdvance(blueprint, {}, 4, 0.1);
+  assert.ok(totalSolidQuantity(product.materialBody.solidState) > 0);
+  assert.ok(ventedGasMassKg(ventA) + ventedGasMassKg(ventB) > 0);
 });
