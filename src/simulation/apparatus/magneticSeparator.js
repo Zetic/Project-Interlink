@@ -3,10 +3,7 @@ import {
   getProcessDefinition,
 } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
-import { multiplySolidMaterialState, totalSolidQuantity } from '../../core/materials/solids/solidMaterialState.js';
 import {
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
   hopperFreeCapacityKg,
   hopperReceiveInflow,
   hopperStoredMassKg,
@@ -20,34 +17,15 @@ import {
   updateConnectionStream,
 } from './blueprintHelpers.js';
 import {
-  outputSpecificSensibleEnthalpies,
-  solidBodyForWithdrawal,
+  APPARATUS_TRANSFER_TOLERANCE_KG,
+  assertTransferAccepted,
+  capacityScaleForOutput,
+  outputSpecificSensibleEnthalpiesFromWithdrawals,
+  proportionalSolidStateFromHopper,
+  scaleSolidStateForRuntime,
+  solidStateMassForRuntime,
 } from './materialTransferHelpers.js';
-
-const TRANSFER_TOLERANCE_KG = 1e-8;
-
-function proportionalSolidStateFromHopper(hopper, requestedTotalRateKgPerSecond) {
-  const storedMassKg = hopperStoredMassKg(hopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG || requestedTotalRateKgPerSecond <= 0) {
-    return { fractions: {} };
-  }
-  return multiplySolidMaterialState(
-    hopper.materialBody.solidState,
-    requestedTotalRateKgPerSecond / storedMassKg,
-  );
-}
-
-function capacityScaleForOutput(freeCapacityKg, componentRates, dt) {
-  const requiredKg = totalSolidQuantity(componentRates) * dt;
-  if (requiredKg <= TRANSFER_TOLERANCE_KG) return 1;
-  return Math.max(0, Math.min(1, freeCapacityKg / requiredKg));
-}
-
-function assertTransferAccepted(expectedKg, acceptedKg, context) {
-  if (Math.abs(expectedKg - acceptedKg) > TRANSFER_TOLERANCE_KG * Math.max(1, expectedKg)) {
-    throw new Error(`${context} could not commit its planned output atomically`);
-  }
-}
+import { assertHopperCanReceivePlannedSolidState } from './transactionHelpers.js';
 
 export function createMagneticSeparator({
   id,
@@ -72,27 +50,9 @@ export function createMagneticSeparator({
     concentratePortId: 'concentrate',
     tailingsPortId: 'tailings',
     ports: [
-      {
-        id: 'feed',
-        direction: 'input',
-        kind: 'material',
-        label: 'feed',
-        accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE],
-      },
-      {
-        id: 'concentrate',
-        direction: 'output',
-        kind: 'material',
-        label: 'concentrate',
-        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
-      },
-      {
-        id: 'tailings',
-        direction: 'output',
-        kind: 'material',
-        label: 'tailings',
-        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
-      },
+      { id: 'feed', direction: 'input', kind: 'material', label: 'feed', accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE] },
+      { id: 'concentrate', direction: 'output', kind: 'material', label: 'concentrate', provides: [PORT_CAPABILITIES.SOLID_PARTICULATE] },
+      { id: 'tailings', direction: 'output', kind: 'material', label: 'tailings', provides: [PORT_CAPABILITIES.SOLID_PARTICULATE] },
     ],
     maxFeedParticleSizeMm: processDefinition?.maxFeedParticleSizeMm ?? 25,
     lastError: null,
@@ -127,6 +87,7 @@ export function simulateMagSepNode(blueprint, node, dt) {
     node.operatingState = 'blocked';
     return;
   }
+
   const concentrateHopper = blueprint.nodes[concentrateConnection.targetNodeId];
   const tailingsHopper = blueprint.nodes[tailingsConnection.targetNodeId];
   if (inputHopper?.nodeType !== 'hopper' || concentrateHopper?.nodeType !== 'hopper' || tailingsHopper?.nodeType !== 'hopper') {
@@ -136,10 +97,10 @@ export function simulateMagSepNode(blueprint, node, dt) {
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
   const candidateRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt);
-  let candidateFeedRates = proportionalSolidStateFromHopper(inputHopper, candidateRate);
+  const candidateFeed = proportionalSolidStateFromHopper(inputHopper, candidateRate);
   let candidateResult;
   try {
-    candidateResult = applyContinuousMagneticSeparation(candidateFeedRates, node.fieldStrength, node.maxFeedParticleSizeMm);
+    candidateResult = applyContinuousMagneticSeparation(candidateFeed, node.fieldStrength, node.maxFeedParticleSizeMm);
   } catch (error) {
     node.lastError = error.message;
     node.operatingState = 'blocked';
@@ -150,61 +111,63 @@ export function simulateMagSepNode(blueprint, node, dt) {
     capacityScaleForOutput(hopperFreeCapacityKg(concentrateHopper), candidateResult.concentrateSolidState, dt),
     capacityScaleForOutput(hopperFreeCapacityKg(tailingsHopper), candidateResult.tailingsSolidState, dt),
   );
-  if (capacityScale <= TRANSFER_TOLERANCE_KG) {
+  if (capacityScale <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = 'One or more output hoppers are full';
     node.operatingState = 'blocked';
     return;
   }
-  if (capacityScale < 1) candidateFeedRates = multiplySolidMaterialState(candidateFeedRates, capacityScale);
 
-  const stagedInput = cloneHopperMaterialState(inputHopper);
-  const stagedConcentrate = cloneHopperMaterialState(concentrateHopper);
-  const stagedTailings = cloneHopperMaterialState(tailingsHopper);
-  const withdrawal = hopperWithdraw(stagedInput, totalSolidQuantity(candidateFeedRates), dt);
-  if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) {
-    node.operatingState = 'idle';
+  const actualFeedSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.actualFeedSolidState, capacityScale)
+    : candidateResult.actualFeedSolidState;
+  const concentrateSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.concentrateSolidState, capacityScale)
+    : candidateResult.concentrateSolidState;
+  const tailingsSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.tailingsSolidState, capacityScale)
+    : candidateResult.tailingsSolidState;
+  const plannedRate = solidStateMassForRuntime(actualFeedSolidState);
+  const expectedConcentrateKg = solidStateMassForRuntime(concentrateSolidState) * dt;
+  const expectedTailingsKg = solidStateMassForRuntime(tailingsSolidState) * dt;
+
+  try {
+    assertHopperCanReceivePlannedSolidState(concentrateHopper, concentrateSolidState, expectedConcentrateKg, 'Magnetic Separator concentrate');
+    assertHopperCanReceivePlannedSolidState(tailingsHopper, tailingsSolidState, expectedTailingsKg, 'Magnetic Separator tailings');
+  } catch (error) {
+    node.lastError = error.message;
+    node.operatingState = 'blocked';
     return;
   }
 
-  const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-  const result = applyContinuousMagneticSeparation(actualFeed, node.fieldStrength, node.maxFeedParticleSizeMm);
-  const [concentrateSpecificSensibleEnthalpyJPerKg, tailingsSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
-    [solidBodyForWithdrawal(withdrawal)],
-    [result.concentrateSolidState, result.tailingsSolidState],
+  const withdrawal = hopperWithdraw(inputHopper, plannedRate, dt);
+  if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+    node.operatingState = 'idle';
+    return;
+  }
+  const actualFeed = scaleSolidStateForRuntime(withdrawal.actualSolidState, 1 / dt);
+  const [concentrateSpecificSensibleEnthalpyJPerKg, tailingsSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpiesFromWithdrawals(
+    [withdrawal],
+    [concentrateSolidState, tailingsSolidState],
   );
-  const expectedConcentrateKg = totalSolidQuantity(result.concentrateSolidState) * dt;
+
   const acceptedConcentrateKg = hopperReceiveInflow(
-    stagedConcentrate,
-    result.concentrateSolidState,
+    concentrateHopper,
+    concentrateSolidState,
     dt,
     concentrateSpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedConcentrateKg, acceptedConcentrateKg, 'Magnetic Separator concentrate');
-  const expectedTailingsKg = totalSolidQuantity(result.tailingsSolidState) * dt;
   const acceptedTailingsKg = hopperReceiveInflow(
-    stagedTailings,
-    result.tailingsSolidState,
+    tailingsHopper,
+    tailingsSolidState,
     dt,
     tailingsSpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedTailingsKg, acceptedTailingsKg, 'Magnetic Separator tailings');
 
-  commitHopperMaterialState(inputHopper, stagedInput);
-  commitHopperMaterialState(concentrateHopper, stagedConcentrate);
-  commitHopperMaterialState(tailingsHopper, stagedTailings);
   updateConnectionStream(blueprint, inputConnection, actualFeed, withdrawal.actualSpecificSensibleEnthalpyJPerKg);
-  updateConnectionStream(
-    blueprint,
-    concentrateConnection,
-    result.concentrateSolidState,
-    concentrateSpecificSensibleEnthalpyJPerKg,
-  );
-  updateConnectionStream(
-    blueprint,
-    tailingsConnection,
-    result.tailingsSolidState,
-    tailingsSpecificSensibleEnthalpyJPerKg,
-  );
+  updateConnectionStream(blueprint, concentrateConnection, concentrateSolidState, concentrateSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, tailingsConnection, tailingsSolidState, tailingsSpecificSensibleEnthalpyJPerKg);
   node.lastError = null;
   node.operatingState = 'running';
 }
