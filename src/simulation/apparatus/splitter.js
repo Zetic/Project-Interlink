@@ -1,19 +1,12 @@
 import { SPLITTING_PROCESS_ID } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
 import {
-  multiplySolidMaterialState,
-  totalSolidQuantity,
-} from '../../core/materials/solids/solidMaterialState.js';
-import {
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
   hopperFreeCapacityKg,
   hopperReceiveInflow,
   hopperStoredMassKg,
   hopperWithdraw,
   HOPPER_TOLERANCE_KG,
 } from '../hopperNode.js';
-import { applyContinuousSplitting } from '../continuousProcessing.js';
 import {
   findInboundConnection,
   findOutboundConnection,
@@ -22,11 +15,11 @@ import {
 import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
-  capacityScaleForOutput,
-  outputSpecificSensibleEnthalpies,
-  proportionalSolidStateFromHopper,
-  solidBodyForWithdrawal,
+  outputSpecificSensibleEnthalpiesFromWithdrawals,
+  scaleSolidStateForRuntime,
+  solidStateMassForRuntime,
 } from './materialTransferHelpers.js';
+import { assertHopperCanReceivePlannedSolidState } from './transactionHelpers.js';
 
 export function createSplitter({
   id,
@@ -106,66 +99,70 @@ export function simulateSplitterNode(blueprint, node, dt) {
 
   const storedMassKg = hopperStoredMassKg(inputHopper);
   const candidateRate = Math.min(node.throughputKgPerSecond, storedMassKg / dt);
-  let candidateFeed = proportionalSolidStateFromHopper(inputHopper, candidateRate);
-  let candidateResult;
+  const requestedAKg = candidateRate * node.splitFractionToA * dt;
+  const requestedBKg = candidateRate * (1 - node.splitFractionToA) * dt;
+  const scaleA = requestedAKg <= APPARATUS_TRANSFER_TOLERANCE_KG
+    ? 1
+    : hopperFreeCapacityKg(outputAHopper) / requestedAKg;
+  const scaleB = requestedBKg <= APPARATUS_TRANSFER_TOLERANCE_KG
+    ? 1
+    : hopperFreeCapacityKg(outputBHopper) / requestedBKg;
+  const capacityScale = Math.max(0, Math.min(1, scaleA, scaleB));
+  if (capacityScale <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+    node.lastError = 'One or more required Splitter outputs are full';
+    node.operatingState = 'blocked';
+    return;
+  }
+
+  const plannedRate = candidateRate * capacityScale;
+  const plannedFeed = scaleSolidStateForRuntime(
+    inputHopper.materialBody.solidState,
+    plannedRate / storedMassKg,
+  );
+  const outputASolidState = scaleSolidStateForRuntime(plannedFeed, node.splitFractionToA);
+  const outputBSolidState = scaleSolidStateForRuntime(plannedFeed, 1 - node.splitFractionToA);
+  const expectedAKg = solidStateMassForRuntime(outputASolidState) * dt;
+  const expectedBKg = solidStateMassForRuntime(outputBSolidState) * dt;
+
   try {
-    candidateResult = applyContinuousSplitting(candidateFeed, node.splitFractionToA, node.throughputKgPerSecond);
+    assertHopperCanReceivePlannedSolidState(outputAHopper, outputASolidState, expectedAKg, 'Splitter output A');
+    assertHopperCanReceivePlannedSolidState(outputBHopper, outputBSolidState, expectedBKg, 'Splitter output B');
   } catch (error) {
     node.lastError = error.message;
     node.operatingState = 'blocked';
     return;
   }
 
-  const capacityScale = Math.min(
-    capacityScaleForOutput(hopperFreeCapacityKg(outputAHopper), candidateResult.outputASolidState, dt),
-    capacityScaleForOutput(hopperFreeCapacityKg(outputBHopper), candidateResult.outputBSolidState, dt),
-  );
-  if (capacityScale <= APPARATUS_TRANSFER_TOLERANCE_KG) {
-    node.lastError = 'One or more required Splitter outputs are full';
-    node.operatingState = 'blocked';
-    return;
-  }
-  if (capacityScale < 1) candidateFeed = multiplySolidMaterialState(candidateFeed, capacityScale);
-
-  const stagedInput = cloneHopperMaterialState(inputHopper);
-  const stagedA = cloneHopperMaterialState(outputAHopper);
-  const stagedB = cloneHopperMaterialState(outputBHopper);
-  const withdrawal = hopperWithdraw(stagedInput, totalSolidQuantity(candidateFeed), dt);
+  const withdrawal = hopperWithdraw(inputHopper, plannedRate, dt);
   if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = null;
     node.operatingState = 'idle';
     return;
   }
-
-  const actualFeed = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-  const result = applyContinuousSplitting(actualFeed, node.splitFractionToA, node.throughputKgPerSecond);
-  const [outputASpecificSensibleEnthalpyJPerKg, outputBSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
-    [solidBodyForWithdrawal(withdrawal)],
-    [result.outputASolidState, result.outputBSolidState],
+  const actualFeed = scaleSolidStateForRuntime(withdrawal.actualSolidState, 1 / dt);
+  const [outputASpecificSensibleEnthalpyJPerKg, outputBSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpiesFromWithdrawals(
+    [withdrawal],
+    [outputASolidState, outputBSolidState],
   );
-  const expectedAKg = totalSolidQuantity(result.outputASolidState) * dt;
+
   const acceptedAKg = hopperReceiveInflow(
-    stagedA,
-    result.outputASolidState,
+    outputAHopper,
+    outputASolidState,
     dt,
     outputASpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedAKg, acceptedAKg, 'Splitter output A');
-  const expectedBKg = totalSolidQuantity(result.outputBSolidState) * dt;
   const acceptedBKg = hopperReceiveInflow(
-    stagedB,
-    result.outputBSolidState,
+    outputBHopper,
+    outputBSolidState,
     dt,
     outputBSpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedBKg, acceptedBKg, 'Splitter output B');
 
-  commitHopperMaterialState(inputHopper, stagedInput);
-  commitHopperMaterialState(outputAHopper, stagedA);
-  commitHopperMaterialState(outputBHopper, stagedB);
   updateConnectionStream(blueprint, inputConnection, actualFeed, withdrawal.actualSpecificSensibleEnthalpyJPerKg);
-  updateConnectionStream(blueprint, outputAConnection, result.outputASolidState, outputASpecificSensibleEnthalpyJPerKg);
-  updateConnectionStream(blueprint, outputBConnection, result.outputBSolidState, outputBSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, outputAConnection, outputASolidState, outputASpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, outputBConnection, outputBSolidState, outputBSpecificSensibleEnthalpyJPerKg);
   node.lastError = null;
   node.operatingState = 'running';
 }
