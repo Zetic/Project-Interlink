@@ -34,6 +34,15 @@ import {
   roastingFurnaceZoneCapacityKg,
 } from '../../simulation/apparatus/roastingFurnace.js';
 
+// The workspace is rendered from requestAnimationFrame while physical state
+// advances at a fixed lower rate. These caches prevent unchanged authoritative
+// material from being re-summarized and re-validated on every display frame.
+// They are presentation caches only; simulation truth remains on the bodies.
+const HOPPER_INSPECTION_CACHE = new WeakMap();
+const STREAM_INSPECTION_CACHE = new WeakMap();
+const FURNACE_ZONE_INSPECTION_CACHE = new WeakMap();
+const EXHAUST_BODY_INSPECTION_CACHE = new WeakMap();
+
 function summaryRows(summary, total, labelFor) {
   return Object.entries(summary ?? {})
     .filter(([, value]) => value > 0)
@@ -145,24 +154,49 @@ function occurrencePropertyDetails(occurrence) {
 }
 
 export function hopperInspection(hopper) {
+  const revision = hopper?.materialRevision ?? 0;
+  const materialBody = hopper?.materialBody ?? null;
+  const cached = HOPPER_INSPECTION_CACHE.get(hopper);
+  if (
+    cached
+    && cached.revision === revision
+    && cached.materialBody === materialBody
+    && cached.capacityKg === hopper?.capacityKg
+    && cached.nominalParticleSizeMm === hopper?.nominalParticleSizeMm
+  ) {
+    return cached.value;
+  }
+
   const storedMassKg = hopperStoredMassKg(hopper);
-  const thermal = thermalDetailsForBody(hopper?.materialBody, storedMassKg);
-  return {
+  const thermal = thermalDetailsForBody(materialBody, storedMassKg);
+  const compositionSummary = hopperCompositionKg(hopper);
+  const compositionRows = summaryRows(compositionSummary, storedMassKg, speciesLabel);
+  const value = {
     kind: hopper?.systemType === 'boundary-buffer' ? 'boundaryBuffer' : 'hopper',
     id: hopper?.id ?? null,
     storedMassKg,
     capacityKg: hopper?.capacityKg ?? 0,
-    freeCapacityKg: hopperFreeCapacityKg(hopper),
-    physicalForm: hopper?.materialBody?.physicalForm ?? null,
+    freeCapacityKg: Math.max(0, (hopper?.capacityKg ?? 0) - storedMassKg),
+    physicalForm: materialBody?.physicalForm ?? null,
     particleSizeMm: hopper?.nominalParticleSizeMm ?? null,
     temperatureK: thermal.temperatureK,
     sensibleEnthalpyJ: thermal.sensibleEnthalpyJ,
     thermalError: thermal.thermalError,
-    components: summaryRows(hopperCompositionKg(hopper), storedMassKg, speciesLabel),
-    composition: summaryRows(hopperCompositionKg(hopper), storedMassKg, speciesLabel),
+    // Historical components and current composition intentionally expose the
+    // same summary rows; compute them once rather than traversing twice.
+    components: compositionRows,
+    composition: compositionRows,
     particleSizeDistribution: summaryRows(hopperParticleSizeDistributionKg(hopper), storedMassKg, sizeBinLabel),
     liberationDistribution: summaryRows(hopperLiberationDistributionKg(hopper), storedMassKg, liberationLabel),
   };
+  HOPPER_INSPECTION_CACHE.set(hopper, {
+    revision,
+    materialBody,
+    capacityKg: hopper?.capacityKg,
+    nominalParticleSizeMm: hopper?.nominalParticleSizeMm,
+    value,
+  });
+  return value;
 }
 
 export function streamInspection(stream) {
@@ -173,13 +207,29 @@ export function streamInspection(stream) {
       temperatureK: null, specificSensibleEnthalpyJPerKg: 0, thermalError: null,
     };
   }
+
+  // setMaterialStreamState/setGasMaterialStreamState replace the physical state
+  // object when simulation advances. Object identity is therefore a cheap,
+  // deterministic presentation revision between fixed simulation steps.
+  const stateRef = stream.physicalForm === MATERIAL_FORMS.GAS ? stream.gasState : stream.solidState;
+  const cached = STREAM_INSPECTION_CACHE.get(stream);
+  if (
+    cached
+    && cached.stateRef === stateRef
+    && cached.physicalForm === stream.physicalForm
+    && cached.specificSensibleEnthalpyJPerKg === stream.specificSensibleEnthalpyJPerKg
+    && cached.nominalParticleSizeMm === stream.nominalParticleSizeMm
+  ) {
+    return cached.value;
+  }
+
   const totalFlowKgPerSecond = totalMaterialStreamMassFlowKgPerSecond(stream);
   const gas = stream.physicalForm === MATERIAL_FORMS.GAS;
   const compositionSummary = gas
     ? { ...(stream.gasState?.speciesMassKg ?? {}) }
     : summarizeSolidMaterialBySpecies(stream.solidState);
   const thermal = streamThermalDetails(stream, totalFlowKgPerSecond);
-  return {
+  const value = {
     kind: 'stream',
     id: stream?.id ?? null,
     sourceNodeId: stream?.sourceNodeId ?? null,
@@ -201,6 +251,14 @@ export function streamInspection(stream) {
     specificSensibleEnthalpyJPerKg: thermal.specificSensibleEnthalpyJPerKg,
     thermalError: thermal.thermalError,
   };
+  STREAM_INSPECTION_CACHE.set(stream, {
+    stateRef,
+    physicalForm: stream.physicalForm,
+    specificSensibleEnthalpyJPerKg: stream.specificSensibleEnthalpyJPerKg,
+    nominalParticleSizeMm: stream.nominalParticleSizeMm,
+    value,
+  });
+  return value;
 }
 
 export function connectionInspection(blueprint, connection) {
@@ -280,10 +338,13 @@ function inspectedConnectionsByPort(blueprint, connections, portKey) {
 }
 
 function furnaceZoneInspection(zone, index, zoneCapacityKg) {
+  const cached = FURNACE_ZONE_INSPECTION_CACHE.get(zone);
+  if (cached && cached.index === index && cached.zoneCapacityKg === zoneCapacityKg) return cached.value;
+
   const massKg = totalSolidQuantity(zone.solidState);
   const thermal = thermalDetailsForBody(zone, massKg);
   const composition = summarizeSolidMaterialBySpecies(zone.solidState);
-  return {
+  const value = {
     index: index + 1,
     massKg,
     capacityKg: zoneCapacityKg,
@@ -292,12 +353,29 @@ function furnaceZoneInspection(zone, index, zoneCapacityKg) {
     goethiteKg: composition.goethite ?? 0,
     hematiteKg: composition.hematite ?? 0,
   };
+  FURNACE_ZONE_INSPECTION_CACHE.set(zone, { index, zoneCapacityKg, value });
+  return value;
+}
+
+function exhaustBodyInspection(gasBody) {
+  const cached = EXHAUST_BODY_INSPECTION_CACHE.get(gasBody);
+  if (cached) return cached;
+  const totalEmittedMassKg = totalGasMassKg(gasBody.gasState);
+  const thermal = thermalDetailsForBody(gasBody, totalEmittedMassKg);
+  const value = {
+    totalEmittedMassKg,
+    composition: summaryRows(gasBody.gasState.speciesMassKg, totalEmittedMassKg, speciesLabel),
+    temperatureK: thermal.temperatureK,
+    sensibleEnthalpyJ: thermal.sensibleEnthalpyJ,
+    thermalError: thermal.thermalError,
+  };
+  EXHAUST_BODY_INSPECTION_CACHE.set(gasBody, value);
+  return value;
 }
 
 export function exhaustVentInspection(blueprint, vent) {
   const gasBody = vent?.emittedGasBody ?? createGasMaterialBody(createGasMaterialState());
-  const totalEmittedMassKg = totalGasMassKg(gasBody.gasState);
-  const thermal = thermalDetailsForBody(gasBody, totalEmittedMassKg);
+  const bodyDetails = exhaustBodyInspection(gasBody);
   const inputConnection = Object.values(blueprint?.connections ?? {}).find(connection =>
     connection.kind === 'material'
       && connection.targetNodeId === vent?.id
@@ -306,11 +384,7 @@ export function exhaustVentInspection(blueprint, vent) {
   return {
     kind: 'exhaustVent',
     id: vent?.id ?? null,
-    totalEmittedMassKg,
-    composition: summaryRows(gasBody.gasState.speciesMassKg, totalEmittedMassKg, speciesLabel),
-    temperatureK: thermal.temperatureK,
-    sensibleEnthalpyJ: thermal.sensibleEnthalpyJ,
-    thermalError: thermal.thermalError,
+    ...bodyDetails,
     input: inputConnection ? connectionInspection(blueprint, inputConnection) : null,
   };
 }
@@ -403,6 +477,7 @@ export function machineInspection(blueprint, node) {
         : null,
       solidProductRateKgPerSecond: outputByPort[node.solidProductPortId]?.totalFlowKgPerSecond ?? 0,
       exhaustRateKgPerSecond: outputByPort[node.gasExhaustPortId]?.totalFlowKgPerSecond ?? 0,
+      solverEvaluationCount: node.lastSolverEvaluationCount ?? 0,
       zones: (node.zones ?? []).map((zone, index) => furnaceZoneInspection(zone, index, zoneCapacityKg)),
     };
   }
