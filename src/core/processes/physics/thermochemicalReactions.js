@@ -28,9 +28,9 @@ import { representativeParticleSizeMm } from '../../materials/solids/particleSiz
 
 const GAS_CONSTANT_J_PER_MOL_K = 8.314462618;
 const REACTION_SOLVE_ITERATIONS = 32;
-// The prototype thermodynamic/property data is nowhere near micro-kelvin
-// precision. A 0.01 K solve tolerance is materially indistinguishable here and
-// avoids wasting repeated hot-path evaluations every simulation tick.
+// The root solve only needs enough precision to make the kinetic temperature
+// self-consistent. Once the extent is selected, the committed product
+// temperature is recomputed from the exact energy balance for that extent.
 const REACTION_SOLVE_TOLERANCE_K = 0.01;
 const MINIMUM_ABSOLUTE_TEMPERATURE_K = 1;
 
@@ -176,13 +176,13 @@ function scalarEvaluation(
   initialTemperatureK,
   initialSensibleEnthalpyJ,
   residenceTimeSeconds,
-  finalTemperatureK,
+  candidateFinalTemperatureK,
 ) {
   // Mean-temperature kinetics is the same bounded approximation used by the
   // prior implementation, but candidate evaluation remains scalar-only.
   const kineticTemperatureK = Math.max(
     MINIMUM_ABSOLUTE_TEMPERATURE_K,
-    (initialTemperatureK + finalTemperatureK) / 2,
+    (initialTemperatureK + candidateFinalTemperatureK) / 2,
   );
   const { reactionExtentMol } = evaluateReactionExtent(
     model,
@@ -208,7 +208,20 @@ function scalarEvaluation(
     reactionEnergyDemandJ,
     totalHeatCapacityJPerK,
     energyBalancedTemperatureK,
-    residualK: finalTemperatureK - energyBalancedTemperatureK,
+    residualK: candidateFinalTemperatureK - energyBalancedTemperatureK,
+  };
+}
+
+function solvedState(model, evaluation, solverEvaluationCount) {
+  const finalTemperatureK = evaluation.energyBalancedTemperatureK;
+  if (finalTemperatureK <= 0 || !Number.isFinite(finalTemperatureK)) {
+    throw new Error('Thermochemical reaction solved to an invalid absolute temperature');
+  }
+  return {
+    model,
+    finalTemperatureK,
+    solverEvaluationCount,
+    ...evaluation,
   };
 }
 
@@ -218,7 +231,7 @@ function solveReactionAtFinalTemperature(feedBody, residenceTimeSeconds, reactio
   const model = compileReactionModel(feedBody, reaction);
   let solverEvaluationCount = 0;
 
-  const evaluate = finalTemperatureK => {
+  const evaluate = candidateFinalTemperatureK => {
     solverEvaluationCount += 1;
     return scalarEvaluation(
       model,
@@ -226,7 +239,7 @@ function solveReactionAtFinalTemperature(feedBody, residenceTimeSeconds, reactio
       initialTemperatureK,
       initialSensibleEnthalpyJ,
       residenceTimeSeconds,
-      finalTemperatureK,
+      candidateFinalTemperatureK,
     );
   };
 
@@ -236,13 +249,8 @@ function solveReactionAtFinalTemperature(feedBody, residenceTimeSeconds, reactio
   let lowK = MINIMUM_ABSOLUTE_TEMPERATURE_K;
   let highK = Math.max(MINIMUM_ABSOLUTE_TEMPERATURE_K, initialTemperatureK);
   const highEvaluation = evaluate(highK);
-  if (highEvaluation.residualK <= REACTION_SOLVE_TOLERANCE_K) {
-    return {
-      model,
-      finalTemperatureK: highK,
-      solverEvaluationCount,
-      ...highEvaluation,
-    };
+  if (Math.abs(highEvaluation.residualK) <= REACTION_SOLVE_TOLERANCE_K) {
+    return solvedState(model, highEvaluation, solverEvaluationCount);
   }
 
   const lowEvaluation = evaluate(lowK);
@@ -255,25 +263,14 @@ function solveReactionAtFinalTemperature(feedBody, residenceTimeSeconds, reactio
     const midpointK = (lowK + highK) / 2;
     evaluation = evaluate(midpointK);
     if (Math.abs(evaluation.residualK) <= REACTION_SOLVE_TOLERANCE_K) {
-      lowK = midpointK;
-      highK = midpointK;
-      break;
+      return solvedState(model, evaluation, solverEvaluationCount);
     }
     if (evaluation.residualK > 0) highK = midpointK;
     else lowK = midpointK;
   }
 
-  const finalTemperatureK = (lowK + highK) / 2;
-  evaluation = evaluate(finalTemperatureK);
-  if (finalTemperatureK <= 0 || !Number.isFinite(finalTemperatureK)) {
-    throw new Error('Thermochemical reaction solved to an invalid absolute temperature');
-  }
-  return {
-    model,
-    finalTemperatureK,
-    solverEvaluationCount,
-    ...evaluation,
-  };
+  evaluation = evaluate((lowK + highK) / 2);
+  return solvedState(model, evaluation, solverEvaluationCount);
 }
 
 function materializeReactionProducts(feedBody, model, reaction, kineticTemperatureK, residenceTimeSeconds) {
@@ -363,6 +360,9 @@ export function applyGoethiteDehydroxylation(feedBody, residenceTimeSeconds) {
     + solved.reactionExtentMol * solved.model.solidHeatCapacityDeltaPerExtentJPerK;
   const gasCapacityJPerK = solved.reactionExtentMol
     * solved.model.gasHeatCapacityPerExtentJPerK;
+  // The chosen extent came from the bounded root solve. Commit the exact
+  // energy-balanced temperature for that extent so strict energy conservation
+  // is not weakened merely to gain solver performance.
   products.solidProductBody.thermalState.sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(
     solved.finalTemperatureK,
     solidCapacityJPerK,
