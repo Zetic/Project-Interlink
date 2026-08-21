@@ -182,6 +182,7 @@ test('shared SVG renderer creates and reuses one stable path per projected edge'
   };
   const makePath = () => ({
     attrs: {},
+    dataset: {},
     classList: { add() {}, toggle() {} },
     setAttribute(name, value) { this.attrs[name] = value; },
     addEventListener() {},
