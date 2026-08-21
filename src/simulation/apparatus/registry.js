@@ -17,10 +17,15 @@ import { createExhaustVent } from './exhaustVent.js';
 import { createRoastingFurnace, simulateRoastingFurnaceNode } from './roastingFurnace.js';
 import { createHopper } from '../hopperNode.js';
 import { apparatusPortsForNode } from '../../content/apparatus/definitions.js';
-import { profileApparatusCall } from '../../debug/performanceTelemetry.js';
+import { runApparatusSimulationWithOptionalProfiling } from '../telemetry/apparatusProfiling.js';
 
 function profiled(nodeType, simulate) {
-  return (...args) => profileApparatusCall(nodeType, args[2]?.id ?? null, simulate, args);
+  return (...args) => runApparatusSimulationWithOptionalProfiling(
+    nodeType,
+    args[2]?.id ?? null,
+    simulate,
+    args,
+  );
 }
 
 export const APPARATUS_RUNTIME_REGISTRY = Object.freeze({
