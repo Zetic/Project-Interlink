@@ -23,13 +23,13 @@ import {
 import {
   THERMAL_REFERENCE_TEMPERATURE_K,
   sensibleEnthalpyJAtTemperature,
-  temperatureKFromSensibleEnthalpy,
 } from '../../materials/thermal/thermalState.js';
 import { representativeParticleSizeMm } from '../../materials/solids/particleSizeBins.js';
 
 const GAS_CONSTANT_J_PER_MOL_K = 8.314462618;
-const REACTION_SOLVE_ITERATIONS = 8;
-const REACTION_SOLVE_TOLERANCE_K = 1e-6;
+const REACTION_SOLVE_ITERATIONS = 64;
+const REACTION_SOLVE_TOLERANCE_K = 1e-7;
+const MINIMUM_ABSOLUTE_TEMPERATURE_K = 1;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -59,7 +59,7 @@ function fractionKey(fraction) {
     : `${fraction.speciesId}|${fraction.sizeBinId}|${fraction.liberationClassId}`;
 }
 
-function reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeconds, conversionScale) {
+function reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeconds) {
   const reaction = getReactionDefinition(GOETHITE_DEHYDROXYLATION_REACTION_ID);
   const goethiteMassPerExtentKg = reactionSpeciesMassKg(reaction, 'goethite');
   const hematiteMassPerExtentKg = reactionSpeciesMassKg(reaction, 'hematite');
@@ -71,8 +71,10 @@ function reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeco
   for (const fraction of iterateSolidFractions(feedBody.solidState)) {
     if (fraction.speciesId !== 'goethite') continue;
     const conversion = clamp(
-      (1 - Math.exp(-reactionRatePerSecond(temperatureK, fraction.sizeBinId, reaction.kinetics) * residenceTimeSeconds))
-        * conversionScale,
+      1 - Math.exp(
+        -reactionRatePerSecond(temperatureK, fraction.sizeBinId, reaction.kinetics)
+          * residenceTimeSeconds,
+      ),
       0,
       1,
     );
@@ -113,84 +115,106 @@ function reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeco
   };
 }
 
+function solveReactionAtFinalTemperature(feedBody, residenceTimeSeconds, reaction) {
+  const initialTemperatureK = materialBodyTemperatureK(feedBody);
+  const initialSensibleEnthalpyJ = feedBody.thermalState?.sensibleEnthalpyJ ?? 0;
+
+  const evaluate = finalTemperatureK => {
+    // The reaction rate is evaluated at the mean of the incoming and candidate
+    // final temperatures. This is a bounded implicit approximation to the
+    // continuously cooling material over one simulation step.
+    const kineticTemperatureK = Math.max(
+      MINIMUM_ABSOLUTE_TEMPERATURE_K,
+      (initialTemperatureK + finalTemperatureK) / 2,
+    );
+    const products = reactionProductsAtTemperature(
+      feedBody,
+      kineticTemperatureK,
+      residenceTimeSeconds,
+    );
+    const totalHeatCapacityJPerK = materialBodyHeatCapacityJPerK(products.solidProductBody)
+      + materialBodyHeatCapacityJPerK(products.gasProductBody);
+    const reactionEnergyDemandJ = products.reactionExtentMol
+      * reaction.thermochemistry.reactionEnthalpyJPerMolExtent;
+    const energyBalancedTemperatureK = totalHeatCapacityJPerK <= 0
+      ? THERMAL_REFERENCE_TEMPERATURE_K
+      : THERMAL_REFERENCE_TEMPERATURE_K
+        + (initialSensibleEnthalpyJ - reactionEnergyDemandJ) / totalHeatCapacityJPerK;
+    return {
+      products,
+      reactionEnergyDemandJ,
+      energyBalancedTemperatureK,
+      residualK: finalTemperatureK - energyBalancedTemperatureK,
+    };
+  };
+
+  // Endothermic conversion cannot finish hotter than the incoming material in
+  // this isolated reaction kernel. Bisection avoids the hot/cold oscillation of
+  // the former fixed-point iteration and always terminates deterministically.
+  let lowK = MINIMUM_ABSOLUTE_TEMPERATURE_K;
+  let highK = Math.max(MINIMUM_ABSOLUTE_TEMPERATURE_K, initialTemperatureK);
+  let highEvaluation = evaluate(highK);
+  if (highEvaluation.residualK <= REACTION_SOLVE_TOLERANCE_K) {
+    return { finalTemperatureK: highK, ...highEvaluation };
+  }
+
+  let lowEvaluation = evaluate(lowK);
+  if (lowEvaluation.residualK > 0) {
+    throw new Error('Thermochemical reaction has no positive-temperature energy solution');
+  }
+
+  let evaluation = highEvaluation;
+  for (let iteration = 0; iteration < REACTION_SOLVE_ITERATIONS; iteration += 1) {
+    const midpointK = (lowK + highK) / 2;
+    evaluation = evaluate(midpointK);
+    if (Math.abs(evaluation.residualK) <= REACTION_SOLVE_TOLERANCE_K) {
+      lowK = midpointK;
+      highK = midpointK;
+      break;
+    }
+    if (evaluation.residualK > 0) {
+      highK = midpointK;
+      highEvaluation = evaluation;
+    } else {
+      lowK = midpointK;
+      lowEvaluation = evaluation;
+    }
+  }
+
+  const finalTemperatureK = (lowK + highK) / 2;
+  evaluation = evaluate(finalTemperatureK);
+  if (finalTemperatureK <= 0 || !Number.isFinite(finalTemperatureK)) {
+    throw new Error('Thermochemical reaction solved to an invalid absolute temperature');
+  }
+  return { finalTemperatureK, ...evaluation };
+}
+
 /**
  * Pure, bounded thermochemical kernel. Furnace machinery supplies heat and
- * residence time; reaction content supplies kinetics and stoichiometry.
+ * elapsed reaction time; reaction content supplies kinetics and stoichiometry.
  */
 export function applyGoethiteDehydroxylation(feedBody, residenceTimeSeconds) {
   if (!Number.isFinite(residenceTimeSeconds) || residenceTimeSeconds < 0) {
     throw new Error('Reaction residenceTimeSeconds must be finite and non-negative');
   }
   const reaction = getReactionDefinition(GOETHITE_DEHYDROXYLATION_REACTION_ID);
-  let temperatureK = materialBodyTemperatureK(feedBody);
-  let products = reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeconds, 1);
-
-  for (let iteration = 0; iteration < REACTION_SOLVE_ITERATIONS; iteration += 1) {
-    const totalHeatCapacityJPerK = materialBodyHeatCapacityJPerK(products.solidProductBody)
-      + materialBodyHeatCapacityJPerK(products.gasProductBody);
-    const lowestPermittedSensibleEnthalpyJ = totalHeatCapacityJPerK * (1 - THERMAL_REFERENCE_TEMPERATURE_K);
-    const energyLimitedExtentMol = Math.max(
-      0,
-      (feedBody.thermalState.sensibleEnthalpyJ - lowestPermittedSensibleEnthalpyJ)
-        / reaction.thermochemistry.reactionEnthalpyJPerMolExtent,
-    );
-    const conversionScale = products.reactionExtentMol <= 0
-      ? 1
-      : Math.min(1, energyLimitedExtentMol / products.reactionExtentMol);
-    products = reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeconds, conversionScale);
-    const combinedCapacityJPerK = materialBodyHeatCapacityJPerK(products.solidProductBody)
-      + materialBodyHeatCapacityJPerK(products.gasProductBody);
-    const sensibleEnthalpyAfterReactionJ = feedBody.thermalState.sensibleEnthalpyJ
-      - products.reactionExtentMol * reaction.thermochemistry.reactionEnthalpyJPerMolExtent;
-    const nextTemperatureK = temperatureKFromSensibleEnthalpy(
-      sensibleEnthalpyAfterReactionJ,
-      combinedCapacityJPerK,
-    );
-    if (Math.abs(nextTemperatureK - temperatureK) <= REACTION_SOLVE_TOLERANCE_K) {
-      temperatureK = nextTemperatureK;
-      break;
-    }
-    temperatureK = nextTemperatureK;
-  }
-
-  // Re-evaluate once at the converged temperature so reported products and
-  // energy correspond to the same deterministic state.
-  products = reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeconds, 1);
-  const finalCapacityJPerK = materialBodyHeatCapacityJPerK(products.solidProductBody)
-    + materialBodyHeatCapacityJPerK(products.gasProductBody);
-  const lowestFinalEnthalpyJ = finalCapacityJPerK * (1 - THERMAL_REFERENCE_TEMPERATURE_K);
-  const finalEnergyLimitedExtentMol = Math.max(
-    0,
-    (feedBody.thermalState.sensibleEnthalpyJ - lowestFinalEnthalpyJ)
-      / reaction.thermochemistry.reactionEnthalpyJPerMolExtent,
-  );
-  if (products.reactionExtentMol > finalEnergyLimitedExtentMol) {
-    products = reactionProductsAtTemperature(
-      feedBody,
-      temperatureK,
-      residenceTimeSeconds,
-      finalEnergyLimitedExtentMol / products.reactionExtentMol,
-    );
-  }
+  const solved = solveReactionAtFinalTemperature(feedBody, residenceTimeSeconds, reaction);
+  const products = solved.products;
   const solidCapacityJPerK = materialBodyHeatCapacityJPerK(products.solidProductBody);
   const gasCapacityJPerK = materialBodyHeatCapacityJPerK(products.gasProductBody);
-  const totalSensibleEnthalpyJ = feedBody.thermalState.sensibleEnthalpyJ
-    - products.reactionExtentMol * reaction.thermochemistry.reactionEnthalpyJPerMolExtent;
-  const finalTemperatureK = temperatureKFromSensibleEnthalpy(
-    totalSensibleEnthalpyJ,
-    solidCapacityJPerK + gasCapacityJPerK,
-  );
+
   products.solidProductBody.thermalState.sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(
-    finalTemperatureK,
+    solved.finalTemperatureK,
     solidCapacityJPerK,
   );
   products.gasProductBody.thermalState.sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(
-    finalTemperatureK,
+    solved.finalTemperatureK,
     gasCapacityJPerK,
   );
+
   return {
     ...products,
-    temperatureK: finalTemperatureK,
-    reactionEnergyDemandJ: products.reactionExtentMol * reaction.thermochemistry.reactionEnthalpyJPerMolExtent,
+    temperatureK: solved.finalTemperatureK,
+    reactionEnergyDemandJ: solved.reactionEnergyDemandJ,
   };
 }
