@@ -108,7 +108,10 @@ function assertSpecies(state, expected) {
 }
 
 test('particle-size vocabulary spans fine grinding through run-of-mine rock', () => {
-  assert.equal(particleSizeBinIdForMm(0.032), 'lt-0.032mm');
+  assert.equal(particleSizeBinIdForMm(0.004), 'lt-0.004mm');
+  assert.equal(particleSizeBinIdForMm(0.008), '0.004-0.008mm');
+  assert.equal(particleSizeBinIdForMm(0.016), '0.008-0.016mm');
+  assert.equal(particleSizeBinIdForMm(0.032), '0.016-0.032mm');
   assert.equal(particleSizeBinIdForMm(0.063), '0.032-0.063mm');
   assert.equal(particleSizeBinIdForMm(0.125), '0.063-0.125mm');
   assert.equal(particleSizeBinIdForMm(0.25), '0.125-0.25mm');
@@ -211,8 +214,21 @@ test('Ball Mill reaches the sub-millimetre regime and drives more liberation tha
   assertAlmostEqual(sizes['0.125-0.25mm'], 45, 'mill nominal');
   assertAlmostEqual(sizes['0.063-0.125mm'], 30, 'mill finer');
   assertAlmostEqual(sizes['0.032-0.063mm'], 15, 'mill very fine');
-  assertAlmostEqual(sizes['lt-0.032mm'], 5, 'mill finest');
+  assertAlmostEqual(sizes['0.016-0.032mm'], 5, 'mill finest');
   assert.ok(liberationShare(milled, ['locked']) < liberationShare(crushed, ['locked']));
+});
+
+test('32 µm Ball Mill setting resolves its fine tail instead of collapsing 95% into one terminal bin', () => {
+  const feed = singleFractionState({ sizeBinId: '15-25mm' });
+  const milled = millSolidMaterialState(feed, 0.032);
+  const sizes = summarizeSolidMaterialBySizeBin(milled);
+
+  assertAlmostEqual(sizes['0.032-0.063mm'], 5, '32 µm oversize');
+  assertAlmostEqual(sizes['0.016-0.032mm'], 45, '32 µm nominal');
+  assertAlmostEqual(sizes['0.008-0.016mm'], 30, '32 µm finer');
+  assertAlmostEqual(sizes['0.004-0.008mm'], 15, '32 µm very fine');
+  assertAlmostEqual(sizes['lt-0.004mm'], 5, '32 µm ultrafine tail');
+  assert.equal(sizes['lt-0.032mm'] ?? 0, 0);
 });
 
 test('identical Ball Mill settings produce different liberation from measured mineral grain distributions', () => {
