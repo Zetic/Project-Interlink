@@ -78,26 +78,6 @@ function occurrencePropertyDetails(occurrence) {
   return { properties, mineralTextures };
 }
 
-function compactOccurrencePropertyText(occurrence, details) {
-  const parts = [];
-  for (const property of details.properties) {
-    const value = property.id === 'mineral-density'
-      ? Math.round(property.value).toLocaleString('en-US')
-      : Number(property.value).toFixed(property.id === 'bond-ai' ? 3 : 2);
-    parts.push(`${property.label}: ${value}${property.unit ? ` ${property.unit}` : ''}`);
-  }
-  for (const texture of details.mineralTextures) {
-    const { d10, d50, d90 } = texture.grainSizeUm;
-    const modes = texture.occurrenceModes;
-    parts.push(
-      `${texture.label} grains D10/D50/D90: ${d10}/${d50}/${d90} µm; `
-      + `modes free ${(modes.free * 100).toFixed(0)}%, boundary ${(modes.boundary * 100).toFixed(0)}%, `
-      + `intergrown ${(modes.intergrown * 100).toFixed(0)}%, included ${(modes.included * 100).toFixed(0)}%`,
-    );
-  }
-  return [occurrence?.descriptor, ...parts].filter(Boolean).join(' · ');
-}
-
 export function hopperInspection(hopper) {
   const storedMassKg = hopperStoredMassKg(hopper);
   return {
@@ -165,7 +145,9 @@ export function featureInspection(world, blueprint, node) {
       name: occurrence?.name ?? occurrence?.resourceId ?? occurrenceId,
       resourceId: occurrence?.resourceId ?? null,
       availabilityClass: occurrence?.availabilityClass ?? occurrence?.quantityClass ?? 'Available',
-      descriptor: compactOccurrencePropertyText(occurrence, propertyDetails),
+      // Keep the geological descriptor concise. Engineering and mineral-texture
+      // values are already exposed below as structured fields for the Inspector.
+      descriptor: occurrence?.descriptor ?? null,
       accessScope: occurrence?.accessScope ?? 'localized',
       concentrationPercent: occurrence?.concentrationPercent ?? null,
       composition: { ...(occurrence?.composition ?? {}) },
