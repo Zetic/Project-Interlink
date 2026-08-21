@@ -89,9 +89,8 @@ export function distributeSensibleEnthalpyAtEquilibrium(inputBodies, outputBodie
       return output;
     });
   }
-  const inputCapacity = inputBodies.reduce((sum, body) => sum + materialBodyHeatCapacityJPerK(body), 0);
   const outputCapacity = outputBodies.reduce((sum, body) => sum + materialBodyHeatCapacityJPerK(body), 0);
-  const temperatureK = temperatureKFromSensibleEnthalpy(totalEnergyJ, inputCapacity);
+  const temperatureK = temperatureKFromSensibleEnthalpy(totalEnergyJ, outputCapacity);
   return outputBodies.map(body => {
     const output = cloneMaterialBody(body);
     output.thermalState.sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(
