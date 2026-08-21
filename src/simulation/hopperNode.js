@@ -44,6 +44,10 @@ function legacyMaterialBody(initialComponentsKg, initialParticleSizeMm, initialL
   return createSolidMaterialBody(solidState);
 }
 
+function markHopperMaterialChanged(hopper) {
+  hopper.materialRevision = (hopper.materialRevision ?? 0) + 1;
+}
+
 export function createHopper({
   id,
   capacityKg,
@@ -71,6 +75,7 @@ export function createHopper({
     physicalForm: SOLID_PARTICULATE_FORM,
     nominalParticleSizeMm: initialParticleSizeMm,
     materialBody,
+    materialRevision: 0,
     inputPortId: 'input',
     outputPortId: 'output',
     nodeType: 'hopper',
@@ -173,6 +178,7 @@ export function hopperReceiveMaterialBody(hopper, incomingBody) {
 
   addSolidMaterialState(hopper.materialBody.solidState, incomingBody.solidState);
   hopper.materialBody.thermalState.sensibleEnthalpyJ += incomingBody.thermalState?.sensibleEnthalpyJ ?? 0;
+  markHopperMaterialChanged(hopper);
   return incomingMassKg;
 }
 
@@ -203,6 +209,7 @@ export function hopperReceiveInflow(hopper, inflowSolidStateOrComponents, partic
   addSolidMaterialState(hopper.materialBody.solidState, acceptedState, dt);
   const acceptedKg = totalSolidQuantity(acceptedState) * dt;
   hopper.materialBody.thermalState.sensibleEnthalpyJ += acceptedKg * specificSensibleEnthalpyJPerKg;
+  if (acceptedKg > HOPPER_TOLERANCE_KG) markHopperMaterialChanged(hopper);
   return acceptedKg;
 }
 
@@ -230,6 +237,7 @@ export function hopperWithdraw(hopper, requestedTotalRateKgPerSecond, dt) {
     ? 0
     : hopper.materialBody.thermalState.sensibleEnthalpyJ * (actualTotalKg / storedMassKg);
   hopper.materialBody.thermalState.sensibleEnthalpyJ -= actualSensibleEnthalpyJ;
+  if (actualTotalKg > HOPPER_TOLERANCE_KG) markHopperMaterialChanged(hopper);
   const actualRates = Object.fromEntries(
     Object.entries(summarizeSolidMaterialBySpecies(actualSolidState)).map(([speciesId, quantity]) => [speciesId, quantity / dt])
   );
@@ -248,6 +256,7 @@ export function cloneHopperMaterialState(hopper) {
 
 export function commitHopperMaterialState(target, staged) {
   target.materialBody = cloneSolidMaterialBody(staged.materialBody);
+  markHopperMaterialChanged(target);
 }
 
 export { HOPPER_TOLERANCE_KG };
