@@ -126,7 +126,7 @@ Current solid state includes:
 
 - concrete registered material/mineral species
 - mass/quantity
-- particle-size distribution from `<32 µm` through run-of-mine rock above 1 m
+- particle-size distribution from `<4 µm` through run-of-mine rock above 1 m
 - liberation distribution
 - persistent ore texture lineage
 - magnetic-response property coverage
@@ -208,10 +208,20 @@ A 250 µm nominal setting currently produces the prototype PSD:
 45% → 125–250 µm
 30% → 63–125 µm
 15% → 32–63 µm
- 5% → <32 µm
+ 5% → 16–32 µm
 ```
 
-Grinding does **not** apply one universal liberation result. Liberation depends on each material population's particle size relative to its occurrence-specific characteristic mineral-grain/liberation scale. The same Ball Mill and PSD can therefore produce substantially different liberation distributions for coarse-textured and finely disseminated ores.
+The fine vocabulary continues below 32 µm as `16–32`, `8–16`, `4–8`, and `<4 µm`. This prevents the finest Ball Mill setting from collapsing its entire fine tail into one broad terminal class. A 32 µm nominal setting therefore resolves as:
+
+```text
+ 5% → 32–63 µm
+45% → 16–32 µm
+30% → 8–16 µm
+15% → 4–8 µm
+ 5% → <4 µm
+```
+
+Grinding does **not** apply one universal liberation result. Liberation depends on each material population's particle size relative to its occurrence-specific mineral grain-size distribution and association modes. The same Ball Mill and PSD can therefore produce substantially different liberation distributions for coarse-textured and finely disseminated ores.
 
 ## Screen
 
@@ -305,16 +315,22 @@ Composition answers **which species are present and how much?** An iron ore sour
 
 Mineral texture answers **how are those minerals originally distributed/intergrown in this particular occurrence?** It belongs to the `ResourceOccurrence`, not to `MaterialSpecies`.
 
-An ore texture profile currently contains:
+An ore texture profile currently contains occurrence-specific data for each constituent species:
 
 ```text
-fallback characteristic liberation size
-species-specific characteristic liberation sizes
-liberation-curve spread
-boundary-breakage affinity
+speciesTextures[speciesId]
+  grainSizeUm
+    d10
+    d50
+    d90
+  occurrenceModes
+    free
+    boundary
+    intergrown
+    included
 ```
 
-The profile is immutable geological lineage. The physical particles change during comminution, but the lineage remains attached so the simulation still knows which source texture governs their liberation response.
+D10/D50/D90 describe the generated mineral grain-size distribution. The occurrence-mode shares describe how that mineral appears structurally in the source rock. The profile is immutable geological lineage: particle size and liberation evolve during comminution, while the source texture remains attached so later processing can resolve the correct physical response.
 
 ### Liberation
 
@@ -476,13 +492,15 @@ species identity
 mass / quantity
 particle size
 liberation
-occurrence mineral texture / characteristic liberation scale
+occurrence mineral D10/D50/D90 and association modes
+Bond crushing / milling work indices and abrasion index
+intrinsic solid density
 magnetic response
 ```
 
 Texture is a particulate-population identity dimension because losing it when ores mix would lose physically relevant future behavior. That does **not** imply that temperature, pressure, moisture, or every future property should be appended to the fraction key. Broader body/phase/thermal state should remain around the particulate population where appropriate.
 
-Likely future property domains include density, hardness/grindability, moisture/liquid fraction, surface chemistry, temperature/internal energy, phase, pressure/viscosity/EOS data, and chemical equilibrium/reaction data.
+Likely future property domains include hardness beyond the current Bond test properties, moisture/liquid fraction, surface chemistry, temperature/internal energy, phase, pressure/viscosity/EOS data, and chemical equilibrium/reaction data.
 
 > **A material property enters the simulation when an apparatus or process needs it to determine a physical outcome.**
 
@@ -545,6 +563,8 @@ Persistent graph edges correspond to real relationships. Material edges represen
 
 The viewport is finite. Logical graph space is effectively unbounded and supports signed coordinates.
 
+The Feature Inspector presents occurrence data as structured sections rather than flattening engineering and mineralogical values into one descriptor string. Resource identity and geological description remain concise, while Bond indices, mixture density, and per-mineral texture values are grouped separately for narrow-panel readability.
+
 ---
 
 # Near-Term Development Direction
@@ -556,7 +576,7 @@ Likely sequence:
 1. **Decide the next beneficiation family from the now-meaningful fine product state** — likely density/Gravity Separation or the first fine magnetic/wet route when supporting properties justify it.
 2. **Density property + Gravity Separation** — a major new property-driven processing domain beyond magnetic response.
 3. **Slurry/liquid handling and Hydrocyclone / Flotation-style processing** when the material model supports them.
-4. **Hardness/grindability and energy demand** when comminution power/throughput tradeoffs become gameplay-relevant; HPGR/microfracture can then have a real physical role.
+4. **Comminution wear/component models and additional breakage routes** when abrasion exposure and equipment choices justify them; HPGR/microfracture can then have a real physical role.
 5. **Thermal state and thermal apparatus** once internal-energy/phase modeling has a concrete process need.
 6. **Chemical transformation** after elemental/stoichiometric conservation and thermal foundations are ready.
 7. **Sensors, controllers, logistics, energy networks, and reusable composite systems** incrementally as real gameplay demands them.
