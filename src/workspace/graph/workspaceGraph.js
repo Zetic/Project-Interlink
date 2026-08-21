@@ -100,6 +100,28 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
 }
 
 /**
+ * Graph rendering is requested by requestAnimationFrame, while authoritative
+ * simulation state currently advances at a much lower fixed rate. Build a cheap
+ * signature from the primitive fields that can affect node-card text plus raw
+ * stored mass. This lets the renderer keep drag/viewport responsiveness without
+ * rewriting identical DOM 60-144 times per second between simulation ticks.
+ */
+function nodeContentSignature(node) {
+  const source = node?.source ?? {};
+  const primitives = [];
+  for (const [key, value] of Object.entries(source)) {
+    if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) {
+      primitives.push(`${key}=${String(value)}`);
+    }
+  }
+  let storedMass = 0;
+  for (const quantity of Object.values(source.materialBody?.solidState?.fractions ?? {})) {
+    if (Number.isFinite(quantity) && quantity > 0) storedMass += quantity;
+  }
+  return `${node.label}|${primitives.join('|')}|mass=${storedMass}`;
+}
+
+/**
  * Render projected nodes and install the shared node, port, and pointer
  * interaction hooks used by every workspace level.
  */
@@ -147,14 +169,17 @@ export function renderGraphNodes({
       elements.set(node.id, element);
     }
 
-    element.className = `ws-node ${className} ${nodeClass(node)}`;
+    const nextClassName = `ws-node ${className} ${nodeClass(node)}`;
+    if (element.className !== nextClassName) element.className = nextClassName;
     element.classList.toggle('ws-node--composite', node.composite === true);
-    Object.assign(element.style, {
-      left: `${node.position.x}px`,
-      top: `${node.position.y}px`,
-      width: `${width}px`,
-      height: `${height}px`,
-    });
+    const left = `${node.position.x}px`;
+    const top = `${node.position.y}px`;
+    const widthPx = `${width}px`;
+    const heightPx = `${height}px`;
+    if (element.style.left !== left) element.style.left = left;
+    if (element.style.top !== top) element.style.top = top;
+    if (element.style.width !== widthPx) element.style.width = widthPx;
+    if (element.style.height !== heightPx) element.style.height = heightPx;
 
     let categoryBar = element.querySelector('.ws-node-category');
     if (!categoryBar) {
@@ -162,17 +187,24 @@ export function renderGraphNodes({
       element.appendChild(categoryBar);
     }
     const category = node.category ?? nodeCategory(node.source);
-    categoryBar.className = `ws-node-category ws-node-category--${category.key}`;
-    categoryBar.textContent = category.label;
-    element.setAttribute('data-node-category', category.key);
+    const categoryClassName = `ws-node-category ws-node-category--${category.key}`;
+    if (categoryBar.className !== categoryClassName) categoryBar.className = categoryClassName;
+    if (categoryBar.textContent !== category.label) categoryBar.textContent = category.label;
+    if (element.getAttribute('data-node-category') !== category.key) {
+      element.setAttribute('data-node-category', category.key);
+    }
 
-    nodeContent?.(element, node, isNew);
-    if (!nodeContent) {
-      const nodeLabel = element.querySelector('.ws-node-label') ?? document.createElement('div');
-      nodeLabel.className = 'ws-node-label';
-      nodeLabel.innerHTML = String(label(node)).split('\n')
-        .map(line => `<span>${line}</span>`).join('');
-      if (!nodeLabel.parentNode) element.appendChild(nodeLabel);
+    const contentSignature = nodeContentSignature(node);
+    if (isNew || element.dataset.nodeContentSignature !== contentSignature) {
+      nodeContent?.(element, node, isNew);
+      if (!nodeContent) {
+        const nodeLabel = element.querySelector('.ws-node-label') ?? document.createElement('div');
+        nodeLabel.className = 'ws-node-label';
+        nodeLabel.innerHTML = String(label(node)).split('\n')
+          .map(line => `<span>${line}</span>`).join('');
+        if (!nodeLabel.parentNode) element.appendChild(nodeLabel);
+      }
+      element.dataset.nodeContentSignature = contentSignature;
     }
 
     if (isNew) {
@@ -296,15 +328,28 @@ export function renderGraphConnections({
       svg.appendChild(path);
       elements.set(connection.id, path);
     }
-    path.classList.toggle('ws-connection--material', connection.kind === 'material');
-    path.classList.toggle('ws-connection--resource-access', connection.kind === 'resource-access');
     const source = endpointPosition(graphConnectionEndpoint(connection, 'source'));
     const target = endpointPosition(graphConnectionEndpoint(connection, 'target'));
-    const midX = (source.x + target.x) / 2;
-    path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
-    // Keep low-flow edges visible while scaling active material flow within a readable range.
-    path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + flow(connection) * 0.5)));
-    path.classList.toggle('ws-connection--selected', selectedId === connection.id);
+    const connectionFlow = flow(connection);
+    const signature = [
+      connection.kind,
+      source.x,
+      source.y,
+      target.x,
+      target.y,
+      connectionFlow,
+      selectedId === connection.id,
+    ].join('|');
+    if (path.dataset.renderSignature !== signature) {
+      path.classList.toggle('ws-connection--material', connection.kind === 'material');
+      path.classList.toggle('ws-connection--resource-access', connection.kind === 'resource-access');
+      const midX = (source.x + target.x) / 2;
+      path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
+      // Keep low-flow edges visible while scaling active material flow within a readable range.
+      path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + connectionFlow * 0.5)));
+      path.classList.toggle('ws-connection--selected', selectedId === connection.id);
+      path.dataset.renderSignature = signature;
+    }
   }
   for (const [id, path] of elements) {
     if (!activeIds.has(id)) {
