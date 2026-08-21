@@ -25,13 +25,14 @@ import {
 } from '../simulation/worldSimulation.js';
 import { getSystemNodePort } from '../core/systems/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';
-import { totalMassFlowKgPerSecond } from '../simulation/materialStream.js';
+import { totalMaterialStreamMassFlowKgPerSecond } from '../simulation/materialStream.js';
 import {
   hopperInspection,
   streamInspection,
   machineInspection,
   featureInspection,
   connectionInspection,
+  exhaustVentInspection,
 } from './inspector/inspectionViewModel.js';
 import { renderFeatureResources } from './inspector/featureInspectorUI.js';
 import {
@@ -93,6 +94,19 @@ export { navigationVisibilityState, navigationFilterState, nodeCatalogFilterStat
 const NODE_WIDTH = 160;
 const NODE_HEIGHT = 100;
 const PORT_RADIUS = 7;
+const MACHINE_NODE_TYPES = new Set([
+  'extractor',
+  'crusher',
+  'jawCrusher',
+  'coneCrusher',
+  'ballMill',
+  'screen',
+  'splitter',
+  'merger',
+  'feeder',
+  'magSep',
+  'roastingFurnace',
+]);
 
 let dragState = null;
 let systemDragState = null;
@@ -1240,6 +1254,20 @@ function summaryRowHtml(row, suffix) {
   return `<div class="ws-ins-comp-row"><span>${escHtml(row.label ?? row.id)}</span><span>${row.quantity.toFixed(3)} ${suffix} (${row.percentage.toFixed(1)}%)</span></div>`;
 }
 
+function formatTemperature(temperatureK) {
+  if (!Number.isFinite(temperatureK)) return 'Unavailable';
+  return `${(temperatureK - 273.15).toFixed(1)} °C (${temperatureK.toFixed(1)} K)`;
+}
+
+function formatEnergyMj(energyJ) {
+  return Number.isFinite(energyJ) ? `${(energyJ / 1e6).toFixed(3)} MJ` : 'Unavailable';
+}
+
+function furnaceZonesHtml(zones) {
+  if (!zones?.length) return '<span>No retained process material.</span>';
+  return zones.map(zone => `<div class="ws-ins-comp-row"><span>Zone ${zone.index}</span><span>${zone.massKg.toFixed(3)} / ${zone.capacityKg.toFixed(3)} kg · ${escHtml(formatTemperature(zone.temperatureK))} · Goethite ${zone.goethiteKg.toFixed(3)} kg · Hematite ${zone.hematiteKg.toFixed(3)} kg</span></div>`).join('');
+}
+
 export function compactCompositionSummaryHtml(rows, emptyLabel, suffix = 'kg') {
   if (!rows?.length) return `<span>${escHtml(emptyLabel)}</span>`;
   const primaryRows = rows.slice(0, 4);
@@ -1286,6 +1314,9 @@ function formatCompositeInspector(node) {
       <div class="ws-ins-row"><b>Capacity:</b> ${details.capacityKg} kg</div>
       <div class="ws-ins-row"><b>Free:</b> <span data-live="boundary-free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
+      <div class="ws-ins-row"><b>Temperature:</b> <span data-live="boundary-temperature">${escHtml(formatTemperature(details.temperatureK))}</span></div>
+      <div class="ws-ins-row"><b>Thermal energy:</b> <span data-live="boundary-energy">${escHtml(formatEnergyMj(details.sensibleEnthalpyJ))}</span></div>
+      ${details.thermalError ? `<div class="ws-ins-note">${escHtml(details.thermalError)}</div>` : ''}
       <div class="ws-ins-comp"><b>Composition</b><div data-live-section="boundary-components">${compactCompositionSummaryHtml(details.composition, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="boundary-size">${summaryRowsHtml(details.particleSizeDistribution, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="boundary-liberation">${summaryRowsHtml(details.liberationDistribution, 'no stored material')}</div></div>`;
@@ -1371,11 +1402,15 @@ function updateCompositeInspector(force = false) {
     const details = hopperInspection(node);
     const stored = body.querySelector('[data-live="boundary-stored"]');
     const free = body.querySelector('[data-live="boundary-free"]');
+    const temperature = body.querySelector('[data-live="boundary-temperature"]');
+    const energy = body.querySelector('[data-live="boundary-energy"]');
     const components = body.querySelector('[data-live-section="boundary-components"]');
     const size = body.querySelector('[data-live-section="boundary-size"]');
     const liberation = body.querySelector('[data-live-section="boundary-liberation"]');
     if (stored) stored.textContent = details.storedMassKg.toFixed(3);
     if (free) free.textContent = details.freeCapacityKg.toFixed(3);
+    if (temperature) temperature.textContent = formatTemperature(details.temperatureK);
+    if (energy) energy.textContent = formatEnergyMj(details.sensibleEnthalpyJ);
     replaceInspectorSectionHtml(components, compactCompositionSummaryHtml(details.composition, 'no stored material'));
     if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
     if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
@@ -1407,7 +1442,16 @@ function nodeLabel(node) {
     return `${label}\n${mass.toFixed(1)} / ${node.capacityKg} kg\n${(mass / node.capacityKg * 100).toFixed(0)}%`;
   }
   if (node.nodeType === 'crusher') return `Crusher [${getNodeOperatingState(node)}]\n→ ${node.targetParticleSizeMm} mm\n${node.throughputKgPerSecond} kg/s`;
+  if (node.nodeType === 'jawCrusher') return `Jaw Crusher [${getNodeOperatingState(node)}]\n${node.throughputKgPerSecond} kg/s`;
+  if (node.nodeType === 'coneCrusher') return `Cone Crusher [${getNodeOperatingState(node)}]\n${node.throughputKgPerSecond} kg/s`;
+  if (node.nodeType === 'ballMill') return `Ball Mill [${getNodeOperatingState(node)}]\n${node.throughputKgPerSecond} kg/s`;
+  if (node.nodeType === 'feeder') return `Feeder [${getNodeOperatingState(node)}]\nSet ${node.flowRateKgPerSecond.toFixed(2)} kg/s`;
   if (node.nodeType === 'magSep') return `Mag. Sep. [${getNodeOperatingState(node)}]\nB=${node.fieldStrength}\n${node.throughputKgPerSecond} kg/s`;
+  if (node.nodeType === 'roastingFurnace') {
+    const temperatureC = Number.isFinite(node.actualChargeTemperatureK) ? node.actualChargeTemperatureK - 273.15 : null;
+    return `Roasting Furnace [${getNodeOperatingState(node)}]\n${node.internalZoneCount ?? 4} zones · ${node.effectiveChamberHoldUpKg} kg\n${temperatureC == null ? 'No charge' : `${temperatureC.toFixed(0)} °C`}`;
+  }
+  if (node.nodeType === 'exhaustVent') return 'Exhaust Vent\nGas boundary';
   return node.nodeType;
 }
 
@@ -1433,7 +1477,7 @@ function renderConnections(svg) {
     endpointPosition: endpoint => portCanvasPosition(endpoint.nodeId, endpoint.portId),
     flow: connection => {
       const stream = getStreamForConnection(wsState.blueprint, connection.id);
-      return stream ? totalMassFlowKgPerSecond(stream.solidState) : 0;
+      return stream ? totalMaterialStreamMassFlowKgPerSecond(stream) : 0;
     },
     selectedId: inspector.selectedConnId,
     onSelect: selectConnection,
@@ -1669,6 +1713,21 @@ function featureResourcesHtml(details) {
   return renderFeatureResources(details);
 }
 
+function machineControlsHtml(node, details) {
+  let html = `<div class="ws-ins-row"><b>State:</b> <span data-live="state">${escHtml(details.operatingState)}</span></div>
+    <div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${details.enabled ? 'On' : 'Off'}</button></div>`;
+  for (const capability of details.capabilities ?? []) {
+    const unit = capability.unit ? ` ${escHtml(capability.unit)}` : '';
+    html += `<div class="ws-ins-row"><b>${escHtml(capability.label)}:</b> ${escHtml(capability.value)}${unit}</div>`;
+  }
+  for (const parameter of apparatusParametersForNode(node)) {
+    if (!parameter.playerConfigurable) continue;
+    const unit = parameter.unit ? ` ${escHtml(parameter.unit)}` : '';
+    html += `<div class="ws-ins-row"><label><b>${escHtml(parameter.label)}:</b> <input class="ws-apparatus-parameter" data-node-id="${escHtml(node.id)}" data-parameter-id="${escHtml(parameter.id)}" type="${escHtml(parameter.controlType ?? 'number')}" min="${parameter.min}" max="${parameter.max}" step="any" value="${node[parameter.id]}">${unit}</label></div>`;
+  }
+  return html;
+}
+
 function formatNodeInspector(node) {
   if (!node) return 'Select a node or connection.';
   const hopper = ['hopper', 'boundary-buffer'].includes(node.systemType) || node.nodeType === 'hopper';
@@ -1678,14 +1737,9 @@ function formatNodeInspector(node) {
   let html = `<div class="ws-ins-type">${escHtml(typeLabel.toUpperCase())}</div>`;
   if (!isFeature) html += `<div class="ws-ins-row"><b>ID:</b> ${escHtml(node.id)}</div>`;
 
-  if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
+  if (MACHINE_NODE_TYPES.has(node.nodeType)) {
     const details = machineInspection(wsState.blueprint, node);
-    html += `<div class="ws-ins-row"><b>State:</b> <span data-live="state">${escHtml(details.operatingState)}</span></div>
-      <div class="ws-ins-row"><b>Enabled:</b> <button class="ws-btn-enable" data-node-id="${escHtml(node.id)}">${details.enabled ? 'On' : 'Off'}</button></div>`;
-    for (const capability of details.capabilities ?? []) {
-      const unit = capability.unit ? ` ${escHtml(capability.unit)}` : '';
-      html += `<div class="ws-ins-row"><b>${escHtml(capability.label)}:</b> ${escHtml(capability.value)}${unit}</div>`;
-    }
+    html += machineControlsHtml(node, details);
     if (node.nodeType === 'extractor') {
       const sourceNode = details.resourceAccess ? wsState.blueprint.nodes[details.resourceAccess.sourceNodeId] : null;
       const sourceFeature = sourceNode ? wsState.world?.features?.[sourceNode.featureId] : null;
@@ -1695,15 +1749,25 @@ function formatNodeInspector(node) {
       html += `<div class="ws-ins-row"><b>Actual feed:</b> <span data-live="machine-feed">${details.actualFeedKgPerSecond.toFixed(3)}</span> kg/s</div>`;
     }
     html += `<div class="ws-ins-row"><b>Actual product:</b> <span data-live="machine-product">${details.actualProductKgPerSecond.toFixed(3)}</span> kg/s</div>`;
-    for (const parameter of apparatusParametersForNode(node)) {
-      if (!parameter.playerConfigurable) continue;
-      const unit = parameter.unit ? ` ${escHtml(parameter.unit)}` : '';
-      html += `<div class="ws-ins-row"><label><b>${escHtml(parameter.label)}:</b> <input class="ws-apparatus-parameter" data-node-id="${escHtml(node.id)}" data-parameter-id="${escHtml(parameter.id)}" type="${escHtml(parameter.controlType ?? 'number')}" min="${parameter.min}" max="${parameter.max}" step="any" value="${node[parameter.id]}">${unit}</label></div>`;
-    }
     if (node.nodeType === 'magSep') {
       html += `<div class="ws-ins-row"><b>Feed:</b> <span data-live="feed-flow">${(details.feed?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>
         <div class="ws-ins-row"><b>Concentrate:</b> <span data-live="concentrate-flow">${(details.concentrate?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>
         <div class="ws-ins-row"><b>Tailings:</b> <span data-live="tailings-flow">${(details.tailings?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>`;
+    }
+    if (node.nodeType === 'roastingFurnace') {
+      const thermo = details.thermochemical;
+      html += `<div class="ws-ins-section-title">Thermochemical state</div>
+        <div class="ws-ins-row"><b>Retained charge:</b> <span data-live="furnace-charge">${thermo.chargeMassKg.toFixed(3)}</span> kg</div>
+        <div class="ws-ins-row"><b>Pending inlet:</b> <span data-live="furnace-pending">${thermo.pendingFeedMassKg.toFixed(3)}</span> kg</div>
+        <div class="ws-ins-row"><b>Charge temperature:</b> <span data-live="furnace-temperature">${escHtml(formatTemperature(thermo.chargeTemperatureK))}</span></div>
+        <div class="ws-ins-row"><b>Nominal mean residence:</b> <span data-live="furnace-residence">${thermo.meanResidenceTimeSeconds == null ? '—' : `${thermo.meanResidenceTimeSeconds.toFixed(2)} s`}</span></div>
+        <div class="ws-ins-row"><b>Heater:</b> <span data-live="furnace-heater">${thermo.actualHeaterPowerKw.toFixed(2)}</span> / ${thermo.ratedHeaterPowerKw.toFixed(2)} kW</div>
+        <div class="ws-ins-row"><b>Heat loss:</b> <span data-live="furnace-loss">${thermo.heatLossPowerKw.toFixed(2)}</span> kW</div>
+        <div class="ws-ins-row"><b>Reaction heat demand:</b> <span data-live="furnace-reaction-power">${thermo.reactionPowerKw.toFixed(2)}</span> kW</div>
+        <div class="ws-ins-row"><b>Goethite conversion this tick:</b> <span data-live="furnace-conversion">${thermo.goethiteConversionPercent.toFixed(2)}</span>%</div>
+        <div class="ws-ins-row"><b>Solid product:</b> <span data-live="furnace-product">${thermo.solidProductRateKgPerSecond.toFixed(3)}</span> kg/s</div>
+        <div class="ws-ins-row"><b>Exhaust:</b> <span data-live="furnace-exhaust">${thermo.exhaustRateKgPerSecond.toFixed(3)}</span> kg/s</div>
+        <div class="ws-ins-comp"><b>Internal zones</b><div data-live-section="furnace-zones">${furnaceZonesHtml(thermo.zones)}</div></div>`;
     }
     html += `<div class="ws-ins-note" data-live="error"${details.lastError ? '' : ' hidden'}>${escHtml(details.lastError ?? '')}</div>`;
   } else if (hopper) {
@@ -1712,9 +1776,20 @@ function formatNodeInspector(node) {
       <div class="ws-ins-row"><b>Capacity:</b> ${details.capacityKg} kg</div>
       <div class="ws-ins-row"><b>Free:</b> <span data-live="free">${details.freeCapacityKg.toFixed(3)}</span> kg</div>
       <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
+      <div class="ws-ins-row"><b>Temperature:</b> <span data-live="hopper-temperature">${escHtml(formatTemperature(details.temperatureK))}</span></div>
+      <div class="ws-ins-row"><b>Thermal energy:</b> <span data-live="hopper-energy">${escHtml(formatEnergyMj(details.sensibleEnthalpyJ))}</span></div>
+      <div class="ws-ins-note" data-live="thermal-error"${details.thermalError ? '' : ' hidden'}>${escHtml(details.thermalError ?? '')}</div>
       <div class="ws-ins-comp"><b>Composition</b><div data-live-section="components">${compactCompositionSummaryHtml(details.composition, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="particle-size-distribution">${summaryRowsHtml(details.particleSizeDistribution, 'no stored material')}</div></div>
       <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="liberation-distribution">${summaryRowsHtml(details.liberationDistribution, 'no stored material')}</div></div>`;
+  } else if (node.nodeType === 'exhaustVent') {
+    const details = exhaustVentInspection(wsState.blueprint, node);
+    html += `<div class="ws-ins-row"><b>Current gas flow:</b> <span data-live="vent-flow">${(details.input?.totalFlowKgPerSecond ?? 0).toFixed(3)}</span> kg/s</div>
+      <div class="ws-ins-row"><b>Cumulative emitted:</b> <span data-live="vent-total">${details.totalEmittedMassKg.toFixed(3)}</span> kg</div>
+      <div class="ws-ins-row"><b>Emitted-gas temperature:</b> <span data-live="vent-temperature">${escHtml(formatTemperature(details.temperatureK))}</span></div>
+      <div class="ws-ins-row"><b>Cumulative sensible energy:</b> <span data-live="vent-energy">${escHtml(formatEnergyMj(details.sensibleEnthalpyJ))}</span></div>
+      <div class="ws-ins-note" data-live="vent-thermal-error"${details.thermalError ? '' : ' hidden'}>${escHtml(details.thermalError ?? '')}</div>
+      <div class="ws-ins-comp"><b>Emitted gas composition</b><div data-live-section="vent-components">${compactCompositionSummaryHtml(details.composition, 'no emitted gas')}</div></div>`;
   } else if (isFeature) {
     const details = featureInspection(wsState.world, wsState.blueprint, node);
     html += `<div class="ws-ins-row"><b>Name:</b> ${escHtml(details.name)}</div>
@@ -1744,14 +1819,18 @@ function formatConnectionInspector(connection) {
       <div class="ws-ins-note">This edge grants access to a physical source. Matter begins flowing only from the Extractor's material output.</div>
       <div class="ws-ins-action"><button class="ws-btn-disconnect" data-conn-id="${escHtml(connection.id)}">Disconnect</button></div>`;
   }
+  const gas = details.physicalForm === 'gas';
   return `<div class="ws-ins-type">CONNECTION</div>
     <div class="ws-ins-row"><b>From:</b> ${escHtml(details.sourceNodeId)} / ${escHtml(details.sourcePortId)}</div>
     <div class="ws-ins-row"><b>To:</b> ${escHtml(details.targetNodeId)} / ${escHtml(details.targetPortId)}</div>
     <div class="ws-ins-row"><b>Total flow:</b> <span data-live="flow">${details.totalFlowKgPerSecond.toFixed(3)}</span> kg/s</div>
     <div class="ws-ins-row"><b>Physical form:</b> ${escHtml(details.physicalForm ?? 'unknown')}</div>
+    <div class="ws-ins-row"><b>Temperature:</b> <span data-live="stream-temperature">${escHtml(formatTemperature(details.temperatureK))}</span></div>
+    <div class="ws-ins-row"><b>Specific sensible enthalpy:</b> <span data-live="stream-enthalpy">${details.specificSensibleEnthalpyJPerKg.toFixed(0)}</span> J/kg</div>
+    <div class="ws-ins-note" data-live="stream-thermal-error"${details.thermalError ? '' : ' hidden'}>${escHtml(details.thermalError ?? '')}</div>
     <div class="ws-ins-comp"><b>Composition</b><div data-live-section="stream-components">${compactCompositionSummaryHtml(details.composition, 'no flow', 'kg/s')}</div></div>
-    <div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="stream-size">${summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s')}</div></div>
-    <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="stream-liberation">${summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s')}</div></div>
+    ${gas ? '' : `<div class="ws-ins-comp"><b>Particle Size</b><div data-live-section="stream-size">${summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s')}</div></div>
+    <div class="ws-ins-comp"><b>Liberation</b><div data-live-section="stream-liberation">${summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s')}</div></div>`}
     <div class="ws-ins-action"><button class="ws-btn-disconnect" data-conn-id="${escHtml(connection.id)}">Disconnect</button></div>`;
 }
 
@@ -1779,15 +1858,24 @@ function updateInspector(force = false) {
       const details = hopperInspection(node);
       const stored = body.querySelector('[data-live="stored"]');
       const free = body.querySelector('[data-live="free"]');
+      const temperature = body.querySelector('[data-live="hopper-temperature"]');
+      const energy = body.querySelector('[data-live="hopper-energy"]');
+      const thermalError = body.querySelector('[data-live="thermal-error"]');
       const components = body.querySelector('[data-live-section="components"]');
       const size = body.querySelector('[data-live-section="particle-size-distribution"]');
       const liberation = body.querySelector('[data-live-section="liberation-distribution"]');
       if (stored) stored.textContent = details.storedMassKg.toFixed(3);
       if (free) free.textContent = details.freeCapacityKg.toFixed(3);
+      if (temperature) temperature.textContent = formatTemperature(details.temperatureK);
+      if (energy) energy.textContent = formatEnergyMj(details.sensibleEnthalpyJ);
+      if (thermalError) {
+        thermalError.textContent = details.thermalError ?? '';
+        thermalError.hidden = !details.thermalError;
+      }
       replaceInspectorSectionHtml(components, compactCompositionSummaryHtml(details.composition, 'no stored material'));
       if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no stored material');
       if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no stored material');
-    } else if (['extractor', 'crusher', 'magSep'].includes(node.nodeType)) {
+    } else if (MACHINE_NODE_TYPES.has(node.nodeType)) {
       const details = machineInspection(wsState.blueprint, node);
       const feed = body.querySelector('[data-live="machine-feed"]');
       const product = body.querySelector('[data-live="machine-product"]');
@@ -1797,11 +1885,53 @@ function updateInspector(force = false) {
         const span = body.querySelector(`[data-live="${name}-flow"]`);
         if (span) span.textContent = (stream?.totalFlowKgPerSecond ?? 0).toFixed(3);
       }
+      if (node.nodeType === 'roastingFurnace') {
+        const thermo = details.thermochemical;
+        const values = {
+          'furnace-charge': `${thermo.chargeMassKg.toFixed(3)}`,
+          'furnace-pending': `${thermo.pendingFeedMassKg.toFixed(3)}`,
+          'furnace-temperature': formatTemperature(thermo.chargeTemperatureK),
+          'furnace-residence': thermo.meanResidenceTimeSeconds == null ? '—' : `${thermo.meanResidenceTimeSeconds.toFixed(2)} s`,
+          'furnace-heater': thermo.actualHeaterPowerKw.toFixed(2),
+          'furnace-loss': thermo.heatLossPowerKw.toFixed(2),
+          'furnace-reaction-power': thermo.reactionPowerKw.toFixed(2),
+          'furnace-conversion': thermo.goethiteConversionPercent.toFixed(2),
+          'furnace-product': thermo.solidProductRateKgPerSecond.toFixed(3),
+          'furnace-exhaust': thermo.exhaustRateKgPerSecond.toFixed(3),
+        };
+        for (const [name, value] of Object.entries(values)) {
+          const span = body.querySelector(`[data-live="${name}"]`);
+          if (span) span.textContent = value;
+        }
+        const zones = body.querySelector('[data-live-section="furnace-zones"]');
+        if (zones) zones.innerHTML = furnaceZonesHtml(thermo.zones);
+      }
       const error = body.querySelector('[data-live="error"]');
       if (error) {
         error.textContent = details.lastError ?? '';
         error.hidden = !details.lastError;
       }
+    } else if (node.nodeType === 'exhaustVent') {
+      const details = exhaustVentInspection(wsState.blueprint, node);
+      const values = {
+        'vent-flow': (details.input?.totalFlowKgPerSecond ?? 0).toFixed(3),
+        'vent-total': details.totalEmittedMassKg.toFixed(3),
+        'vent-temperature': formatTemperature(details.temperatureK),
+        'vent-energy': formatEnergyMj(details.sensibleEnthalpyJ),
+      };
+      for (const [name, value] of Object.entries(values)) {
+        const span = body.querySelector(`[data-live="${name}"]`);
+        if (span) span.textContent = value;
+      }
+      const thermalError = body.querySelector('[data-live="vent-thermal-error"]');
+      if (thermalError) {
+        thermalError.textContent = details.thermalError ?? '';
+        thermalError.hidden = !details.thermalError;
+      }
+      replaceInspectorSectionHtml(
+        body.querySelector('[data-live-section="vent-components"]'),
+        compactCompositionSummaryHtml(details.composition, 'no emitted gas'),
+      );
     }
   }
 
@@ -1810,10 +1940,19 @@ function updateInspector(force = false) {
     if (connection?.kind === 'material') {
       const details = streamInspection(getStreamForConnection(wsState.blueprint, inspector.selectedConnId));
       const flow = body.querySelector('[data-live="flow"]');
+      const temperature = body.querySelector('[data-live="stream-temperature"]');
+      const enthalpy = body.querySelector('[data-live="stream-enthalpy"]');
+      const thermalError = body.querySelector('[data-live="stream-thermal-error"]');
       const components = body.querySelector('[data-live-section="stream-components"]');
       const size = body.querySelector('[data-live-section="stream-size"]');
       const liberation = body.querySelector('[data-live-section="stream-liberation"]');
       if (flow) flow.textContent = details.totalFlowKgPerSecond.toFixed(3);
+      if (temperature) temperature.textContent = formatTemperature(details.temperatureK);
+      if (enthalpy) enthalpy.textContent = details.specificSensibleEnthalpyJPerKg.toFixed(0);
+      if (thermalError) {
+        thermalError.textContent = details.thermalError ?? '';
+        thermalError.hidden = !details.thermalError;
+      }
       replaceInspectorSectionHtml(components, compactCompositionSummaryHtml(details.composition, 'no flow', 'kg/s'));
       if (size) size.innerHTML = summaryRowsHtml(details.particleSizeDistribution, 'no flow', 'kg/s');
       if (liberation) liberation.innerHTML = summaryRowsHtml(details.liberationDistribution, 'no flow', 'kg/s');
