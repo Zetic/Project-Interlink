@@ -81,6 +81,7 @@ Project-Interlink/
 ├── styles.css
 ├── workspace-overrides.css
 ├── apparatus-controls.css
+├── feature-inspector.css
 ├── package.json
 ├── src/
 │   ├── app.js
@@ -148,6 +149,7 @@ src/core/materials/
 ├── properties/
 │   └── magneticProperties.js
 ├── solids/
+│   ├── comminutionProperties.js
 │   ├── liberationClasses.js
 │   ├── mineralTextures.js
 │   ├── particleSizeBins.js
@@ -177,19 +179,45 @@ A mineral texture profile currently contains:
 
 ```text
 id
-fallbackLiberationSizeUm
-curveSpread
-boundaryBreakageAffinity
-speciesLiberationSizeUm
+speciesTextures[speciesId]
+  grainSizeUm
+    d10
+    d50
+    d90
+  occurrenceModes
+    free
+    boundary
+    intergrown
+    included
+
+optional carried engineering lineage
+  comminutionProperties
+    bondCrushingWorkIndexKWhPerT
+    bondBallMillWorkIndexKWhPerT
+    bondAbrasionIndex
 ```
 
-Texture is **occurrence/geological structural state**, not a `MaterialSpecies` property. Hematite can therefore have different grain/intergrowth scales in different deposits.
+Texture is **occurrence/geological structural state**, not a `MaterialSpecies` property. Hematite can therefore have different grain-size distributions and association modes in different deposits.
 
 The source texture profile remains immutable lineage while particle size and liberation state evolve. This fourth particulate identity axis is justified because merging it away would change future physical outcomes.
 
 Do **not** generalize this into appending every future property to the fraction key. Temperature, pressure, moisture, phase state, and similar body-scale/phase-scale variables should remain outside the sparse particulate identity unless loss of that axis would genuinely merge populations with different future particulate behavior.
 
 `properties/` remains the intended home for domain-specific intrinsic/reference property resolution. Process physics should use property APIs when a resolver exists rather than reaching directly into species registry internals.
+
+The canonical particle-size vocabulary now resolves fine grinding through the following lower bins:
+
+```text
+<4 µm
+4–8 µm
+8–16 µm
+16–32 µm
+32–63 µm
+63–125 µm
+...
+```
+
+The former broad `<32 µm` class remains readable only as a compatibility alias. New staged comminution does not emit it.
 
 ### 5.2 Processes
 
@@ -218,7 +246,7 @@ Current mechanical process behavior:
 
 - **Jaw Crushing** — primary size reduction with a coarse PSD and intentionally very low direct liberation.
 - **Cone Crushing** — secondary/tertiary size reduction with nominal PSD/oversize behavior and limited texture-dependent direct liberation.
-- **Milling** — sub-millimetre grinding; liberation depends on resulting particle size relative to the source texture's species-specific characteristic liberation scale.
+- **Milling** — fine grinding; liberation depends on resulting particle size relative to the source texture's species-specific D10/D50/D90 grain distribution and association modes.
 - **Screening** — routes existing fractions to `undersize`/`oversize` by ideal aperture cut without changing descriptors.
 - **Material Splitting** — divides every existing population proportionally across explicit outputs.
 - **Material Merging** — combines sparse populations while retaining distinct texture lineages.
@@ -236,16 +264,18 @@ The physical dependency is:
 ```text
 resulting particle size
         ↓
-size relative to species grain/liberation scale
+size relative to species D10/D50/D90 grain distribution
         +
-source ResourceOccurrence mineral texture
+free / boundary / intergrown / included association state
         +
 equipment breakage regime
         ↓
 liberation advancement
 ```
 
-Jaw/Cone equipment strongly limits direct liberation even when size reduction is large. Ball Mill grinding can create substantial liberation when particles approach or fall below the occurrence-specific characteristic mineral scale.
+`mineralTextures.js` derives an aggregate liberation-equilibrium distribution from the generated species texture. The current class thresholds are intentionally ordered so partial and mostly-liberated states can appear while composite particles are still comparable to mineral-grain dimensions, while the fully-liberated class requires particles to be materially smaller than the effective grain scale.
+
+Jaw/Cone equipment strongly limits how far one breakage event approaches this equilibrium even when size reduction is large. Ball Mill grinding can approach it much more strongly. Comminution is monotonic: already-liberated matter is not re-locked by further size reduction.
 
 Two ores with the same bulk composition and the same Ball Mill PSD may therefore leave the mill with different liberation distributions.
 
@@ -277,14 +307,16 @@ Occurrence validation checks texture profile structure and species coverage for 
 
 `generator` answers **what physical world is produced from this seed and these conditions?** It owns deterministic algorithms and RNG use, not authoritative content catalogs.
 
-`generateResources.js` now generates ore-body texture profiles after composition is generated. Current prototype texture generation intentionally spans a broad geological range rather than hard-coding one liberation size per resource name:
+`generateResources.js` generates ore-body texture profiles after composition is generated. Current prototype texture generation intentionally spans broad geological ranges while keeping constituent minerals correlated within one occurrence:
 
-- occurrence fallback characteristic liberation scale is generated broadly in the tens-to-hundreds of microns;
-- each constituent species receives a deterministic scale variation within the occurrence;
-- curve spread varies the width of the statistical liberation transition;
-- boundary-breakage affinity influences the small amount of liberation possible during crushing.
+- each ore resource has a resource-specific D50 generation envelope;
+- one occurrence-scale D50 is drawn log-uniformly from that envelope;
+- each constituent species varies around the shared occurrence scale rather than being rolled independently across the full resource range;
+- species D10 and D90 are generated around species D50 to provide a grain-size distribution rather than one characteristic-size scalar;
+- one occurrence complexity value influences normalized `free`, `boundary`, `intergrown`, and `included` association shares;
+- Bond Crushing Work Index, Bond Ball Mill Work Index, and Bond Abrasion Index are generated separately from resource-specific engineering ranges.
 
-These values are physical world truth. Exact values should not automatically become player knowledge merely because they exist in the world model.
+These values are physical world truth. Exact values should not automatically become player knowledge merely because they exist in the world model; the current prototype Inspector exposes them directly for testing and development while the eventual analysis/knowledge gameplay layer remains a separate concern.
 
 Generation changes that alter same-seed world truth must follow generator-version rules.
 
@@ -318,13 +350,44 @@ Screen and Splitter remain explicit multi-output apparatus with transactional co
 
 `MaterialStream` represents transfer rates, not inventory. Hoppers/boundary buffers own stored matter.
 
+### Comminution energy and throughput
+
+Staged comminution consumes occurrence-scoped engineering lineage rather than treating power as cosmetic metadata.
+
+```text
+feed P80
++ product P80
++ appropriate Bond Work Index
+→ specific energy kWh/t
+
+rated drive power
+÷ specific energy
+→ power-limited throughput
+```
+
+The continuous runtime uses the lower of mechanical throughput capacity and power-limited throughput. Bond Abrasion Index is retained through lineage and accumulated as `tonne × Ai` exposure, without inventing a component-life coefficient before a wear model exists.
+
 ---
 
 ## 8. `src/workspace/` — Player-Facing Graph Application
 
 `workspace` owns graph projection, catalog, placement, navigation, Inspector presentation, and DOM orchestration. It does not own physical truth.
 
-The generic Inspector currently summarizes composition, particle-size distribution, and liberation. Texture profile IDs/precise grain scales are intentionally not dumped into normal material UI merely because they exist in World State; future analysis/measurement can expose texture knowledge through the Knowledge layer when gameplay needs it.
+Generic Hopper and stream inspection summarizes composition, particle-size distribution, and liberation without exposing internal texture-profile IDs. Feature/resource inspection currently exposes occurrence engineering and mineralogical values as structured presentation data for development/testing:
+
+```text
+resource identity + concise geological descriptor
+engineering properties
+  CWi / BWi / Ai / mixture density
+mineral texture
+  species D10 / D50 / D90
+  free / boundary / intergrown / included shares
+access / connected extraction apparatus
+```
+
+`inspectionViewModel.js` projects authoritative occurrence data into structured fields. `featureInspectorUI.js` owns Feature-resource markup and `feature-inspector.css` owns narrow-panel presentation. Do not flatten these values back into one descriptor string or expose internal `textureProfileId` values in ordinary UI.
+
+The eventual player analysis/measurement system should control which exact occurrence properties are known; that Knowledge-layer work is separate from the current development Inspector presentation.
 
 New machinery should continue to flow through definition-driven catalog, parameter, port, removability, and generic inspection paths instead of acquiring node-type branches.
 
@@ -440,22 +503,30 @@ A compatibility module is not a second implementation home. Do not add new autho
 
 The legacy generic Crusher likewise remains a compatibility apparatus, not the player-facing comminution model.
 
+The former broad `<32 µm` staged-comminution fraction ID also remains readable as a compatibility alias. New Ball Mill products use the resolved `<4`, `4–8`, `8–16`, and `16–32 µm` bins instead.
+
 ---
 
 ## 14. Tests as Architecture Contracts
 
 The suite covers both simulation behavior and architectural extension points. In addition to existing architecture, routing, screening, and conservation groups, `stagedComminution.test.js` now proves:
 
-- fine-through-ROM particle-size vocabulary;
+- `<4 µm` through run-of-mine particle-size vocabulary;
 - mostly locked run-of-mine extraction;
 - Jaw primary-crushing size reduction with little liberation;
 - Cone feed envelope and nominal PSD;
 - Ball Mill feed envelope and fine PSD;
+- the 32 µm Ball Mill product resolves across 32–63, 16–32, 8–16, 4–8, and <4 µm rather than collapsing into one terminal bin;
 - screen-to-mill eligibility;
 - exact species conservation through staged comminution;
 - persistent texture lineage from extraction;
 - identical Ball Mill settings producing different liberation for different ore textures;
-- blended ores retaining separate texture populations rather than collapsing.
+- blended ores retaining separate texture populations rather than collapsing;
+- Bond Work Index power limiting for harder ore.
+
+`liberationEquilibrium.test.js` proves the texture-equilibrium class distribution, stronger liberation with finer grinding, the stricter fully-liberated classification, and the no-relocking invariant.
+
+`featureInspectorUI.test.js` and `inspectionViewModel.test.js` protect the structured occurrence-property presentation and escaping boundary.
 
 `worldIntegrity.test.js` proves ore-body texture generation, species coverage, schema/generator versioning, and determinism.
 
@@ -483,7 +554,7 @@ beneficiation selected from actual material properties
 
 The Dry Drum Magnetic Separator can serve as coarse dry preconcentration for suitable strongly magnetic material; it is not being treated as universal final beneficiation.
 
-The next major capability should be chosen from the physical state now available rather than added to compensate for missing liberation physics. Density + Gravity Separation is a strong candidate. Slurry/fluid handling then opens wet classification, flotation, and wet magnetic separation. Hardness/grindability and energy can later distinguish comminution efficiency/HPGR behavior.
+The next major capability should be chosen from the physical state now available rather than added to compensate for missing liberation physics. Density + Gravity Separation is a strong candidate. Slurry/fluid handling then opens wet classification, flotation, and wet magnetic separation. Additional comminution routes such as HPGR should enter when their breakage, energy, and wear differences are modeled as real process choices rather than nominal machine variants.
 
 Longer-term systems should extend these boundaries rather than being packed into universal material objects or central machine engines.
 
