@@ -1,0 +1,104 @@
+/* Resource-occurrence Inspector presentation for narrow workspace panels. */
+.ws-ins-resource {
+  min-width: 0;
+}
+.ws-ins-resource + .ws-ins-resource {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #243443;
+}
+.ws-ins-resource-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  color: #c8d8e8;
+}
+.ws-ins-resource-header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-ins-resource-header span {
+  color: #9ab0c2;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.ws-ins-resource-note {
+  margin: 3px 0 8px;
+  color: #7f919f;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.ws-ins-resource-subsection {
+  margin-top: 10px;
+}
+.ws-ins-resource-subtitle {
+  margin-bottom: 5px;
+  color: #8eb0ca;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ws-ins-property-list {
+  display: grid;
+  gap: 3px;
+}
+.ws-ins-property-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  color: #aebdca;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.ws-ins-property-row > span:first-child {
+  min-width: 0;
+}
+.ws-ins-property-value {
+  color: #d1dfeb;
+  text-align: right;
+  white-space: nowrap;
+}
+.ws-ins-mineral {
+  margin-top: 6px;
+  padding: 6px 7px;
+  background: #0c1621;
+  border: 1px solid #1d2d3b;
+}
+.ws-ins-mineral-name {
+  margin-bottom: 4px;
+  color: #c8e0f0;
+  font-size: 10px;
+  font-weight: 700;
+}
+.ws-ins-mineral-grains {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: baseline;
+  color: #8195a8;
+  font-size: 9px;
+  line-height: 1.3;
+}
+.ws-ins-mineral-grains strong {
+  color: #d1dfeb;
+  font-size: 9px;
+  font-weight: 400;
+  text-align: right;
+  white-space: nowrap;
+}
+.ws-ins-mineral-modes {
+  margin-top: 4px;
+  color: #aebdca;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.ws-ins-mineral-modes span {
+  color: #8195a8;
+}
