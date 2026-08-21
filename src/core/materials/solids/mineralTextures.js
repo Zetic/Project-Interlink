@@ -20,14 +20,16 @@ const MODE_REQUIRED_SIZE_MULTIPLIER = Object.freeze({
 });
 
 // Liberation classes are derived from particle size relative to effective mineral
-// grain size rather than reached through fixed ordinal jumps. A particle can be
-// partially liberated while still several effective grain diameters across; as it
-// approaches one effective grain diameter, the probability of a mono-mineral
-// particle rises. These ratios define the meanings of the aggregate classes.
+// grain size rather than reached through fixed ordinal jumps. Partial and mostly
+// liberated states become plausible while composite particles are still comparable
+// to the mineral-grain scale. The fully-liberated class is intentionally stricter:
+// a particle should be materially smaller than its effective mineral grain before
+// it is treated as likely mono-mineral, rather than being called fully liberated as
+// soon as particle size merely reaches the grain scale.
 const LIBERATION_CLASS_GRAIN_RATIO = Object.freeze({
   partialOrBetter: 0.25,
   mostlyLiberatedOrBetter: 0.5,
-  liberated: 1,
+  liberated: 2,
 });
 
 function assertFinitePositive(value, label) {
