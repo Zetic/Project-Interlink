@@ -5,6 +5,7 @@ import {
 import {
   createGasMaterialBody,
   createGasMaterialState,
+  GAS_MATERIAL_TOLERANCE,
 } from '../../materials/gas/gasMaterialState.js';
 import {
   addSolidFractionDirect,
@@ -12,6 +13,7 @@ import {
   createSolidMaterialBody,
   iterateSolidFractions,
   registerSolidTextureProfile,
+  SOLID_MATERIAL_TOLERANCE,
   solidTextureProfile,
 } from '../../materials/solids/solidMaterialState.js';
 import { deriveReactionTextureProfile } from '../../materials/solids/mineralTextures.js';
@@ -78,12 +80,31 @@ function reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeco
       0,
       1,
     );
-    const consumedKg = fraction.quantity * conversion;
+    let consumedKg = fraction.quantity * conversion;
     if (consumedKg <= 0) continue;
-    const extentMol = consumedKg / goethiteMassPerExtentKg;
+
+    // Material states intentionally prune populations at nanogram scale. Never
+    // subtract a reactant amount whose stoichiometric products would then be
+    // pruned, because that turns numerical canonicalization into real mass loss.
+    // At the opposite end, consume the tiny residual reactant completely so a
+    // pruned remainder is represented by its products instead of disappearing.
+    const remainingKg = fraction.quantity - consumedKg;
+    if (remainingKg > 0 && remainingKg <= SOLID_MATERIAL_TOLERANCE) {
+      consumedKg = fraction.quantity;
+    }
+    let extentMol = consumedKg / goethiteMassPerExtentKg;
+    let hematiteProductKg = extentMol * hematiteMassPerExtentKg;
+    let waterProductKg = extentMol * waterMassPerExtentKg;
+    if (
+      hematiteProductKg <= SOLID_MATERIAL_TOLERANCE
+      || waterProductKg <= GAS_MATERIAL_TOLERANCE
+    ) {
+      continue;
+    }
+
     const sourceKey = fractionKey(fraction);
     solidState.fractions[sourceKey] = Math.max(0, (solidState.fractions[sourceKey] ?? 0) - consumedKg);
-    if (solidState.fractions[sourceKey] <= 1e-9) delete solidState.fractions[sourceKey];
+    if (solidState.fractions[sourceKey] <= SOLID_MATERIAL_TOLERANCE) delete solidState.fractions[sourceKey];
 
     let productTextureProfileId = fraction.textureProfileId;
     if (fraction.textureProfileId) {
@@ -102,9 +123,9 @@ function reactionProductsAtTemperature(feedBody, temperatureK, residenceTimeSeco
       sizeBinId: fraction.sizeBinId,
       liberationClassId: fraction.liberationClassId,
       textureProfileId: productTextureProfileId,
-      quantity: extentMol * hematiteMassPerExtentKg,
+      quantity: hematiteProductKg,
     });
-    gasSpeciesMassKg.waterVapor = (gasSpeciesMassKg.waterVapor ?? 0) + extentMol * waterMassPerExtentKg;
+    gasSpeciesMassKg.waterVapor = (gasSpeciesMassKg.waterVapor ?? 0) + waterProductKg;
     reactionExtentMol += extentMol;
   }
 
