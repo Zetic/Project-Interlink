@@ -24,6 +24,9 @@ export function validateElementalConservation(inputBodies, outputBodies, process
   }
   const massInKg = inputBodies.reduce((sum, body) => sum + materialBodyMassKg(body), 0);
   const massOutKg = outputBodies.reduce((sum, body) => sum + materialBodyMassKg(body), 0);
+  if (Math.abs(massInKg - massOutKg) > MASS_TOLERANCE_KG) {
+    throw new Error(`Process '${processId}' violates total mass conservation`);
+  }
   return {
     massInKg: roundKg(massInKg),
     massOutKg: roundKg(massOutKg),
