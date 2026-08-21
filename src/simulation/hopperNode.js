@@ -147,6 +147,35 @@ export function hopperLiberationDistributionKg(hopper) {
   return summarizeSolidMaterialByLiberationClass(hopper.materialBody.solidState);
 }
 
+/**
+ * Receive a finite, already-materialized solid body directly into inventory.
+ *
+ * Continuous stream callers should keep using hopperReceiveInflow. Apparatus
+ * that has already staged a finite product body can avoid converting inventory
+ * -> kg/s -> inventory and, critically, avoid cloning the entire destination
+ * Hopper just to preserve transactionality. A small profile-only probe catches
+ * texture conflicts before the authoritative destination is mutated.
+ */
+export function hopperReceiveMaterialBody(hopper, incomingBody) {
+  validateSolidMaterialBody(incomingBody);
+  const incomingMassKg = totalSolidQuantity(incomingBody.solidState);
+  if (incomingMassKg <= HOPPER_TOLERANCE_KG) return 0;
+  const freeKg = hopperFreeCapacityKg(hopper);
+  if (incomingMassKg > freeKg + HOPPER_TOLERANCE_KG) {
+    throw new Error('Hopper could not accept the requested material body atomically');
+  }
+
+  // Preflight immutable texture lineage without copying destination fractions.
+  const textureProbe = createSolidMaterialState([], {
+    textureProfiles: hopper.materialBody.solidState.textureProfiles ?? {},
+  });
+  addSolidMaterialState(textureProbe, incomingBody.solidState);
+
+  addSolidMaterialState(hopper.materialBody.solidState, incomingBody.solidState);
+  hopper.materialBody.thermalState.sensibleEnthalpyJ += incomingBody.thermalState?.sensibleEnthalpyJ ?? 0;
+  return incomingMassKg;
+}
+
 export function hopperReceiveInflow(hopper, inflowSolidStateOrComponents, particleSizeMmOrDt, maybeDt) {
   const incomingIsSolidState = Boolean(inflowSolidStateOrComponents?.fractions);
   const usingLegacySignature = !incomingIsSolidState && typeof maybeDt === 'number';
