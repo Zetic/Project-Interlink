@@ -5,7 +5,7 @@ import {
   particleSizeBinIdForMm,
   particleSizeBinIndex,
 } from '../../materials/solids/particleSizeBins.js';
-import { liberationPotentialAtParticleSize } from '../../materials/solids/mineralTextures.js';
+import { liberationClassDistributionAtParticleSize } from '../../materials/solids/mineralTextures.js';
 import { bondSpecificEnergyKWhPerT } from '../../materials/solids/comminutionProperties.js';
 import {
   SOLID_MATERIAL_TOLERANCE,
@@ -33,7 +33,7 @@ const EQUIPMENT_PROFILES = Object.freeze({
       Object.freeze({ offset: -1, share: 0.20 }),
       Object.freeze({ offset: -2, share: 0.10 }),
     ]),
-    liberationEfficiency: 0.02,
+    intergranularBreakageEfficiency: 0.02,
     workIndexProperty: 'bondCrushingWorkIndexKWhPerT',
   }),
   [COMMINUTION_EQUIPMENT.CONE_CRUSHER]: Object.freeze({
@@ -45,7 +45,7 @@ const EQUIPMENT_PROFILES = Object.freeze({
       Object.freeze({ offset: -1, share: 0.25 }),
       Object.freeze({ offset: -2, share: 0.10 }),
     ]),
-    liberationEfficiency: 0.10,
+    intergranularBreakageEfficiency: 0.10,
     workIndexProperty: 'bondCrushingWorkIndexKWhPerT',
   }),
   [COMMINUTION_EQUIPMENT.BALL_MILL]: Object.freeze({
@@ -58,7 +58,7 @@ const EQUIPMENT_PROFILES = Object.freeze({
       Object.freeze({ offset: -2, share: 0.15 }),
       Object.freeze({ offset: -3, share: 0.05 }),
     ]),
-    liberationEfficiency: 0.95,
+    intergranularBreakageEfficiency: 0.95,
     workIndexProperty: 'bondBallMillWorkIndexKWhPerT',
   }),
 });
@@ -139,43 +139,49 @@ function textureForFraction(feedSolidState, fraction) {
 }
 
 /**
- * Liberation is derived from current particle size relative to measured mineral
- * grain-size distributions and occurrence modes. Equipment geometry affects how
- * efficiently size reduction creates intergranular liberation, but no occurrence
- * stores a synthetic liberation-size or curve-width parameter.
+ * Fraction of the texture-defined liberation equilibrium realized by one
+ * comminution event. The amount of actual size reduction is derived from the
+ * representative physical sizes rather than from the number of discrete bins
+ * crossed. Equipment then controls how strongly that breakage is intergranular.
  */
-function liberationAdvancement(
-  equipmentProfile,
-  textureProfile,
-  speciesId,
-  inputSizeBinId,
-  outputSizeBinId,
-) {
-  const inputIndex = particleSizeBinIndex(inputSizeBinId);
-  const outputIndex = particleSizeBinIndex(outputSizeBinId);
-  const sizeReductionBins = Math.max(0, inputIndex - outputIndex);
-  if (sizeReductionBins <= 0) return { improvedShare: 0, maxLift: 0 };
-
-  const outputBin = getParticleSizeBin(outputSizeBinId);
-  const liberationPotential = liberationPotentialAtParticleSize(
-    textureProfile,
-    speciesId,
-    outputBin.representativeMm,
-  );
-  const reductionFactor = clamp(0.45 + 0.11 * sizeReductionBins, 0, 1);
-  const improvedShare = clamp(
-    liberationPotential * reductionFactor * equipmentProfile.liberationEfficiency,
+function intergranularBreakageProgress(equipmentProfile, inputSizeBinId, outputSizeBinId) {
+  const inputSizeMm = getParticleSizeBin(inputSizeBinId)?.representativeMm;
+  const outputSizeMm = getParticleSizeBin(outputSizeBinId)?.representativeMm;
+  if (!inputSizeMm || !outputSizeMm || outputSizeMm >= inputSizeMm) return 0;
+  const geometricReductionFraction = clamp(1 - (outputSizeMm / inputSizeMm), 0, 1);
+  return clamp(
+    geometricReductionFraction * equipmentProfile.intergranularBreakageEfficiency,
     0,
-    equipmentProfile.liberationEfficiency,
+    1,
   );
+}
 
-  if (equipmentProfile.liberationEfficiency <= 0.10) {
-    return { improvedShare, maxLift: 1 };
+/**
+ * Comminution cannot re-lock mineral matter that was already more liberated.
+ * Any texture-equilibrium probability below the incoming class is folded into
+ * the incoming class before the equipment approaches that equilibrium.
+ */
+function monotonicLiberationTarget(targetDistribution, inputLiberationClassId) {
+  const classes = listLiberationClasses();
+  const inputIndex = liberationClassIndex(inputLiberationClassId);
+  const shares = Object.fromEntries(classes.map(item => [
+    item.id,
+    clamp(targetDistribution[item.id] ?? 0, 0, 1),
+  ]));
+
+  let foldedShare = 0;
+  for (let index = 0; index < inputIndex; index += 1) {
+    foldedShare += shares[classes[index].id];
+    shares[classes[index].id] = 0;
   }
-  return {
-    improvedShare,
-    maxLift: liberationPotential >= 0.75 ? 3 : liberationPotential >= 0.30 ? 2 : 1,
-  };
+  shares[classes[inputIndex].id] += foldedShare;
+
+  const total = Object.values(shares).reduce((sum, share) => sum + share, 0);
+  if (total <= 0) {
+    return Object.fromEntries(classes.map((item, index) => [item.id, index === inputIndex ? 1 : 0]));
+  }
+  for (const item of classes) shares[item.id] /= total;
+  return shares;
 }
 
 function addFraction(outputState, fraction, sizeBinId, liberationClassId, quantity) {
@@ -189,6 +195,14 @@ function addFraction(outputState, fraction, sizeBinId, liberationClassId, quanti
   });
 }
 
+/**
+ * Resolve one product-size child toward the liberation-state distribution implied
+ * by its actual mineral texture. This replaces the old fixed +1/+2/+3 class lift.
+ * A sufficiently fine Ball Mill product can therefore move locked feed directly
+ * into mostly-liberated/liberated populations when D10/D50/D90 and association
+ * state support that outcome. Jaw/Cone realize only a small fraction of the same
+ * texture-defined equilibrium.
+ */
 function liberationAllocations(
   feedSolidState,
   fraction,
@@ -196,20 +210,12 @@ function liberationAllocations(
   massKg,
   equipmentProfile,
 ) {
-  const liberationClasses = listLiberationClasses();
-  const inputIndex = liberationClassIndex(fraction.liberationClassId);
-  const lastIndex = liberationClasses.length - 1;
-  const textureProfile = textureForFraction(feedSolidState, fraction);
-  const advancement = liberationAdvancement(
+  const progress = intergranularBreakageProgress(
     equipmentProfile,
-    textureProfile,
-    fraction.speciesId,
     fraction.sizeBinId,
     outputSizeBinId,
   );
-  const maxLift = Math.min(advancement.maxLift, lastIndex - inputIndex);
-
-  if (maxLift <= 0 || advancement.improvedShare <= 0 || inputIndex >= lastIndex) {
+  if (progress <= 0) {
     return [{
       sizeBinId: outputSizeBinId,
       liberationClassId: fraction.liberationClassId,
@@ -217,54 +223,27 @@ function liberationAllocations(
     }];
   }
 
-  const improvedMass = massKg * advancement.improvedShare;
-  const allocations = [{
-    sizeBinId: outputSizeBinId,
-    liberationClassId: liberationClasses[inputIndex].id,
-    quantity: massKg - improvedMass,
-  }];
+  const textureProfile = textureForFraction(feedSolidState, fraction);
+  const outputBin = getParticleSizeBin(outputSizeBinId);
+  const physicalTarget = liberationClassDistributionAtParticleSize(
+    textureProfile,
+    fraction.speciesId,
+    outputBin.representativeMm,
+  );
+  const target = monotonicLiberationTarget(physicalTarget, fraction.liberationClassId);
+  const allocations = [];
 
-  if (maxLift === 1) {
+  for (const liberationClass of listLiberationClasses()) {
+    let share = progress * (target[liberationClass.id] ?? 0);
+    if (liberationClass.id === fraction.liberationClassId) share += 1 - progress;
+    if (share <= 0) continue;
     allocations.push({
       sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex + 1].id,
-      quantity: improvedMass,
+      liberationClassId: liberationClass.id,
+      quantity: massKg * share,
     });
-    return allocations;
-  }
-  if (maxLift === 2) {
-    allocations.push(
-      {
-        sizeBinId: outputSizeBinId,
-        liberationClassId: liberationClasses[inputIndex + 1].id,
-        quantity: improvedMass * 0.65,
-      },
-      {
-        sizeBinId: outputSizeBinId,
-        liberationClassId: liberationClasses[inputIndex + 2].id,
-        quantity: improvedMass * 0.35,
-      },
-    );
-    return allocations;
   }
 
-  allocations.push(
-    {
-      sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex + 1].id,
-      quantity: improvedMass * 0.45,
-    },
-    {
-      sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex + 2].id,
-      quantity: improvedMass * 0.35,
-    },
-    {
-      sizeBinId: outputSizeBinId,
-      liberationClassId: liberationClasses[inputIndex + 3].id,
-      quantity: improvedMass * 0.20,
-    },
-  );
   return allocations;
 }
 
