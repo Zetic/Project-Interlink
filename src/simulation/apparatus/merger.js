@@ -1,12 +1,6 @@
 import { MERGING_PROCESS_ID } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
 import {
-  multiplySolidMaterialState,
-  totalSolidQuantity,
-} from '../../core/materials/solids/solidMaterialState.js';
-import {
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
   hopperFreeCapacityKg,
   hopperReceiveInflow,
   hopperStoredMassKg,
@@ -23,10 +17,12 @@ import {
   APPARATUS_TRANSFER_TOLERANCE_KG,
   assertTransferAccepted,
   capacityScaleForOutput,
-  outputSpecificSensibleEnthalpies,
+  outputSpecificSensibleEnthalpiesFromWithdrawals,
   proportionalSolidStateFromHopper,
-  solidBodyForWithdrawal,
+  scaleSolidStateForRuntime,
+  solidStateMassForRuntime,
 } from './materialTransferHelpers.js';
+import { assertHopperCanReceivePlannedSolidState } from './transactionHelpers.js';
 
 export function createMerger({
   id,
@@ -100,8 +96,8 @@ export function simulateMergerNode(blueprint, node, dt) {
   const candidateTotalRate = Math.min(node.throughputKgPerSecond, totalStored / dt);
   const candidateRateA = candidateTotalRate * (storedA / totalStored);
   const candidateRateB = candidateTotalRate * (storedB / totalStored);
-  let candidateA = proportionalSolidStateFromHopper(inputAHopper, candidateRateA);
-  let candidateB = proportionalSolidStateFromHopper(inputBHopper, candidateRateB);
+  const candidateA = proportionalSolidStateFromHopper(inputAHopper, candidateRateA);
+  const candidateB = proportionalSolidStateFromHopper(inputBHopper, candidateRateB);
   const candidateResult = applyContinuousMerging(candidateA, candidateB, node.throughputKgPerSecond);
   const capacityScale = capacityScaleForOutput(
     hopperFreeCapacityKg(outputHopper),
@@ -113,16 +109,30 @@ export function simulateMergerNode(blueprint, node, dt) {
     node.operatingState = 'blocked';
     return;
   }
-  if (capacityScale < 1) {
-    candidateA = multiplySolidMaterialState(candidateA, capacityScale);
-    candidateB = multiplySolidMaterialState(candidateB, capacityScale);
+
+  const actualASolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.actualInputASolidState, capacityScale)
+    : candidateResult.actualInputASolidState;
+  const actualBSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.actualInputBSolidState, capacityScale)
+    : candidateResult.actualInputBSolidState;
+  const productSolidState = capacityScale < 1
+    ? scaleSolidStateForRuntime(candidateResult.productSolidState, capacityScale)
+    : candidateResult.productSolidState;
+  const plannedRateA = solidStateMassForRuntime(actualASolidState);
+  const plannedRateB = solidStateMassForRuntime(actualBSolidState);
+  const expectedOutputKg = solidStateMassForRuntime(productSolidState) * dt;
+
+  try {
+    assertHopperCanReceivePlannedSolidState(outputHopper, productSolidState, expectedOutputKg, 'Material Merger product');
+  } catch (error) {
+    node.lastError = error.message;
+    node.operatingState = 'blocked';
+    return;
   }
 
-  const stagedA = cloneHopperMaterialState(inputAHopper);
-  const stagedB = cloneHopperMaterialState(inputBHopper);
-  const stagedOutput = cloneHopperMaterialState(outputHopper);
-  const withdrawalA = hopperWithdraw(stagedA, totalSolidQuantity(candidateA), dt);
-  const withdrawalB = hopperWithdraw(stagedB, totalSolidQuantity(candidateB), dt);
+  const withdrawalA = hopperWithdraw(inputAHopper, plannedRateA, dt);
+  const withdrawalB = hopperWithdraw(inputBHopper, plannedRateB, dt);
   const totalWithdrawn = withdrawalA.actualTotalKg + withdrawalB.actualTotalKg;
   if (totalWithdrawn <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = null;
@@ -130,28 +140,23 @@ export function simulateMergerNode(blueprint, node, dt) {
     return;
   }
 
-  const actualA = multiplySolidMaterialState(withdrawalA.actualSolidState, 1 / dt);
-  const actualB = multiplySolidMaterialState(withdrawalB.actualSolidState, 1 / dt);
-  const result = applyContinuousMerging(actualA, actualB, node.throughputKgPerSecond);
-  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpies(
-    [solidBodyForWithdrawal(withdrawalA), solidBodyForWithdrawal(withdrawalB)],
-    [result.productSolidState],
+  const actualA = scaleSolidStateForRuntime(withdrawalA.actualSolidState, 1 / dt);
+  const actualB = scaleSolidStateForRuntime(withdrawalB.actualSolidState, 1 / dt);
+  const [productSpecificSensibleEnthalpyJPerKg] = outputSpecificSensibleEnthalpiesFromWithdrawals(
+    [withdrawalA, withdrawalB],
+    [productSolidState],
   );
-  const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
   const acceptedOutputKg = hopperReceiveInflow(
-    stagedOutput,
-    result.productSolidState,
+    outputHopper,
+    productSolidState,
     dt,
     productSpecificSensibleEnthalpyJPerKg,
   );
   assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Material Merger product');
 
-  commitHopperMaterialState(inputAHopper, stagedA);
-  commitHopperMaterialState(inputBHopper, stagedB);
-  commitHopperMaterialState(outputHopper, stagedOutput);
   updateConnectionStream(blueprint, inputAConnection, actualA, withdrawalA.actualSpecificSensibleEnthalpyJPerKg);
   updateConnectionStream(blueprint, inputBConnection, actualB, withdrawalB.actualSpecificSensibleEnthalpyJPerKg);
-  updateConnectionStream(blueprint, outputConnection, result.productSolidState, productSpecificSensibleEnthalpyJPerKg);
+  updateConnectionStream(blueprint, outputConnection, productSolidState, productSpecificSensibleEnthalpyJPerKg);
   node.lastError = null;
   node.operatingState = 'running';
 }
