@@ -184,7 +184,8 @@ export function simulateFeederNode(blueprint, node, dt) {
     assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Feeder product');
     commitHopperMaterialState(outputTarget, stagedOutput);
   } else {
-    const productBody = createSolidMaterialBody(result.productSolidState, {
+    const productInventoryState = multiplySolidMaterialState(result.productSolidState, dt);
+    const productBody = createSolidMaterialBody(productInventoryState, {
       sensibleEnthalpyJ: expectedOutputKg * productSpecificSensibleEnthalpyJPerKg,
     });
     const acceptedOutputKg = roastingFurnaceReceiveFeed(outputTarget, productBody, dt);
