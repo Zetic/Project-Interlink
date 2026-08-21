@@ -11,10 +11,20 @@ import { cloneMaterialBody, validateMaterialBody } from '../materialBody.js';
 import {
   THERMAL_ENERGY_TOLERANCE_J,
   THERMAL_REFERENCE_TEMPERATURE_K,
+  createThermalState,
   heatCapacityJPerKForSpeciesMasses,
   sensibleEnthalpyJAtTemperature,
   temperatureKFromSensibleEnthalpy,
 } from './thermalState.js';
+
+function bodySensibleEnthalpyJ(body) {
+  return body?.thermalState?.sensibleEnthalpyJ ?? 0;
+}
+
+function ensureBodyThermalState(body) {
+  if (!body.thermalState) body.thermalState = createThermalState();
+  return body.thermalState;
+}
 
 export function materialBodySpeciesMassesKg(body) {
   validateMaterialBody(body);
@@ -38,13 +48,17 @@ export function materialBodyHeatCapacityJPerK(body) {
 }
 
 export function materialBodyTemperatureK(body) {
+  const sensibleEnthalpyJ = bodySensibleEnthalpyJ(body);
+  if (Math.abs(sensibleEnthalpyJ) <= THERMAL_ENERGY_TOLERANCE_J) {
+    return THERMAL_REFERENCE_TEMPERATURE_K;
+  }
   const capacity = materialBodyHeatCapacityJPerK(body);
-  return temperatureKFromSensibleEnthalpy(body.thermalState.sensibleEnthalpyJ, capacity);
+  return temperatureKFromSensibleEnthalpy(sensibleEnthalpyJ, capacity);
 }
 
 export function setMaterialBodyTemperatureK(body, temperatureK) {
   const capacity = materialBodyHeatCapacityJPerK(body);
-  body.thermalState.sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(temperatureK, capacity);
+  ensureBodyThermalState(body).sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(temperatureK, capacity);
   return body;
 }
 
@@ -60,7 +74,7 @@ export function proportionalMaterialBodyShare(body, requestedMassKg) {
     for (const [speciesId, massKg] of Object.entries(body.gasState.speciesMassKg)) {
       result.gasState.speciesMassKg[speciesId] = massKg * factor;
     }
-    result.thermalState.sensibleEnthalpyJ = body.thermalState.sensibleEnthalpyJ * factor;
+    result.thermalState.sensibleEnthalpyJ = bodySensibleEnthalpyJ(body) * factor;
     return result;
   }
   const result = createSolidMaterialBody(createSolidMaterialState([], {
@@ -72,7 +86,7 @@ export function proportionalMaterialBodyShare(body, requestedMassKg) {
       : `${fraction.speciesId}|${fraction.sizeBinId}|${fraction.liberationClassId}`;
     result.solidState.fractions[key] = fraction.quantity * factor;
   }
-  result.thermalState.sensibleEnthalpyJ = body.thermalState.sensibleEnthalpyJ * factor;
+  result.thermalState.sensibleEnthalpyJ = bodySensibleEnthalpyJ(body) * factor;
   return result;
 }
 
@@ -81,11 +95,11 @@ export function proportionalMaterialBodyShare(body, requestedMassKg) {
  * temperature. Zero energy needs no property coverage and remains at Tref.
  */
 export function distributeSensibleEnthalpyAtEquilibrium(inputBodies, outputBodies) {
-  const totalEnergyJ = inputBodies.reduce((sum, body) => sum + body.thermalState.sensibleEnthalpyJ, 0);
+  const totalEnergyJ = inputBodies.reduce((sum, body) => sum + bodySensibleEnthalpyJ(body), 0);
   if (Math.abs(totalEnergyJ) <= THERMAL_ENERGY_TOLERANCE_J) {
     return outputBodies.map(body => {
       const output = cloneMaterialBody(body);
-      output.thermalState.sensibleEnthalpyJ = 0;
+      ensureBodyThermalState(output).sensibleEnthalpyJ = 0;
       return output;
     });
   }
@@ -93,7 +107,7 @@ export function distributeSensibleEnthalpyAtEquilibrium(inputBodies, outputBodie
   const temperatureK = temperatureKFromSensibleEnthalpy(totalEnergyJ, outputCapacity);
   return outputBodies.map(body => {
     const output = cloneMaterialBody(body);
-    output.thermalState.sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(
+    ensureBodyThermalState(output).sensibleEnthalpyJ = sensibleEnthalpyJAtTemperature(
       temperatureK,
       materialBodyHeatCapacityJPerK(output),
     );
