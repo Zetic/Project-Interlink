@@ -20,15 +20,5 @@ export const ROASTING_PROCESS_DEFINITION = Object.freeze({
       controlType: 'number',
       playerConfigurable: true,
     },
-    {
-      id: 'residenceTimeSeconds',
-      label: 'Residence time',
-      unit: 's',
-      min: 0,
-      max: 86400,
-      defaultValue: 60,
-      controlType: 'number',
-      playerConfigurable: false,
-    },
   ]),
 });
