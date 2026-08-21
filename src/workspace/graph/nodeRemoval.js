@@ -12,6 +12,10 @@ import {
   HOPPER_TOLERANCE_KG,
   hopperStoredMassKg,
 } from '../../simulation/hopperNode.js';
+import {
+  roastingFurnaceChargeMassKg,
+  roastingFurnacePendingFeedMassKg,
+} from '../../simulation/apparatus/roastingFurnace.js';
 import { getApparatusDefinition } from '../../content/apparatus/definitions.js';
 
 function resolveNode(blueprint, nodeOrId) {
@@ -28,18 +32,20 @@ function isPlayerRemovableNode(node) {
 }
 
 /**
- * Return the persistent material owned by a node. Add future storage owners
- * here when they are introduced rather than spreading ownership checks through
- * UI event handlers. Stateless/transactional process apparatus own no material
- * between simulation steps and therefore return zero.
+ * Return persistent matter physically retained by a node. Environmental tally
+ * nodes such as Exhaust Vent report emitted matter but no longer physically own
+ * that matter, so their cumulative counters do not block deletion.
  */
 export function nodeOwnedMatterKg(node) {
   if (node?.nodeType === 'hopper') return hopperStoredMassKg(node);
+  if (node?.nodeType === 'roastingFurnace') {
+    return roastingFurnaceChargeMassKg(node) + roastingFurnacePendingFeedMassKg(node);
+  }
   return 0;
 }
 
 export function nodeRemovalMatterToleranceKg(node) {
-  if (node?.nodeType === 'hopper') return HOPPER_TOLERANCE_KG;
+  if (node?.nodeType === 'hopper' || node?.nodeType === 'roastingFurnace') return HOPPER_TOLERANCE_KG;
   return 0;
 }
 
