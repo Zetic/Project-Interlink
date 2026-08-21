@@ -1,6 +1,7 @@
 import { FEEDING_PROCESS_ID } from '../../core/processes/definitions/index.js';
 import { PORT_CAPABILITIES } from '../../core/systems/ports.js';
 import {
+  createSolidMaterialBody,
   multiplySolidMaterialState,
   totalSolidQuantity,
 } from '../../core/materials/solids/solidMaterialState.js';
@@ -27,6 +28,10 @@ import {
   proportionalSolidStateFromHopper,
   solidBodyForWithdrawal,
 } from './materialTransferHelpers.js';
+import {
+  roastingFurnaceInputCapacityKg,
+  roastingFurnaceReceiveFeed,
+} from './roastingFurnace.js';
 
 export function createFeeder({
   id,
@@ -54,12 +59,24 @@ export function createFeeder({
     outputPortId: 'product',
     ports: [
       { id: 'feed', direction: 'input', kind: 'material', label: 'feed', accepts: [PORT_CAPABILITIES.STORED_SOLID_PARTICULATE] },
-      { id: 'product', direction: 'output', kind: 'material', label: 'product', provides: [PORT_CAPABILITIES.SOLID_PARTICULATE] },
+      {
+        id: 'product',
+        direction: 'output',
+        kind: 'material',
+        label: 'product',
+        provides: [PORT_CAPABILITIES.SOLID_PARTICULATE, PORT_CAPABILITIES.METERED_SOLID_PARTICULATE],
+      },
     ],
     lastError: null,
     enabled,
     operatingState: enabled ? 'idle' : 'off',
   };
+}
+
+function targetCapacityKg(outputTarget, dt) {
+  if (outputTarget?.nodeType === 'hopper') return hopperFreeCapacityKg(outputTarget);
+  if (outputTarget?.nodeType === 'roastingFurnace') return roastingFurnaceInputCapacityKg(outputTarget, dt);
+  return 0;
 }
 
 export function simulateFeederNode(blueprint, node, dt) {
@@ -88,14 +105,14 @@ export function simulateFeederNode(blueprint, node, dt) {
     return;
   }
 
-  const outputHopper = blueprint.nodes[outputConnection.targetNodeId];
-  if (inputHopper?.nodeType !== 'hopper' || outputHopper?.nodeType !== 'hopper') {
-    node.lastError = 'Feeder requires Hopper-compatible storage on feed and output';
+  const outputTarget = blueprint.nodes[outputConnection.targetNodeId];
+  if (inputHopper?.nodeType !== 'hopper' || !['hopper', 'roastingFurnace'].includes(outputTarget?.nodeType)) {
+    node.lastError = 'Feeder requires Hopper storage on feed and a compatible solid receiver on output';
     node.operatingState = 'blocked';
     return;
   }
-  if (inputHopper.id === outputHopper.id) {
-    node.lastError = 'Feeder output storage must be distinct from the feed Hopper';
+  if (inputHopper.id === outputTarget.id) {
+    node.lastError = 'Feeder output must be distinct from the feed Hopper';
     node.operatingState = 'blocked';
     return;
   }
@@ -105,10 +122,20 @@ export function simulateFeederNode(blueprint, node, dt) {
     return;
   }
 
+  const availableOutputCapacityKg = targetCapacityKg(outputTarget, dt);
+  if (availableOutputCapacityKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+    node.lastError = outputTarget.nodeType === 'roastingFurnace'
+      ? 'Feeder downstream furnace cannot accept additional feed this tick'
+      : 'Feeder product output is full';
+    node.operatingState = 'blocked';
+    return;
+  }
+
   const candidateRate = Math.min(
     node.flowRateKgPerSecond,
     node.throughputKgPerSecond,
     hopperStoredMassKg(inputHopper) / dt,
+    availableOutputCapacityKg / dt,
   );
   let candidateFeed = proportionalSolidStateFromHopper(inputHopper, candidateRate);
   const candidateResult = applyContinuousFeeding(
@@ -116,20 +143,21 @@ export function simulateFeederNode(blueprint, node, dt) {
     node.flowRateKgPerSecond,
     node.throughputKgPerSecond,
   );
-  const capacityScale = capacityScaleForOutput(
-    hopperFreeCapacityKg(outputHopper),
-    candidateResult.productSolidState,
-    dt,
-  );
-  if (capacityScale <= APPARATUS_TRANSFER_TOLERANCE_KG) {
-    node.lastError = 'Feeder product output is full';
-    node.operatingState = 'blocked';
-    return;
+  if (outputTarget.nodeType === 'hopper') {
+    const capacityScale = capacityScaleForOutput(
+      hopperFreeCapacityKg(outputTarget),
+      candidateResult.productSolidState,
+      dt,
+    );
+    if (capacityScale <= APPARATUS_TRANSFER_TOLERANCE_KG) {
+      node.lastError = 'Feeder product output is full';
+      node.operatingState = 'blocked';
+      return;
+    }
+    if (capacityScale < 1) candidateFeed = multiplySolidMaterialState(candidateFeed, capacityScale);
   }
-  if (capacityScale < 1) candidateFeed = multiplySolidMaterialState(candidateFeed, capacityScale);
 
   const stagedInput = cloneHopperMaterialState(inputHopper);
-  const stagedOutput = cloneHopperMaterialState(outputHopper);
   const withdrawal = hopperWithdraw(stagedInput, totalSolidQuantity(candidateFeed), dt);
   if (withdrawal.actualTotalKg <= APPARATUS_TRANSFER_TOLERANCE_KG) {
     node.lastError = null;
@@ -144,16 +172,26 @@ export function simulateFeederNode(blueprint, node, dt) {
     [result.productSolidState],
   );
   const expectedOutputKg = totalSolidQuantity(result.productSolidState) * dt;
-  const acceptedOutputKg = hopperReceiveInflow(
-    stagedOutput,
-    result.productSolidState,
-    dt,
-    productSpecificSensibleEnthalpyJPerKg,
-  );
-  assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Feeder product');
+
+  if (outputTarget.nodeType === 'hopper') {
+    const stagedOutput = cloneHopperMaterialState(outputTarget);
+    const acceptedOutputKg = hopperReceiveInflow(
+      stagedOutput,
+      result.productSolidState,
+      dt,
+      productSpecificSensibleEnthalpyJPerKg,
+    );
+    assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Feeder product');
+    commitHopperMaterialState(outputTarget, stagedOutput);
+  } else {
+    const productBody = createSolidMaterialBody(result.productSolidState, {
+      sensibleEnthalpyJ: expectedOutputKg * productSpecificSensibleEnthalpyJPerKg,
+    });
+    const acceptedOutputKg = roastingFurnaceReceiveFeed(outputTarget, productBody, dt);
+    assertTransferAccepted(expectedOutputKg, acceptedOutputKg, 'Feeder furnace feed');
+  }
 
   commitHopperMaterialState(inputHopper, stagedInput);
-  commitHopperMaterialState(outputHopper, stagedOutput);
   updateConnectionStream(
     blueprint,
     inputConnection,
