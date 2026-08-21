@@ -1,5 +1,8 @@
 export const PARTICLE_SIZE_BINS = Object.freeze([
-  Object.freeze({ id: 'lt-0.032mm', name: '<32 µm', minMm: 0, maxMm: 0.032, representativeMm: 0.016 }),
+  Object.freeze({ id: 'lt-0.004mm', name: '<4 µm', minMm: 0, maxMm: 0.004, representativeMm: 0.002 }),
+  Object.freeze({ id: '0.004-0.008mm', name: '4–8 µm', minMm: 0.004, maxMm: 0.008, representativeMm: 0.006 }),
+  Object.freeze({ id: '0.008-0.016mm', name: '8–16 µm', minMm: 0.008, maxMm: 0.016, representativeMm: 0.012 }),
+  Object.freeze({ id: '0.016-0.032mm', name: '16–32 µm', minMm: 0.016, maxMm: 0.032, representativeMm: 0.024 }),
   Object.freeze({ id: '0.032-0.063mm', name: '32–63 µm', minMm: 0.032, maxMm: 0.063, representativeMm: 0.0475 }),
   Object.freeze({ id: '0.063-0.125mm', name: '63–125 µm', minMm: 0.063, maxMm: 0.125, representativeMm: 0.094 }),
   Object.freeze({ id: '0.125-0.25mm', name: '125–250 µm', minMm: 0.125, maxMm: 0.25, representativeMm: 0.1875 }),
@@ -20,9 +23,19 @@ const PARTICLE_SIZE_BIN_BY_ID = Object.freeze(Object.fromEntries(
   PARTICLE_SIZE_BINS.map((bin, index) => [bin.id, Object.freeze({ ...bin, index })])
 ));
 
-// Compatibility-only aliases for fraction keys produced before the staged
-// comminution model. New staged comminution emits the expanded canonical bins.
+// Compatibility-only aliases for fraction keys produced before the current
+// staged comminution vocabulary. New staged comminution emits canonical bins.
 const LEGACY_PARTICLE_SIZE_BINS = Object.freeze({
+  // Transitional staged-comminution builds used one broad <32 µm terminal bin.
+  // Keep it readable without allowing new Ball Mill products to collapse into it.
+  'lt-0.032mm': Object.freeze({
+    id: 'lt-0.032mm',
+    name: '<32 µm (legacy)',
+    minMm: 0,
+    maxMm: 0.032,
+    representativeMm: 0.016,
+    index: PARTICLE_SIZE_BINS.findIndex(bin => bin.id === '0.016-0.032mm'),
+  }),
   'lt-1mm': Object.freeze({
     id: 'lt-1mm',
     name: '<1 mm (legacy)',
@@ -67,8 +80,8 @@ export function particleSizeBinIdForMm(sizeMm) {
   // broad <1 mm class. Keep the exact 1 mm lookup stable for that compatibility
   // path; new Ball Mill settings are below 1 mm and resolve to canonical fine bins.
   if (sizeMm === 1) return 'lt-1mm';
-  // Exact cut points map to the finer/lower bin so a target like 15 mm means
-  // “no coarser than 15 mm”, not the next coarser 15–25 mm product class.
+  // Exact cut points map to the finer/lower bin so a target like 32 µm means
+  // “no coarser than 32 µm”, not the next coarser 32–63 µm product class.
   return PARTICLE_SIZE_BINS.find(bin => sizeMm <= bin.maxMm)?.id
     ?? PARTICLE_SIZE_BINS[PARTICLE_SIZE_BINS.length - 1].id;
 }
