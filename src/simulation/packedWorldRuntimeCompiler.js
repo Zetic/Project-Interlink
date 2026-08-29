@@ -443,10 +443,9 @@ export function compilePackedWorldRuntime(
       };
     });
 
-  // Furnace retained-zone state is compiled and retained in the setup snapshot,
-  // but is intentionally not applied by this PR's WASM adapter yet. The next
-  // Worker cutover will import the entire world atomically rather than introducing
-  // a per-zone/per-fraction live synchronization protocol.
+  // Furnace retained-zone state is compiled into the one-time setup snapshot and
+  // imported atomically before the Rust world is sealed. Normal fixed-step play
+  // never synchronizes zones or material fractions apparatus-by-apparatus.
   const furnaceStateSnapshots = [];
   for (const [canonicalSiteId, blueprint] of Object.entries(simulation.sessions ?? {})) {
     for (const node of Object.values(blueprint.nodes ?? {})) {
