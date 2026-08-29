@@ -1,0 +1,10 @@
+[package]
+name = "interlink-separation"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+interlink-core = { path = "../interlink-core" }
+interlink-processes = { path = "../interlink-processes" }
+interlink-routing = { path = "../interlink-routing" }
