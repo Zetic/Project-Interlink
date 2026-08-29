@@ -4,6 +4,9 @@ use interlink_core::{
 };
 use wasm_bindgen::prelude::*;
 
+mod process_bridge;
+pub use process_bridge::WasmPackedFeeder;
+
 pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 2;
 
 #[wasm_bindgen]
