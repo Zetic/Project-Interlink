@@ -121,8 +121,13 @@ export function createMaterialStream({
     nominalParticleSizeMm: particleSizeMm,
     ...(normalizedSolidState ? { solidState: normalizedSolidState } : { gasState: normalizedGasState }),
     specificSensibleEnthalpyJPerKg,
-    _cachedTotalMassFlowKgPerSecond: 0,
   };
+  Object.defineProperty(stream, '_cachedTotalMassFlowKgPerSecond', {
+    enumerable: false,
+    configurable: true,
+    writable: true,
+    value: 0,
+  });
   refreshCachedTotalFlow(stream);
   Object.defineProperty(stream, 'componentMassFlowKgPerSecond', {
     enumerable: true,
