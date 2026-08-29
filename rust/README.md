@@ -8,6 +8,7 @@ Project Interlink is migrating the authoritative numerical simulation toward a W
 - `interlink-processes` — platform-neutral apparatus/process execution built on `interlink-core`. Process code owns packed streams and reusable machine runtime behavior without depending on browser APIs.
 - `interlink-routing` — platform-neutral multi-port logistics built on the core/process contracts. It owns Splitter/Merger routing, atomic multi-Hopper transactions, and the runtime-local thermal lookup required for exact mixed-stream energy parity.
 - `interlink-comminution` — platform-neutral Crusher/Jaw/Cone/Ball-Mill physics. It owns packed particle-size redistribution, texture-driven liberation, Bond energy/power limiting, and abrasion diagnostics.
+- `interlink-separation` — platform-neutral Screen/Magnetic-Separator physics. It owns conservative two-way material partitioning, sharp particle-size classification, magnetic recovery, dual-output backpressure, and partitioned sensible-energy transport.
 - `interlink-wasm` — the browser adapter. It exposes coarse stateful operations from the Rust crates to JavaScript through `wasm-bindgen`.
 
 The Rust crates are intentionally usable as ordinary native Rust so the same simulation can later run in browser WASM, native tools, headless tests, or another frontend.
@@ -26,7 +27,7 @@ quantity[]              f64
 
 Readable JavaScript/save state keeps canonical string identifiers. Runtime-local numeric IDs are an execution detail and must not become persistent content IDs.
 
-`packedRuntimeCompiler.js` is the canonical-state → execution-state boundary. It compiles solid material state, solid material bodies, Hopper inventories, and the constant-Cp species values needed by packed thermal routing while preserving canonical IDs outside the execution plane. `packedProcessCompiler.js` extends that boundary to canonical solid `MaterialStream` state using the same runtime ID tables. `packedComminutionCompiler.js` compiles particle-size vocabulary, liberation classes, mineral textures, and measured CWi/BWi/Ai values into the same numeric execution ID space.
+`packedRuntimeCompiler.js` is the canonical-state → execution-state boundary. It compiles solid material state, solid material bodies, Hopper inventories, and the constant-Cp species values needed by packed thermal routing while preserving canonical IDs outside the execution plane. `packedProcessCompiler.js` extends that boundary to canonical solid `MaterialStream` state using the same runtime ID tables. `packedComminutionCompiler.js` compiles particle-size vocabulary, liberation classes, mineral textures, and measured CWi/BWi/Ai values into the same numeric execution ID space. `packedSeparationCompiler.js` compiles the particle-size cut metadata, liberation recovery factors, magnetic species response, and thermal properties used by packed classification/separation.
 
 ## Migrated storage semantics
 
@@ -90,6 +91,27 @@ Canonical string IDs and texture definitions are compiled once into `PackedCommi
 
 The JavaScript production simulation remains the behavioral oracle during migration. Native Rust tests mirror production PSD, oversize, texture/liberation, power-limit, mass, and energy expectations, while JavaScript tests verify the canonical metadata compiler that feeds those numeric tables.
 
+## Migrated classification and separation
+
+`interlink-separation` introduces a reusable conservative two-way partition primitive and uses it for both Screen and Magnetic Separator rather than duplicating multi-output transaction code.
+
+The packed implementation preserves:
+
+- ideal sharp-cut screening by each fraction's particle-size-bin upper bound;
+- unchanged species, size, liberation, and texture descriptors through Screen classification;
+- the current Magnetic Separator field-strength curve and base carryover/entrainment term;
+- species `normalizedSeparationCoefficient` values from canonical material definitions;
+- liberation-class recovery factors;
+- the existing particle-size suitability table, including historical `<32 µm` / `<1 mm` compatibility behavior;
+- the Magnetic Separator maximum-feed-size envelope;
+- throughput limiting and capacity scaling against the tightest required nonzero output;
+- atomic source/concentrate-tailings or source/undersize-oversize commits;
+- composition-dependent sensible-enthalpy allocation using the same constant-Cp equilibrium model as production.
+
+`WasmPackedScreen` and `WasmPackedMagneticSeparator` each execute one complete three-Hopper transaction through a coarse WASM call. `WasmPackedSeparationTables` is populated once from canonical particle, liberation, species magnetic-response, and thermal definitions; no per-fraction JavaScript bridge loop is introduced.
+
+As with comminution, JavaScript remains the production oracle until the later authoritative runtime cutover. Rust and JavaScript parity tests pin the current classification/recovery curves and capacity/conservation behavior.
+
 ## Commands
 
 From the repository root:
@@ -112,5 +134,5 @@ The repository pins the stable Rust toolchain and the `wasm32-unknown-unknown` t
 6. Preserve deterministic fixed-step semantics and existing conservation tests during every port.
 7. Prefer migrating reusable physical primitives before apparatus-specific behavior so later machine ports build on one Rust-owned material/transfer model.
 8. Apparatus ports must preserve production operating-state and backpressure behavior in addition to numerical mass/energy parity.
-9. Multi-port routing must commit all participating inventories atomically; partial output commits are not acceptable.
-10. Comminution metadata must be compiled from canonical material definitions; do not hard-code persistent content identity into the Rust execution plane.
+9. Multi-port routing and separation must commit all participating inventories atomically; partial output commits are not acceptable.
+10. Comminution and separation metadata must be compiled from canonical material definitions; do not hard-code persistent content identity into the Rust execution plane.
