@@ -174,6 +174,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   }
 
   let disposed = false;
+  let terminalError = null;
   let running = setup.running;
   let lastSnapshot = null;
   const pending = [];
@@ -182,12 +183,22 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     while (pending.length) pending.shift().reject(error);
   }
 
+  function failWorker(error) {
+    if (terminalError) return;
+    terminalError = error instanceof Error ? error : new Error(String(error));
+    running = false;
+    rejectAll(terminalError);
+    if (typeof worker.terminate === 'function') worker.terminate();
+  }
+
   function onMessage(event) {
     const request = pending.shift();
     if (!request) return;
     const runtimeEvent = event?.data;
     if (!runtimeEvent || runtimeEvent.protocolVersion !== REALTIME_RUNTIME_PROTOCOL_VERSION) {
-      request.reject(new Error('Rust/WASM Worker returned an incompatible runtime event'));
+      const error = new Error('Rust/WASM Worker returned an incompatible runtime event');
+      request.reject(error);
+      failWorker(error);
       return;
     }
     if (runtimeEvent.type === RUNTIME_EVENT_TYPES.ERROR) {
@@ -205,8 +216,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   }
 
   function onError(event) {
-    const message = event?.message ?? 'Rust/WASM Worker failed';
-    rejectAll(new Error(message));
+    failWorker(new Error(event?.message ?? 'Rust/WASM Worker failed'));
   }
 
   if (typeof worker.addEventListener === 'function') {
@@ -219,6 +229,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
 
   function assertActive() {
     if (disposed) throw new Error('Realtime runtime has been disposed');
+    if (terminalError) throw terminalError;
   }
 
   function send(command) {
@@ -252,6 +263,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
       throw new Error('Rust/WASM Worker runtime initialization is managed by the facade');
     }
     await ready;
+    assertActive();
     return send(command);
   }
 
@@ -288,8 +300,9 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     setup,
     ready,
 
-    get running() { return !disposed && running; },
+    get running() { return !disposed && !terminalError && running; },
     get snapshot() { return lastSnapshot; },
+    get error() { return terminalError; },
 
     pause,
     resume,
