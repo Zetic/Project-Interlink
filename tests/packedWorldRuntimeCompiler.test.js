@@ -5,6 +5,7 @@ import { createFeeder } from '../src/simulation/apparatus/feeder.js';
 import { createHopper, createBoundaryBuffer } from '../src/simulation/hopperNode.js';
 import {
   compilePackedWorldRuntime,
+  PACKED_NO_RUNTIME_ID,
   PACKED_SOLID_TARGET_HOPPER,
   populateWasmPackedWorldRuntime,
 } from '../src/simulation/packedWorldRuntimeCompiler.js';
@@ -99,7 +100,10 @@ test('Site-local boundary Hopper links compile after apparatus as passive storag
   const blueprint = world.simulation.sessions['site-a'];
   const importBuffer = createBoundaryBuffer({ id: 'site-import', capacityKg: 10, role: 'import' });
   const exportBuffer = createBoundaryBuffer({ id: 'site-export', capacityKg: 10, role: 'export' });
-  blueprint.nodes = { importBuffer, exportBuffer };
+  blueprint.nodes = {
+    'site-import': importBuffer,
+    'site-export': exportBuffer,
+  };
   blueprint.connections = {
     boundary: materialConnection('boundary', 'site-import', 'output', 'site-export', 'input'),
   };
@@ -109,6 +113,41 @@ test('Site-local boundary Hopper links compile after apparatus as passive storag
   assert.equal(compiled.runtimeIds.nodeIds.valueFor(link.sourceHopperId), 'site-import');
   assert.equal(compiled.runtimeIds.nodeIds.valueFor(link.targetHopperId), 'site-export');
   assert.equal(link.rateKgPerSecond, 10);
+});
+
+test('unsupported occurrence bindings compile as blocked extractor sources rather than dangling IDs', () => {
+  const world = simpleWorld();
+  const blueprint = world.simulation.sessions['site-a'];
+  blueprint.nodes = {
+    feature: { id: 'feature', nodeType: 'feature', ports: [] },
+    extractor: {
+      id: 'extractor',
+      nodeType: 'extractor',
+      sourceInputPortId: 'resource-source',
+      outputPortId: 'output',
+      prototypeRateKgPerSecond: 5,
+      enabled: true,
+    },
+    target: blueprint.nodes.target,
+  };
+  blueprint.connections = {
+    source: {
+      id: 'source',
+      kind: 'resource-access',
+      sourceNodeId: 'feature',
+      sourcePortId: 'resource-source',
+      targetNodeId: 'extractor',
+      targetPortId: 'resource-source',
+      occurrenceId: 'unsupported-occurrence',
+    },
+    product: materialConnection('product', 'extractor', 'output', 'target', 'input'),
+  };
+  const compiled = compilePackedWorldRuntime(world);
+  const extractor = compiled.machines.find(machine => machine.kind === 'extractor');
+  assert.ok(extractor);
+  assert.equal(extractor.occurrenceId, PACKED_NO_RUNTIME_ID);
+  assert.equal(compiled.runtimeIds.occurrenceIds.valueFor(0), null,
+    'unsupported occurrence does not allocate a runtime identity');
 });
 
 test('WASM population is setup-only and seals one coarse world runtime', () => {
