@@ -10,7 +10,13 @@ import {
 } from '../src/simulation/realtimeRuntime.js';
 
 function minimalWorld() {
-  return { sites: {}, regions: {}, systemNodes: {} };
+  return {
+    sites: {},
+    regions: {},
+    features: {},
+    resourceOccurrences: {},
+    systemNodes: {},
+  };
 }
 
 test('realtime runtime preserves pause/play and authoritative fixed-step semantics', () => {
