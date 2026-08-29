@@ -9,9 +9,9 @@ Project Interlink is migrating the authoritative numerical simulation toward a W
 
 The core crate is intentionally usable as ordinary native Rust so the same simulation can later run in browser WASM, native tools, headless tests, or another frontend.
 
-## Current migration slice
+## Packed execution state
 
-The first migrated physical primitive is packed solid-particulate execution state:
+Solid-particulate runtime state uses a structure-of-arrays representation:
 
 ```text
 species_id[]            u16
@@ -23,7 +23,22 @@ quantity[]              f64
 
 Readable JavaScript/save state keeps canonical string identifiers. Runtime-local numeric IDs are an execution detail and must not become persistent content IDs.
 
-The Rust and JavaScript packed implementations share `tests/fixtures/rust_core_parity.json`. The fixture verifies canonical duplicate merging, total quantity, and scaling behavior while the old JS simulation remains authoritative.
+`packedRuntimeCompiler.js` is the canonical-state → execution-state boundary. It now compiles solid material state, solid material bodies, and Hopper inventories while preserving mass and the body's sensible-enthalpy ledger.
+
+## Migrated storage semantics
+
+`interlink-core` now owns packed equivalents of the first conservation-sensitive runtime operations:
+
+- well-mixed proportional solid withdrawal;
+- finite solid material bodies with sensible enthalpy;
+- finite-capacity Hopper storage;
+- capacity-clipped continuous packed inflow;
+- proportional enthalpy withdrawal;
+- atomic conservative Hopper-to-Hopper transfer.
+
+The WASM adapter exposes packed Hoppers and coarse transfer/receive operations. Material arrays remain inside WASM during a Hopper-to-Hopper transfer rather than crossing the JS/WASM boundary per population.
+
+The matching JavaScript packed runtime is a migration fallback and parity oracle, not a second permanent physics engine. Regression tests compare it directly against the current canonical Hopper implementation so production behavior remains the specification until Rust becomes authoritative.
 
 ## Commands
 
@@ -45,3 +60,4 @@ The repository pins the stable Rust toolchain and the `wasm32-unknown-unknown` t
 4. Do not serialize runtime-local numeric IDs as game/content identity.
 5. Do not enable the Rust Worker backend until the migrated state is authoritative enough that each fixed step does not require cloning the full JS world across the thread boundary.
 6. Preserve deterministic fixed-step semantics and existing conservation tests during every port.
+7. Prefer migrating reusable physical primitives before apparatus-specific behavior so later machine ports build on one Rust-owned material/transfer model.
