@@ -1,5 +1,6 @@
 import { iterateSolidFractions } from '../core/materials/solids/solidMaterialState.js';
 import { PackedSolidRuntimeState } from './packedRuntimeState.js';
+import { PackedHopperRuntimeState, PackedSolidRuntimeBody } from './packedStorageRuntime.js';
 
 class RuntimeIdTable {
   constructor(maxId, startId = 0) {
@@ -46,4 +47,29 @@ export function compileSolidMaterialStateForRuntime(canonicalState, idTables = c
     });
   }
   return { packed, idTables };
+}
+
+export function compileSolidMaterialBodyForRuntime(canonicalBody, idTables = createPackedMaterialIdTables()) {
+  if (!canonicalBody?.solidState) throw new Error('canonical solid material body is required');
+  const { packed, idTables: resolvedTables } = compileSolidMaterialStateForRuntime(canonicalBody.solidState, idTables);
+  const sensibleEnthalpyJ = canonicalBody.thermalState?.sensibleEnthalpyJ ?? 0;
+  if (typeof sensibleEnthalpyJ !== 'number' || !Number.isFinite(sensibleEnthalpyJ)) {
+    throw new Error('canonical sensible enthalpy must be finite');
+  }
+  return {
+    packedBody: new PackedSolidRuntimeBody(packed, sensibleEnthalpyJ),
+    idTables: resolvedTables,
+  };
+}
+
+export function compileHopperForRuntime(canonicalHopper, idTables = createPackedMaterialIdTables()) {
+  if (!canonicalHopper?.materialBody) throw new Error('canonical Hopper material body is required');
+  if (typeof canonicalHopper.capacityKg !== 'number' || !Number.isFinite(canonicalHopper.capacityKg) || canonicalHopper.capacityKg <= 0) {
+    throw new Error('canonical Hopper capacityKg must be finite and positive');
+  }
+  const { packedBody, idTables: resolvedTables } = compileSolidMaterialBodyForRuntime(canonicalHopper.materialBody, idTables);
+  return {
+    packedHopper: new PackedHopperRuntimeState(canonicalHopper.capacityKg, packedBody),
+    idTables: resolvedTables,
+  };
 }
