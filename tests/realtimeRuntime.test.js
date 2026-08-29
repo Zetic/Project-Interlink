@@ -67,3 +67,41 @@ test('auto runtime reports acceleration recommendation without selecting an inco
   assert.equal(runtime.recommendation.cpuParallelism, 'shared-memory-workers');
   assert.equal(runtime.recommendation.gpuCompute, 'webgpu-available');
 });
+
+test('Rust/WASM Worker runtime becomes terminal after a Worker crash', async () => {
+  const listeners = new Map();
+  let terminated = false;
+  const worker = {
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    postMessage() {
+      queueMicrotask(() => listeners.get('error')?.({ message: 'simulated Worker crash' }));
+    },
+    terminate() {
+      terminated = true;
+    },
+  };
+
+  const runtime = createRealtimeRuntime(minimalWorld(), {
+    backend: REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER,
+    capabilities: {
+      worker: true,
+      hardwareConcurrency: 2,
+      webAssembly: true,
+      wasmSimd: true,
+      sharedArrayBuffer: false,
+      crossOriginIsolated: false,
+      wasmThreads: false,
+      webGpu: false,
+      offscreenCanvas: false,
+    },
+    workerFactory: () => worker,
+  });
+
+  await assert.rejects(runtime.ready, /simulated Worker crash/);
+  assert.equal(runtime.running, false);
+  assert.match(runtime.error.message, /simulated Worker crash/);
+  assert.equal(terminated, true);
+  await assert.rejects(runtime.stepFixed(), /simulated Worker crash/);
+});
