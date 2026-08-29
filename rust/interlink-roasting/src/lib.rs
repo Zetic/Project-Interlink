@@ -230,6 +230,42 @@ impl PackedRoastingFurnaceRuntime {
         }
     }
 
+    /// Restore retained physical inventory when transferring an already-running
+    /// canonical world into the Rust runtime. Transient streams and diagnostics
+    /// restart cleanly; material and sensible energy are preserved.
+    pub fn import_retained_state(
+        &mut self,
+        zones: Vec<PackedSolidBody>,
+        pending_feed: PackedSolidBody,
+        gas_inventory: PackedGasBody,
+    ) -> Result<(), String> {
+        if zones.len() != self.config.internal_zone_count {
+            return Err(format!(
+                "Furnace retained state has {} zones; expected {}",
+                zones.len(),
+                self.config.internal_zone_count,
+            ));
+        }
+        self.zones = zones;
+        self.pending_feed = pending_feed;
+        self.gas_inventory = gas_inventory;
+        self.solid_product_stream = PackedSolidStream::new();
+        self.gas_exhaust_stream = PackedGasStream::new();
+        self.zone_temperatures_k = vec![
+            THERMAL_REFERENCE_TEMPERATURE_K;
+            self.config.internal_zone_count
+        ];
+        self.diagnostics = PackedRoastingFurnaceDiagnostics::default();
+        self.operating_state = if self.config.enabled {
+            PackedOperatingState::Idle
+        } else {
+            PackedOperatingState::Off
+        };
+        self.last_error = None;
+        self.incoming_mass_since_last_simulation_kg = 0.0;
+        Ok(())
+    }
+
     pub fn config(&self) -> PackedRoastingFurnaceConfig {
         self.config
     }

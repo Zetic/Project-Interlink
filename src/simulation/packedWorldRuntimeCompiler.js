@@ -501,6 +501,34 @@ function gasColumns(body) {
   return body.gasState.toColumns();
 }
 
+function flattenFurnaceZones(zones) {
+  const lengths = new Uint32Array(zones.length);
+  let total = 0;
+  zones.forEach((zone, index) => {
+    const columns = solidColumns(zone);
+    lengths[index] = columns.quantities.length;
+    total += columns.quantities.length;
+  });
+  const speciesIds = new Uint16Array(total);
+  const sizeBinIds = new Uint8Array(total);
+  const liberationClassIds = new Uint8Array(total);
+  const textureProfileIds = new Uint32Array(total);
+  const quantities = new Float64Array(total);
+  const sensibleEnthalpiesJ = new Float64Array(zones.length);
+  let offset = 0;
+  zones.forEach((zone, index) => {
+    const columns = solidColumns(zone);
+    speciesIds.set(columns.speciesIds, offset);
+    sizeBinIds.set(columns.sizeBinIds, offset);
+    liberationClassIds.set(columns.liberationClassIds, offset);
+    textureProfileIds.set(columns.textureProfileIds, offset);
+    quantities.set(columns.quantities, offset);
+    sensibleEnthalpiesJ[index] = zone.sensibleEnthalpyJ;
+    offset += columns.quantities.length;
+  });
+  return { lengths, speciesIds, sizeBinIds, liberationClassIds, textureProfileIds, quantities, sensibleEnthalpiesJ };
+}
+
 function populateMetadata(wasmWorld, compiled) {
   for (const row of compiled.thermalProperties) {
     wasmWorld.set_specific_heat_capacity_j_per_kg_k(
@@ -702,10 +730,28 @@ export function populateWasmPackedWorldRuntime(wasmWorld, compiled) {
       transfer.ordinal,
     );
   }
+  wasmWorld.import_world_elapsed_seconds(compiled.elapsedSeconds);
+  for (const site of compiled.sites) {
+    wasmWorld.import_site_stats(site.siteId, site.elapsedSeconds, site.extractedKg);
+  }
+  for (const furnace of compiled.furnaceStateSnapshots) {
+    const zones = flattenFurnaceZones(furnace.packedZones);
+    const pending = solidColumns(furnace.packedPendingFeed);
+    const gas = gasColumns(furnace.packedGasInventory);
+    wasmWorld.import_roasting_furnace_state(
+      furnace.nodeId,
+      zones.lengths, zones.speciesIds, zones.sizeBinIds, zones.liberationClassIds,
+      zones.textureProfileIds, zones.quantities, zones.sensibleEnthalpiesJ,
+      pending.speciesIds, pending.sizeBinIds, pending.liberationClassIds,
+      pending.textureProfileIds, pending.quantities, furnace.packedPendingFeed.sensibleEnthalpyJ,
+      gas.speciesIds, gas.quantities, furnace.packedGasInventory.sensibleEnthalpyJ,
+    );
+  }
   if (!compiled.running) wasmWorld.pause();
   wasmWorld.seal();
   return {
     runtime: wasmWorld,
     deferredStateImport: compiled.deferredStateImport,
+    stateImportApplied: true,
   };
 }

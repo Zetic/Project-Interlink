@@ -4,7 +4,7 @@ use interlink_comminution::{
     PackedComminutionRuntime, PackedComminutionTables,
 };
 use interlink_core::{
-    transfer_between_hoppers, PackedHopperState, SIMULATION_STEP_SECONDS,
+    transfer_between_hoppers, PackedHopperState, PackedSolidBody, SIMULATION_STEP_SECONDS,
     SOLID_MATERIAL_TOLERANCE,
 };
 use interlink_extraction::{PackedExtractorRuntime, PackedResourceOccurrence};
@@ -276,6 +276,44 @@ impl PackedWorldRuntime {
 
     pub fn elapsed_seconds(&self) -> f64 {
         self.elapsed_seconds
+    }
+
+    pub fn import_elapsed_seconds(&mut self, value: f64) -> Result<(), String> {
+        validate_non_negative_finite(value, "world elapsed seconds")?;
+        self.elapsed_seconds = value;
+        Ok(())
+    }
+
+    pub fn import_site_stats(
+        &mut self,
+        site_id: RuntimeSiteId,
+        elapsed_seconds: f64,
+        extracted_kg: f64,
+    ) -> Result<(), String> {
+        validate_non_negative_finite(elapsed_seconds, "Site elapsed seconds")?;
+        validate_non_negative_finite(extracted_kg, "Site extracted mass")?;
+        let site = self.sites.get_mut(&site_id)
+            .ok_or_else(|| format!("unknown runtime Site {site_id}"))?;
+        site.elapsed_seconds = elapsed_seconds;
+        site.extracted_kg = extracted_kg;
+        Ok(())
+    }
+
+    pub fn import_furnace_state(
+        &mut self,
+        node_id: RuntimeNodeId,
+        zones: Vec<PackedSolidBody>,
+        pending_feed: PackedSolidBody,
+        gas_inventory: PackedGasBody,
+    ) -> Result<(), String> {
+        let record = self.machines.get_mut(&node_id)
+            .ok_or_else(|| format!("missing runtime furnace {node_id}"))?;
+        match &mut record.kind {
+            PackedMachineKind::Furnace { runtime, .. } => {
+                runtime.import_retained_state(zones, pending_feed, gas_inventory)
+            }
+            _ => Err(format!("runtime node {node_id} is not a furnace")),
+        }
     }
 
     pub fn thermal_table(&self) -> &PackedSpeciesThermalTable {

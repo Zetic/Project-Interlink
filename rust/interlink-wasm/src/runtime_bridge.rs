@@ -646,6 +646,84 @@ impl WasmPackedWorldRuntime {
             .map_err(js_error)
     }
 
+    pub fn import_world_elapsed_seconds(&mut self, value: f64) -> Result<(), JsValue> {
+        self.inner.import_elapsed_seconds(value).map_err(js_error)
+    }
+
+    pub fn import_site_stats(
+        &mut self,
+        site_id: u32,
+        elapsed_seconds: f64,
+        extracted_kg: f64,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .import_site_stats(site_id, elapsed_seconds, extracted_kg)
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn import_roasting_furnace_state(
+        &mut self,
+        node_id: u32,
+        zone_lengths: Vec<u32>,
+        zone_species_ids: Vec<u16>,
+        zone_size_bin_ids: Vec<u8>,
+        zone_liberation_class_ids: Vec<u8>,
+        zone_texture_profile_ids: Vec<u32>,
+        zone_quantities: Vec<f64>,
+        zone_sensible_enthalpies_j: Vec<f64>,
+        pending_species_ids: Vec<u16>,
+        pending_size_bin_ids: Vec<u8>,
+        pending_liberation_class_ids: Vec<u8>,
+        pending_texture_profile_ids: Vec<u32>,
+        pending_quantities: Vec<f64>,
+        pending_sensible_enthalpy_j: f64,
+        gas_species_ids: Vec<u16>,
+        gas_quantities: Vec<f64>,
+        gas_sensible_enthalpy_j: f64,
+    ) -> Result<(), JsValue> {
+        if zone_lengths.len() != zone_sensible_enthalpies_j.len() {
+            return Err(JsValue::from_str("Furnace zone lengths and enthalpies must align"));
+        }
+        let total: usize = zone_lengths.iter().map(|value| *value as usize).sum();
+        if zone_species_ids.len() != total
+            || zone_size_bin_ids.len() != total
+            || zone_liberation_class_ids.len() != total
+            || zone_texture_profile_ids.len() != total
+            || zone_quantities.len() != total
+        {
+            return Err(JsValue::from_str("Furnace flattened zone columns must align"));
+        }
+        let mut zones = Vec::with_capacity(zone_lengths.len());
+        let mut offset = 0usize;
+        for (zone_index, length) in zone_lengths.iter().enumerate() {
+            let end = offset + *length as usize;
+            zones.push(solid_body_from_columns(
+                zone_species_ids[offset..end].to_vec(),
+                zone_size_bin_ids[offset..end].to_vec(),
+                zone_liberation_class_ids[offset..end].to_vec(),
+                zone_texture_profile_ids[offset..end].to_vec(),
+                zone_quantities[offset..end].to_vec(),
+                zone_sensible_enthalpies_j[zone_index],
+            ).map_err(js_error)?);
+            offset = end;
+        }
+        let pending_feed = solid_body_from_columns(
+            pending_species_ids,
+            pending_size_bin_ids,
+            pending_liberation_class_ids,
+            pending_texture_profile_ids,
+            pending_quantities,
+            pending_sensible_enthalpy_j,
+        ).map_err(js_error)?;
+        let gas_inventory = gas_body_from_columns(
+            gas_species_ids, gas_quantities, gas_sensible_enthalpy_j,
+        ).map_err(js_error)?;
+        self.inner
+            .import_furnace_state(node_id, zones, pending_feed, gas_inventory)
+            .map_err(js_error)
+    }
+
     pub fn seal(&mut self) {
         self.inner.seal();
     }
