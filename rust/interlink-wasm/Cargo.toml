@@ -18,4 +18,5 @@ interlink-thermal = { path = "../interlink-thermal" }
 interlink-thermochemistry = { path = "../interlink-thermochemistry" }
 interlink-roasting = { path = "../interlink-roasting" }
 interlink-runtime = { path = "../interlink-runtime" }
-wasm-bindgen = "0.2"
+# Keep generated browser glue and the Rust dependency on the same exact ABI/tool version.
+wasm-bindgen = "=0.2.127"
