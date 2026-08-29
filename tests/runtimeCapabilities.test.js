@@ -34,6 +34,19 @@ test('runtime capability report distinguishes worker, shared-memory, and WebGPU 
   assert.equal(capabilities.offscreenCanvas, true);
 });
 
+test('WASM SIMD detection follows the supplied runtime scope', () => {
+  const withoutWasm = browserRuntimeCapabilities({ navigator: {} });
+  assert.equal(withoutWasm.webAssembly, false);
+  assert.equal(withoutWasm.wasmSimd, false);
+
+  const rejectingWasm = browserRuntimeCapabilities({
+    navigator: {},
+    WebAssembly: { validate: () => false },
+  });
+  assert.equal(rejectingWasm.webAssembly, true);
+  assert.equal(rejectingWasm.wasmSimd, false);
+});
+
 test('runtime backend policy does not require unavailable accelerators', () => {
   const backend = recommendedRuntimeBackend({
     worker: false,
