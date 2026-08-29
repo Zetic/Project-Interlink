@@ -41,6 +41,8 @@ function isPlayerRemovableNode(node) {
 export function nodeOwnedMatterKg(node) {
   if (node?.nodeType === 'hopper') return hopperStoredMassKg(node);
   if (node?.nodeType === 'roastingFurnace') {
+    const projected = node.runtimePresentation?.retainedMassKg;
+    if (Number.isFinite(projected) && projected >= 0) return projected;
     return roastingFurnaceChargeMassKg(node) + roastingFurnacePendingFeedMassKg(node);
   }
   return 0;

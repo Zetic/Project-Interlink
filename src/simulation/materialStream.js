@@ -210,6 +210,8 @@ export function clearMaterialStream(stream) {
 }
 
 export function totalMaterialStreamMassFlowKgPerSecond(stream) {
+  const projected = stream?._runtimePresentationMassFlowKgPerSecond;
+  if (Number.isFinite(projected) && projected >= 0) return projected;
   if (!Number.isFinite(stream?._cachedTotalMassFlowKgPerSecond)) refreshCachedTotalFlow(stream);
   return stream._cachedTotalMassFlowKgPerSecond;
 }

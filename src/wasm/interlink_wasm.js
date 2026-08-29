@@ -2270,6 +2270,12 @@ if (Symbol.dispose) WasmPackedThermalTable.prototype[Symbol.dispose] = WasmPacke
  * per-apparatus or per-fraction JavaScript loop is required.
  */
 export class WasmPackedWorldRuntime {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmPackedWorldRuntime.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmPackedWorldRuntimeFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
@@ -2593,6 +2599,9 @@ export class WasmPackedWorldRuntime {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
+    begin_live_reconfigure() {
+        wasm.wasmpackedworldruntime_begin_live_reconfigure(this.__wbg_ptr);
+    }
     /**
      * @param {number} transfer_id
      * @returns {number}
@@ -2609,6 +2618,13 @@ export class WasmPackedWorldRuntime {
         const ret = wasm.wasmpackedworldruntime_boundary_last_rate_kg_per_second(this.__wbg_ptr, transfer_id);
         return ret;
     }
+    /**
+     * @returns {WasmPackedWorldRuntime}
+     */
+    clone_for_live_reconfigure() {
+        const ret = wasm.wasmpackedworldruntime_clone_for_live_reconfigure(this.__wbg_ptr);
+        return WasmPackedWorldRuntime.__wrap(ret);
+    }
     commit_goethite_reaction() {
         const ret = wasm.wasmpackedworldruntime_commit_goethite_reaction(this.__wbg_ptr);
         if (ret[1]) {
@@ -2623,11 +2639,54 @@ export class WasmPackedWorldRuntime {
         return ret;
     }
     /**
+     * @param {Uint32Array} active_machine_ids
+     */
+    finish_live_reconfigure(active_machine_ids) {
+        const ptr0 = passArray32ToWasm0(active_machine_ids, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmpackedworldruntime_finish_live_reconfigure(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * @param {number} node_id
      * @returns {number}
      */
     furnace_actual_charge_temperature_k(node_id) {
         const ret = wasm.wasmpackedworldruntime_furnace_actual_charge_temperature_k(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    furnace_charge_mass_kg(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_charge_mass_kg(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    furnace_last_feed_rate_kg_per_second(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_last_feed_rate_kg_per_second(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    furnace_last_goethite_conversion_fraction(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_last_goethite_conversion_fraction(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    furnace_last_heat_loss_power_kw(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_last_heat_loss_power_kw(this.__wbg_ptr, node_id);
         return ret;
     }
     /**
@@ -2642,8 +2701,32 @@ export class WasmPackedWorldRuntime {
      * @param {number} node_id
      * @returns {number}
      */
+    furnace_last_product_rate_kg_per_second(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_last_product_rate_kg_per_second(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
     furnace_last_reaction_power_kw(node_id) {
         const ret = wasm.wasmpackedworldruntime_furnace_last_reaction_power_kw(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    furnace_last_solver_evaluation_count(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_last_solver_evaluation_count(this.__wbg_ptr, node_id);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    furnace_pending_feed_mass_kg(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_pending_feed_mass_kg(this.__wbg_ptr, node_id);
         return ret;
     }
     /**
@@ -2750,6 +2833,15 @@ export class WasmPackedWorldRuntime {
     }
     /**
      * @param {number} node_id
+     * @param {number} input_index
+     * @returns {number}
+     */
+    node_input_mass_flow_kg_per_second(node_id, input_index) {
+        const ret = wasm.wasmpackedworldruntime_node_input_mass_flow_kg_per_second(this.__wbg_ptr, node_id, input_index);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
      * @returns {string}
      */
     node_last_error(node_id) {
@@ -2807,6 +2899,63 @@ export class WasmPackedWorldRuntime {
     }
     pause() {
         wasm.wasmpackedworldruntime_pause(this.__wbg_ptr);
+    }
+    /**
+     * @param {number} node_id
+     */
+    remove_exhaust_vent_live(node_id) {
+        wasm.wasmpackedworldruntime_remove_exhaust_vent_live(this.__wbg_ptr, node_id);
+    }
+    /**
+     * @param {number} node_id
+     */
+    remove_hopper_if_empty_live(node_id) {
+        const ret = wasm.wasmpackedworldruntime_remove_hopper_if_empty_live(this.__wbg_ptr, node_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} node_id
+     * @param {Uint16Array} species_ids
+     * @param {Float64Array} quantities
+     * @param {number} sensible_enthalpy_j
+     */
+    replace_exhaust_vent_state_live(node_id, species_ids, quantities, sensible_enthalpy_j) {
+        const ptr0 = passArray16ToWasm0(species_ids, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF64ToWasm0(quantities, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmpackedworldruntime_replace_exhaust_vent_state_live(this.__wbg_ptr, node_id, ptr0, len0, ptr1, len1, sensible_enthalpy_j);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} capacity_kg
+     * @param {Uint16Array} species_ids
+     * @param {Uint8Array} size_bin_ids
+     * @param {Uint8Array} liberation_class_ids
+     * @param {Uint32Array} texture_profile_ids
+     * @param {Float64Array} quantities
+     * @param {number} sensible_enthalpy_j
+     */
+    replace_hopper_state_live(node_id, capacity_kg, species_ids, size_bin_ids, liberation_class_ids, texture_profile_ids, quantities, sensible_enthalpy_j) {
+        const ptr0 = passArray16ToWasm0(species_ids, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(size_bin_ids, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(liberation_class_ids, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray32ToWasm0(texture_profile_ids, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArrayF64ToWasm0(quantities, wasm.__wbindgen_malloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmpackedworldruntime_replace_hopper_state_live(this.__wbg_ptr, node_id, capacity_kg, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, sensible_enthalpy_j);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     resume() {
         wasm.wasmpackedworldruntime_resume(this.__wbg_ptr);
@@ -2913,6 +3062,24 @@ export class WasmPackedWorldRuntime {
         return ret;
     }
     /**
+     * @param {number} site_id
+     * @param {number} link_index
+     * @returns {number}
+     */
+    site_passive_link_last_moved_kg(site_id, link_index) {
+        const ret = wasm.wasmpackedworldruntime_site_passive_link_last_moved_kg(this.__wbg_ptr, site_id, link_index);
+        return ret;
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} link_index
+     * @returns {number}
+     */
+    site_passive_link_last_rate_kg_per_second(site_id, link_index) {
+        const ret = wasm.wasmpackedworldruntime_site_passive_link_last_rate_kg_per_second(this.__wbg_ptr, site_id, link_index);
+        return ret;
+    }
+    /**
      * @returns {boolean}
      */
     tick_fixed() {
@@ -2921,6 +3088,148 @@ export class WasmPackedWorldRuntime {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] !== 0;
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} equipment_kind
+     * @param {number} target_size_bin_id
+     * @param {number} target_particle_size_mm
+     * @param {number} throughput_kg_per_second
+     * @param {number} rated_power_kw
+     * @param {boolean} enabled
+     * @param {number} input_hopper_id
+     * @param {number} output_hopper_id
+     */
+    upsert_comminution_live(site_id, node_id, ordinal, equipment_kind, target_size_bin_id, target_particle_size_mm, throughput_kg_per_second, rated_power_kw, enabled, input_hopper_id, output_hopper_id) {
+        const ret = wasm.wasmpackedworldruntime_upsert_comminution_live(this.__wbg_ptr, site_id, node_id, ordinal, equipment_kind, target_size_bin_id, target_particle_size_mm, throughput_kg_per_second, rated_power_kw, enabled, input_hopper_id, output_hopper_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} rate_kg_per_second
+     * @param {boolean} enabled
+     * @param {number} occurrence_id
+     * @param {number} output_hopper_id
+     */
+    upsert_extractor_live(site_id, node_id, ordinal, rate_kg_per_second, enabled, occurrence_id, output_hopper_id) {
+        const ret = wasm.wasmpackedworldruntime_upsert_extractor_live(this.__wbg_ptr, site_id, node_id, ordinal, rate_kg_per_second, enabled, occurrence_id, output_hopper_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} flow_rate_kg_per_second
+     * @param {number} throughput_kg_per_second
+     * @param {boolean} enabled
+     * @param {number} input_hopper_id
+     * @param {number} output_target_kind
+     * @param {number} output_target_id
+     */
+    upsert_feeder_live(site_id, node_id, ordinal, flow_rate_kg_per_second, throughput_kg_per_second, enabled, input_hopper_id, output_target_kind, output_target_id) {
+        const ret = wasm.wasmpackedworldruntime_upsert_feeder_live(this.__wbg_ptr, site_id, node_id, ordinal, flow_rate_kg_per_second, throughput_kg_per_second, enabled, input_hopper_id, output_target_kind, output_target_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} field_strength
+     * @param {number} max_feed_particle_size_mm
+     * @param {number} throughput_kg_per_second
+     * @param {boolean} enabled
+     * @param {number} input_hopper_id
+     * @param {number} concentrate_hopper_id
+     * @param {number} tailings_hopper_id
+     */
+    upsert_magnetic_separator_live(site_id, node_id, ordinal, field_strength, max_feed_particle_size_mm, throughput_kg_per_second, enabled, input_hopper_id, concentrate_hopper_id, tailings_hopper_id) {
+        const ret = wasm.wasmpackedworldruntime_upsert_magnetic_separator_live(this.__wbg_ptr, site_id, node_id, ordinal, field_strength, max_feed_particle_size_mm, throughput_kg_per_second, enabled, input_hopper_id, concentrate_hopper_id, tailings_hopper_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} throughput_kg_per_second
+     * @param {boolean} enabled
+     * @param {number} input_a_hopper_id
+     * @param {number} input_b_hopper_id
+     * @param {number} output_hopper_id
+     */
+    upsert_merger_live(site_id, node_id, ordinal, throughput_kg_per_second, enabled, input_a_hopper_id, input_b_hopper_id, output_hopper_id) {
+        const ret = wasm.wasmpackedworldruntime_upsert_merger_live(this.__wbg_ptr, site_id, node_id, ordinal, throughput_kg_per_second, enabled, input_a_hopper_id, input_b_hopper_id, output_hopper_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} temperature_setpoint_k
+     * @param {number} rated_heater_power_kw
+     * @param {number} maximum_operating_temperature_k
+     * @param {number} maximum_solid_throughput_kg_per_second
+     * @param {number} effective_chamber_hold_up_kg
+     * @param {number} heat_loss_coefficient_w_per_k
+     * @param {number} internal_zone_count
+     * @param {boolean} enabled
+     * @param {number} product_target_kind
+     * @param {number} product_target_id
+     * @param {number} gas_vent_id
+     * @param {boolean} preserve_retained_state
+     */
+    upsert_roasting_furnace_live(site_id, node_id, ordinal, temperature_setpoint_k, rated_heater_power_kw, maximum_operating_temperature_k, maximum_solid_throughput_kg_per_second, effective_chamber_hold_up_kg, heat_loss_coefficient_w_per_k, internal_zone_count, enabled, product_target_kind, product_target_id, gas_vent_id, preserve_retained_state) {
+        const ret = wasm.wasmpackedworldruntime_upsert_roasting_furnace_live(this.__wbg_ptr, site_id, node_id, ordinal, temperature_setpoint_k, rated_heater_power_kw, maximum_operating_temperature_k, maximum_solid_throughput_kg_per_second, effective_chamber_hold_up_kg, heat_loss_coefficient_w_per_k, internal_zone_count, enabled, product_target_kind, product_target_id, gas_vent_id, preserve_retained_state);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} aperture_size_mm
+     * @param {number} throughput_kg_per_second
+     * @param {boolean} enabled
+     * @param {number} input_hopper_id
+     * @param {number} undersize_hopper_id
+     * @param {number} oversize_hopper_id
+     */
+    upsert_screen_live(site_id, node_id, ordinal, aperture_size_mm, throughput_kg_per_second, enabled, input_hopper_id, undersize_hopper_id, oversize_hopper_id) {
+        const ret = wasm.wasmpackedworldruntime_upsert_screen_live(this.__wbg_ptr, site_id, node_id, ordinal, aperture_size_mm, throughput_kg_per_second, enabled, input_hopper_id, undersize_hopper_id, oversize_hopper_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} site_id
+     * @param {number} node_id
+     * @param {number} ordinal
+     * @param {number} split_fraction_to_a
+     * @param {number} throughput_kg_per_second
+     * @param {boolean} enabled
+     * @param {number} input_hopper_id
+     * @param {number} output_a_hopper_id
+     * @param {number} output_b_hopper_id
+     */
+    upsert_splitter_live(site_id, node_id, ordinal, split_fraction_to_a, throughput_kg_per_second, enabled, input_hopper_id, output_a_hopper_id, output_b_hopper_id) {
+        const ret = wasm.wasmpackedworldruntime_upsert_splitter_live(this.__wbg_ptr, site_id, node_id, ordinal, split_fraction_to_a, throughput_kg_per_second, enabled, input_hopper_id, output_a_hopper_id, output_b_hopper_id);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
      * @param {number} node_id

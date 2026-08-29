@@ -1,4 +1,6 @@
 import { compilePackedWorldRuntime } from './packedWorldRuntimeCompiler.js';
+import { createPackedMaterialIdTablesFromValues } from './packedRuntimeCompiler.js';
+import { getNodePortDefinitions } from './simulationEngine.js';
 
 function solidBodyWire(body) {
   const columns = body.solidState.toColumns();
@@ -34,8 +36,31 @@ function cloneRows(rows) {
  * Runtime-local numeric IDs and packed TypedArrays cross the boundary once;
  * canonical strings remain only in compact lookup arrays for presentation.
  */
-export function compilePackedWorldWorkerSetup(world) {
-  const compiled = compilePackedWorldRuntime(world);
+function canonicalRuntimeNode(world, canonicalNodeId) {
+  for (const blueprint of Object.values(world?.simulation?.sessions ?? {})) {
+    if (blueprint?.nodes?.[canonicalNodeId]) return blueprint.nodes[canonicalNodeId];
+  }
+  for (const workspace of Object.values(world?.simulation?.workspaces ?? {})) {
+    if (workspace?.nodes?.[canonicalNodeId]) return workspace.nodes[canonicalNodeId];
+  }
+  return null;
+}
+
+function materialPortIds(node, direction) {
+  return getNodePortDefinitions(node)
+    .filter(port => port.kind === 'material' && port.direction === direction)
+    .map(port => port.id);
+}
+
+export function compilePackedWorldWorkerSetup(world, { previousSetup = null } = {}) {
+  const idTables = previousSetup
+    ? createPackedMaterialIdTablesFromValues(previousSetup.materialIds)
+    : undefined;
+  const compiled = compilePackedWorldRuntime(
+    world,
+    idTables,
+    previousSetup?.runtimeIds ?? {},
+  );
   return {
     running: compiled.running,
     elapsedSeconds: compiled.elapsedSeconds,
@@ -64,11 +89,18 @@ export function compilePackedWorldWorkerSetup(world) {
       canonicalNodeId: vent.canonicalNodeId,
       body: gasBodyWire(vent.packedGasBody),
     })),
-    machines: cloneRows(compiled.machines).map(machine => ({
-      ...machine,
-      outputTarget: machine.outputTarget ? { ...machine.outputTarget } : undefined,
-      productTarget: machine.productTarget ? { ...machine.productTarget } : undefined,
-    })),
+    machines: cloneRows(compiled.machines).map(machine => {
+      const canonicalNodeId = compiled.runtimeIds.nodeIds.valueFor(machine.nodeId);
+      const node = canonicalRuntimeNode(world, canonicalNodeId);
+      return {
+        ...machine,
+        canonicalNodeId,
+        inputPortIds: materialPortIds(node, 'input'),
+        outputPortIds: materialPortIds(node, 'output'),
+        outputTarget: machine.outputTarget ? { ...machine.outputTarget } : undefined,
+        productTarget: machine.productTarget ? { ...machine.productTarget } : undefined,
+      };
+    }),
     passiveLinks: cloneRows(compiled.passiveLinks),
     boundaryTransfers: cloneRows(compiled.boundaryTransfers),
     thermalProperties: cloneRows(compiled.thermalProperties),
@@ -399,6 +431,9 @@ export function snapshotWasmPackedWorldRuntime(wasmWorld, setup) {
         id: setup.runtimeIds.nodes[machine.nodeId] ?? null,
         operatingState: wasmWorld.node_operating_state(machine.nodeId),
         lastError: wasmWorld.node_last_error(machine.nodeId),
+        inputMassFlowKgPerSecond: machine.inputPortIds.map(
+          (_, index) => wasmWorld.node_input_mass_flow_kg_per_second(machine.nodeId, index),
+        ),
         outputMassFlowKgPerSecond: Array.from(
           { length: outputCount(machine) },
           (_, index) => wasmWorld.node_output_mass_flow_kg_per_second(machine.nodeId, index),
@@ -409,10 +444,22 @@ export function snapshotWasmPackedWorldRuntime(wasmWorld, setup) {
           actualChargeTemperatureK: wasmWorld.furnace_actual_charge_temperature_k(machine.nodeId),
           lastHeaterPowerKw: wasmWorld.furnace_last_heater_power_kw(machine.nodeId),
           lastReactionPowerKw: wasmWorld.furnace_last_reaction_power_kw(machine.nodeId),
+          lastHeatLossPowerKw: wasmWorld.furnace_last_heat_loss_power_kw(machine.nodeId),
+          lastFeedRateKgPerSecond: wasmWorld.furnace_last_feed_rate_kg_per_second(machine.nodeId),
+          lastProductRateKgPerSecond: wasmWorld.furnace_last_product_rate_kg_per_second(machine.nodeId),
+          lastGoethiteConversionFraction: wasmWorld.furnace_last_goethite_conversion_fraction(machine.nodeId),
+          lastSolverEvaluationCount: wasmWorld.furnace_last_solver_evaluation_count(machine.nodeId),
+          chargeMassKg: wasmWorld.furnace_charge_mass_kg(machine.nodeId),
+          pendingFeedMassKg: wasmWorld.furnace_pending_feed_mass_kg(machine.nodeId),
         };
       }
       return snapshot;
     }),
+    passiveLinks: setup.passiveLinks.map(link => ({
+      id: link.canonicalConnectionId,
+      lastMovedKg: wasmWorld.site_passive_link_last_moved_kg(link.siteId, link.siteLinkIndex),
+      lastRateKgPerSecond: wasmWorld.site_passive_link_last_rate_kg_per_second(link.siteId, link.siteLinkIndex),
+    })),
     boundaryTransfers: setup.boundaryTransfers.map(transfer => ({
       id: transfer.canonicalTransferId,
       lastMovedKg: wasmWorld.boundary_last_moved_kg(transfer.transferId),

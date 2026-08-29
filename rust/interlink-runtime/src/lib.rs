@@ -1,17 +1,17 @@
+mod live_reconfigure;
+
 use std::collections::HashMap;
 
-use interlink_comminution::{
-    PackedComminutionRuntime, PackedComminutionTables,
-};
+use interlink_comminution::{PackedComminutionRuntime, PackedComminutionTables};
 use interlink_core::{
     transfer_between_hoppers, PackedHopperState, PackedSolidBody, SIMULATION_STEP_SECONDS,
     SOLID_MATERIAL_TOLERANCE,
 };
 use interlink_extraction::{PackedExtractorRuntime, PackedResourceOccurrence};
-use interlink_processes::{PackedFeederRuntime, PackedOperatingState, APPARATUS_TRANSFER_TOLERANCE_KG};
-use interlink_roasting::{
-    PackedRoastingFurnaceDiagnostics, PackedRoastingFurnaceRuntime,
+use interlink_processes::{
+    PackedFeederRuntime, PackedOperatingState, APPARATUS_TRANSFER_TOLERANCE_KG,
 };
+use interlink_roasting::{PackedRoastingFurnaceDiagnostics, PackedRoastingFurnaceRuntime};
 use interlink_routing::{PackedMergerRuntime, PackedSpeciesThermalTable, PackedSplitterRuntime};
 use interlink_separation::{
     PackedMagneticSeparatorRuntime, PackedScreenRuntime, PackedSeparationTables,
@@ -164,6 +164,8 @@ pub struct PackedStorageLink {
     pub source_hopper_id: RuntimeNodeId,
     pub target_hopper_id: RuntimeNodeId,
     pub rate_kg_per_second: f64,
+    pub last_moved_kg: f64,
+    pub last_rate_kg_per_second: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -292,7 +294,9 @@ impl PackedWorldRuntime {
     ) -> Result<(), String> {
         validate_non_negative_finite(elapsed_seconds, "Site elapsed seconds")?;
         validate_non_negative_finite(extracted_kg, "Site extracted mass")?;
-        let site = self.sites.get_mut(&site_id)
+        let site = self
+            .sites
+            .get_mut(&site_id)
             .ok_or_else(|| format!("unknown runtime Site {site_id}"))?;
         site.elapsed_seconds = elapsed_seconds;
         site.extracted_kg = extracted_kg;
@@ -306,7 +310,9 @@ impl PackedWorldRuntime {
         pending_feed: PackedSolidBody,
         gas_inventory: PackedGasBody,
     ) -> Result<(), String> {
-        let record = self.machines.get_mut(&node_id)
+        let record = self
+            .machines
+            .get_mut(&node_id)
             .ok_or_else(|| format!("missing runtime furnace {node_id}"))?;
         match &mut record.kind {
             PackedMachineKind::Furnace { runtime, .. } => {
@@ -363,7 +369,10 @@ impl PackedWorldRuntime {
         node_id: RuntimeNodeId,
         hopper: PackedHopperState,
     ) -> Result<(), String> {
-        if self.hoppers.contains_key(&node_id) || self.machines.contains_key(&node_id) || self.vents.contains_key(&node_id) {
+        if self.hoppers.contains_key(&node_id)
+            || self.machines.contains_key(&node_id)
+            || self.vents.contains_key(&node_id)
+        {
             return Err(format!("runtime node {node_id} already exists"));
         }
         self.hoppers.insert(node_id, hopper);
@@ -392,7 +401,10 @@ impl PackedWorldRuntime {
         Ok(())
     }
 
-    pub fn occurrence(&self, occurrence_id: RuntimeOccurrenceId) -> Option<&PackedResourceOccurrence> {
+    pub fn occurrence(
+        &self,
+        occurrence_id: RuntimeOccurrenceId,
+    ) -> Option<&PackedResourceOccurrence> {
         self.occurrences.get(&occurrence_id)
     }
 
@@ -401,7 +413,10 @@ impl PackedWorldRuntime {
         node_id: RuntimeNodeId,
         emitted_gas: PackedGasBody,
     ) -> Result<(), String> {
-        if self.hoppers.contains_key(&node_id) || self.machines.contains_key(&node_id) || self.vents.contains_key(&node_id) {
+        if self.hoppers.contains_key(&node_id)
+            || self.machines.contains_key(&node_id)
+            || self.vents.contains_key(&node_id)
+        {
             return Err(format!("runtime node {node_id} already exists"));
         }
         self.vents.insert(node_id, emitted_gas);
@@ -425,7 +440,10 @@ impl PackedWorldRuntime {
         if !self.sites.contains_key(&site_id) {
             return Err(format!("unknown runtime Site {site_id}"));
         }
-        if self.hoppers.contains_key(&node_id) || self.machines.contains_key(&node_id) || self.vents.contains_key(&node_id) {
+        if self.hoppers.contains_key(&node_id)
+            || self.machines.contains_key(&node_id)
+            || self.vents.contains_key(&node_id)
+        {
             return Err(format!("runtime node {node_id} already exists"));
         }
         let record = PackedMachineRecord {
@@ -436,11 +454,15 @@ impl PackedWorldRuntime {
             kind,
         };
         self.machines.insert(node_id, record);
-        self.sites.get_mut(&site_id).unwrap().schedule.push(ScheduleEntry {
-            node_id,
-            phase,
-            ordinal,
-        });
+        self.sites
+            .get_mut(&site_id)
+            .unwrap()
+            .schedule
+            .push(ScheduleEntry {
+                node_id,
+                phase,
+                ordinal,
+            });
         self.sealed = false;
         Ok(())
     }
@@ -461,7 +483,11 @@ impl PackedWorldRuntime {
             PHASE_EXTRACTOR,
             ordinal,
             state,
-            PackedMachineKind::Extractor { runtime, occurrence_id, output_hopper_id },
+            PackedMachineKind::Extractor {
+                runtime,
+                occurrence_id,
+                output_hopper_id,
+            },
         )
     }
 
@@ -482,7 +508,12 @@ impl PackedWorldRuntime {
             PHASE_MERGER,
             ordinal,
             state,
-            PackedMachineKind::Merger { runtime, input_a_hopper_id, input_b_hopper_id, output_hopper_id },
+            PackedMachineKind::Merger {
+                runtime,
+                input_a_hopper_id,
+                input_b_hopper_id,
+                output_hopper_id,
+            },
         )
     }
 
@@ -502,7 +533,11 @@ impl PackedWorldRuntime {
             PHASE_FEEDER,
             ordinal,
             state,
-            PackedMachineKind::Feeder { runtime, input_hopper_id, output_target },
+            PackedMachineKind::Feeder {
+                runtime,
+                input_hopper_id,
+                output_target,
+            },
         )
     }
 
@@ -516,7 +551,10 @@ impl PackedWorldRuntime {
         input_hopper_id: Option<RuntimeNodeId>,
         output_hopper_id: Option<RuntimeNodeId>,
     ) -> Result<(), String> {
-        if !matches!(phase, PHASE_LEGACY_CRUSHER | PHASE_CONE_CRUSHER | PHASE_BALL_MILL) {
+        if !matches!(
+            phase,
+            PHASE_LEGACY_CRUSHER | PHASE_CONE_CRUSHER | PHASE_BALL_MILL
+        ) {
             return Err(format!("invalid comminution scheduler phase {phase}"));
         }
         let state = runtime.operating_state();
@@ -526,7 +564,11 @@ impl PackedWorldRuntime {
             phase,
             ordinal,
             state,
-            PackedMachineKind::Comminution { runtime, input_hopper_id, output_hopper_id },
+            PackedMachineKind::Comminution {
+                runtime,
+                input_hopper_id,
+                output_hopper_id,
+            },
         )
     }
 
@@ -547,7 +589,12 @@ impl PackedWorldRuntime {
             PHASE_SCREEN,
             ordinal,
             state,
-            PackedMachineKind::Screen { runtime, input_hopper_id, undersize_hopper_id, oversize_hopper_id },
+            PackedMachineKind::Screen {
+                runtime,
+                input_hopper_id,
+                undersize_hopper_id,
+                oversize_hopper_id,
+            },
         )
     }
 
@@ -568,7 +615,12 @@ impl PackedWorldRuntime {
             PHASE_SPLITTER,
             ordinal,
             state,
-            PackedMachineKind::Splitter { runtime, input_hopper_id, output_a_hopper_id, output_b_hopper_id },
+            PackedMachineKind::Splitter {
+                runtime,
+                input_hopper_id,
+                output_a_hopper_id,
+                output_b_hopper_id,
+            },
         )
     }
 
@@ -589,7 +641,12 @@ impl PackedWorldRuntime {
             PHASE_MAGNETIC_SEPARATOR,
             ordinal,
             state,
-            PackedMachineKind::MagneticSeparator { runtime, input_hopper_id, concentrate_hopper_id, tailings_hopper_id },
+            PackedMachineKind::MagneticSeparator {
+                runtime,
+                input_hopper_id,
+                concentrate_hopper_id,
+                tailings_hopper_id,
+            },
         )
     }
 
@@ -609,7 +666,11 @@ impl PackedWorldRuntime {
             PHASE_ROASTING_FURNACE,
             ordinal,
             state,
-            PackedMachineKind::Furnace { runtime, product_target, gas_vent_id },
+            PackedMachineKind::Furnace {
+                runtime,
+                product_target,
+                gas_vent_id,
+            },
         )
     }
 
@@ -624,12 +685,16 @@ impl PackedWorldRuntime {
         if source_hopper_id == target_hopper_id {
             return Err("passive storage link source and target must differ".to_string());
         }
-        let site = self.sites.get_mut(&site_id)
+        let site = self
+            .sites
+            .get_mut(&site_id)
             .ok_or_else(|| format!("unknown runtime Site {site_id}"))?;
         site.passive_storage_links.push(PackedStorageLink {
             source_hopper_id,
             target_hopper_id,
             rate_kg_per_second,
+            last_moved_kg: 0.0,
+            last_rate_kg_per_second: 0.0,
         });
         self.sealed = false;
         Ok(())
@@ -668,7 +733,8 @@ impl PackedWorldRuntime {
 
     pub fn seal(&mut self) {
         for site in self.sites.values_mut() {
-            site.schedule.sort_by_key(|entry| (entry.phase, entry.ordinal));
+            site.schedule
+                .sort_by_key(|entry| (entry.phase, entry.ordinal));
         }
         self.boundary_transfers
             .sort_by_key(|transfer| (transfer.priority, transfer.ordinal));
@@ -692,14 +758,18 @@ impl PackedWorldRuntime {
     ) -> Option<f64> {
         let record = self.machines.get(&node_id)?;
         match &record.kind {
-            PackedMachineKind::Extractor { runtime, .. } => (output_index == 0)
-                .then(|| runtime.output_stream().total_mass_flow_kg_per_second()),
-            PackedMachineKind::Merger { runtime, .. } => (output_index == 0)
-                .then(|| runtime.output_stream().total_mass_flow_kg_per_second()),
-            PackedMachineKind::Feeder { runtime, .. } => (output_index == 0)
-                .then(|| runtime.output_stream().total_mass_flow_kg_per_second()),
-            PackedMachineKind::Comminution { runtime, .. } => (output_index == 0)
-                .then(|| runtime.output_stream().total_mass_flow_kg_per_second()),
+            PackedMachineKind::Extractor { runtime, .. } => {
+                (output_index == 0).then(|| runtime.output_stream().total_mass_flow_kg_per_second())
+            }
+            PackedMachineKind::Merger { runtime, .. } => {
+                (output_index == 0).then(|| runtime.output_stream().total_mass_flow_kg_per_second())
+            }
+            PackedMachineKind::Feeder { runtime, .. } => {
+                (output_index == 0).then(|| runtime.output_stream().total_mass_flow_kg_per_second())
+            }
+            PackedMachineKind::Comminution { runtime, .. } => {
+                (output_index == 0).then(|| runtime.output_stream().total_mass_flow_kg_per_second())
+            }
             PackedMachineKind::Screen { runtime, .. } => match output_index {
                 0 => Some(runtime.undersize_stream().total_mass_flow_kg_per_second()),
                 1 => Some(runtime.oversize_stream().total_mass_flow_kg_per_second()),
@@ -716,7 +786,11 @@ impl PackedWorldRuntime {
                 _ => None,
             },
             PackedMachineKind::Furnace { runtime, .. } => match output_index {
-                0 => Some(runtime.solid_product_stream().total_mass_flow_kg_per_second()),
+                0 => Some(
+                    runtime
+                        .solid_product_stream()
+                        .total_mass_flow_kg_per_second(),
+                ),
                 1 => Some(runtime.gas_exhaust_stream().total_mass_flow_kg_per_second()),
                 _ => None,
             },
@@ -736,7 +810,20 @@ impl PackedWorldRuntime {
     }
 
     pub fn boundary_transfer(&self, id: RuntimeTransferId) -> Option<&PackedBoundaryTransfer> {
-        self.boundary_transfers.iter().find(|transfer| transfer.id == id)
+        self.boundary_transfers
+            .iter()
+            .find(|transfer| transfer.id == id)
+    }
+
+    pub fn site_passive_storage_link(
+        &self,
+        site_id: RuntimeSiteId,
+        link_index: usize,
+    ) -> Option<&PackedStorageLink> {
+        self.sites
+            .get(&site_id)?
+            .passive_storage_links
+            .get(link_index)
     }
 
     fn take_two_hoppers(
@@ -747,7 +834,9 @@ impl PackedWorldRuntime {
         if a == b {
             return Err("runtime operation requires distinct Hopper owners".to_string());
         }
-        let first = self.hoppers.remove(&a)
+        let first = self
+            .hoppers
+            .remove(&a)
             .ok_or_else(|| format!("missing runtime Hopper {a}"))?;
         match self.hoppers.remove(&b) {
             Some(second) => Ok((first, second)),
@@ -778,7 +867,9 @@ impl PackedWorldRuntime {
         if a == b || a == c || b == c {
             return Err("runtime operation requires three distinct Hopper owners".to_string());
         }
-        let first = self.hoppers.remove(&a)
+        let first = self
+            .hoppers
+            .remove(&a)
             .ok_or_else(|| format!("missing runtime Hopper {a}"))?;
         let second = match self.hoppers.remove(&b) {
             Some(value) => value,
@@ -819,7 +910,9 @@ impl PackedWorldRuntime {
         furnace_id: RuntimeNodeId,
         dt: f64,
     ) -> Result<(), String> {
-        let source = self.hoppers.get(&source_id)
+        let source = self
+            .hoppers
+            .get(&source_id)
             .ok_or_else(|| format!("missing runtime Hopper {source_id}"))?;
         if source.stored_mass_kg() <= SOLID_MATERIAL_TOLERANCE {
             let mut temporary = PackedHopperState::empty(1.0)?;
@@ -830,7 +923,9 @@ impl PackedWorldRuntime {
             return Ok(());
         }
 
-        let mut target_record = self.machines.remove(&furnace_id)
+        let mut target_record = self
+            .machines
+            .remove(&furnace_id)
             .ok_or_else(|| format!("missing runtime furnace {furnace_id}"))?;
         let result = (|| {
             let target_furnace = match &mut target_record.kind {
@@ -843,11 +938,8 @@ impl PackedWorldRuntime {
             let mut staged_source = self.hoppers.get(&source_id).unwrap().clone();
             let mut staged_feeder = runtime.clone();
             let mut staged_target = target_furnace.clone();
-            let feeder_result = staged_feeder.tick_hopper_to_hopper(
-                &mut staged_source,
-                &mut temporary,
-                dt,
-            )?;
+            let feeder_result =
+                staged_feeder.tick_hopper_to_hopper(&mut staged_source, &mut temporary, dt)?;
             if feeder_result.transferred_mass_kg > APPARATUS_TRANSFER_TOLERANCE_KG {
                 let accepted = staged_target.receive_feed(temporary.body(), dt)?;
                 if (accepted - feeder_result.transferred_mass_kg).abs()
@@ -872,8 +964,9 @@ impl PackedWorldRuntime {
         gas_vent_id: Option<RuntimeNodeId>,
         dt: f64,
     ) -> Result<(), String> {
-        let reaction = self.reaction.as_ref()
-            .ok_or_else(|| "Roasting Furnace requires compiled thermochemical reaction tables".to_string())?;
+        let reaction = self.reaction.as_ref().ok_or_else(|| {
+            "Roasting Furnace requires compiled thermochemical reaction tables".to_string()
+        })?;
 
         match product_target {
             Some(PackedSolidTarget::Hopper(hopper_id)) => {
@@ -939,7 +1032,8 @@ impl PackedWorldRuntime {
                         if (accepted - tick.discharged_mass_kg).abs()
                             > APPARATUS_TRANSFER_TOLERANCE_KG * accepted.max(1.0)
                         {
-                            return Err("Furnace-to-furnace product could not commit atomically".to_string());
+                            return Err("Furnace-to-furnace product could not commit atomically"
+                                .to_string());
                         }
                     }
                     *runtime = staged_source;
@@ -957,8 +1051,11 @@ impl PackedWorldRuntime {
             }
             None => {
                 let mut vent = match gas_vent_id {
-                    Some(id) => Some(self.vents.remove(&id)
-                        .ok_or_else(|| format!("missing runtime exhaust vent {id}"))?),
+                    Some(id) => Some(
+                        self.vents
+                            .remove(&id)
+                            .ok_or_else(|| format!("missing runtime exhaust vent {id}"))?,
+                    ),
                     None => None,
                 };
                 let result = runtime.tick_to_hopper_and_vent(
@@ -976,20 +1073,40 @@ impl PackedWorldRuntime {
         }
     }
 
-    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {
+    fn execute_machine(
+        &mut self,
+        record: &mut PackedMachineRecord,
+        dt: f64,
+    ) -> Result<f64, String> {
         // Production apparatus apply the enabled/off gate before connection
         // validation. Preserve that ordering at the scheduler boundary so a
         // disconnected disabled machine stays `off` rather than becoming
         // `idle` or `blocked` merely because its endpoints are absent.
         let runtime_is_off = match &record.kind {
-            PackedMachineKind::Extractor { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-            PackedMachineKind::Merger { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-            PackedMachineKind::Feeder { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-            PackedMachineKind::Comminution { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-            PackedMachineKind::Screen { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-            PackedMachineKind::Splitter { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-            PackedMachineKind::MagneticSeparator { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-            PackedMachineKind::Furnace { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::Extractor { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
+            PackedMachineKind::Merger { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
+            PackedMachineKind::Feeder { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
+            PackedMachineKind::Comminution { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
+            PackedMachineKind::Screen { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
+            PackedMachineKind::Splitter { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
+            PackedMachineKind::MagneticSeparator { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
+            PackedMachineKind::Furnace { runtime, .. } => {
+                runtime.operating_state() == PackedOperatingState::Off
+            }
         };
         if runtime_is_off {
             record.status.set(PackedOperatingState::Off, None);
@@ -997,13 +1114,21 @@ impl PackedWorldRuntime {
         }
 
         match &mut record.kind {
-            PackedMachineKind::Extractor { runtime, occurrence_id, output_hopper_id } => {
+            PackedMachineKind::Extractor {
+                runtime,
+                occurrence_id,
+                output_hopper_id,
+            } => {
                 let Some(occurrence_id) = *occurrence_id else {
-                    record.status.blocked("Extractor requires a connected Feature resource source");
+                    record
+                        .status
+                        .blocked("Extractor requires a connected Feature resource source");
                     return Ok(0.0);
                 };
                 let Some(output_id) = *output_hopper_id else {
-                    record.status.blocked("Extractor requires a connected material output");
+                    record
+                        .status
+                        .blocked("Extractor requires a connected material output");
                     return Ok(0.0);
                 };
                 if !self.occurrences.contains_key(&occurrence_id) {
@@ -1018,44 +1143,73 @@ impl PackedWorldRuntime {
                 self.occurrences.insert(occurrence_id, occurrence);
                 self.hoppers.insert(output_id, hopper);
                 let tick = result?;
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(tick.extracted_mass_kg)
             }
-            PackedMachineKind::Merger { runtime, input_a_hopper_id, input_b_hopper_id, output_hopper_id } => {
-                let (Some(a), Some(b), Some(out)) = (*input_a_hopper_id, *input_b_hopper_id, *output_hopper_id) else {
-                    record.status.blocked("Material Merger requires input A, input B, and product connections");
+            PackedMachineKind::Merger {
+                runtime,
+                input_a_hopper_id,
+                input_b_hopper_id,
+                output_hopper_id,
+            } => {
+                let (Some(a), Some(b), Some(out)) =
+                    (*input_a_hopper_id, *input_b_hopper_id, *output_hopper_id)
+                else {
+                    record.status.blocked(
+                        "Material Merger requires input A, input B, and product connections",
+                    );
                     return Ok(0.0);
                 };
                 let (mut ha, mut hb, mut ho) = self.take_three_hoppers(a, b, out)?;
-                let result = runtime.tick_hoppers_to_hopper(&mut ha, &mut hb, &mut ho, &self.thermal, dt);
+                let result =
+                    runtime.tick_hoppers_to_hopper(&mut ha, &mut hb, &mut ho, &self.thermal, dt);
                 self.restore_three_hoppers(a, ha, b, hb, out, ho);
                 result?;
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(0.0)
             }
-            PackedMachineKind::Feeder { runtime, input_hopper_id, output_target } => {
+            PackedMachineKind::Feeder {
+                runtime,
+                input_hopper_id,
+                output_target,
+            } => {
                 let Some(source_id) = *input_hopper_id else {
                     record.status.idle();
                     return Ok(0.0);
                 };
-                if self.hoppers.get(&source_id).map(PackedHopperState::stored_mass_kg).unwrap_or(0.0)
+                if self
+                    .hoppers
+                    .get(&source_id)
+                    .map(PackedHopperState::stored_mass_kg)
+                    .unwrap_or(0.0)
                     <= SOLID_MATERIAL_TOLERANCE
                 {
                     let mut temporary = PackedHopperState::empty(1.0)?;
-                    let mut source = self.hoppers.remove(&source_id)
+                    let mut source = self
+                        .hoppers
+                        .remove(&source_id)
                         .ok_or_else(|| format!("missing runtime Hopper {source_id}"))?;
                     runtime.tick_hopper_to_hopper(&mut source, &mut temporary, dt)?;
                     self.hoppers.insert(source_id, source);
-                    record.status.set(runtime.operating_state(), runtime.last_error());
+                    record
+                        .status
+                        .set(runtime.operating_state(), runtime.last_error());
                     return Ok(0.0);
                 }
                 let Some(target) = *output_target else {
-                    record.status.blocked("Feeder requires feed and product connections");
+                    record
+                        .status
+                        .blocked("Feeder requires feed and product connections");
                     return Ok(0.0);
                 };
                 match target {
                     PackedSolidTarget::Hopper(target_id) => {
-                        let (mut source, mut target) = self.take_two_hoppers(source_id, target_id)?;
+                        let (mut source, mut target) =
+                            self.take_two_hoppers(source_id, target_id)?;
                         let result = runtime.tick_hopper_to_hopper(&mut source, &mut target, dt);
                         self.restore_two_hoppers(source_id, source, target_id, target);
                         result?;
@@ -1064,67 +1218,135 @@ impl PackedWorldRuntime {
                         self.execute_feeder_to_furnace(runtime, source_id, target_id, dt)?;
                     }
                 }
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(0.0)
             }
-            PackedMachineKind::Comminution { runtime, input_hopper_id, output_hopper_id } => {
-                let (Some(source_id), Some(target_id)) = (*input_hopper_id, *output_hopper_id) else {
-                    record.status.blocked("Comminution equipment requires feed and product Hopper connections");
+            PackedMachineKind::Comminution {
+                runtime,
+                input_hopper_id,
+                output_hopper_id,
+            } => {
+                let (Some(source_id), Some(target_id)) = (*input_hopper_id, *output_hopper_id)
+                else {
+                    record.status.blocked(
+                        "Comminution equipment requires feed and product Hopper connections",
+                    );
                     return Ok(0.0);
                 };
                 let (mut source, mut target) = self.take_two_hoppers(source_id, target_id)?;
-                let result = runtime.tick_hopper_to_hopper(&mut source, &mut target, &self.comminution, dt);
+                let result =
+                    runtime.tick_hopper_to_hopper(&mut source, &mut target, &self.comminution, dt);
                 self.restore_two_hoppers(source_id, source, target_id, target);
                 result?;
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(0.0)
             }
-            PackedMachineKind::Screen { runtime, input_hopper_id, undersize_hopper_id, oversize_hopper_id } => {
-                let (Some(input), Some(under), Some(over)) = (*input_hopper_id, *undersize_hopper_id, *oversize_hopper_id) else {
-                    record.status.blocked("Screen requires feed, undersize, and oversize Hopper connections");
+            PackedMachineKind::Screen {
+                runtime,
+                input_hopper_id,
+                undersize_hopper_id,
+                oversize_hopper_id,
+            } => {
+                let (Some(input), Some(under), Some(over)) =
+                    (*input_hopper_id, *undersize_hopper_id, *oversize_hopper_id)
+                else {
+                    record.status.blocked(
+                        "Screen requires feed, undersize, and oversize Hopper connections",
+                    );
                     return Ok(0.0);
                 };
                 let (mut hi, mut hu, mut ho) = self.take_three_hoppers(input, under, over)?;
-                let result = runtime.tick_hopper_to_hoppers(&mut hi, &mut hu, &mut ho, &self.separation, &self.thermal, dt);
+                let result = runtime.tick_hopper_to_hoppers(
+                    &mut hi,
+                    &mut hu,
+                    &mut ho,
+                    &self.separation,
+                    &self.thermal,
+                    dt,
+                );
                 self.restore_three_hoppers(input, hi, under, hu, over, ho);
                 result?;
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(0.0)
             }
-            PackedMachineKind::Splitter { runtime, input_hopper_id, output_a_hopper_id, output_b_hopper_id } => {
-                let (Some(input), Some(a), Some(b)) = (*input_hopper_id, *output_a_hopper_id, *output_b_hopper_id) else {
-                    record.status.blocked("Splitter requires feed, output A, and output B connections");
+            PackedMachineKind::Splitter {
+                runtime,
+                input_hopper_id,
+                output_a_hopper_id,
+                output_b_hopper_id,
+            } => {
+                let (Some(input), Some(a), Some(b)) =
+                    (*input_hopper_id, *output_a_hopper_id, *output_b_hopper_id)
+                else {
+                    record
+                        .status
+                        .blocked("Splitter requires feed, output A, and output B connections");
                     return Ok(0.0);
                 };
                 let (mut hi, mut ha, mut hb) = self.take_three_hoppers(input, a, b)?;
-                let result = runtime.tick_hopper_to_hoppers(&mut hi, &mut ha, &mut hb, &self.thermal, dt);
+                let result =
+                    runtime.tick_hopper_to_hoppers(&mut hi, &mut ha, &mut hb, &self.thermal, dt);
                 self.restore_three_hoppers(input, hi, a, ha, b, hb);
                 result?;
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(0.0)
             }
-            PackedMachineKind::MagneticSeparator { runtime, input_hopper_id, concentrate_hopper_id, tailings_hopper_id } => {
-                let (Some(input), Some(concentrate), Some(tailings)) = (*input_hopper_id, *concentrate_hopper_id, *tailings_hopper_id) else {
+            PackedMachineKind::MagneticSeparator {
+                runtime,
+                input_hopper_id,
+                concentrate_hopper_id,
+                tailings_hopper_id,
+            } => {
+                let (Some(input), Some(concentrate), Some(tailings)) = (
+                    *input_hopper_id,
+                    *concentrate_hopper_id,
+                    *tailings_hopper_id,
+                ) else {
                     record.status.blocked("Magnetic Separator requires feed, concentrate, and tailings Hopper connections");
                     return Ok(0.0);
                 };
-                let (mut hi, mut hc, mut ht) = self.take_three_hoppers(input, concentrate, tailings)?;
-                let result = runtime.tick_hopper_to_hoppers(&mut hi, &mut hc, &mut ht, &self.separation, &self.thermal, dt);
+                let (mut hi, mut hc, mut ht) =
+                    self.take_three_hoppers(input, concentrate, tailings)?;
+                let result = runtime.tick_hopper_to_hoppers(
+                    &mut hi,
+                    &mut hc,
+                    &mut ht,
+                    &self.separation,
+                    &self.thermal,
+                    dt,
+                );
                 self.restore_three_hoppers(input, hi, concentrate, hc, tailings, ht);
                 result?;
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(0.0)
             }
-            PackedMachineKind::Furnace { runtime, product_target, gas_vent_id } => {
+            PackedMachineKind::Furnace {
+                runtime,
+                product_target,
+                gas_vent_id,
+            } => {
                 self.execute_furnace(runtime, *product_target, *gas_vent_id, dt)?;
-                record.status.set(runtime.operating_state(), runtime.last_error());
+                record
+                    .status
+                    .set(runtime.operating_state(), runtime.last_error());
                 Ok(0.0)
             }
         }
     }
 
     fn execute_storage_link(&mut self, link: PackedStorageLink, dt: f64) -> Result<f64, String> {
-        let (mut source, mut target) = self.take_two_hoppers(link.source_hopper_id, link.target_hopper_id)?;
+        let (mut source, mut target) =
+            self.take_two_hoppers(link.source_hopper_id, link.target_hopper_id)?;
         let moved = transfer_between_hoppers(&mut source, &mut target, link.rate_kg_per_second, dt);
         self.restore_two_hoppers(link.source_hopper_id, source, link.target_hopper_id, target);
         moved
@@ -1133,7 +1355,11 @@ impl PackedWorldRuntime {
     pub fn tick(&mut self, dt: f64) -> Result<PackedWorldTickResult, String> {
         validate_positive_finite(dt, "world simulation dt")?;
         if !self.running {
-            return Ok(PackedWorldTickResult { advanced: false, ticks: 0, extracted_kg: 0.0 });
+            return Ok(PackedWorldTickResult {
+                advanced: false,
+                ticks: 0,
+                extracted_kg: 0.0,
+            });
         }
         self.ensure_sealed();
         let site_order = self.site_order.clone();
@@ -1141,24 +1367,41 @@ impl PackedWorldRuntime {
 
         for site_id in site_order {
             let (schedule, passive_links) = {
-                let site = self.sites.get(&site_id)
+                let site = self
+                    .sites
+                    .get(&site_id)
                     .ok_or_else(|| format!("missing runtime Site {site_id}"))?;
                 (site.schedule.clone(), site.passive_storage_links.clone())
             };
             let mut site_extracted = 0.0;
             for entry in schedule {
-                let mut record = self.machines.remove(&entry.node_id)
+                let mut record = self
+                    .machines
+                    .remove(&entry.node_id)
                     .ok_or_else(|| format!("missing scheduled runtime node {}", entry.node_id))?;
-                if record.site_id != site_id || record.phase != entry.phase || record.ordinal != entry.ordinal {
+                if record.site_id != site_id
+                    || record.phase != entry.phase
+                    || record.ordinal != entry.ordinal
+                {
                     self.machines.insert(entry.node_id, record);
-                    return Err("runtime schedule metadata drifted from machine ownership".to_string());
+                    return Err(
+                        "runtime schedule metadata drifted from machine ownership".to_string()
+                    );
                 }
                 let result = self.execute_machine(&mut record, dt);
                 self.machines.insert(entry.node_id, record);
                 site_extracted += result?;
             }
-            for link in passive_links {
-                self.execute_storage_link(link, dt)?;
+            for (link_index, link) in passive_links.into_iter().enumerate() {
+                let moved = self.execute_storage_link(link, dt)?;
+                if let Some(runtime_link) = self
+                    .sites
+                    .get_mut(&site_id)
+                    .and_then(|site| site.passive_storage_links.get_mut(link_index))
+                {
+                    runtime_link.last_moved_kg = moved;
+                    runtime_link.last_rate_kg_per_second = moved / dt;
+                }
             }
             let site = self.sites.get_mut(&site_id).unwrap();
             site.elapsed_seconds += dt;
@@ -1168,17 +1411,26 @@ impl PackedWorldRuntime {
 
         for index in 0..self.boundary_transfers.len() {
             let transfer = self.boundary_transfers[index].clone();
-            let moved = self.execute_storage_link(PackedStorageLink {
-                source_hopper_id: transfer.source_hopper_id,
-                target_hopper_id: transfer.target_hopper_id,
-                rate_kg_per_second: transfer.capacity_kg_per_second,
-            }, dt)?;
+            let moved = self.execute_storage_link(
+                PackedStorageLink {
+                    source_hopper_id: transfer.source_hopper_id,
+                    target_hopper_id: transfer.target_hopper_id,
+                    rate_kg_per_second: transfer.capacity_kg_per_second,
+                    last_moved_kg: 0.0,
+                    last_rate_kg_per_second: 0.0,
+                },
+                dt,
+            )?;
             self.boundary_transfers[index].last_moved_kg = moved;
             self.boundary_transfers[index].last_rate_kg_per_second = moved / dt;
         }
 
         self.elapsed_seconds += dt;
-        Ok(PackedWorldTickResult { advanced: true, ticks: 1, extracted_kg: world_extracted })
+        Ok(PackedWorldTickResult {
+            advanced: true,
+            ticks: 1,
+            extracted_kg: world_extracted,
+        })
     }
 
     pub fn tick_fixed(&mut self) -> Result<PackedWorldTickResult, String> {
@@ -1231,22 +1483,26 @@ mod tests {
         world.add_occurrence(1, occurrence()).unwrap();
         world.add_hopper(100, hopper(100.0)).unwrap();
         world.add_hopper(101, hopper(100.0)).unwrap();
-        world.add_extractor(
-            1,
-            10,
-            0,
-            PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, true).unwrap()),
-            Some(1),
-            Some(100),
-        ).unwrap();
-        world.add_feeder(
-            1,
-            11,
-            1,
-            PackedFeederRuntime::new(PackedFeederConfig::new(2.0, 8.0, true).unwrap()),
-            Some(100),
-            Some(PackedSolidTarget::Hopper(101)),
-        ).unwrap();
+        world
+            .add_extractor(
+                1,
+                10,
+                0,
+                PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, true).unwrap()),
+                Some(1),
+                Some(100),
+            )
+            .unwrap();
+        world
+            .add_feeder(
+                1,
+                11,
+                1,
+                PackedFeederRuntime::new(PackedFeederConfig::new(2.0, 8.0, true).unwrap()),
+                Some(100),
+                Some(PackedSolidTarget::Hopper(101)),
+            )
+            .unwrap();
 
         let tick = world.tick_fixed().unwrap();
         assert!(tick.advanced);
@@ -1266,23 +1522,29 @@ mod tests {
         world.add_hopper(100, hopper(100.0)).unwrap();
         world.add_hopper(200, hopper(100.0)).unwrap();
         world.add_hopper(201, hopper(100.0)).unwrap();
-        world.add_extractor(
-            1,
-            10,
-            0,
-            PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, true).unwrap()),
-            Some(1),
-            Some(100),
-        ).unwrap();
-        world.add_feeder(
-            2,
-            20,
-            0,
-            PackedFeederRuntime::new(PackedFeederConfig::new(5.0, 8.0, true).unwrap()),
-            Some(200),
-            Some(PackedSolidTarget::Hopper(201)),
-        ).unwrap();
-        world.add_boundary_transfer(1, 100, 200, 10.0, 0, 0).unwrap();
+        world
+            .add_extractor(
+                1,
+                10,
+                0,
+                PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, true).unwrap()),
+                Some(1),
+                Some(100),
+            )
+            .unwrap();
+        world
+            .add_feeder(
+                2,
+                20,
+                0,
+                PackedFeederRuntime::new(PackedFeederConfig::new(5.0, 8.0, true).unwrap()),
+                Some(200),
+                Some(PackedSolidTarget::Hopper(201)),
+            )
+            .unwrap();
+        world
+            .add_boundary_transfer(1, 100, 200, 10.0, 0, 0)
+            .unwrap();
 
         world.tick_fixed().unwrap();
         assert!((world.hopper(100).unwrap().stored_mass_kg() - 0.0).abs() < 1e-12);
@@ -1299,14 +1561,16 @@ mod tests {
         world.add_site(1).unwrap();
         world.add_occurrence(1, occurrence()).unwrap();
         world.add_hopper(100, hopper(100.0)).unwrap();
-        world.add_extractor(
-            1,
-            10,
-            0,
-            PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, true).unwrap()),
-            Some(1),
-            Some(100),
-        ).unwrap();
+        world
+            .add_extractor(
+                1,
+                10,
+                0,
+                PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, true).unwrap()),
+                Some(1),
+                Some(100),
+            )
+            .unwrap();
         world.pause();
         let result = world.tick_fixed().unwrap();
         assert!(!result.advanced);
@@ -1317,59 +1581,77 @@ mod tests {
 
     fn reaction() -> PackedGoethiteReactionTables {
         let config = PackedGoethiteReactionConfig::new(
-            1, 2, 3,
-            0.177702, 0.159687, 0.018015,
-            90_000.0, 90_000.0, 60_000.0,
-        ).unwrap();
+            1, 2, 3, 0.177702, 0.159687, 0.018015, 90_000.0, 90_000.0, 60_000.0,
+        )
+        .unwrap();
         let mut reaction = PackedGoethiteReactionTables::new(config);
         reaction.set_size_factor(1, 1.0).unwrap();
         reaction
     }
 
     fn furnace() -> PackedRoastingFurnaceRuntime {
-        PackedRoastingFurnaceRuntime::new(PackedRoastingFurnaceConfig::new(
-            800.0, 60.0, 1200.0, 4.0, 20.0, 25.0, 4, true,
-        ).unwrap())
+        PackedRoastingFurnaceRuntime::new(
+            PackedRoastingFurnaceConfig::new(800.0, 60.0, 1200.0, 4.0, 20.0, 25.0, 4, true)
+                .unwrap(),
+        )
     }
 
     #[test]
     fn feeder_can_stage_directly_into_furnace_before_furnace_phase() {
         let mut world = PackedWorldRuntime::new();
         world.add_site(1).unwrap();
-        world.thermal_table_mut().set_specific_heat_capacity_j_per_kg_k(1, 650.0).unwrap();
-        world.thermal_table_mut().set_specific_heat_capacity_j_per_kg_k(2, 650.0).unwrap();
-        world.thermal_table_mut().set_specific_heat_capacity_j_per_kg_k(3, 1900.0).unwrap();
+        world
+            .thermal_table_mut()
+            .set_specific_heat_capacity_j_per_kg_k(1, 650.0)
+            .unwrap();
+        world
+            .thermal_table_mut()
+            .set_specific_heat_capacity_j_per_kg_k(2, 650.0)
+            .unwrap();
+        world
+            .thermal_table_mut()
+            .set_specific_heat_capacity_j_per_kg_k(3, 1900.0)
+            .unwrap();
         world.set_reaction_tables(reaction());
         let mut feed = PackedSolidState::new();
         feed.push_fraction(descriptor(1), 1.0).unwrap();
-        world.add_hopper(100, PackedHopperState::new(
-            10.0,
-            PackedSolidBody::new(feed, 0.0).unwrap(),
-        ).unwrap()).unwrap();
+        world
+            .add_hopper(
+                100,
+                PackedHopperState::new(10.0, PackedSolidBody::new(feed, 0.0).unwrap()).unwrap(),
+            )
+            .unwrap();
         world.add_hopper(102, hopper(100.0)).unwrap();
         world.add_exhaust_vent(103, PackedGasBody::empty()).unwrap();
-        world.add_feeder(
-            1,
-            10,
-            0,
-            PackedFeederRuntime::new(PackedFeederConfig::new(1.0, 8.0, true).unwrap()),
-            Some(100),
-            Some(PackedSolidTarget::Furnace(20)),
-        ).unwrap();
-        world.add_roasting_furnace(
-            1,
-            20,
-            1,
-            furnace(),
-            Some(PackedSolidTarget::Hopper(102)),
-            Some(103),
-        ).unwrap();
+        world
+            .add_feeder(
+                1,
+                10,
+                0,
+                PackedFeederRuntime::new(PackedFeederConfig::new(1.0, 8.0, true).unwrap()),
+                Some(100),
+                Some(PackedSolidTarget::Furnace(20)),
+            )
+            .unwrap();
+        world
+            .add_roasting_furnace(
+                1,
+                20,
+                1,
+                furnace(),
+                Some(PackedSolidTarget::Hopper(102)),
+                Some(103),
+            )
+            .unwrap();
 
         world.tick_fixed().unwrap();
         assert!((world.hopper(100).unwrap().stored_mass_kg() - 0.9).abs() < 1e-12);
         let diagnostics = world.furnace_diagnostics(20).unwrap();
         assert!(diagnostics.last_feed_rate_kg_per_second > 0.0);
-        assert_eq!(world.node_status(10).unwrap().operating_state(), PackedOperatingState::Running);
+        assert_eq!(
+            world.node_status(10).unwrap().operating_state(),
+            PackedOperatingState::Running
+        );
     }
 
     #[test]
@@ -1378,9 +1660,21 @@ mod tests {
         world.add_site(1).unwrap();
         let mut state = PackedSolidState::new();
         state.push_fraction(descriptor(1), 1.0).unwrap();
-        world.add_hopper(100, PackedHopperState::new(10.0, PackedSolidBody::new(state, 100.0).unwrap()).unwrap()).unwrap();
+        world
+            .add_hopper(
+                100,
+                PackedHopperState::new(10.0, PackedSolidBody::new(state, 100.0).unwrap()).unwrap(),
+            )
+            .unwrap();
         world.add_hopper(101, hopper(10.0)).unwrap();
-        world.add_site_passive_storage_link(1, 100, 101, DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_SECOND).unwrap();
+        world
+            .add_site_passive_storage_link(
+                1,
+                100,
+                101,
+                DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_SECOND,
+            )
+            .unwrap();
         world.tick_fixed().unwrap();
         assert_eq!(world.hopper(100).unwrap().stored_mass_kg(), 0.0);
         assert_eq!(world.hopper(101).unwrap().stored_mass_kg(), 1.0);

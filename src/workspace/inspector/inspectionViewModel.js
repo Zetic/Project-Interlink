@@ -156,11 +156,14 @@ function occurrencePropertyDetails(occurrence) {
 export function hopperInspection(hopper) {
   const revision = hopper?.materialRevision ?? 0;
   const materialBody = hopper?.materialBody ?? null;
+  const runtimePresentation = hopper?.runtimePresentation ?? null;
+  const workerProjected = runtimePresentation?.authority === 'rust-wasm-worker';
   const cached = HOPPER_INSPECTION_CACHE.get(hopper);
   if (
     cached
     && cached.revision === revision
     && cached.materialBody === materialBody
+    && cached.runtimePresentation === runtimePresentation
     && cached.capacityKg === hopper?.capacityKg
     && cached.nominalParticleSizeMm === hopper?.nominalParticleSizeMm
   ) {
@@ -168,8 +171,14 @@ export function hopperInspection(hopper) {
   }
 
   const storedMassKg = hopperStoredMassKg(hopper);
-  const thermal = thermalDetailsForBody(materialBody, storedMassKg);
-  const compositionSummary = hopperCompositionKg(hopper);
+  const thermal = workerProjected
+    ? {
+      temperatureK: null,
+      sensibleEnthalpyJ: runtimePresentation.sensibleEnthalpyJ ?? 0,
+      thermalError: storedMassKg > 0 ? 'Detailed material state is retained in the Rust/WASM Worker.' : null,
+    }
+    : thermalDetailsForBody(materialBody, storedMassKg);
+  const compositionSummary = workerProjected ? {} : hopperCompositionKg(hopper);
   const compositionRows = summaryRows(compositionSummary, storedMassKg, speciesLabel);
   const value = {
     kind: hopper?.systemType === 'boundary-buffer' ? 'boundaryBuffer' : 'hopper',
@@ -186,12 +195,14 @@ export function hopperInspection(hopper) {
     // same summary rows; compute them once rather than traversing twice.
     components: compositionRows,
     composition: compositionRows,
-    particleSizeDistribution: summaryRows(hopperParticleSizeDistributionKg(hopper), storedMassKg, sizeBinLabel),
-    liberationDistribution: summaryRows(hopperLiberationDistributionKg(hopper), storedMassKg, liberationLabel),
+    particleSizeDistribution: workerProjected ? [] : summaryRows(hopperParticleSizeDistributionKg(hopper), storedMassKg, sizeBinLabel),
+    liberationDistribution: workerProjected ? [] : summaryRows(hopperLiberationDistributionKg(hopper), storedMassKg, liberationLabel),
+    detailsUnavailable: workerProjected,
   };
   HOPPER_INSPECTION_CACHE.set(hopper, {
     revision,
     materialBody,
+    runtimePresentation,
     capacityKg: hopper?.capacityKg,
     nominalParticleSizeMm: hopper?.nominalParticleSizeMm,
     value,
@@ -212,10 +223,13 @@ export function streamInspection(stream) {
   // object when simulation advances. Object identity is therefore a cheap,
   // deterministic presentation revision between fixed simulation steps.
   const stateRef = stream.physicalForm === MATERIAL_FORMS.GAS ? stream.gasState : stream.solidState;
+  const projectedFlow = stream._runtimePresentationMassFlowKgPerSecond;
+  const workerProjected = Number.isFinite(projectedFlow) && projectedFlow >= 0;
   const cached = STREAM_INSPECTION_CACHE.get(stream);
   if (
     cached
     && cached.stateRef === stateRef
+    && cached.projectedFlow === projectedFlow
     && cached.physicalForm === stream.physicalForm
     && cached.specificSensibleEnthalpyJPerKg === stream.specificSensibleEnthalpyJPerKg
     && cached.nominalParticleSizeMm === stream.nominalParticleSizeMm
@@ -225,10 +239,18 @@ export function streamInspection(stream) {
 
   const totalFlowKgPerSecond = totalMaterialStreamMassFlowKgPerSecond(stream);
   const gas = stream.physicalForm === MATERIAL_FORMS.GAS;
-  const compositionSummary = gas
-    ? { ...(stream.gasState?.speciesMassKg ?? {}) }
-    : summarizeSolidMaterialBySpecies(stream.solidState);
-  const thermal = streamThermalDetails(stream, totalFlowKgPerSecond);
+  const compositionSummary = workerProjected
+    ? {}
+    : (gas
+      ? { ...(stream.gasState?.speciesMassKg ?? {}) }
+      : summarizeSolidMaterialBySpecies(stream.solidState));
+  const thermal = workerProjected
+    ? {
+      temperatureK: null,
+      specificSensibleEnthalpyJPerKg: 0,
+      thermalError: totalFlowKgPerSecond > 0 ? 'Detailed stream state is retained in the Rust/WASM Worker.' : null,
+    }
+    : streamThermalDetails(stream, totalFlowKgPerSecond);
   const value = {
     kind: 'stream',
     id: stream?.id ?? null,
@@ -241,18 +263,20 @@ export function streamInspection(stream) {
     particleSizeMm: gas ? null : (stream?.nominalParticleSizeMm ?? null),
     componentMassFlowKgPerSecond: summaryObject(compositionSummary),
     composition: summaryRows(compositionSummary, totalFlowKgPerSecond, speciesLabel),
-    particleSizeDistribution: gas
+    particleSizeDistribution: gas || workerProjected
       ? []
       : summaryRows(summarizeSolidMaterialBySizeBin(stream.solidState), totalFlowKgPerSecond, sizeBinLabel),
-    liberationDistribution: gas
+    liberationDistribution: gas || workerProjected
       ? []
       : summaryRows(summarizeSolidMaterialByLiberationClass(stream.solidState), totalFlowKgPerSecond, liberationLabel),
     temperatureK: thermal.temperatureK,
     specificSensibleEnthalpyJPerKg: thermal.specificSensibleEnthalpyJPerKg,
     thermalError: thermal.thermalError,
+    detailsUnavailable: workerProjected,
   };
   STREAM_INSPECTION_CACHE.set(stream, {
     stateRef,
+    projectedFlow,
     physicalForm: stream.physicalForm,
     specificSensibleEnthalpyJPerKg: stream.specificSensibleEnthalpyJPerKg,
     nominalParticleSizeMm: stream.nominalParticleSizeMm,
@@ -374,8 +398,22 @@ function exhaustBodyInspection(gasBody) {
 }
 
 export function exhaustVentInspection(blueprint, vent) {
+  const projected = vent?.runtimePresentation?.authority === 'rust-wasm-worker'
+    ? vent.runtimePresentation
+    : null;
   const gasBody = vent?.emittedGasBody ?? createGasMaterialBody(createGasMaterialState());
-  const bodyDetails = exhaustBodyInspection(gasBody);
+  const bodyDetails = projected
+    ? {
+      totalEmittedMassKg: projected.ventedGasMassKg ?? 0,
+      composition: [],
+      temperatureK: null,
+      sensibleEnthalpyJ: 0,
+      thermalError: (projected.ventedGasMassKg ?? 0) > 0
+        ? 'Detailed exhaust state is retained in the Rust/WASM Worker.'
+        : null,
+      detailsUnavailable: true,
+    }
+    : exhaustBodyInspection(gasBody);
   const inputConnection = Object.values(blueprint?.connections ?? {}).find(connection =>
     connection.kind === 'material'
       && connection.targetNodeId === vent?.id
@@ -429,7 +467,7 @@ export function machineInspection(blueprint, node) {
     configuredThroughputKgPerSecond,
     actualFeedKgPerSecond,
     actualProductKgPerSecond,
-    lastError: node?.lastError ?? null,
+    lastError: node?.runtimePresentation?.lastError ?? node?.lastError ?? null,
     input: inputInspection,
     inputs: inputByPort,
     inputStreams,
@@ -456,29 +494,36 @@ export function machineInspection(blueprint, node) {
   }
 
   if (node?.nodeType === 'roastingFurnace') {
-    const chargeMassKg = roastingFurnaceChargeMassKg(node);
-    const pendingFeedMassKg = roastingFurnacePendingFeedMassKg(node);
-    const feedRateKgPerSecond = actualFeedKgPerSecond > 0
-      ? actualFeedKgPerSecond
-      : (node.lastFeedRateKgPerSecond ?? 0);
+    const projectedFurnace = node.runtimePresentation?.furnace ?? null;
+    const chargeMassKg = projectedFurnace?.chargeMassKg ?? roastingFurnaceChargeMassKg(node);
+    const pendingFeedMassKg = projectedFurnace?.pendingFeedMassKg ?? roastingFurnacePendingFeedMassKg(node);
+    const feedRateKgPerSecond = projectedFurnace?.lastFeedRateKgPerSecond
+      ?? (actualFeedKgPerSecond > 0 ? actualFeedKgPerSecond : (node.lastFeedRateKgPerSecond ?? 0));
     const zoneCapacityKg = roastingFurnaceZoneCapacityKg(node);
     result.thermochemical = {
       chargeMassKg,
       pendingFeedMassKg,
-      chargeTemperatureK: chargeMassKg > 0 ? (node.actualChargeTemperatureK ?? null) : null,
+      chargeTemperatureK: chargeMassKg > 0
+        ? (projectedFurnace?.actualChargeTemperatureK ?? node.actualChargeTemperatureK ?? null)
+        : null,
       temperatureSetpointK: node.temperatureSetpointK,
       ratedHeaterPowerKw: node.ratedHeaterPowerKw,
-      actualHeaterPowerKw: node.lastHeaterPowerKw ?? 0,
-      heatLossPowerKw: node.lastHeatLossPowerKw ?? 0,
-      reactionPowerKw: node.lastReactionPowerKw ?? 0,
-      goethiteConversionPercent: (node.lastGoethiteConversionFraction ?? 0) * 100,
+      actualHeaterPowerKw: projectedFurnace?.lastHeaterPowerKw ?? node.lastHeaterPowerKw ?? 0,
+      heatLossPowerKw: projectedFurnace?.lastHeatLossPowerKw ?? node.lastHeatLossPowerKw ?? 0,
+      reactionPowerKw: projectedFurnace?.lastReactionPowerKw ?? node.lastReactionPowerKw ?? 0,
+      goethiteConversionPercent: (projectedFurnace?.lastGoethiteConversionFraction
+        ?? node.lastGoethiteConversionFraction
+        ?? 0) * 100,
       meanResidenceTimeSeconds: feedRateKgPerSecond > 0
         ? node.effectiveChamberHoldUpKg / feedRateKgPerSecond
         : null,
       solidProductRateKgPerSecond: outputByPort[node.solidProductPortId]?.totalFlowKgPerSecond ?? 0,
       exhaustRateKgPerSecond: outputByPort[node.gasExhaustPortId]?.totalFlowKgPerSecond ?? 0,
-      solverEvaluationCount: node.lastSolverEvaluationCount ?? 0,
-      zones: (node.zones ?? []).map((zone, index) => furnaceZoneInspection(zone, index, zoneCapacityKg)),
+      solverEvaluationCount: projectedFurnace?.lastSolverEvaluationCount
+        ?? node.lastSolverEvaluationCount
+        ?? 0,
+      zones: projectedFurnace ? [] : (node.zones ?? []).map((zone, index) => furnaceZoneInspection(zone, index, zoneCapacityKg)),
+      detailsUnavailable: Boolean(projectedFurnace),
     };
   }
 

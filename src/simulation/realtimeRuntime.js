@@ -39,7 +39,7 @@ function validateStepCount(steps) {
   }
 }
 
-/** Backend-neutral synchronous reference runtime used by production today. */
+/** Synchronous compatibility runtime used when Worker/WASM is unavailable. */
 export function createMainThreadRealtimeRuntime(world, {
   capabilities = browserRuntimeCapabilities(),
 } = {}) {
@@ -84,6 +84,12 @@ export function createMainThreadRealtimeRuntime(world, {
     return { advanced, ticks, extractedKg };
   }
 
+  function reconfigure() {
+    assertActive();
+    // Canonical JS objects are already the physical runtime in this fallback.
+    return { snapshot: null, backend: REALTIME_RUNTIME_BACKENDS.MAIN_THREAD };
+  }
+
   function dispatch(command) {
     assertActive();
     validateRuntimeCommand(command);
@@ -110,7 +116,8 @@ export function createMainThreadRealtimeRuntime(world, {
         });
       }
       case RUNTIME_COMMAND_TYPES.INIT:
-        throw new Error('main-thread runtime is initialized directly from its world object');
+      case RUNTIME_COMMAND_TYPES.RECONFIGURE:
+        throw new Error('main-thread runtime is mutated directly from canonical world state');
       default:
         throw new Error(`Unsupported runtime command '${command.type}'`);
     }
@@ -136,6 +143,7 @@ export function createMainThreadRealtimeRuntime(world, {
     resume,
     stepFixed,
     advanceFixedSteps,
+    reconfigure,
     dispatch,
 
     dispose() {
@@ -152,9 +160,9 @@ function defaultWorkerFactory(url, options) {
 }
 
 /**
- * Real Rust/WASM execution backend. Canonical authoring state is compiled once
- * into a structured-clone-safe numeric setup; after READY, all fixed-step physics
- * and state ownership live inside the module Worker/WASM instance.
+ * Production Rust/WASM execution backend. Canonical authoring state is compiled
+ * to a structured-clone-safe setup; after READY, fixed-step physics and retained
+ * physical state live only inside the Worker/WASM runtime.
  */
 export function createRustWasmWorkerRealtimeRuntime(world, {
   capabilities = browserRuntimeCapabilities(),
@@ -164,7 +172,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   if (!capabilities?.worker) throw new Error('Rust/WASM Worker backend requires Web Worker support');
   if (!capabilities?.webAssembly) throw new Error('Rust/WASM Worker backend requires WebAssembly support');
 
-  const setup = compilePackedWorldWorkerSetup(world);
+  let setup = compilePackedWorldWorkerSetup(world);
   const worker = workerFactory(
     new URL('./rustWasmWorker.js', import.meta.url),
     { type: 'module', name: 'interlink-rust-simulation' },
@@ -293,15 +301,32 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     return event.payload;
   }
 
+  async function reconfigure(nextWorld = world, { resetNodeIds = [] } = {}) {
+    assertActive();
+    await ready;
+    const nextSetup = compilePackedWorldWorkerSetup(nextWorld, { previousSetup: setup });
+    const event = await send(createRuntimeCommand(RUNTIME_COMMAND_TYPES.RECONFIGURE, {
+      setup: nextSetup,
+      resetNodeIds,
+    }));
+    if (event.type !== RUNTIME_EVENT_TYPES.RECONFIGURED) {
+      throw new Error(`Rust/WASM Worker expected RECONFIGURED, got '${event.type}'`);
+    }
+    setup = nextSetup;
+    lastSnapshot = event.payload.snapshot ?? lastSnapshot;
+    running = event.payload.running === true;
+    return event.payload;
+  }
+
   return {
     protocolVersion: REALTIME_RUNTIME_PROTOCOL_VERSION,
     backend: REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER,
     capabilities,
     recommendation: recommendedRuntimeBackend(capabilities),
     world,
-    setup,
     ready,
 
+    get setup() { return setup; },
     get running() { return !disposed && !terminalError && running; },
     get snapshot() { return lastSnapshot; },
     get error() { return terminalError; },
@@ -310,6 +335,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     resume,
     stepFixed,
     advanceFixedSteps,
+    reconfigure,
     dispatch,
 
     dispose() {
@@ -322,16 +348,22 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
 }
 
 /**
- * `auto` remains on the compiled JavaScript backend until the player-facing
- * workspace projects Worker snapshots back into canonical UI state. The explicit
- * Rust/WASM Worker backend is now real and can own a complete world independently.
+ * Worker/WASM is now the preferred player runtime whenever both platform
+ * capabilities are available. Main-thread compiled JavaScript remains the
+ * deterministic compatibility backend for unsupported browsers and tests.
  */
 export function createRealtimeRuntime(world, {
   backend = 'auto',
   capabilities = browserRuntimeCapabilities(),
   workerFactory,
 } = {}) {
-  if (backend === 'auto' || backend === REALTIME_RUNTIME_BACKENDS.MAIN_THREAD) {
+  if (backend === 'auto') {
+    if (capabilities?.worker && capabilities?.webAssembly) {
+      return createRustWasmWorkerRealtimeRuntime(world, { capabilities, workerFactory });
+    }
+    return createMainThreadRealtimeRuntime(world, { capabilities });
+  }
+  if (backend === REALTIME_RUNTIME_BACKENDS.MAIN_THREAD) {
     return createMainThreadRealtimeRuntime(world, { capabilities });
   }
   if (backend === REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER) {
