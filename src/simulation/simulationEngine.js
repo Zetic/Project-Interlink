@@ -294,7 +294,6 @@ function compileBlueprintExecutionPlan(blueprint) {
     const target = blueprint.nodes?.[connection.targetNodeId];
     if (!isExplicitBoundaryStorageTransition(source, target)) continue;
     boundaryStorageLinks.push({
-      connection,
       source,
       target,
       stream: streamByConnectionId.get(connection.id) ?? null,
@@ -466,12 +465,6 @@ function findOutboundConnection(blueprint, sourceNodeId, sourcePortId) {
   ) ?? null;
 }
 
-function updateConnectionStream(blueprint, connection, solidState) {
-  if (!connection) return;
-  const stream = getStreamForConnection(blueprint, connection.id);
-  if (stream) setMaterialStreamState(stream, solidState);
-}
-
 function zeroAllStreams(streams) {
   for (const stream of streams) clearMaterialStream(stream);
 }
@@ -495,7 +488,7 @@ function capacityScaleForOutput(freeCapacityKg, componentRates, dt) {
 }
 
 function simulateExplicitBoundaryStorageLinks(links, dt) {
-  for (const { connection, source, target, stream } of links) {
+  for (const { source, target, stream } of links) {
     const availableKg = hopperStoredMassKg(source);
     const freeKg = hopperFreeCapacityKg(target);
     if (availableKg <= HOPPER_TOLERANCE_KG || freeKg <= HOPPER_TOLERANCE_KG) continue;
@@ -503,7 +496,6 @@ function simulateExplicitBoundaryStorageLinks(links, dt) {
     const rate = Math.min(DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S, availableKg / dt, freeKg / dt);
     if (rate <= TRANSFER_TOLERANCE_KG) continue;
 
-    const rates = proportionalSolidStateFromHopper(source, rate);
     const stagedSource = cloneHopperMaterialState(source);
     const stagedTarget = cloneHopperMaterialState(target);
     const withdrawal = hopperWithdraw(stagedSource, rate, dt);
@@ -519,20 +511,7 @@ function simulateExplicitBoundaryStorageLinks(links, dt) {
     assertTransferAccepted(withdrawal.actualTotalKg, acceptedKg, 'Boundary storage link');
     commitHopperMaterialState(source, stagedSource);
     commitHopperMaterialState(target, stagedTarget);
-    if (stream) {
-      setMaterialStreamState(
-        stream,
-        actualFlow,
-        withdrawal.actualSpecificSensibleEnthalpyJPerKg,
-      );
-    } else {
-      updateConnectionStream(
-        { streams: {} },
-        connection,
-        actualFlow,
-        withdrawal.actualSpecificSensibleEnthalpyJPerKg,
-      );
-    }
+    if (stream) setMaterialStreamState(stream, actualFlow);
   }
 }
 
