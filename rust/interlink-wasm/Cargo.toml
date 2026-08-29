@@ -17,4 +17,5 @@ interlink-extraction = { path = "../interlink-extraction" }
 interlink-thermal = { path = "../interlink-thermal" }
 interlink-thermochemistry = { path = "../interlink-thermochemistry" }
 interlink-roasting = { path = "../interlink-roasting" }
+interlink-runtime = { path = "../interlink-runtime" }
 wasm-bindgen = "0.2"
