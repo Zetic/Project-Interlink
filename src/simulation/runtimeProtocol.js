@@ -1,11 +1,13 @@
 import { SIMULATION_STEP_S } from './simulationEngine.js';
 
-export const REALTIME_RUNTIME_PROTOCOL_VERSION = 2;
+export const REALTIME_RUNTIME_PROTOCOL_VERSION = 3;
 
 export const RUNTIME_COMMAND_TYPES = Object.freeze({
+  INIT: 'init',
   PAUSE: 'pause',
   RESUME: 'resume',
   STEP_FIXED: 'step-fixed',
+  ADVANCE_FIXED: 'advance-fixed',
 });
 
 export const RUNTIME_EVENT_TYPES = Object.freeze({
@@ -38,10 +40,21 @@ export function validateRuntimeCommand(command) {
   if (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) {
     throw new Error('runtime command payload must be an object');
   }
+  if (command.type === RUNTIME_COMMAND_TYPES.INIT) {
+    if (!command.payload.setup || typeof command.payload.setup !== 'object' || Array.isArray(command.payload.setup)) {
+      throw new Error('init requires a compiled runtime setup object');
+    }
+  }
   if (command.type === RUNTIME_COMMAND_TYPES.STEP_FIXED) {
     const dt = command.payload.dt ?? SIMULATION_STEP_S;
     if (dt !== SIMULATION_STEP_S) {
       throw new Error(`step-fixed requires the authoritative ${SIMULATION_STEP_S} s timestep`);
+    }
+  }
+  if (command.type === RUNTIME_COMMAND_TYPES.ADVANCE_FIXED) {
+    const steps = command.payload.steps;
+    if (!Number.isInteger(steps) || steps < 0 || steps > 10_000) {
+      throw new Error('advance-fixed requires an integer steps value between 0 and 10000');
     }
   }
   return command;

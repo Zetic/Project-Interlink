@@ -8,9 +8,33 @@ import {
   REALTIME_RUNTIME_BACKENDS,
   REALTIME_RUNTIME_PROTOCOL_VERSION,
 } from '../src/simulation/realtimeRuntime.js';
+import {
+  RUNTIME_EVENT_TYPES,
+  createRuntimeEvent,
+} from '../src/simulation/runtimeProtocol.js';
 
 function minimalWorld() {
-  return { sites: {}, regions: {}, systemNodes: {} };
+  return {
+    sites: {},
+    regions: {},
+    features: {},
+    resourceOccurrences: {},
+    systemNodes: {},
+  };
+}
+
+function workerCapabilities() {
+  return {
+    worker: true,
+    hardwareConcurrency: 2,
+    webAssembly: true,
+    wasmSimd: true,
+    sharedArrayBuffer: false,
+    crossOriginIsolated: false,
+    wasmThreads: false,
+    webGpu: false,
+    offscreenCanvas: false,
+  };
 }
 
 test('realtime runtime preserves pause/play and authoritative fixed-step semantics', () => {
@@ -66,4 +90,64 @@ test('auto runtime reports acceleration recommendation without selecting an inco
   assert.equal(runtime.recommendation.simulationThread, 'worker');
   assert.equal(runtime.recommendation.cpuParallelism, 'shared-memory-workers');
   assert.equal(runtime.recommendation.gpuCompute, 'webgpu-available');
+});
+
+test('Rust/WASM Worker runtime becomes terminal after a Worker crash', async () => {
+  const listeners = new Map();
+  let terminated = false;
+  const worker = {
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    postMessage() {
+      queueMicrotask(() => listeners.get('error')?.({ message: 'simulated Worker crash' }));
+    },
+    terminate() {
+      terminated = true;
+    },
+  };
+
+  const runtime = createRealtimeRuntime(minimalWorld(), {
+    backend: REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER,
+    capabilities: workerCapabilities(),
+    workerFactory: () => worker,
+  });
+
+  await assert.rejects(runtime.ready, /simulated Worker crash/);
+  assert.equal(runtime.running, false);
+  assert.match(runtime.error.message, /simulated Worker crash/);
+  assert.equal(terminated, true);
+  await assert.rejects(runtime.stepFixed(), /simulated Worker crash/);
+});
+
+test('Rust/WASM Worker runtime becomes terminal when the Worker reports a protocol error', async () => {
+  const listeners = new Map();
+  let terminated = false;
+  const worker = {
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    postMessage() {
+      queueMicrotask(() => listeners.get('message')?.({
+        data: createRuntimeEvent(RUNTIME_EVENT_TYPES.ERROR, {
+          message: 'simulated WASM initialization failure',
+        }),
+      }));
+    },
+    terminate() {
+      terminated = true;
+    },
+  };
+
+  const runtime = createRealtimeRuntime(minimalWorld(), {
+    backend: REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER,
+    capabilities: workerCapabilities(),
+    workerFactory: () => worker,
+  });
+
+  await assert.rejects(runtime.ready, /simulated WASM initialization failure/);
+  assert.equal(runtime.running, false);
+  assert.match(runtime.error.message, /simulated WASM initialization failure/);
+  assert.equal(terminated, true);
+  await assert.rejects(runtime.stepFixed(), /simulated WASM initialization failure/);
 });

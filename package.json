@@ -9,6 +9,8 @@
     "test:js": "node --test tests/*.test.js",
     "test:rust": "cargo test --workspace",
     "check:wasm": "cargo check -p interlink-wasm --target wasm32-unknown-unknown",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "check:wasm-package": "bash scripts/build-wasm.sh target/wasm-package",
     "check:runtime": "npm run test:js && npm run test:rust && npm run check:wasm"
   }
 }

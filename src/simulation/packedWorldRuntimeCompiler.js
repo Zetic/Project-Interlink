@@ -443,10 +443,9 @@ export function compilePackedWorldRuntime(
       };
     });
 
-  // Furnace retained-zone state is compiled and retained in the setup snapshot,
-  // but is intentionally not applied by this PR's WASM adapter yet. The next
-  // Worker cutover will import the entire world atomically rather than introducing
-  // a per-zone/per-fraction live synchronization protocol.
+  // Furnace retained-zone state is compiled into the one-time setup snapshot and
+  // imported atomically before the Rust world is sealed. Normal fixed-step play
+  // never synchronizes zones or material fractions apparatus-by-apparatus.
   const furnaceStateSnapshots = [];
   for (const [canonicalSiteId, blueprint] of Object.entries(simulation.sessions ?? {})) {
     for (const node of Object.values(blueprint.nodes ?? {})) {
@@ -499,6 +498,34 @@ function solidColumns(body) {
 
 function gasColumns(body) {
   return body.gasState.toColumns();
+}
+
+function flattenFurnaceZones(zones) {
+  const lengths = new Uint32Array(zones.length);
+  let total = 0;
+  zones.forEach((zone, index) => {
+    const columns = solidColumns(zone);
+    lengths[index] = columns.quantities.length;
+    total += columns.quantities.length;
+  });
+  const speciesIds = new Uint16Array(total);
+  const sizeBinIds = new Uint8Array(total);
+  const liberationClassIds = new Uint8Array(total);
+  const textureProfileIds = new Uint32Array(total);
+  const quantities = new Float64Array(total);
+  const sensibleEnthalpiesJ = new Float64Array(zones.length);
+  let offset = 0;
+  zones.forEach((zone, index) => {
+    const columns = solidColumns(zone);
+    speciesIds.set(columns.speciesIds, offset);
+    sizeBinIds.set(columns.sizeBinIds, offset);
+    liberationClassIds.set(columns.liberationClassIds, offset);
+    textureProfileIds.set(columns.textureProfileIds, offset);
+    quantities.set(columns.quantities, offset);
+    sensibleEnthalpiesJ[index] = zone.sensibleEnthalpyJ;
+    offset += columns.quantities.length;
+  });
+  return { lengths, speciesIds, sizeBinIds, liberationClassIds, textureProfileIds, quantities, sensibleEnthalpiesJ };
 }
 
 function populateMetadata(wasmWorld, compiled) {
@@ -702,10 +729,28 @@ export function populateWasmPackedWorldRuntime(wasmWorld, compiled) {
       transfer.ordinal,
     );
   }
+  wasmWorld.import_world_elapsed_seconds(compiled.elapsedSeconds);
+  for (const site of compiled.sites) {
+    wasmWorld.import_site_stats(site.siteId, site.elapsedSeconds, site.extractedKg);
+  }
+  for (const furnace of compiled.furnaceStateSnapshots) {
+    const zones = flattenFurnaceZones(furnace.packedZones);
+    const pending = solidColumns(furnace.packedPendingFeed);
+    const gas = gasColumns(furnace.packedGasInventory);
+    wasmWorld.import_roasting_furnace_state(
+      furnace.nodeId,
+      zones.lengths, zones.speciesIds, zones.sizeBinIds, zones.liberationClassIds,
+      zones.textureProfileIds, zones.quantities, zones.sensibleEnthalpiesJ,
+      pending.speciesIds, pending.sizeBinIds, pending.liberationClassIds,
+      pending.textureProfileIds, pending.quantities, furnace.packedPendingFeed.sensibleEnthalpyJ,
+      gas.speciesIds, gas.quantities, furnace.packedGasInventory.sensibleEnthalpyJ,
+    );
+  }
   if (!compiled.running) wasmWorld.pause();
   wasmWorld.seal();
   return {
     runtime: wasmWorld,
     deferredStateImport: compiled.deferredStateImport,
+    stateImportApplied: true,
   };
 }
