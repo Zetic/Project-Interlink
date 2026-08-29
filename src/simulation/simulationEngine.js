@@ -49,8 +49,42 @@ const TRANSFER_TOLERANCE_KG = 1e-8;
 // The editable Blueprint remains the authoritative, readable graph. The live
 // fixed-step runtime compiles that graph into a transient execution projection
 // and reuses it until a canonical topology mutation invalidates the cache.
-// Nothing in this WeakMap is serialized or changes physical state semantics.
+// Nothing in these WeakMaps is serialized or changes physical state semantics.
 const blueprintExecutionPlanCache = new WeakMap();
+const blueprintTopologyRevisionCache = new WeakMap();
+const blueprintPresentationRevisionCache = new WeakMap();
+const layoutPresentationRevisionCache = new WeakMap();
+
+function revisionFor(cache, object) {
+  return object && typeof object === 'object' ? (cache.get(object) ?? 0) : 0;
+}
+
+function bumpRevision(cache, object) {
+  if (!object || typeof object !== 'object') return 0;
+  const revision = revisionFor(cache, object) + 1;
+  cache.set(object, revision);
+  return revision;
+}
+
+export function blueprintTopologyRevision(blueprint) {
+  return revisionFor(blueprintTopologyRevisionCache, blueprint);
+}
+
+export function blueprintPresentationRevision(blueprint) {
+  return revisionFor(blueprintPresentationRevisionCache, blueprint);
+}
+
+export function blueprintLayoutRevision(layout) {
+  return revisionFor(layoutPresentationRevisionCache, layout);
+}
+
+export function invalidateBlueprintPresentation(blueprint) {
+  return bumpRevision(blueprintPresentationRevisionCache, blueprint);
+}
+
+export function invalidateBlueprintLayout(layout) {
+  return bumpRevision(layoutPresentationRevisionCache, layout);
+}
 
 let _nextNodeOrdinal = 1;
 let _nextConnectionOrdinal = 1;
@@ -67,11 +101,14 @@ export function _resetOrdinals() {
 }
 
 export function invalidateBlueprintExecutionPlan(blueprint) {
-  if (blueprint && typeof blueprint === 'object') blueprintExecutionPlanCache.delete(blueprint);
+  if (!blueprint || typeof blueprint !== 'object') return;
+  blueprintExecutionPlanCache.delete(blueprint);
+  bumpRevision(blueprintTopologyRevisionCache, blueprint);
+  invalidateBlueprintPresentation(blueprint);
 }
 
 export function createBlueprint() {
-  return {
+  const blueprint = {
     nodes: {},
     connections: {},
     streams: {},
@@ -80,6 +117,9 @@ export function createBlueprint() {
       extractedKg: 0,
     },
   };
+  blueprintTopologyRevisionCache.set(blueprint, 0);
+  blueprintPresentationRevisionCache.set(blueprint, 0);
+  return blueprint;
 }
 
 /** Add a physical world Feature as a source/opportunity node in a Site graph. */
@@ -531,6 +571,7 @@ export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
 
   blueprint.simulationStats.elapsedSeconds += dt;
   blueprint.simulationStats.extractedKg += extractedThisTickKg;
+  invalidateBlueprintPresentation(blueprint);
   return { extractedKg: extractedThisTickKg };
 }
 
@@ -552,6 +593,7 @@ export function setNodeEnabled(blueprint, nodeId, enabled) {
   node.enabled = enabled;
   if (!enabled) node.operatingState = 'off';
   else if (node.operatingState === 'off') node.operatingState = 'idle';
+  invalidateBlueprintPresentation(blueprint);
   return node;
 }
 
@@ -563,6 +605,7 @@ export function setApparatusParameter(blueprint, nodeId, parameterId, value) {
     throw new Error(`Unknown apparatus parameter '${parameterId}' for '${node.nodeType}'`);
   }
   node[parameterId] = normalized[parameterId];
+  invalidateBlueprintPresentation(blueprint);
   return node;
 }
 
@@ -573,10 +616,13 @@ export function getNodeOperatingState(node) {
 }
 
 export function createBlueprintLayout() {
-  return { nodePositions: {} };
+  const layout = { nodePositions: {} };
+  layoutPresentationRevisionCache.set(layout, 0);
+  return layout;
 }
 
 export function layoutMoveNode(layout, nodeId, x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Layout coordinates must be finite numbers');
   layout.nodePositions[nodeId] = { x, y };
+  invalidateBlueprintLayout(layout);
 }
