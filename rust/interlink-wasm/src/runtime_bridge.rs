@@ -909,6 +909,13 @@ impl WasmPackedWorldRuntime {
 
 #[wasm_bindgen]
 impl WasmPackedWorldRuntime {
+    pub fn clone_for_live_reconfigure(&self) -> WasmPackedWorldRuntime {
+        WasmPackedWorldRuntime {
+            inner: self.inner.clone(),
+            reaction_builder: None,
+        }
+    }
+
     pub fn begin_live_reconfigure(&mut self) {
         self.inner.begin_live_reconfigure();
     }
@@ -1062,13 +1069,15 @@ impl WasmPackedWorldRuntime {
         output_hopper_id: u32,
     ) -> Result<(), JsValue> {
         let (equipment, phase) = comminution_equipment(equipment_kind).map_err(js_error)?;
+        let rated_power =
+            (equipment != PackedComminutionEquipment::LegacyCrusher).then_some(rated_power_kw);
         let runtime = PackedComminutionRuntime::new(
             interlink_comminution::PackedComminutionConfig::new(
                 equipment,
                 target_size_bin_id,
                 target_particle_size_mm,
                 throughput_kg_per_second,
-                rated_power_kw,
+                rated_power,
                 enabled,
             )
             .map_err(js_error)?,

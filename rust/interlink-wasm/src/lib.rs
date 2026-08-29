@@ -23,7 +23,7 @@ pub use separation_bridge::{
 };
 pub use thermal_bridge::{WasmPackedGasBody, WasmPackedGasStream, WasmPackedThermalModel};
 
-pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 3;
+pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 4;
 
 #[wasm_bindgen]
 pub fn runtime_protocol_version() -> u32 {
@@ -147,7 +147,9 @@ impl WasmPackedHopper {
     ) -> Result<(), JsValue> {
         let next_mass = self.inner.stored_mass_kg() + quantity_kg;
         if !quantity_kg.is_finite() || quantity_kg < 0.0 {
-            return Err(JsValue::from_str("Hopper fraction quantity must be finite and non-negative"));
+            return Err(JsValue::from_str(
+                "Hopper fraction quantity must be finite and non-negative",
+            ));
         }
         if next_mass > self.inner.capacity_kg() + interlink_core::SOLID_MATERIAL_TOLERANCE {
             return Err(JsValue::from_str("Hopper fraction would exceed capacity"));
@@ -199,11 +201,7 @@ impl WasmPackedHopper {
         specific_sensible_enthalpy_j_per_kg: f64,
     ) -> Result<f64, JsValue> {
         self.inner
-            .receive_flow(
-                &flow.inner,
-                dt,
-                specific_sensible_enthalpy_j_per_kg,
-            )
+            .receive_flow(&flow.inner, dt, specific_sensible_enthalpy_j_per_kg)
             .map_err(js_error)
     }
 
