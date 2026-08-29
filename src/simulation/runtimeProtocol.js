@@ -1,9 +1,10 @@
 import { SIMULATION_STEP_S } from './simulationEngine.js';
 
-export const REALTIME_RUNTIME_PROTOCOL_VERSION = 3;
+export const REALTIME_RUNTIME_PROTOCOL_VERSION = 4;
 
 export const RUNTIME_COMMAND_TYPES = Object.freeze({
   INIT: 'init',
+  RECONFIGURE: 'reconfigure',
   PAUSE: 'pause',
   RESUME: 'resume',
   STEP_FIXED: 'step-fixed',
@@ -12,6 +13,7 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
 
 export const RUNTIME_EVENT_TYPES = Object.freeze({
   READY: 'ready',
+  RECONFIGURED: 'reconfigured',
   STEPPED: 'stepped',
   RUN_STATE: 'run-state',
   ERROR: 'error',
@@ -40,9 +42,15 @@ export function validateRuntimeCommand(command) {
   if (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) {
     throw new Error('runtime command payload must be an object');
   }
-  if (command.type === RUNTIME_COMMAND_TYPES.INIT) {
+  if (command.type === RUNTIME_COMMAND_TYPES.INIT || command.type === RUNTIME_COMMAND_TYPES.RECONFIGURE) {
     if (!command.payload.setup || typeof command.payload.setup !== 'object' || Array.isArray(command.payload.setup)) {
-      throw new Error('init requires a compiled runtime setup object');
+      throw new Error(`${command.type} requires a compiled runtime setup object`);
+    }
+  }
+  if (command.type === RUNTIME_COMMAND_TYPES.RECONFIGURE) {
+    const resetNodeIds = command.payload.resetNodeIds ?? [];
+    if (!Array.isArray(resetNodeIds) || resetNodeIds.some(id => typeof id !== 'string' || id.length === 0)) {
+      throw new Error('reconfigure resetNodeIds must be an array of canonical node IDs');
     }
   }
   if (command.type === RUNTIME_COMMAND_TYPES.STEP_FIXED) {
