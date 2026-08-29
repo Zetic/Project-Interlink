@@ -20,6 +20,12 @@ import {
   resumeWorldSimulation,
   worldSimulationTick,
 } from '../src/simulation/worldSimulation.js';
+import {
+  createMaterialStream,
+  setMaterialStreamState,
+  totalMaterialStreamMassFlowKgPerSecond,
+} from '../src/simulation/materialStream.js';
+import { createSolidMaterialState, addSolidFractionDirect } from '../src/core/materials/solids/solidMaterialState.js';
 import { projectBlueprintGraph } from '../src/workspace/graph/workspaceGraph.js';
 
 function materialPort(node, direction) {
@@ -137,4 +143,26 @@ test('blueprint graph projection is reused until topology, runtime presentation,
   worldSimulationTick(world, 0.1);
   const afterTick = projectBlueprintGraph(blueprint, layout);
   assert.notEqual(afterTick, afterLayout);
+});
+
+test('stream total-flow cache updates with state and is excluded from serialization', () => {
+  const stream = createMaterialStream({
+    id: 'stream-cache-test',
+    sourceNodeId: 'source',
+    sourcePortId: 'out',
+    targetNodeId: 'target',
+    targetPortId: 'in',
+  });
+  const state = createSolidMaterialState();
+  addSolidFractionDirect(state, {
+    speciesId: 'hematite',
+    sizeBinId: '1-2mm',
+    liberationClassId: 'partial',
+    quantity: 3.5,
+  });
+  setMaterialStreamState(stream, state);
+
+  assert.equal(totalMaterialStreamMassFlowKgPerSecond(stream), 3.5);
+  assert.equal(Object.keys(stream).includes('_cachedTotalMassFlowKgPerSecond'), false);
+  assert.equal(JSON.stringify(stream).includes('_cachedTotalMassFlowKgPerSecond'), false);
 });
