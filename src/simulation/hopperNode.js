@@ -133,6 +133,8 @@ export function createBoundaryBuffer({
 }
 
 export function hopperStoredMassKg(hopper) {
+  const projected = hopper?.runtimePresentation?.storedMassKg;
+  if (typeof projected === 'number' && Number.isFinite(projected) && projected >= 0) return projected;
   return totalSolidQuantity(hopper.materialBody.solidState);
 }
 
@@ -170,7 +172,6 @@ export function hopperReceiveMaterialBody(hopper, incomingBody) {
     throw new Error('Hopper could not accept the requested material body atomically');
   }
 
-  // Preflight immutable texture lineage without copying destination fractions.
   const textureProbe = createSolidMaterialState([], {
     textureProfiles: hopper.materialBody.solidState.textureProfiles ?? {},
   });
