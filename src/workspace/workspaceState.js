@@ -16,6 +16,12 @@ export function createWorkspaceState() {
     workspaceLayouts: {},
     systemNodeElements: new Map(),
     systemConnectionElements: new Map(),
+    realtimeRuntime: null,
+    runtimeReadyPromise: null,
+    runtimeReconfigurePromise: Promise.resolve(),
+    runtimeReconfigurePending: false,
+    runtimeStepPromise: null,
+    runtimeError: null,
     simRunning: false,
     simLastTime: null,
     /**
