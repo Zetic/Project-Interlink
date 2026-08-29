@@ -1,6 +1,7 @@
 /** Shared DOM shell for recursive workspace views. */
 
 import { installDebugDrawer } from '../debug/debugDrawer.js';
+import { installRuntimeDebugStats } from '../debug/runtimeDebugStats.js';
 import { escHtml } from './utils.js';
 
 function el(id) { return document.getElementById(id); }
@@ -75,6 +76,7 @@ export function renderWorkspaceShell(container, options = {}) {
   container.innerHTML = workspaceShellMarkup(options);
   const root = container.querySelector('.ws-workspace');
   installDebugDrawer(root);
+  installRuntimeDebugStats(root);
   return {
     root,
     toolbar: root.querySelector('.ws-toolbar'),
