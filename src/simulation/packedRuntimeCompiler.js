@@ -1,6 +1,9 @@
 import { iterateSolidFractions } from '../core/materials/solids/solidMaterialState.js';
+import { getMaterialSpecies } from '../core/materials/species/materialSpecies.js';
+import { specificHeatCapacityJPerKgKForSpecies } from '../core/materials/properties/thermalProperties.js';
 import { PackedSolidRuntimeState } from './packedRuntimeState.js';
 import { PackedHopperRuntimeState, PackedSolidRuntimeBody } from './packedStorageRuntime.js';
+import { PackedSpeciesThermalRuntimeTable } from './packedThermalRuntime.js';
 
 class RuntimeIdTable {
   constructor(maxId, startId = 0) {
@@ -72,4 +75,23 @@ export function compileHopperForRuntime(canonicalHopper, idTables = createPacked
     packedHopper: new PackedHopperRuntimeState(canonicalHopper.capacityKg, packedBody),
     idTables: resolvedTables,
   };
+}
+
+/**
+ * Compile canonical MaterialSpecies constant-Cp values into the same runtime ID
+ * space used by packed material fractions. Missing canonical Cp values remain
+ * absent so thermal routing fails at the same point production would require
+ * unsupported thermal-property coverage.
+ */
+export function compileSpeciesThermalTableForRuntime(idTables) {
+  if (!idTables?.species?.values) throw new Error('packed material ID tables are required');
+  const table = new PackedSpeciesThermalRuntimeTable(Math.max(16, idTables.species.values.length || 1));
+  for (let runtimeId = 0; runtimeId < idTables.species.values.length; runtimeId++) {
+    const speciesId = idTables.species.valueFor(runtimeId);
+    if (speciesId == null) continue;
+    const specificHeatCapacityJPerKgK = specificHeatCapacityJPerKgKForSpecies(getMaterialSpecies(speciesId));
+    if (specificHeatCapacityJPerKgK == null) continue;
+    table.setSpecificHeatCapacityJPerKgK(runtimeId, specificHeatCapacityJPerKgK);
+  }
+  return table;
 }
