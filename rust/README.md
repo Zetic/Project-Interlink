@@ -9,6 +9,7 @@ Project Interlink is migrating the authoritative numerical simulation toward a W
 - `interlink-routing` — platform-neutral multi-port logistics built on the core/process contracts. It owns Splitter/Merger routing, atomic multi-Hopper transactions, and the runtime-local thermal lookup required for exact mixed-stream energy parity.
 - `interlink-comminution` — platform-neutral Crusher/Jaw/Cone/Ball-Mill physics. It owns packed particle-size redistribution, texture-driven liberation, Bond energy/power limiting, and abrasion diagnostics.
 - `interlink-separation` — platform-neutral Screen/Magnetic-Separator physics. It owns conservative two-way material partitioning, sharp particle-size classification, magnetic recovery, dual-output backpressure, and partitioned sensible-energy transport.
+- `interlink-extraction` — platform-neutral ResourceOccurrence/Extractor execution. It owns normalized occurrence material templates, extraction throttling, optional finite reserve accounting, output streams, and occurrence → Hopper commits.
 - `interlink-wasm` — the browser adapter. It exposes coarse stateful operations from the Rust crates to JavaScript through `wasm-bindgen`.
 
 The Rust crates are intentionally usable as ordinary native Rust so the same simulation can later run in browser WASM, native tools, headless tests, or another frontend.
@@ -27,7 +28,7 @@ quantity[]              f64
 
 Readable JavaScript/save state keeps canonical string identifiers. Runtime-local numeric IDs are an execution detail and must not become persistent content IDs.
 
-`packedRuntimeCompiler.js` is the canonical-state → execution-state boundary. It compiles solid material state, solid material bodies, Hopper inventories, and the constant-Cp species values needed by packed thermal routing while preserving canonical IDs outside the execution plane. `packedProcessCompiler.js` extends that boundary to canonical solid `MaterialStream` state using the same runtime ID tables. `packedComminutionCompiler.js` compiles particle-size vocabulary, liberation classes, mineral textures, and measured CWi/BWi/Ai values into the same numeric execution ID space. `packedSeparationCompiler.js` compiles the particle-size cut metadata, liberation recovery factors, magnetic species response, and thermal properties used by packed classification/separation.
+`packedRuntimeCompiler.js` is the canonical-state → execution-state boundary. It compiles solid material state, solid material bodies, Hopper inventories, and the constant-Cp species values needed by packed thermal routing while preserving canonical IDs outside the execution plane. `packedProcessCompiler.js` extends that boundary to canonical solid `MaterialStream` state using the same runtime ID tables. `packedComminutionCompiler.js` compiles particle-size vocabulary, liberation classes, mineral textures, and measured CWi/BWi/Ai values into the same numeric execution ID space. `packedSeparationCompiler.js` compiles the particle-size cut metadata, liberation recovery factors, magnetic species response, and thermal properties used by packed classification/separation. `packedExtractionCompiler.js` compiles Feature-owned solid ResourceOccurrences into normalized one-kilogram packed material templates in that same ID space.
 
 ## Migrated storage semantics
 
@@ -112,6 +113,24 @@ The packed implementation preserves:
 
 As with comminution, JavaScript remains the production oracle until the later authoritative runtime cutover. Rust and JavaScript parity tests pin the current classification/recovery curves and capacity/conservation behavior.
 
+## Migrated extraction and world material access
+
+`interlink-extraction` establishes the first world-material source owned by the Rust execution plane. A canonical Feature-owned solid `ResourceOccurrence` is compiled once into a normalized one-kilogram packed material template. That template preserves the current occurrence composition, run-of-mine/coarse-solid fragmentation policy, liberation classes, and mineral-texture runtime IDs.
+
+The packed Extractor preserves current production behavior:
+
+- the active source is still selected by the Feature `resource-access` connection at the graph/world layer;
+- only physical forms supported by the current Extractor are compiled into the solid extraction registry;
+- the default Extractor rate remains 5 kg/s unless apparatus configuration says otherwise;
+- output is throttled against downstream Hopper capacity before mutation;
+- output material composition/particle state is the actual occurrence mixture rather than a purified resource label;
+- occurrence → Hopper mutation is staged and committed atomically;
+- extracted material is published as one packed solid stream with zero reference sensible enthalpy, matching occurrence materialization today.
+
+Current generated occurrences contain qualitative `quantityClass` and `availabilityClass`, not a measured reserve mass. The compiler therefore **does not invent a kg reserve from those labels**. `PackedResourceOccurrence` defaults to an unbounded source to preserve today's JavaScript behavior. It also supports an explicit finite `remaining_mass_kg` for a future world model that supplies a real physical reserve; when used, Rust clips the final extraction tick exactly and blocks subsequent ticks as depleted.
+
+`compileExtractableWorldOccurrencesForRuntime()` compiles every currently eligible solid occurrence into one shared runtime ID space and reports unsupported liquid/gas occurrences separately rather than discarding canonical world data. `WasmPackedExtractor` advances the occurrence, output Hopper, and packed stream through one coarse WASM call.
+
 ## Commands
 
 From the repository root:
@@ -135,4 +154,5 @@ The repository pins the stable Rust toolchain and the `wasm32-unknown-unknown` t
 7. Prefer migrating reusable physical primitives before apparatus-specific behavior so later machine ports build on one Rust-owned material/transfer model.
 8. Apparatus ports must preserve production operating-state and backpressure behavior in addition to numerical mass/energy parity.
 9. Multi-port routing and separation must commit all participating inventories atomically; partial output commits are not acceptable.
-10. Comminution and separation metadata must be compiled from canonical material definitions; do not hard-code persistent content identity into the Rust execution plane.
+10. Comminution, separation, and extraction metadata must be compiled from canonical material/world definitions; do not hard-code persistent content identity into the Rust execution plane.
+11. Do not reinterpret qualitative world-generation labels such as `quantityClass` as physical conserved quantities. A finite reserve requires explicit quantitative world data.

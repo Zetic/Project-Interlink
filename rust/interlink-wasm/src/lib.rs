@@ -5,9 +5,11 @@ use interlink_core::{
 use wasm_bindgen::prelude::*;
 
 mod comminution_bridge;
+mod extraction_bridge;
 mod process_bridge;
 mod separation_bridge;
 pub use comminution_bridge::{WasmPackedComminutionMachine, WasmPackedComminutionTables};
+pub use extraction_bridge::{WasmPackedExtractor, WasmPackedResourceOccurrence};
 pub use process_bridge::{
     WasmPackedFeeder, WasmPackedMerger, WasmPackedSplitter, WasmPackedThermalTable,
 };
