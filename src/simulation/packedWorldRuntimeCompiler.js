@@ -36,11 +36,18 @@ const COMMINUTION_KIND = Object.freeze({
 });
 
 class RuntimeObjectIdTable {
-  constructor(label) {
+  constructor(label, seedValues = []) {
     this.label = label;
     this.ids = new Map();
     this.values = [];
     this.sealed = false;
+    for (let id = 0; id < (seedValues?.length ?? 0); id++) {
+      const value = seedValues[id];
+      if (typeof value !== 'string' || value.length === 0) continue;
+      if (id >= PACKED_NO_RUNTIME_ID) throw new Error(`${label} runtime ID seed exceeds capacity`);
+      this.ids.set(value, id);
+      this.values[id] = value;
+    }
   }
 
   idFor(value) {
@@ -364,12 +371,13 @@ function resolveBoundaryHopper(world, simulation, compositeId, portId, direction
 export function compilePackedWorldRuntime(
   world,
   idTables = createPackedMaterialIdTables(),
+  runtimeIdSeeds = {},
 ) {
   const simulation = createWorldSimulation(world);
-  const nodeIds = new RuntimeObjectIdTable('node');
-  const siteIds = new RuntimeObjectIdTable('Site');
-  const occurrenceIds = new RuntimeObjectIdTable('ResourceOccurrence');
-  const transferIds = new RuntimeObjectIdTable('boundary transfer');
+  const nodeIds = new RuntimeObjectIdTable('node', runtimeIdSeeds.nodes);
+  const siteIds = new RuntimeObjectIdTable('Site', runtimeIdSeeds.sites);
+  const occurrenceIds = new RuntimeObjectIdTable('ResourceOccurrence', runtimeIdSeeds.occurrences);
+  const transferIds = new RuntimeObjectIdTable('boundary transfer', runtimeIdSeeds.transfers);
 
   const occurrenceCompilation = compileExtractableWorldOccurrencesForRuntime(world, idTables);
   const compiledOccurrences = [];

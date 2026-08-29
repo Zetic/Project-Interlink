@@ -12,17 +12,15 @@ use interlink_routing::{
     PackedMergerConfig, PackedMergerRuntime, PackedSplitterConfig, PackedSplitterRuntime,
 };
 use interlink_runtime::{
-    PackedSolidTarget, PackedWorldRuntime, PHASE_BALL_MILL, PHASE_CONE_CRUSHER,
-    PHASE_JAW_CRUSHER, PHASE_LEGACY_CRUSHER,
+    PackedSolidTarget, PackedWorldRuntime, PHASE_BALL_MILL, PHASE_CONE_CRUSHER, PHASE_JAW_CRUSHER,
+    PHASE_LEGACY_CRUSHER,
 };
 use interlink_separation::{
     PackedMagneticSeparatorConfig, PackedMagneticSeparatorRuntime, PackedScreenConfig,
     PackedScreenRuntime,
 };
 use interlink_thermal::{PackedGasBody, PackedGasColumns, PackedGasState};
-use interlink_thermochemistry::{
-    PackedGoethiteReactionConfig, PackedGoethiteReactionTables,
-};
+use interlink_thermochemistry::{PackedGoethiteReactionConfig, PackedGoethiteReactionTables};
 use wasm_bindgen::prelude::*;
 
 use super::js_error;
@@ -90,14 +88,20 @@ fn gas_body_from_columns(
     sensible_enthalpy_j: f64,
 ) -> Result<PackedGasBody, String> {
     PackedGasBody::new(
-        PackedGasState::from_columns(PackedGasColumns { species_ids, quantities })?,
+        PackedGasState::from_columns(PackedGasColumns {
+            species_ids,
+            quantities,
+        })?,
         sensible_enthalpy_j,
     )
 }
 
 fn comminution_equipment(kind: u8) -> Result<(PackedComminutionEquipment, i32), String> {
     match kind {
-        0 => Ok((PackedComminutionEquipment::LegacyCrusher, PHASE_LEGACY_CRUSHER)),
+        0 => Ok((
+            PackedComminutionEquipment::LegacyCrusher,
+            PHASE_LEGACY_CRUSHER,
+        )),
         1 => Ok((PackedComminutionEquipment::JawCrusher, PHASE_JAW_CRUSHER)),
         2 => Ok((PackedComminutionEquipment::ConeCrusher, PHASE_CONE_CRUSHER)),
         3 => Ok((PackedComminutionEquipment::BallMill, PHASE_BALL_MILL)),
@@ -183,7 +187,9 @@ impl WasmPackedWorldRuntime {
         } else {
             PackedResourceOccurrence::new_unbounded(material)
         };
-        self.inner.add_occurrence(occurrence_id, occurrence).map_err(js_error)
+        self.inner
+            .add_occurrence(occurrence_id, occurrence)
+            .map_err(js_error)
     }
 
     pub fn add_exhaust_vent_state(
@@ -219,7 +225,13 @@ impl WasmPackedWorldRuntime {
     ) -> Result<(), JsValue> {
         self.inner
             .comminution_tables_mut()
-            .add_size_bin(runtime_id, order_index as usize, max_mm, representative_mm, canonical)
+            .add_size_bin(
+                runtime_id,
+                order_index as usize,
+                max_mm,
+                representative_mm,
+                canonical,
+            )
             .map_err(js_error)
     }
 
@@ -255,9 +267,11 @@ impl WasmPackedWorldRuntime {
             [free, boundary, intergrown, included],
         )
         .map_err(js_error)?;
-        self.inner
-            .comminution_tables_mut()
-            .set_species_texture(texture_profile_id, species_id, texture);
+        self.inner.comminution_tables_mut().set_species_texture(
+            texture_profile_id,
+            species_id,
+            texture,
+        );
         Ok(())
     }
 
@@ -268,12 +282,9 @@ impl WasmPackedWorldRuntime {
         bwi_kwh_per_t: f64,
         abrasion_index: f64,
     ) -> Result<(), JsValue> {
-        let properties = PackedComminutionProperties::new(
-            cwi_kwh_per_t,
-            bwi_kwh_per_t,
-            abrasion_index,
-        )
-        .map_err(js_error)?;
+        let properties =
+            PackedComminutionProperties::new(cwi_kwh_per_t, bwi_kwh_per_t, abrasion_index)
+                .map_err(js_error)?;
         self.inner
             .comminution_tables_mut()
             .set_texture_properties(texture_profile_id, properties);
@@ -343,7 +354,11 @@ impl WasmPackedWorldRuntime {
         Ok(())
     }
 
-    pub fn set_reaction_size_factor(&mut self, size_bin_id: u8, factor: f64) -> Result<(), JsValue> {
+    pub fn set_reaction_size_factor(
+        &mut self,
+        size_bin_id: u8,
+        factor: f64,
+    ) -> Result<(), JsValue> {
         self.reaction_builder
             .as_mut()
             .ok_or_else(|| JsValue::from_str("begin_goethite_reaction must be called first"))?
@@ -364,7 +379,9 @@ impl WasmPackedWorldRuntime {
     }
 
     pub fn commit_goethite_reaction(&mut self) -> Result<(), JsValue> {
-        let reaction = self.reaction_builder.take()
+        let reaction = self
+            .reaction_builder
+            .take()
             .ok_or_else(|| JsValue::from_str("no pending goethite reaction"))?;
         self.inner.set_reaction_tables(reaction);
         Ok(())
@@ -383,14 +400,16 @@ impl WasmPackedWorldRuntime {
         let runtime = PackedExtractorRuntime::new(
             PackedExtractorConfig::new(rate_kg_per_second, enabled).map_err(js_error)?,
         );
-        self.inner.add_extractor(
-            site_id,
-            node_id,
-            ordinal,
-            runtime,
-            optional_id(occurrence_id),
-            optional_id(output_hopper_id),
-        ).map_err(js_error)
+        self.inner
+            .add_extractor(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(occurrence_id),
+                optional_id(output_hopper_id),
+            )
+            .map_err(js_error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -408,15 +427,17 @@ impl WasmPackedWorldRuntime {
         let runtime = PackedMergerRuntime::new(
             PackedMergerConfig::new(throughput_kg_per_second, enabled).map_err(js_error)?,
         );
-        self.inner.add_merger(
-            site_id,
-            node_id,
-            ordinal,
-            runtime,
-            optional_id(input_a_hopper_id),
-            optional_id(input_b_hopper_id),
-            optional_id(output_hopper_id),
-        ).map_err(js_error)
+        self.inner
+            .add_merger(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_a_hopper_id),
+                optional_id(input_b_hopper_id),
+                optional_id(output_hopper_id),
+            )
+            .map_err(js_error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -436,14 +457,16 @@ impl WasmPackedWorldRuntime {
             PackedFeederConfig::new(flow_rate_kg_per_second, throughput_kg_per_second, enabled)
                 .map_err(js_error)?,
         );
-        self.inner.add_feeder(
-            site_id,
-            node_id,
-            ordinal,
-            runtime,
-            optional_id(input_hopper_id),
-            solid_target(output_target_kind, output_target_id).map_err(js_error)?,
-        ).map_err(js_error)
+        self.inner
+            .add_feeder(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                solid_target(output_target_kind, output_target_id).map_err(js_error)?,
+            )
+            .map_err(js_error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -462,8 +485,8 @@ impl WasmPackedWorldRuntime {
         output_hopper_id: u32,
     ) -> Result<(), JsValue> {
         let (equipment, phase) = comminution_equipment(equipment_kind).map_err(js_error)?;
-        let rated_power = (equipment != PackedComminutionEquipment::LegacyCrusher)
-            .then_some(rated_power_kw);
+        let rated_power =
+            (equipment != PackedComminutionEquipment::LegacyCrusher).then_some(rated_power_kw);
         let runtime = PackedComminutionRuntime::new(
             PackedComminutionConfig::new(
                 equipment,
@@ -472,17 +495,20 @@ impl WasmPackedWorldRuntime {
                 throughput_kg_per_second,
                 rated_power,
                 enabled,
-            ).map_err(js_error)?,
+            )
+            .map_err(js_error)?,
         );
-        self.inner.add_comminution(
-            site_id,
-            node_id,
-            phase,
-            ordinal,
-            runtime,
-            optional_id(input_hopper_id),
-            optional_id(output_hopper_id),
-        ).map_err(js_error)
+        self.inner
+            .add_comminution(
+                site_id,
+                node_id,
+                phase,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(output_hopper_id),
+            )
+            .map_err(js_error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -502,15 +528,17 @@ impl WasmPackedWorldRuntime {
             PackedScreenConfig::new(aperture_size_mm, throughput_kg_per_second, enabled)
                 .map_err(js_error)?,
         );
-        self.inner.add_screen(
-            site_id,
-            node_id,
-            ordinal,
-            runtime,
-            optional_id(input_hopper_id),
-            optional_id(undersize_hopper_id),
-            optional_id(oversize_hopper_id),
-        ).map_err(js_error)
+        self.inner
+            .add_screen(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(undersize_hopper_id),
+                optional_id(oversize_hopper_id),
+            )
+            .map_err(js_error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -530,15 +558,17 @@ impl WasmPackedWorldRuntime {
             PackedSplitterConfig::new(split_fraction_to_a, throughput_kg_per_second, enabled)
                 .map_err(js_error)?,
         );
-        self.inner.add_splitter(
-            site_id,
-            node_id,
-            ordinal,
-            runtime,
-            optional_id(input_hopper_id),
-            optional_id(output_a_hopper_id),
-            optional_id(output_b_hopper_id),
-        ).map_err(js_error)
+        self.inner
+            .add_splitter(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(output_a_hopper_id),
+                optional_id(output_b_hopper_id),
+            )
+            .map_err(js_error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -561,17 +591,20 @@ impl WasmPackedWorldRuntime {
                 max_feed_particle_size_mm,
                 throughput_kg_per_second,
                 enabled,
-            ).map_err(js_error)?,
+            )
+            .map_err(js_error)?,
         );
-        self.inner.add_magnetic_separator(
-            site_id,
-            node_id,
-            ordinal,
-            runtime,
-            optional_id(input_hopper_id),
-            optional_id(concentrate_hopper_id),
-            optional_id(tailings_hopper_id),
-        ).map_err(js_error)
+        self.inner
+            .add_magnetic_separator(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(concentrate_hopper_id),
+                optional_id(tailings_hopper_id),
+            )
+            .map_err(js_error)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -601,15 +634,18 @@ impl WasmPackedWorldRuntime {
             heat_loss_coefficient_w_per_k,
             internal_zone_count as usize,
             enabled,
-        ).map_err(js_error)?;
-        self.inner.add_roasting_furnace(
-            site_id,
-            node_id,
-            ordinal,
-            PackedRoastingFurnaceRuntime::new(config),
-            solid_target(product_target_kind, product_target_id).map_err(js_error)?,
-            optional_id(gas_vent_id),
-        ).map_err(js_error)
+        )
+        .map_err(js_error)?;
+        self.inner
+            .add_roasting_furnace(
+                site_id,
+                node_id,
+                ordinal,
+                PackedRoastingFurnaceRuntime::new(config),
+                solid_target(product_target_kind, product_target_id).map_err(js_error)?,
+                optional_id(gas_vent_id),
+            )
+            .map_err(js_error)
     }
 
     pub fn add_site_passive_storage_link(
@@ -620,7 +656,12 @@ impl WasmPackedWorldRuntime {
         rate_kg_per_second: f64,
     ) -> Result<(), JsValue> {
         self.inner
-            .add_site_passive_storage_link(site_id, source_hopper_id, target_hopper_id, rate_kg_per_second)
+            .add_site_passive_storage_link(
+                site_id,
+                source_hopper_id,
+                target_hopper_id,
+                rate_kg_per_second,
+            )
             .map_err(js_error)
     }
 
@@ -683,7 +724,9 @@ impl WasmPackedWorldRuntime {
         gas_sensible_enthalpy_j: f64,
     ) -> Result<(), JsValue> {
         if zone_lengths.len() != zone_sensible_enthalpies_j.len() {
-            return Err(JsValue::from_str("Furnace zone lengths and enthalpies must align"));
+            return Err(JsValue::from_str(
+                "Furnace zone lengths and enthalpies must align",
+            ));
         }
         let total: usize = zone_lengths.iter().map(|value| *value as usize).sum();
         if zone_species_ids.len() != total
@@ -692,20 +735,25 @@ impl WasmPackedWorldRuntime {
             || zone_texture_profile_ids.len() != total
             || zone_quantities.len() != total
         {
-            return Err(JsValue::from_str("Furnace flattened zone columns must align"));
+            return Err(JsValue::from_str(
+                "Furnace flattened zone columns must align",
+            ));
         }
         let mut zones = Vec::with_capacity(zone_lengths.len());
         let mut offset = 0usize;
         for (zone_index, length) in zone_lengths.iter().enumerate() {
             let end = offset + *length as usize;
-            zones.push(solid_body_from_columns(
-                zone_species_ids[offset..end].to_vec(),
-                zone_size_bin_ids[offset..end].to_vec(),
-                zone_liberation_class_ids[offset..end].to_vec(),
-                zone_texture_profile_ids[offset..end].to_vec(),
-                zone_quantities[offset..end].to_vec(),
-                zone_sensible_enthalpies_j[zone_index],
-            ).map_err(js_error)?);
+            zones.push(
+                solid_body_from_columns(
+                    zone_species_ids[offset..end].to_vec(),
+                    zone_size_bin_ids[offset..end].to_vec(),
+                    zone_liberation_class_ids[offset..end].to_vec(),
+                    zone_texture_profile_ids[offset..end].to_vec(),
+                    zone_quantities[offset..end].to_vec(),
+                    zone_sensible_enthalpies_j[zone_index],
+                )
+                .map_err(js_error)?,
+            );
             offset = end;
         }
         let pending_feed = solid_body_from_columns(
@@ -715,10 +763,11 @@ impl WasmPackedWorldRuntime {
             pending_texture_profile_ids,
             pending_quantities,
             pending_sensible_enthalpy_j,
-        ).map_err(js_error)?;
-        let gas_inventory = gas_body_from_columns(
-            gas_species_ids, gas_quantities, gas_sensible_enthalpy_j,
-        ).map_err(js_error)?;
+        )
+        .map_err(js_error)?;
+        let gas_inventory =
+            gas_body_from_columns(gas_species_ids, gas_quantities, gas_sensible_enthalpy_j)
+                .map_err(js_error)?;
         self.inner
             .import_furnace_state(node_id, zones, pending_feed, gas_inventory)
             .map_err(js_error)
@@ -753,45 +802,64 @@ impl WasmPackedWorldRuntime {
     }
 
     pub fn site_elapsed_seconds(&self, site_id: u32) -> f64 {
-        self.inner.site(site_id).map(|site| site.elapsed_seconds()).unwrap_or(0.0)
+        self.inner
+            .site(site_id)
+            .map(|site| site.elapsed_seconds())
+            .unwrap_or(0.0)
     }
 
     pub fn site_extracted_kg(&self, site_id: u32) -> f64 {
-        self.inner.site(site_id).map(|site| site.extracted_kg()).unwrap_or(0.0)
+        self.inner
+            .site(site_id)
+            .map(|site| site.extracted_kg())
+            .unwrap_or(0.0)
     }
 
     pub fn hopper_stored_mass_kg(&self, node_id: u32) -> f64 {
-        self.inner.hopper(node_id).map(PackedHopperState::stored_mass_kg).unwrap_or(0.0)
+        self.inner
+            .hopper(node_id)
+            .map(PackedHopperState::stored_mass_kg)
+            .unwrap_or(0.0)
     }
 
     pub fn hopper_sensible_enthalpy_j(&self, node_id: u32) -> f64 {
-        self.inner.hopper(node_id).map(|hopper| hopper.body().sensible_enthalpy_j()).unwrap_or(0.0)
+        self.inner
+            .hopper(node_id)
+            .map(|hopper| hopper.body().sensible_enthalpy_j())
+            .unwrap_or(0.0)
     }
 
     pub fn occurrence_extracted_mass_kg(&self, occurrence_id: u32) -> f64 {
-        self.inner.occurrence(occurrence_id)
+        self.inner
+            .occurrence(occurrence_id)
             .map(PackedResourceOccurrence::extracted_mass_kg)
             .unwrap_or(0.0)
     }
 
     pub fn occurrence_remaining_mass_kg(&self, occurrence_id: u32) -> f64 {
-        self.inner.occurrence(occurrence_id)
+        self.inner
+            .occurrence(occurrence_id)
             .and_then(PackedResourceOccurrence::remaining_mass_kg)
             .unwrap_or(f64::INFINITY)
     }
 
     pub fn vented_gas_mass_kg(&self, node_id: u32) -> f64 {
-        self.inner.exhaust_vent(node_id).map(PackedGasBody::total_mass_kg).unwrap_or(0.0)
+        self.inner
+            .exhaust_vent(node_id)
+            .map(PackedGasBody::total_mass_kg)
+            .unwrap_or(0.0)
     }
 
     pub fn node_operating_state(&self, node_id: u32) -> String {
-        self.inner.node_status(node_id)
+        self.inner
+            .node_status(node_id)
             .map(|status| status.operating_state().as_str().to_string())
             .unwrap_or_default()
     }
 
     pub fn node_last_error(&self, node_id: u32) -> String {
-        self.inner.node_status(node_id)
+        self.inner
+            .node_status(node_id)
             .and_then(|status| status.last_error())
             .unwrap_or("")
             .to_string()
@@ -804,32 +872,380 @@ impl WasmPackedWorldRuntime {
     }
 
     pub fn furnace_actual_charge_temperature_k(&self, node_id: u32) -> f64 {
-        self.inner.furnace_diagnostics(node_id)
+        self.inner
+            .furnace_diagnostics(node_id)
             .map(|value| value.actual_charge_temperature_k)
             .unwrap_or(0.0)
     }
 
     pub fn furnace_last_heater_power_kw(&self, node_id: u32) -> f64 {
-        self.inner.furnace_diagnostics(node_id)
+        self.inner
+            .furnace_diagnostics(node_id)
             .map(|value| value.last_heater_power_kw)
             .unwrap_or(0.0)
     }
 
     pub fn furnace_last_reaction_power_kw(&self, node_id: u32) -> f64 {
-        self.inner.furnace_diagnostics(node_id)
+        self.inner
+            .furnace_diagnostics(node_id)
             .map(|value| value.last_reaction_power_kw)
             .unwrap_or(0.0)
     }
 
     pub fn boundary_last_moved_kg(&self, transfer_id: u32) -> f64 {
-        self.inner.boundary_transfer(transfer_id)
+        self.inner
+            .boundary_transfer(transfer_id)
             .map(|value| value.last_moved_kg)
             .unwrap_or(0.0)
     }
 
     pub fn boundary_last_rate_kg_per_second(&self, transfer_id: u32) -> f64 {
-        self.inner.boundary_transfer(transfer_id)
+        self.inner
+            .boundary_transfer(transfer_id)
             .map(|value| value.last_rate_kg_per_second)
+            .unwrap_or(0.0)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmPackedWorldRuntime {
+    pub fn begin_live_reconfigure(&mut self) {
+        self.inner.begin_live_reconfigure();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn replace_hopper_state_live(
+        &mut self,
+        node_id: u32,
+        capacity_kg: f64,
+        species_ids: Vec<u16>,
+        size_bin_ids: Vec<u8>,
+        liberation_class_ids: Vec<u8>,
+        texture_profile_ids: Vec<u32>,
+        quantities: Vec<f64>,
+        sensible_enthalpy_j: f64,
+    ) -> Result<(), JsValue> {
+        let body = solid_body_from_columns(
+            species_ids,
+            size_bin_ids,
+            liberation_class_ids,
+            texture_profile_ids,
+            quantities,
+            sensible_enthalpy_j,
+        )
+        .map_err(js_error)?;
+        let hopper = PackedHopperState::new(capacity_kg, body).map_err(js_error)?;
+        self.inner
+            .replace_hopper_live(node_id, hopper)
+            .map_err(js_error)
+    }
+
+    pub fn remove_hopper_if_empty_live(&mut self, node_id: u32) -> Result<(), JsValue> {
+        self.inner
+            .remove_hopper_if_empty_live(node_id)
+            .map_err(js_error)
+    }
+
+    pub fn replace_exhaust_vent_state_live(
+        &mut self,
+        node_id: u32,
+        species_ids: Vec<u16>,
+        quantities: Vec<f64>,
+        sensible_enthalpy_j: f64,
+    ) -> Result<(), JsValue> {
+        let body = gas_body_from_columns(species_ids, quantities, sensible_enthalpy_j)
+            .map_err(js_error)?;
+        self.inner
+            .replace_exhaust_vent_live(node_id, body)
+            .map_err(js_error)
+    }
+
+    pub fn remove_exhaust_vent_live(&mut self, node_id: u32) {
+        self.inner.remove_exhaust_vent_live(node_id);
+    }
+
+    pub fn upsert_extractor_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        rate_kg_per_second: f64,
+        enabled: bool,
+        occurrence_id: u32,
+        output_hopper_id: u32,
+    ) -> Result<(), JsValue> {
+        let runtime = PackedExtractorRuntime::new(
+            PackedExtractorConfig::new(rate_kg_per_second, enabled).map_err(js_error)?,
+        );
+        self.inner
+            .upsert_extractor_live(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(occurrence_id),
+                optional_id(output_hopper_id),
+            )
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_merger_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        throughput_kg_per_second: f64,
+        enabled: bool,
+        input_a_hopper_id: u32,
+        input_b_hopper_id: u32,
+        output_hopper_id: u32,
+    ) -> Result<(), JsValue> {
+        let runtime = PackedMergerRuntime::new(
+            PackedMergerConfig::new(throughput_kg_per_second, enabled).map_err(js_error)?,
+        );
+        self.inner
+            .upsert_merger_live(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_a_hopper_id),
+                optional_id(input_b_hopper_id),
+                optional_id(output_hopper_id),
+            )
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_feeder_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        flow_rate_kg_per_second: f64,
+        throughput_kg_per_second: f64,
+        enabled: bool,
+        input_hopper_id: u32,
+        output_target_kind: u8,
+        output_target_id: u32,
+    ) -> Result<(), JsValue> {
+        let runtime = PackedFeederRuntime::new(
+            PackedFeederConfig::new(flow_rate_kg_per_second, throughput_kg_per_second, enabled)
+                .map_err(js_error)?,
+        );
+        self.inner
+            .upsert_feeder_live(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                solid_target(output_target_kind, output_target_id).map_err(js_error)?,
+            )
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_comminution_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        equipment_kind: u8,
+        target_size_bin_id: u8,
+        target_particle_size_mm: f64,
+        throughput_kg_per_second: f64,
+        rated_power_kw: f64,
+        enabled: bool,
+        input_hopper_id: u32,
+        output_hopper_id: u32,
+    ) -> Result<(), JsValue> {
+        let (equipment, phase) = comminution_equipment(equipment_kind).map_err(js_error)?;
+        let runtime = PackedComminutionRuntime::new(
+            interlink_comminution::PackedComminutionConfig::new(
+                equipment,
+                target_size_bin_id,
+                target_particle_size_mm,
+                throughput_kg_per_second,
+                rated_power_kw,
+                enabled,
+            )
+            .map_err(js_error)?,
+        );
+        self.inner
+            .upsert_comminution_live(
+                site_id,
+                node_id,
+                phase,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(output_hopper_id),
+            )
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_screen_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        aperture_size_mm: f64,
+        throughput_kg_per_second: f64,
+        enabled: bool,
+        input_hopper_id: u32,
+        undersize_hopper_id: u32,
+        oversize_hopper_id: u32,
+    ) -> Result<(), JsValue> {
+        let runtime = PackedScreenRuntime::new(
+            PackedScreenConfig::new(aperture_size_mm, throughput_kg_per_second, enabled)
+                .map_err(js_error)?,
+        );
+        self.inner
+            .upsert_screen_live(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(undersize_hopper_id),
+                optional_id(oversize_hopper_id),
+            )
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_splitter_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        split_fraction_to_a: f64,
+        throughput_kg_per_second: f64,
+        enabled: bool,
+        input_hopper_id: u32,
+        output_a_hopper_id: u32,
+        output_b_hopper_id: u32,
+    ) -> Result<(), JsValue> {
+        let runtime = PackedSplitterRuntime::new(
+            PackedSplitterConfig::new(split_fraction_to_a, throughput_kg_per_second, enabled)
+                .map_err(js_error)?,
+        );
+        self.inner
+            .upsert_splitter_live(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(output_a_hopper_id),
+                optional_id(output_b_hopper_id),
+            )
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_magnetic_separator_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        field_strength: f64,
+        max_feed_particle_size_mm: f64,
+        throughput_kg_per_second: f64,
+        enabled: bool,
+        input_hopper_id: u32,
+        concentrate_hopper_id: u32,
+        tailings_hopper_id: u32,
+    ) -> Result<(), JsValue> {
+        let runtime = PackedMagneticSeparatorRuntime::new(
+            PackedMagneticSeparatorConfig::new(
+                field_strength,
+                max_feed_particle_size_mm,
+                throughput_kg_per_second,
+                enabled,
+            )
+            .map_err(js_error)?,
+        );
+        self.inner
+            .upsert_magnetic_separator_live(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                optional_id(input_hopper_id),
+                optional_id(concentrate_hopper_id),
+                optional_id(tailings_hopper_id),
+            )
+            .map_err(js_error)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_roasting_furnace_live(
+        &mut self,
+        site_id: u32,
+        node_id: u32,
+        ordinal: u32,
+        temperature_setpoint_k: f64,
+        rated_heater_power_kw: f64,
+        maximum_operating_temperature_k: f64,
+        maximum_solid_throughput_kg_per_second: f64,
+        effective_chamber_hold_up_kg: f64,
+        heat_loss_coefficient_w_per_k: f64,
+        internal_zone_count: u32,
+        enabled: bool,
+        product_target_kind: u8,
+        product_target_id: u32,
+        gas_vent_id: u32,
+        preserve_retained_state: bool,
+    ) -> Result<(), JsValue> {
+        let runtime = PackedRoastingFurnaceRuntime::new(
+            PackedRoastingFurnaceConfig::new(
+                temperature_setpoint_k,
+                rated_heater_power_kw,
+                maximum_operating_temperature_k,
+                maximum_solid_throughput_kg_per_second,
+                effective_chamber_hold_up_kg,
+                heat_loss_coefficient_w_per_k,
+                internal_zone_count as usize,
+                enabled,
+            )
+            .map_err(js_error)?,
+        );
+        self.inner
+            .upsert_roasting_furnace_live(
+                site_id,
+                node_id,
+                ordinal,
+                runtime,
+                solid_target(product_target_kind, product_target_id).map_err(js_error)?,
+                optional_id(gas_vent_id),
+                preserve_retained_state,
+            )
+            .map_err(js_error)
+    }
+
+    pub fn finish_live_reconfigure(&mut self, active_machine_ids: Vec<u32>) -> Result<(), JsValue> {
+        self.inner
+            .finish_live_reconfigure(&active_machine_ids)
+            .map_err(js_error)
+    }
+
+    pub fn node_input_mass_flow_kg_per_second(&self, node_id: u32, input_index: u32) -> f64 {
+        self.inner
+            .node_input_mass_flow_kg_per_second(node_id, input_index as usize)
+            .unwrap_or(0.0)
+    }
+
+    pub fn furnace_charge_mass_kg(&self, node_id: u32) -> f64 {
+        self.inner.furnace_charge_mass_kg(node_id).unwrap_or(0.0)
+    }
+
+    pub fn furnace_pending_feed_mass_kg(&self, node_id: u32) -> f64 {
+        self.inner
+            .furnace_pending_feed_mass_kg(node_id)
             .unwrap_or(0.0)
     }
 }
@@ -848,21 +1264,19 @@ mod tests {
     fn world_bridge_runs_phase_order_in_one_fixed_step() {
         let mut world = WasmPackedWorldRuntime::new();
         world.add_site(1).unwrap();
-        world.add_occurrence_state(
-            1,
-            vec![1], vec![1], vec![1], vec![0], vec![1.0],
-            false, 0.0,
-        ).unwrap();
-        world.add_hopper_state(
-            100, 100.0,
-            vec![], vec![], vec![], vec![], vec![], 0.0,
-        ).unwrap();
-        world.add_hopper_state(
-            101, 100.0,
-            vec![], vec![], vec![], vec![], vec![], 0.0,
-        ).unwrap();
+        world
+            .add_occurrence_state(1, vec![1], vec![1], vec![1], vec![0], vec![1.0], false, 0.0)
+            .unwrap();
+        world
+            .add_hopper_state(100, 100.0, vec![], vec![], vec![], vec![], vec![], 0.0)
+            .unwrap();
+        world
+            .add_hopper_state(101, 100.0, vec![], vec![], vec![], vec![], vec![], 0.0)
+            .unwrap();
         world.add_extractor(1, 10, 0, 5.0, true, 1, 100).unwrap();
-        world.add_feeder(1, 11, 1, 2.0, 8.0, true, 100, 1, 101).unwrap();
+        world
+            .add_feeder(1, 11, 1, 2.0, 8.0, true, 100, 1, 101)
+            .unwrap();
         world.seal();
         assert!(world.tick_fixed().unwrap());
         assert!((world.hopper_stored_mass_kg(100) - 0.3).abs() < 1e-12);
