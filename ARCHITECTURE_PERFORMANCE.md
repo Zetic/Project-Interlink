@@ -17,27 +17,33 @@ The browser runtime is split conceptually into four independent layers:
 
 The readable Blueprint/world structures remain the authoring, persistence, debugging, and test representation. Performance-specific projections are transient runtime state and must not become serialized physical truth.
 
-## Current migration in PR #48
+## Implemented in PR #48
 
 ### Compiled fixed-step execution
 
 Stable Blueprint topology is projected once into an execution plan containing apparatus phase buckets, direct runtime references, stream lookup, and explicit boundary-storage links. Topology edits invalidate this plan.
 
-World session enumeration and boundary-transfer ordering are cached until their registries change.
+World session enumeration and boundary-transfer ordering are cached until their registries change. Solid fraction descriptor parsing/static registry validation is also bounded and cached because descriptor keys are immutable, while quantity and texture ownership remain state-specific and continue to be validated.
 
 ### Dirty-driven presentation
 
-Simulation, topology, and graph layout publish transient revision counters. Repeated `requestAnimationFrame` presentation requests reuse the same graph projection and skip node/edge DOM walks when no relevant revision changed.
+Simulation, topology, and graph layout publish transient revision counters. Graph projections and node/edge DOM walks are reused or skipped when no relevant revision changed.
 
-This deliberately decouples display refresh rate from physics refresh rate. A 60/120/240 Hz monitor must not cause identical material state to be reformatted dozens of times between 10 Hz physics steps.
+The requestAnimationFrame loop remains the wall-clock scheduler, but state-dependent Site presentation runs after an authoritative physics step rather than once per monitor refresh. A 60/120/240 Hz monitor therefore no longer forces identical graph/Inspector work between 10 Hz physics steps. Node dragging also updates the affected element and connection geometry directly instead of invoking a complete Site render for every pointer movement.
 
 ### Hot presentation summaries
 
-Material-stream total flow is cached when canonical stream state changes, so rendering an edge no longer has to sum every solid/gas population every display pass. The cache is non-enumerable and does not affect serialization.
+Material-stream total flow is cached when canonical stream state changes, so rendering an edge no longer has to sum every solid/gas population every presentation query. The cache is non-enumerable and does not affect serialization.
 
-## Worker boundary
+### Acceleration capability and backend contract
 
-The next runtime boundary is a dedicated simulation worker. The intended ownership model is:
+`runtimeCapabilities.js` reports Web Worker, hardware-concurrency, WebAssembly/SIMD, shared-memory threading, WebGPU and OffscreenCanvas support. The DEBUG panel exposes the relevant browser capabilities so benchmark results can be compared across machines.
+
+`realtimeRuntime.js` defines the fixed-step backend contract and validates that the current backend retains authoritative `0.1 s` semantics. PR #48 deliberately keeps the proven compiled JavaScript execution backend as the selectable production path. It does **not** pretend that a Worker backend is complete by copying the object-heavy world across a thread boundary every tick.
+
+## Worker boundary — next execution backend
+
+The next backend migration is a dedicated simulation worker. The intended ownership model is:
 
 - main thread owns DOM, pointer/input events, graph interaction and presentation;
 - worker owns fixed-step simulation execution;
@@ -46,6 +52,8 @@ The next runtime boundary is a dedicated simulation worker. The intended ownersh
 - detailed Inspector state is queried/snapshotted only when required.
 
 A full-world `structuredClone` every physics step is explicitly not the target architecture because it moves the bottleneck to serialization and garbage collection.
+
+The Worker should become authoritative only after simulation state has a coarse command/snapshot boundary. Until that point, the compiled main-thread backend remains the correct fallback and reference implementation.
 
 ## Data-oriented / WASM boundary
 
