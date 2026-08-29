@@ -21,7 +21,7 @@ test('player graph edits are serialized into Rust Worker live reconfiguration', 
 });
 
 test('normal Worker presentation deliberately mirrors scalar state instead of packed fraction arrays', () => {
-  assert.match(presentationSource, /does not reconstruct packed fraction populations/);
+  assert.match(presentationSource, /not reconstruct packed fraction populations/);
   assert.match(presentationSource, /storedMassKg/);
   assert.match(presentationSource, /inputMassFlowKgPerSecond/);
   assert.match(presentationSource, /outputMassFlowKgPerSecond/);
