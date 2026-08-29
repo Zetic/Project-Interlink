@@ -9,6 +9,7 @@ members = [
   "rust/interlink-thermal",
   "rust/interlink-thermochemistry",
   "rust/interlink-roasting",
+  "rust/interlink-runtime",
   "rust/interlink-wasm",
 ]
 resolver = "2"
