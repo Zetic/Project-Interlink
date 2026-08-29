@@ -7,6 +7,8 @@ members = [
   "rust/interlink-separation",
   "rust/interlink-extraction",
   "rust/interlink-thermal",
+  "rust/interlink-thermochemistry",
+  "rust/interlink-roasting",
   "rust/interlink-wasm",
 ]
 resolver = "2"
