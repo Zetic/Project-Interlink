@@ -1,0 +1,43 @@
+name: PR59 Package WASM
+
+on:
+  push:
+    branches:
+      - chatgpt/rust-wasm-worker-cutover
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    if: ${{ !contains(github.event.head_commit.message, '[pr59-wasm-generated]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/rust-wasm-worker-cutover
+          fetch-depth: 0
+
+      - name: Install Rust browser target
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+
+      - name: Install pinned wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
+
+      - name: Package browser WASM module
+        run: bash scripts/build-wasm.sh
+
+      - name: Commit generated browser module
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f src/wasm/
+          if git diff --cached --quiet; then
+            echo "Generated WASM module is already current."
+            exit 0
+          fi
+          git commit -m "Package browser Rust/WASM runtime [pr59-wasm-generated]"
+          git push origin HEAD:chatgpt/rust-wasm-worker-cutover
