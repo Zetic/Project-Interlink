@@ -1,0 +1,16 @@
+[package]
+name = "interlink-runtime"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+interlink-core = { path = "../interlink-core" }
+interlink-processes = { path = "../interlink-processes" }
+interlink-routing = { path = "../interlink-routing" }
+interlink-comminution = { path = "../interlink-comminution" }
+interlink-separation = { path = "../interlink-separation" }
+interlink-extraction = { path = "../interlink-extraction" }
+interlink-thermal = { path = "../interlink-thermal" }
+interlink-thermochemistry = { path = "../interlink-thermochemistry" }
+interlink-roasting = { path = "../interlink-roasting" }
