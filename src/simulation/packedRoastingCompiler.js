@@ -177,7 +177,11 @@ function furnaceConfig(node) {
   };
 }
 
-/** Compile an existing live JavaScript furnace into setup data for Rust/WASM. */
+/**
+ * Compile an existing live JavaScript furnace into packed state data. Importing
+ * that snapshot into the eventual authoritative Rust world is intentionally a
+ * graph/world-scheduler concern rather than a per-apparatus bridge protocol.
+ */
 export function compileRoastingFurnaceForRuntime(
   node,
   idTables = createPackedMaterialIdTables(),
@@ -204,53 +208,6 @@ export function compileRoastingFurnaceForRuntime(
     reaction,
     idTables,
   };
-}
-
-function populateSolidBody(pushFraction, setEnthalpy, packedBody) {
-  const columns = packedBody.solidState.toColumns();
-  for (let index = 0; index < columns.quantities.length; index++) {
-    pushFraction(
-      columns.speciesIds[index],
-      columns.sizeBinIds[index],
-      columns.liberationClassIds[index],
-      columns.textureProfileIds[index],
-      columns.quantities[index],
-    );
-  }
-  setEnthalpy(packedBody.sensibleEnthalpyJ);
-}
-
-/**
- * Populate one newly-constructed `WasmPackedRoastingFurnace` from a compiled
- * live-state snapshot. This is setup/cutover plumbing, not a per-tick protocol.
- */
-export function populateWasmRoastingFurnaceState(wasmFurnace, compiled) {
-  if (!wasmFurnace || typeof wasmFurnace.push_zone_fraction !== 'function') {
-    throw new Error('WASM roasting furnace bridge is required');
-  }
-  compiled.packedZones.forEach((body, zoneIndex) => {
-    populateSolidBody(
-      (...args) => wasmFurnace.push_zone_fraction(zoneIndex, ...args),
-      value => wasmFurnace.set_zone_sensible_enthalpy_j(zoneIndex, value),
-      body,
-    );
-  });
-  populateSolidBody(
-    (...args) => wasmFurnace.push_pending_feed_fraction(...args),
-    value => wasmFurnace.set_pending_feed_sensible_enthalpy_j(value),
-    compiled.packedPendingFeed,
-  );
-  const gasColumns = compiled.packedGasInventory.gasState.toColumns();
-  for (let index = 0; index < gasColumns.quantities.length; index++) {
-    wasmFurnace.push_gas_inventory_species(
-      gasColumns.speciesIds[index],
-      gasColumns.quantities[index],
-    );
-  }
-  wasmFurnace.set_gas_inventory_sensible_enthalpy_j(
-    compiled.packedGasInventory.sensibleEnthalpyJ,
-  );
-  return wasmFurnace;
 }
 
 export function wasmRoastingFurnaceConstructorArgs(compiled) {
