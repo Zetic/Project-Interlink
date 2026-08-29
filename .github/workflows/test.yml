@@ -25,7 +25,7 @@ jobs:
         run: npm test
 
   rust:
-    name: Rust core and WASM target
+    name: Rust core and WASM browser package
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,3 +43,14 @@ jobs:
 
       - name: Compile browser WASM target
         run: cargo check -p interlink-wasm --target wasm32-unknown-unknown
+
+      - name: Install pinned wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
+
+      - name: Package browser WASM module
+        run: npm run check:wasm-package
+
+      - name: Verify packaged Worker assets
+        run: |
+          test -s target/wasm-package/interlink_wasm.js
+          test -s target/wasm-package/interlink_wasm_bg.wasm
