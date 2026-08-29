@@ -1,0 +1,9 @@
+[package]
+name = "interlink-thermal"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+interlink-core = { path = "../interlink-core" }
+interlink-routing = { path = "../interlink-routing" }
