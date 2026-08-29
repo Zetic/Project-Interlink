@@ -1,0 +1,11 @@
+[package]
+name = "interlink-roasting"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+interlink-core = { path = "../interlink-core" }
+interlink-processes = { path = "../interlink-processes" }
+interlink-thermal = { path = "../interlink-thermal" }
+interlink-thermochemistry = { path = "../interlink-thermochemistry" }
