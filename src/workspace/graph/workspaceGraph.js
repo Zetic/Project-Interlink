@@ -1,7 +1,14 @@
 /** Shared player-facing graph projection for primitive and composite workspaces. */
 
-import { getNodePortDefinitions } from '../../simulation/simulationEngine.js';
+import {
+  getNodePortDefinitions,
+  blueprintTopologyRevision,
+  blueprintPresentationRevision,
+  blueprintLayoutRevision,
+} from '../../simulation/simulationEngine.js';
 import { nodeCategory } from './nodePresentation.js';
+
+const blueprintProjectionCache = new WeakMap();
 
 function graphPorts(node, ports = getNodePortDefinitions(node)) {
   return ports.map(port => ({
@@ -44,19 +51,54 @@ function graphConnection(connection, adapter) {
   };
 }
 
-/** Project a local engineering blueprint without changing its simulation objects. */
+/**
+ * Project a local engineering blueprint without changing its simulation objects.
+ * The editable graph, runtime state, and graph layout each expose transient
+ * revision counters. Between authoritative changes the identical projection is
+ * returned directly instead of allocating a new node/edge graph every display
+ * frame.
+ */
 export function projectBlueprintGraph(blueprint, layout = { nodePositions: {} }, options = {}) {
-  if (!blueprint) return { nodes: [], connections: [] };
-  return {
+  if (!blueprint) return { nodes: [], connections: [], renderRevision: 'empty' };
+
+  const topologyRevision = blueprintTopologyRevision(blueprint);
+  const presentationRevision = blueprintPresentationRevision(blueprint);
+  const layoutRevision = blueprintLayoutRevision(layout);
+  const selectedNodeId = options.selectedNodeId ?? null;
+  const cache = blueprintProjectionCache.get(blueprint);
+
+  if (
+    cache
+    && cache.layout === layout
+    && cache.topologyRevision === topologyRevision
+    && cache.presentationRevision === presentationRevision
+    && cache.layoutRevision === layoutRevision
+    && cache.selectedNodeId === selectedNodeId
+  ) {
+    return cache.graph;
+  }
+
+  const graph = {
     nodes: Object.values(blueprint.nodes ?? {}).map(node => graphNode(
       node,
       layout.nodePositions?.[node.id] ?? { x: 0, y: 0 },
       undefined,
-      options.selectedNodeId === node.id,
+      selectedNodeId === node.id,
     )),
     connections: Object.values(blueprint.connections ?? {}).map(connection =>
       graphConnection(connection, 'blueprint')),
+    renderRevision: `blueprint:${topologyRevision}:${presentationRevision}:${layoutRevision}:${selectedNodeId ?? ''}`,
   };
+
+  blueprintProjectionCache.set(blueprint, {
+    layout,
+    topologyRevision,
+    presentationRevision,
+    layoutRevision,
+    selectedNodeId,
+    graph,
+  });
+  return graph;
 }
 
 /**
@@ -100,11 +142,10 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
 }
 
 /**
- * Graph rendering is requested by requestAnimationFrame, while authoritative
- * simulation state currently advances at a much lower fixed rate. Build a cheap
- * signature from the primitive fields that can affect node-card text plus raw
- * stored mass. This lets the renderer keep drag/viewport responsiveness without
- * rewriting identical DOM 60-144 times per second between simulation ticks.
+ * Graph rendering may still be requested by requestAnimationFrame for pointer
+ * responsiveness, while authoritative simulation advances at a much lower fixed
+ * rate. A cheap signature prevents identical node-card DOM from being rewritten
+ * between physical-state changes.
  */
 function nodeContentSignature(node) {
   const source = node?.source ?? {};
@@ -143,6 +184,15 @@ export function renderGraphNodes({
   onPortFinish,
 } = {}) {
   if (!canvas) return;
+  const renderRevision = graph?.renderRevision ?? null;
+  if (
+    renderRevision
+    && canvas.dataset.graphNodeRenderRevision === renderRevision
+    && elements.size === (graph?.nodes?.length ?? 0)
+  ) {
+    return;
+  }
+
   const activeIds = new Set();
   for (const node of graph?.nodes ?? []) {
     activeIds.add(node.id);
@@ -238,6 +288,7 @@ export function renderGraphNodes({
       elements.delete(id);
     }
   }
+  if (renderRevision) canvas.dataset.graphNodeRenderRevision = renderRevision;
 }
 
 /** Render the common cursor-following edge preview for any workspace adapter. */
@@ -307,6 +358,16 @@ export function renderGraphConnections({
   createPath = null,
 } = {}) {
   if (!svg) return;
+  const renderRevision = graph?.renderRevision ?? null;
+  const connectionRevision = renderRevision ? `${renderRevision}:${selectedId ?? ''}` : null;
+  if (
+    connectionRevision
+    && svg.dataset.graphConnectionRenderRevision === connectionRevision
+    && elements.size === (graph?.connections?.length ?? 0)
+  ) {
+    return;
+  }
+
   const makePath = createPath ?? (() => {
     if (typeof document === 'undefined') throw new Error('Graph edge rendering requires a document');
     return document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -357,4 +418,5 @@ export function renderGraphConnections({
       elements.delete(id);
     }
   }
+  if (connectionRevision) svg.dataset.graphConnectionRenderRevision = connectionRevision;
 }
