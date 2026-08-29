@@ -120,13 +120,15 @@ impl PackedSolidState {
         descriptor: FractionDescriptor,
         quantity: f64,
     ) -> Result<(), String> {
-        validate_quantity(quantity)?;
+        validate_non_negative_finite(quantity, "solid material quantity")?;
         if quantity <= SOLID_MATERIAL_TOLERANCE {
             return Ok(());
         }
 
         if let Some(index) = self.index_by_descriptor.get(&descriptor).copied() {
-            self.quantities[index] += quantity;
+            let merged = self.quantities[index] + quantity;
+            validate_non_negative_finite(merged, "merged solid material quantity")?;
+            self.quantities[index] = merged;
             return Ok(());
         }
 
@@ -150,19 +152,70 @@ impl PackedSolidState {
     }
 
     pub fn scale_in_place(&mut self, factor: f64) -> Result<(), String> {
-        if !factor.is_finite() || factor < 0.0 {
-            return Err("solid material scale factor must be finite and non-negative".to_string());
-        }
+        validate_non_negative_finite(factor, "solid material scale factor")?;
         if factor <= SOLID_MATERIAL_TOLERANCE {
             self.clear();
             return Ok(());
         }
 
+        for quantity in &self.quantities {
+            validate_non_negative_finite(*quantity * factor, "scaled solid material quantity")?;
+        }
         for quantity in &mut self.quantities {
             *quantity *= factor;
         }
         self.prune_tolerance();
         Ok(())
+    }
+
+    pub fn scaled(&self, factor: f64) -> Result<Self, String> {
+        let mut result = self.clone();
+        result.scale_in_place(factor)?;
+        Ok(result)
+    }
+
+    pub fn add_scaled_from(&mut self, source: &Self, factor: f64) -> Result<(), String> {
+        validate_non_negative_finite(factor, "solid material add factor")?;
+        if factor <= SOLID_MATERIAL_TOLERANCE {
+            return Ok(());
+        }
+        for index in 0..source.len() {
+            self.push_fraction(
+                source
+                    .descriptor_at(index)
+                    .expect("packed descriptor columns share one length"),
+                source.quantities[index] * factor,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Return a well-mixed proportional share without mutating this state.
+    pub fn proportional_share(&self, requested_quantity: f64) -> Result<Self, String> {
+        validate_non_negative_finite(requested_quantity, "requested solid quantity")?;
+        let total = self.total_quantity();
+        if total <= SOLID_MATERIAL_TOLERANCE || requested_quantity <= SOLID_MATERIAL_TOLERANCE {
+            return Ok(Self::new());
+        }
+        self.scaled((requested_quantity / total).min(1.0))
+    }
+
+    /// Remove a well-mixed proportional quantity and return the withdrawn state.
+    pub fn withdraw_quantity(&mut self, requested_quantity: f64) -> Result<Self, String> {
+        validate_non_negative_finite(requested_quantity, "requested solid quantity")?;
+        let total = self.total_quantity();
+        if total <= SOLID_MATERIAL_TOLERANCE || requested_quantity <= SOLID_MATERIAL_TOLERANCE {
+            return Ok(Self::new());
+        }
+        let actual = requested_quantity.min(total);
+        let fraction = actual / total;
+        let withdrawn = self.scaled(fraction)?;
+        if actual >= total - SOLID_MATERIAL_TOLERANCE {
+            self.clear();
+        } else {
+            self.scale_in_place(1.0 - fraction)?;
+        }
+        Ok(withdrawn)
     }
 
     pub fn quantity_at(&self, index: usize) -> Option<f64> {
@@ -210,17 +263,265 @@ impl PackedSolidState {
                 liberation_class_id: old.liberation_class_ids[index],
                 texture_profile_id: old.texture_profile_ids[index],
             };
-            // Values were already validated; failure is impossible unless that
-            // invariant changes, so keep this internal reconstruction infallible.
             self.push_fraction(descriptor, quantity)
                 .expect("validated packed material should remain valid");
         }
     }
 }
 
-fn validate_quantity(quantity: f64) -> Result<(), String> {
-    if !quantity.is_finite() || quantity < 0.0 {
-        return Err("solid material quantity must be finite and non-negative".to_string());
+/// Packed solid inventory plus the body's authoritative sensible-enthalpy ledger.
+/// Temperature remains derived by the higher-level thermal model.
+#[derive(Debug, Clone)]
+pub struct PackedSolidBody {
+    solid_state: PackedSolidState,
+    sensible_enthalpy_j: f64,
+}
+
+impl PackedSolidBody {
+    pub fn new(solid_state: PackedSolidState, sensible_enthalpy_j: f64) -> Result<Self, String> {
+        validate_finite(sensible_enthalpy_j, "sensible enthalpy")?;
+        Ok(Self {
+            solid_state,
+            sensible_enthalpy_j,
+        })
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            solid_state: PackedSolidState::new(),
+            sensible_enthalpy_j: 0.0,
+        }
+    }
+
+    pub fn solid_state(&self) -> &PackedSolidState {
+        &self.solid_state
+    }
+
+    pub fn solid_state_mut(&mut self) -> &mut PackedSolidState {
+        &mut self.solid_state
+    }
+
+    pub fn sensible_enthalpy_j(&self) -> f64 {
+        self.sensible_enthalpy_j
+    }
+
+    pub fn set_sensible_enthalpy_j(&mut self, value: f64) -> Result<(), String> {
+        validate_finite(value, "sensible enthalpy")?;
+        self.sensible_enthalpy_j = value;
+        Ok(())
+    }
+
+    pub fn total_mass_kg(&self) -> f64 {
+        self.solid_state.total_quantity()
+    }
+
+    pub fn specific_sensible_enthalpy_j_per_kg(&self) -> f64 {
+        let mass = self.total_mass_kg();
+        if mass <= SOLID_MATERIAL_TOLERANCE {
+            0.0
+        } else {
+            self.sensible_enthalpy_j / mass
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PackedWithdrawal {
+    pub body: PackedSolidBody,
+    pub actual_mass_kg: f64,
+}
+
+/// Finite-capacity packed solid storage. This is the Rust execution analogue of
+/// the current Hopper inventory semantics, not player-facing serialized state.
+#[derive(Debug, Clone)]
+pub struct PackedHopperState {
+    capacity_kg: f64,
+    body: PackedSolidBody,
+}
+
+impl PackedHopperState {
+    pub fn new(capacity_kg: f64, body: PackedSolidBody) -> Result<Self, String> {
+        validate_positive_finite(capacity_kg, "hopper capacity")?;
+        let stored = body.total_mass_kg();
+        if stored > capacity_kg + SOLID_MATERIAL_TOLERANCE {
+            return Err(format!(
+                "hopper initial contents ({stored} kg) exceed capacity ({capacity_kg} kg)"
+            ));
+        }
+        Ok(Self { capacity_kg, body })
+    }
+
+    pub fn empty(capacity_kg: f64) -> Result<Self, String> {
+        Self::new(capacity_kg, PackedSolidBody::empty())
+    }
+
+    pub fn capacity_kg(&self) -> f64 {
+        self.capacity_kg
+    }
+
+    pub fn body(&self) -> &PackedSolidBody {
+        &self.body
+    }
+
+    pub fn body_mut(&mut self) -> &mut PackedSolidBody {
+        &mut self.body
+    }
+
+    pub fn stored_mass_kg(&self) -> f64 {
+        self.body.total_mass_kg()
+    }
+
+    pub fn free_capacity_kg(&self) -> f64 {
+        (self.capacity_kg - self.stored_mass_kg()).max(0.0)
+    }
+
+    /// Atomically receive a finite already-materialized body.
+    pub fn receive_body(&mut self, incoming: &PackedSolidBody) -> Result<f64, String> {
+        let incoming_mass = incoming.total_mass_kg();
+        if incoming_mass <= SOLID_MATERIAL_TOLERANCE {
+            return Ok(0.0);
+        }
+        if incoming_mass > self.free_capacity_kg() + SOLID_MATERIAL_TOLERANCE {
+            return Err("hopper could not accept the requested material body atomically".to_string());
+        }
+
+        let mut staged = self.clone();
+        staged
+            .body
+            .solid_state
+            .add_scaled_from(incoming.solid_state(), 1.0)?;
+        let next_enthalpy = staged.body.sensible_enthalpy_j + incoming.sensible_enthalpy_j();
+        validate_finite(next_enthalpy, "hopper sensible enthalpy")?;
+        staged.body.sensible_enthalpy_j = next_enthalpy;
+        *self = staged;
+        Ok(incoming_mass)
+    }
+
+    /// Receive continuous packed solid flow (quantities are kg/s), clipping only
+    /// at finite storage capacity while preserving composition and specific energy.
+    pub fn receive_flow(
+        &mut self,
+        flow: &PackedSolidState,
+        dt: f64,
+        specific_sensible_enthalpy_j_per_kg: f64,
+    ) -> Result<f64, String> {
+        validate_positive_finite(dt, "hopper receive dt")?;
+        validate_finite(
+            specific_sensible_enthalpy_j_per_kg,
+            "flow specific sensible enthalpy",
+        )?;
+        let free = self.free_capacity_kg();
+        if free <= SOLID_MATERIAL_TOLERANCE {
+            return Ok(0.0);
+        }
+        let total_rate = flow.total_quantity();
+        let requested = total_rate * dt;
+        validate_non_negative_finite(requested, "requested inflow mass")?;
+        if requested <= SOLID_MATERIAL_TOLERANCE || total_rate <= SOLID_MATERIAL_TOLERANCE {
+            return Ok(0.0);
+        }
+        let accepted = requested.min(free);
+        let seconds_of_flow = accepted / total_rate;
+
+        let mut staged = self.clone();
+        staged.body.solid_state.add_scaled_from(flow, seconds_of_flow)?;
+        let energy = accepted * specific_sensible_enthalpy_j_per_kg;
+        validate_finite(energy, "accepted sensible enthalpy")?;
+        let next_enthalpy = staged.body.sensible_enthalpy_j + energy;
+        validate_finite(next_enthalpy, "hopper sensible enthalpy")?;
+        staged.body.sensible_enthalpy_j = next_enthalpy;
+        *self = staged;
+        Ok(accepted)
+    }
+
+    /// Withdraw a well-mixed body at a requested total mass rate.
+    pub fn withdraw_rate(&mut self, requested_rate_kg_per_second: f64, dt: f64) -> Result<PackedWithdrawal, String> {
+        validate_non_negative_finite(requested_rate_kg_per_second, "hopper withdrawal rate")?;
+        validate_positive_finite(dt, "hopper withdrawal dt")?;
+        let stored_before = self.stored_mass_kg();
+        if stored_before <= SOLID_MATERIAL_TOLERANCE || requested_rate_kg_per_second <= SOLID_MATERIAL_TOLERANCE {
+            return Ok(PackedWithdrawal {
+                body: PackedSolidBody::empty(),
+                actual_mass_kg: 0.0,
+            });
+        }
+
+        let requested = requested_rate_kg_per_second * dt;
+        validate_non_negative_finite(requested, "requested withdrawal mass")?;
+        let mut staged = self.clone();
+        let withdrawn_state = staged.body.solid_state.withdraw_quantity(requested)?;
+        let actual = withdrawn_state.total_quantity();
+        let energy_fraction = if stored_before <= SOLID_MATERIAL_TOLERANCE {
+            0.0
+        } else {
+            actual / stored_before
+        };
+        let withdrawn_enthalpy = staged.body.sensible_enthalpy_j * energy_fraction;
+        validate_finite(withdrawn_enthalpy, "withdrawn sensible enthalpy")?;
+        staged.body.sensible_enthalpy_j -= withdrawn_enthalpy;
+        if staged.body.sensible_enthalpy_j.abs() <= SOLID_MATERIAL_TOLERANCE {
+            staged.body.sensible_enthalpy_j = 0.0;
+        }
+        *self = staged;
+        Ok(PackedWithdrawal {
+            body: PackedSolidBody::new(withdrawn_state, withdrawn_enthalpy)?,
+            actual_mass_kg: actual,
+        })
+    }
+}
+
+/// Conservative packed storage-to-storage transfer. The source withdrawal and
+/// destination receipt commit together or neither state changes.
+pub fn transfer_between_hoppers(
+    source: &mut PackedHopperState,
+    target: &mut PackedHopperState,
+    max_rate_kg_per_second: f64,
+    dt: f64,
+) -> Result<f64, String> {
+    validate_non_negative_finite(max_rate_kg_per_second, "transfer rate")?;
+    validate_positive_finite(dt, "transfer dt")?;
+    let transferable = (max_rate_kg_per_second * dt)
+        .min(source.stored_mass_kg())
+        .min(target.free_capacity_kg());
+    validate_non_negative_finite(transferable, "transferable mass")?;
+    if transferable <= SOLID_MATERIAL_TOLERANCE {
+        return Ok(0.0);
+    }
+
+    let mut staged_source = source.clone();
+    let mut staged_target = target.clone();
+    let withdrawal = staged_source.withdraw_rate(transferable / dt, dt)?;
+    let accepted = staged_target.receive_body(&withdrawal.body)?;
+    if (accepted - withdrawal.actual_mass_kg).abs()
+        > SOLID_MATERIAL_TOLERANCE * accepted.max(withdrawal.actual_mass_kg).max(1.0)
+    {
+        return Err("packed storage transfer failed conservation check".to_string());
+    }
+
+    *source = staged_source;
+    *target = staged_target;
+    Ok(accepted)
+}
+
+fn validate_finite(value: f64, label: &str) -> Result<(), String> {
+    if !value.is_finite() {
+        return Err(format!("{label} must be finite"));
+    }
+    Ok(())
+}
+
+fn validate_non_negative_finite(value: f64, label: &str) -> Result<(), String> {
+    validate_finite(value, label)?;
+    if value < 0.0 {
+        return Err(format!("{label} must be non-negative"));
+    }
+    Ok(())
+}
+
+fn validate_positive_finite(value: f64, label: &str) -> Result<(), String> {
+    validate_finite(value, label)?;
+    if value <= 0.0 {
+        return Err(format!("{label} must be positive"));
     }
     Ok(())
 }
@@ -247,6 +548,23 @@ mod tests {
         liberation_class_id: u8,
         texture_profile_id: u32,
         quantity: f64,
+    }
+
+    fn state(fractions: &[(FractionDescriptor, f64)]) -> PackedSolidState {
+        let mut state = PackedSolidState::new();
+        for (descriptor, quantity) in fractions {
+            state.push_fraction(*descriptor, *quantity).unwrap();
+        }
+        state
+    }
+
+    fn descriptor(species_id: u16) -> FractionDescriptor {
+        FractionDescriptor {
+            species_id,
+            size_bin_id: 2,
+            liberation_class_id: 1,
+            texture_profile_id: 0,
+        }
     }
 
     #[test]
@@ -285,6 +603,57 @@ mod tests {
     }
 
     #[test]
+    fn proportional_withdrawal_conserves_packed_populations() {
+        let mut material = state(&[(descriptor(1), 30.0), (descriptor(2), 20.0)]);
+        let withdrawn = material.withdraw_quantity(20.0).unwrap();
+        assert!((withdrawn.total_quantity() - 20.0).abs() < 1e-12);
+        assert!((material.total_quantity() - 30.0).abs() < 1e-12);
+        let withdrawn_columns = withdrawn.to_columns();
+        assert!((withdrawn_columns.quantities[0] - 12.0).abs() < 1e-12);
+        assert!((withdrawn_columns.quantities[1] - 8.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn hopper_receive_flow_clips_capacity_and_preserves_specific_energy() {
+        let initial = PackedSolidBody::new(state(&[(descriptor(1), 20.0)]), 2_000.0).unwrap();
+        let mut hopper = PackedHopperState::new(25.0, initial).unwrap();
+        let flow = state(&[(descriptor(1), 4.0), (descriptor(2), 6.0)]);
+        let accepted = hopper.receive_flow(&flow, 1.0, 300.0).unwrap();
+        assert!((accepted - 5.0).abs() < 1e-12);
+        assert!((hopper.stored_mass_kg() - 25.0).abs() < 1e-12);
+        assert!((hopper.body().sensible_enthalpy_j() - 3_500.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn storage_transfer_and_withdrawal_conserve_mass_and_enthalpy() {
+        let source_body = PackedSolidBody::new(
+            state(&[(descriptor(1), 30.0), (descriptor(2), 20.0)]),
+            5_000.0,
+        )
+        .unwrap();
+        let target_body = PackedSolidBody::new(state(&[(descriptor(1), 5.0)]), 1_000.0).unwrap();
+        let mut source = PackedHopperState::new(100.0, source_body).unwrap();
+        let mut target = PackedHopperState::new(40.0, target_body).unwrap();
+
+        let mass_before = source.stored_mass_kg() + target.stored_mass_kg();
+        let energy_before = source.body().sensible_enthalpy_j() + target.body().sensible_enthalpy_j();
+        let transferred = transfer_between_hoppers(&mut source, &mut target, 20.0, 1.0).unwrap();
+        assert!((transferred - 20.0).abs() < 1e-12);
+        assert!((source.stored_mass_kg() - 30.0).abs() < 1e-12);
+        assert!((target.stored_mass_kg() - 25.0).abs() < 1e-12);
+        assert!((source.body().sensible_enthalpy_j() - 3_000.0).abs() < 1e-12);
+        assert!((target.body().sensible_enthalpy_j() - 3_000.0).abs() < 1e-12);
+        assert!((source.stored_mass_kg() + target.stored_mass_kg() - mass_before).abs() < 1e-12);
+        assert!((source.body().sensible_enthalpy_j() + target.body().sensible_enthalpy_j() - energy_before).abs() < 1e-12);
+
+        let withdrawal = target.withdraw_rate(10.0, 0.5).unwrap();
+        assert!((withdrawal.actual_mass_kg - 5.0).abs() < 1e-12);
+        assert!((withdrawal.body.sensible_enthalpy_j() - 600.0).abs() < 1e-12);
+        assert!((target.stored_mass_kg() - 20.0).abs() < 1e-12);
+        assert!((target.body().sensible_enthalpy_j() - 2_400.0).abs() < 1e-12);
+    }
+
+    #[test]
     fn invalid_quantities_and_factors_are_rejected() {
         let mut state = PackedSolidState::new();
         let descriptor = FractionDescriptor {
@@ -297,6 +666,7 @@ mod tests {
         assert!(state.push_fraction(descriptor, -1.0).is_err());
         assert!(state.scale_in_place(f64::INFINITY).is_err());
         assert!(state.scale_in_place(-0.5).is_err());
+        assert!(PackedHopperState::empty(0.0).is_err());
     }
 
     #[test]
