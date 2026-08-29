@@ -1,0 +1,108 @@
+name: PR59 State Import V2
+
+on:
+  push:
+    branches:
+      - chatgpt/rust-wasm-worker-cutover
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[pr59-state-import]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/rust-wasm-worker-cutover
+          fetch-depth: 0
+
+      - name: Apply atomic state import support
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          roasting = Path('rust/interlink-roasting/src/lib.rs')
+          text = roasting.read_text()
+          if 'pub fn import_retained_state(' not in text:
+              marker = '    pub fn config(&self) -> PackedRoastingFurnaceConfig {\n'
+              pos = text.find(marker)
+              if pos < 0:
+                  raise SystemExit('roasting config marker missing')
+              method = '''    /// Restore retained physical inventory when transferring an already-running\n    /// canonical world into the Rust runtime. Transient streams and diagnostics\n    /// restart cleanly; material and sensible energy are preserved.\n    pub fn import_retained_state(\n        &mut self,\n        zones: Vec<PackedSolidBody>,\n        pending_feed: PackedSolidBody,\n        gas_inventory: PackedGasBody,\n    ) -> Result<(), String> {\n        if zones.len() != self.config.internal_zone_count {\n            return Err(format!(\n                "Furnace retained state has {} zones; expected {}",\n                zones.len(),\n                self.config.internal_zone_count,\n            ));\n        }\n        self.zones = zones;\n        self.pending_feed = pending_feed;\n        self.gas_inventory = gas_inventory;\n        self.solid_product_stream = PackedSolidStream::new();\n        self.gas_exhaust_stream = PackedGasStream::new();\n        self.zone_temperatures_k = vec![\n            THERMAL_REFERENCE_TEMPERATURE_K;\n            self.config.internal_zone_count\n        ];\n        self.diagnostics = PackedRoastingFurnaceDiagnostics::default();\n        self.operating_state = if self.config.enabled {\n            PackedOperatingState::Idle\n        } else {\n            PackedOperatingState::Off\n        };\n        self.last_error = None;\n        self.incoming_mass_since_last_simulation_kg = 0.0;\n        Ok(())\n    }\n\n'''
+              roasting.write_text(text[:pos] + method + text[pos:])
+
+          runtime = Path('rust/interlink-runtime/src/lib.rs')
+          text = runtime.read_text()
+          text = text.replace(
+              'transfer_between_hoppers, PackedHopperState, SIMULATION_STEP_SECONDS,',
+              'transfer_between_hoppers, PackedHopperState, PackedSolidBody, SIMULATION_STEP_SECONDS,',
+              1,
+          )
+          if 'pub fn import_elapsed_seconds(' not in text:
+              impl_pos = text.find('impl PackedWorldRuntime {')
+              if impl_pos < 0:
+                  raise SystemExit('PackedWorldRuntime impl missing')
+              marker = '''    pub fn elapsed_seconds(&self) -> f64 {\n        self.elapsed_seconds\n    }\n'''
+              pos = text.find(marker, impl_pos)
+              if pos < 0:
+                  raise SystemExit('PackedWorldRuntime elapsed getter missing')
+              end = pos + len(marker)
+              methods = '''\n    pub fn import_elapsed_seconds(&mut self, value: f64) -> Result<(), String> {\n        validate_non_negative_finite(value, "world elapsed seconds")?;\n        self.elapsed_seconds = value;\n        Ok(())\n    }\n\n    pub fn import_site_stats(\n        &mut self,\n        site_id: RuntimeSiteId,\n        elapsed_seconds: f64,\n        extracted_kg: f64,\n    ) -> Result<(), String> {\n        validate_non_negative_finite(elapsed_seconds, "Site elapsed seconds")?;\n        validate_non_negative_finite(extracted_kg, "Site extracted mass")?;\n        let site = self.sites.get_mut(&site_id)\n            .ok_or_else(|| format!("unknown runtime Site {site_id}"))?;\n        site.elapsed_seconds = elapsed_seconds;\n        site.extracted_kg = extracted_kg;\n        Ok(())\n    }\n\n    pub fn import_furnace_state(\n        &mut self,\n        node_id: RuntimeNodeId,\n        zones: Vec<PackedSolidBody>,\n        pending_feed: PackedSolidBody,\n        gas_inventory: PackedGasBody,\n    ) -> Result<(), String> {\n        let record = self.machines.get_mut(&node_id)\n            .ok_or_else(|| format!("missing runtime furnace {node_id}"))?;\n        match &mut record.kind {\n            PackedMachineKind::Furnace { runtime, .. } => {\n                runtime.import_retained_state(zones, pending_feed, gas_inventory)\n            }\n            _ => Err(format!("runtime node {node_id} is not a furnace")),\n        }\n    }\n'''
+              text = text[:end] + methods + text[end:]
+          runtime.write_text(text)
+
+          bridge = Path('rust/interlink-wasm/src/runtime_bridge.rs')
+          text = bridge.read_text()
+          if 'pub fn import_world_elapsed_seconds(' not in text:
+              marker = '''    pub fn seal(&mut self) {\n        self.inner.seal();\n    }\n'''
+              pos = text.find(marker)
+              if pos < 0:
+                  raise SystemExit('WASM seal marker missing')
+              methods = '''    pub fn import_world_elapsed_seconds(&mut self, value: f64) -> Result<(), JsValue> {\n        self.inner.import_elapsed_seconds(value).map_err(js_error)\n    }\n\n    pub fn import_site_stats(\n        &mut self,\n        site_id: u32,\n        elapsed_seconds: f64,\n        extracted_kg: f64,\n    ) -> Result<(), JsValue> {\n        self.inner\n            .import_site_stats(site_id, elapsed_seconds, extracted_kg)\n            .map_err(js_error)\n    }\n\n    #[allow(clippy::too_many_arguments)]\n    pub fn import_roasting_furnace_state(\n        &mut self,\n        node_id: u32,\n        zone_lengths: Vec<u32>,\n        zone_species_ids: Vec<u16>,\n        zone_size_bin_ids: Vec<u8>,\n        zone_liberation_class_ids: Vec<u8>,\n        zone_texture_profile_ids: Vec<u32>,\n        zone_quantities: Vec<f64>,\n        zone_sensible_enthalpies_j: Vec<f64>,\n        pending_species_ids: Vec<u16>,\n        pending_size_bin_ids: Vec<u8>,\n        pending_liberation_class_ids: Vec<u8>,\n        pending_texture_profile_ids: Vec<u32>,\n        pending_quantities: Vec<f64>,\n        pending_sensible_enthalpy_j: f64,\n        gas_species_ids: Vec<u16>,\n        gas_quantities: Vec<f64>,\n        gas_sensible_enthalpy_j: f64,\n    ) -> Result<(), JsValue> {\n        if zone_lengths.len() != zone_sensible_enthalpies_j.len() {\n            return Err(JsValue::from_str("Furnace zone lengths and enthalpies must align"));\n        }\n        let total: usize = zone_lengths.iter().map(|value| *value as usize).sum();\n        if zone_species_ids.len() != total\n            || zone_size_bin_ids.len() != total\n            || zone_liberation_class_ids.len() != total\n            || zone_texture_profile_ids.len() != total\n            || zone_quantities.len() != total\n        {\n            return Err(JsValue::from_str("Furnace flattened zone columns must align"));\n        }\n        let mut zones = Vec::with_capacity(zone_lengths.len());\n        let mut offset = 0usize;\n        for (zone_index, length) in zone_lengths.iter().enumerate() {\n            let end = offset + *length as usize;\n            zones.push(solid_body_from_columns(\n                zone_species_ids[offset..end].to_vec(),\n                zone_size_bin_ids[offset..end].to_vec(),\n                zone_liberation_class_ids[offset..end].to_vec(),\n                zone_texture_profile_ids[offset..end].to_vec(),\n                zone_quantities[offset..end].to_vec(),\n                zone_sensible_enthalpies_j[zone_index],\n            ).map_err(js_error)?);\n            offset = end;\n        }\n        let pending_feed = solid_body_from_columns(\n            pending_species_ids,\n            pending_size_bin_ids,\n            pending_liberation_class_ids,\n            pending_texture_profile_ids,\n            pending_quantities,\n            pending_sensible_enthalpy_j,\n        ).map_err(js_error)?;\n        let gas_inventory = gas_body_from_columns(\n            gas_species_ids, gas_quantities, gas_sensible_enthalpy_j,\n        ).map_err(js_error)?;\n        self.inner\n            .import_furnace_state(node_id, zones, pending_feed, gas_inventory)\n            .map_err(js_error)\n    }\n\n'''
+              bridge.write_text(text[:pos] + methods + text[pos:])
+
+          wasm_lib = Path('rust/interlink-wasm/src/lib.rs')
+          text = wasm_lib.read_text()
+          text = text.replace('pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 2;', 'pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 3;', 1)
+          text = text.replace('assert_eq!(runtime_protocol_version(), 2);', 'assert_eq!(runtime_protocol_version(), 3);', 1)
+          wasm_lib.write_text(text)
+
+          compiler = Path('src/simulation/packedWorldRuntimeCompiler.js')
+          text = compiler.read_text()
+          if 'function flattenFurnaceZones(' not in text:
+              marker = '''function gasColumns(body) {\n  return body.gasState.toColumns();\n}\n'''
+              pos = text.find(marker)
+              if pos < 0:
+                  raise SystemExit('gasColumns marker missing')
+              end = pos + len(marker)
+              helper = '''\nfunction flattenFurnaceZones(zones) {\n  const lengths = new Uint32Array(zones.length);\n  let total = 0;\n  zones.forEach((zone, index) => {\n    const columns = solidColumns(zone);\n    lengths[index] = columns.quantities.length;\n    total += columns.quantities.length;\n  });\n  const speciesIds = new Uint16Array(total);\n  const sizeBinIds = new Uint8Array(total);\n  const liberationClassIds = new Uint8Array(total);\n  const textureProfileIds = new Uint32Array(total);\n  const quantities = new Float64Array(total);\n  const sensibleEnthalpiesJ = new Float64Array(zones.length);\n  let offset = 0;\n  zones.forEach((zone, index) => {\n    const columns = solidColumns(zone);\n    speciesIds.set(columns.speciesIds, offset);\n    sizeBinIds.set(columns.sizeBinIds, offset);\n    liberationClassIds.set(columns.liberationClassIds, offset);\n    textureProfileIds.set(columns.textureProfileIds, offset);\n    quantities.set(columns.quantities, offset);\n    sensibleEnthalpiesJ[index] = zone.sensibleEnthalpyJ;\n    offset += columns.quantities.length;\n  });\n  return { lengths, speciesIds, sizeBinIds, liberationClassIds, textureProfileIds, quantities, sensibleEnthalpiesJ };\n}\n'''
+              text = text[:end] + helper + text[end:]
+
+          if 'stateImportApplied: true' not in text:
+              marker = '''  if (!compiled.running) wasmWorld.pause();\n  wasmWorld.seal();\n  return {\n    runtime: wasmWorld,\n    deferredStateImport: compiled.deferredStateImport,\n  };\n}\n'''
+              pos = text.find(marker)
+              if pos < 0:
+                  raise SystemExit('WASM population footer missing')
+              replacement = '''  wasmWorld.import_world_elapsed_seconds(compiled.elapsedSeconds);\n  for (const site of compiled.sites) {\n    wasmWorld.import_site_stats(site.siteId, site.elapsedSeconds, site.extractedKg);\n  }\n  for (const furnace of compiled.furnaceStateSnapshots) {\n    const zones = flattenFurnaceZones(furnace.packedZones);\n    const pending = solidColumns(furnace.packedPendingFeed);\n    const gas = gasColumns(furnace.packedGasInventory);\n    wasmWorld.import_roasting_furnace_state(\n      furnace.nodeId,\n      zones.lengths, zones.speciesIds, zones.sizeBinIds, zones.liberationClassIds,\n      zones.textureProfileIds, zones.quantities, zones.sensibleEnthalpiesJ,\n      pending.speciesIds, pending.sizeBinIds, pending.liberationClassIds,\n      pending.textureProfileIds, pending.quantities, furnace.packedPendingFeed.sensibleEnthalpyJ,\n      gas.speciesIds, gas.quantities, furnace.packedGasInventory.sensibleEnthalpyJ,\n    );\n  }\n  if (!compiled.running) wasmWorld.pause();\n  wasmWorld.seal();\n  return {\n    runtime: wasmWorld,\n    deferredStateImport: compiled.deferredStateImport,\n    stateImportApplied: true,\n  };\n}\n'''
+              text = text[:pos] + replacement + text[pos + len(marker):]
+          compiler.write_text(text)
+          PY
+
+      - name: Verify state import compiles
+        run: cargo test -p interlink-runtime -p interlink-wasm
+
+      - name: Commit state import
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add rust/interlink-roasting/src/lib.rs rust/interlink-runtime/src/lib.rs rust/interlink-wasm/src/lib.rs rust/interlink-wasm/src/runtime_bridge.rs src/simulation/packedWorldRuntimeCompiler.js
+          if git diff --cached --quiet; then
+            echo "No state-import changes needed."
+            exit 0
+          fi
+          git commit -m "Import complete runtime state atomically [pr59-state-import]"
+          git push origin HEAD:chatgpt/rust-wasm-worker-cutover
