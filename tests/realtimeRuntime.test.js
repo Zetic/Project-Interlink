@@ -37,6 +37,14 @@ function workerCapabilities() {
   };
 }
 
+function inertWorker() {
+  return {
+    addEventListener() {},
+    postMessage() {},
+    terminate() {},
+  };
+}
+
 test('realtime runtime preserves pause/play and authoritative fixed-step semantics', () => {
   const world = minimalWorld();
   const blueprint = createBlueprint();
@@ -70,7 +78,7 @@ test('realtime runtime preserves pause/play and authoritative fixed-step semanti
   assert.throws(() => runtime.stepFixed(), /disposed/);
 });
 
-test('auto runtime reports acceleration recommendation without selecting an incomplete backend', () => {
+test('auto runtime selects the Rust/WASM Worker when Worker and WASM are available', () => {
   const world = minimalWorld();
   const runtime = createRealtimeRuntime(world, {
     capabilities: {
@@ -84,12 +92,14 @@ test('auto runtime reports acceleration recommendation without selecting an inco
       webGpu: true,
       offscreenCanvas: true,
     },
+    workerFactory: () => inertWorker(),
   });
 
-  assert.equal(runtime.backend, REALTIME_RUNTIME_BACKENDS.MAIN_THREAD);
+  assert.equal(runtime.backend, REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER);
   assert.equal(runtime.recommendation.simulationThread, 'worker');
   assert.equal(runtime.recommendation.cpuParallelism, 'shared-memory-workers');
   assert.equal(runtime.recommendation.gpuCompute, 'webgpu-available');
+  runtime.dispose();
 });
 
 test('Rust/WASM Worker runtime becomes terminal after a Worker crash', async () => {
