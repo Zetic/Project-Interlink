@@ -9,6 +9,7 @@ import {
   populateWasmPackedWorldRuntimeFromWorkerSetup,
   snapshotWasmPackedWorldRuntime,
 } from './packedWorldWorkerSetup.js';
+import { reconfigureWasmPackedWorldRuntime } from './liveWorldReconfigure.js';
 
 /**
  * Pure Worker command host. Keeping message handling separate from the browser
@@ -43,7 +44,7 @@ export function createRustWasmWorkerHost({
       if (typeof candidate.free === 'function') candidate.free();
       else if (typeof candidate[Symbol.dispose] === 'function') candidate[Symbol.dispose]();
     } catch {
-      // Initialization already failed. Cleanup must not hide the physical/setup error.
+      // Cleanup must not hide the physical/setup error that caused the release.
     }
   }
 
@@ -71,6 +72,32 @@ export function createRustWasmWorkerHost({
           });
         } catch (error) {
           releaseCandidate(nextRuntime);
+          throw error;
+        }
+      }
+      case RUNTIME_COMMAND_TYPES.RECONFIGURE: {
+        assertInitialized();
+        if (typeof runtime.clone_for_live_reconfigure !== 'function') {
+          throw new Error('Rust/WASM runtime does not support live reconfiguration');
+        }
+        const nextSetup = command.payload.setup;
+        const candidate = runtime.clone_for_live_reconfigure();
+        try {
+          reconfigureWasmPackedWorldRuntime(candidate, setup, nextSetup, {
+            resetNodeIds: command.payload.resetNodeIds ?? [],
+          });
+          const nextSnapshot = snapshotWasmPackedWorldRuntime(candidate, nextSetup);
+          const previous = runtime;
+          runtime = candidate;
+          setup = nextSetup;
+          releaseCandidate(previous);
+          return createRuntimeEvent(RUNTIME_EVENT_TYPES.RECONFIGURED, {
+            running: runtime.running(),
+            elapsedSeconds: runtime.elapsed_seconds(),
+            snapshot: nextSnapshot,
+          });
+        } catch (error) {
+          releaseCandidate(candidate);
           throw error;
         }
       }
