@@ -839,11 +839,17 @@ impl PackedWorldRuntime {
 
         match product_target {
             Some(PackedSolidTarget::Hopper(hopper_id)) => {
-                let mut product = self.hoppers.remove(&hopper_id)
-                    .ok_or_else(|| format!("missing runtime Hopper {hopper_id}"))?;
+                if !self.hoppers.contains_key(&hopper_id) {
+                    return Err(format!("missing runtime Hopper {hopper_id}"));
+                }
+                if let Some(id) = gas_vent_id {
+                    if !self.vents.contains_key(&id) {
+                        return Err(format!("missing runtime exhaust vent {id}"));
+                    }
+                }
+                let mut product = self.hoppers.remove(&hopper_id).unwrap();
                 let mut vent = match gas_vent_id {
-                    Some(id) => Some(self.vents.remove(&id)
-                        .ok_or_else(|| format!("missing runtime exhaust vent {id}"))?),
+                    Some(id) => Some(self.vents.remove(&id).unwrap()),
                     None => None,
                 };
                 let result = runtime.tick_to_hopper_and_vent(
@@ -860,13 +866,20 @@ impl PackedWorldRuntime {
                 result.map(|_| ())
             }
             Some(PackedSolidTarget::Furnace(target_id)) => {
-                let mut target_record = self.machines.remove(&target_id)
-                    .ok_or_else(|| format!("missing runtime furnace {target_id}"))?;
+                if !self.machines.contains_key(&target_id) {
+                    return Err(format!("missing runtime furnace {target_id}"));
+                }
+                if let Some(id) = gas_vent_id {
+                    if !self.vents.contains_key(&id) {
+                        return Err(format!("missing runtime exhaust vent {id}"));
+                    }
+                }
+                let mut target_record = self.machines.remove(&target_id).unwrap();
                 let mut vent = match gas_vent_id {
-                    Some(id) => Some(self.vents.remove(&id)
-                        .ok_or_else(|| format!("missing runtime exhaust vent {id}"))?),
+                    Some(id) => Some(self.vents.remove(&id).unwrap()),
                     None => None,
                 };
+                let mut staged_vent = vent.clone();
                 let result = (|| {
                     let target_furnace = match &mut target_record.kind {
                         PackedMachineKind::Furnace { runtime, .. } => runtime,
@@ -878,7 +891,7 @@ impl PackedWorldRuntime {
                     let mut staged_target = target_furnace.clone();
                     let tick = staged_source.tick_to_hopper_and_vent(
                         Some(&mut temporary),
-                        vent.as_mut(),
+                        staged_vent.as_mut(),
                         &self.thermal,
                         reaction,
                         dt,
@@ -895,6 +908,9 @@ impl PackedWorldRuntime {
                     *target_furnace = staged_target;
                     Ok(())
                 })();
+                if result.is_ok() {
+                    vent = staged_vent;
+                }
                 self.machines.insert(target_id, target_record);
                 if let (Some(id), Some(body)) = (gas_vent_id, vent) {
                     self.vents.insert(id, body);
@@ -923,6 +939,25 @@ impl PackedWorldRuntime {
     }
 
     fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {
+        // Production apparatus apply the enabled/off gate before connection
+        // validation. Preserve that ordering at the scheduler boundary so a
+        // disconnected disabled machine stays `off` rather than becoming
+        // `idle` or `blocked` merely because its endpoints are absent.
+        let runtime_is_off = match &record.kind {
+            PackedMachineKind::Extractor { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::Merger { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::Feeder { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::Comminution { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::Screen { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::Splitter { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::MagneticSeparator { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+            PackedMachineKind::Furnace { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+        };
+        if runtime_is_off {
+            record.status.set(PackedOperatingState::Off, None);
+            return Ok(0.0);
+        }
+
         match &mut record.kind {
             PackedMachineKind::Extractor { runtime, occurrence_id, output_hopper_id } => {
                 let Some(occurrence_id) = *occurrence_id else {
@@ -933,10 +968,14 @@ impl PackedWorldRuntime {
                     record.status.blocked("Extractor requires a connected material output");
                     return Ok(0.0);
                 };
-                let mut occurrence = self.occurrences.remove(&occurrence_id)
-                    .ok_or_else(|| format!("missing runtime occurrence {occurrence_id}"))?;
-                let mut hopper = self.hoppers.remove(&output_id)
-                    .ok_or_else(|| format!("missing runtime Hopper {output_id}"))?;
+                if !self.occurrences.contains_key(&occurrence_id) {
+                    return Err(format!("missing runtime occurrence {occurrence_id}"));
+                }
+                if !self.hoppers.contains_key(&output_id) {
+                    return Err(format!("missing runtime Hopper {output_id}"));
+                }
+                let mut occurrence = self.occurrences.remove(&occurrence_id).unwrap();
+                let mut hopper = self.hoppers.remove(&output_id).unwrap();
                 let result = runtime.tick_occurrence_to_hopper(&mut occurrence, &mut hopper, dt);
                 self.occurrences.insert(occurrence_id, occurrence);
                 self.hoppers.insert(output_id, hopper);
