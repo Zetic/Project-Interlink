@@ -11,6 +11,8 @@ Project Interlink is migrating the authoritative numerical simulation toward a W
 - `interlink-separation` — platform-neutral Screen/Magnetic-Separator physics. It owns conservative two-way material partitioning, sharp particle-size classification, magnetic recovery, dual-output backpressure, and partitioned sensible-energy transport.
 - `interlink-extraction` — platform-neutral ResourceOccurrence/Extractor execution. It owns normalized occurrence material templates, extraction throttling, optional finite reserve accounting, output streams, and occurrence → Hopper commits.
 - `interlink-thermal` — platform-neutral packed gas and sensible-thermal runtime. It owns gas composition/bodies/streams, temperature↔enthalpy derivation, gas mixing, ambient heat transfer, and bounded solid↔gas heat exchange.
+- `interlink-thermochemistry` — platform-neutral reaction execution. It currently owns the goethite dehydroxylation kinetics/stoichiometry/energy solve while taking its numeric parameters from compiled declarative content.
+- `interlink-roasting` — platform-neutral retained-zone Roasting Furnace runtime built on the material, thermal, process, and thermochemistry contracts.
 - `interlink-wasm` — the browser adapter. It exposes coarse stateful operations from the Rust crates to JavaScript through `wasm-bindgen`.
 
 The Rust crates are intentionally usable as ordinary native Rust so the same simulation can later run in browser WASM, native tools, headless tests, or another frontend.
@@ -38,7 +40,7 @@ Gas-body quantities are kg; gas-stream quantities are kg/s. Sensible enthalpy re
 
 Readable JavaScript/save state keeps canonical string identifiers. Runtime-local numeric IDs are an execution detail and must not become persistent content IDs.
 
-`packedRuntimeCompiler.js` is the canonical-state → execution-state boundary. It compiles solid material state, solid material bodies, Hopper inventories, and the constant-Cp species values needed by packed thermal routing while preserving canonical IDs outside the execution plane. `packedProcessCompiler.js` extends that boundary to canonical solid `MaterialStream` state using the same runtime ID tables. `packedComminutionCompiler.js` compiles particle-size vocabulary, liberation classes, mineral textures, and measured CWi/BWi/Ai values into the same numeric execution ID space. `packedSeparationCompiler.js` compiles the particle-size cut metadata, liberation recovery factors, magnetic species response, and thermal properties used by packed classification/separation. `packedExtractionCompiler.js` compiles Feature-owned solid ResourceOccurrences into normalized one-kilogram packed material templates in that same ID space. `packedThermalGasCompiler.js` compiles canonical gas bodies into the same species ID table so gas-only species are included in constant-Cp thermal lookup without introducing a separate identity namespace.
+`packedRuntimeCompiler.js` is the canonical-state → execution-state boundary. It compiles solid material state, solid material bodies, Hopper inventories, and the constant-Cp species values needed by packed thermal routing while preserving canonical IDs outside the execution plane. `packedProcessCompiler.js` extends that boundary to canonical solid `MaterialStream` state using the same runtime ID tables. `packedComminutionCompiler.js` compiles particle-size vocabulary, liberation classes, mineral textures, and measured CWi/BWi/Ai values into the same numeric execution ID space. `packedSeparationCompiler.js` compiles the particle-size cut metadata, liberation recovery factors, magnetic species response, and thermal properties used by packed classification/separation. `packedExtractionCompiler.js` compiles Feature-owned solid ResourceOccurrences into normalized one-kilogram packed material templates in that same ID space. `packedThermalGasCompiler.js` compiles canonical gas bodies into the same species ID table so gas-only species are included in constant-Cp thermal lookup without introducing a separate identity namespace. `packedRoastingCompiler.js` compiles declarative thermochemical parameters, particle-size reaction factors, reaction-derived texture lineage, and existing furnace state into that same runtime ID space.
 
 ## Migrated storage semantics
 
@@ -165,6 +167,25 @@ This is intentionally **not** an ideal-gas, pressure, volume, phase-equilibrium,
 
 The existing routing crate still owns the runtime-local `PackedSpeciesThermalTable` type used by already-migrated Splitter/Merger/separation kernels. `interlink-thermal` deliberately reuses that same table implementation rather than introducing competing thermal-property semantics. A later ownership/scheduler cleanup may relocate the lookup type without changing its numerical contract.
 
+## Migrated thermochemistry and Roasting Furnace
+
+`interlink-thermochemistry` ports the current goethite dehydroxylation kernel while keeping reaction definitions declarative. JavaScript content supplies stoichiometric participants, molar masses, Arrhenius parameters, reaction enthalpy, particle-size response, and source texture lineage; the compiler resolves those values into numeric runtime tables.
+
+The Rust reaction kernel preserves:
+
+- the current first-order Arrhenius conversion model and mean-temperature approximation;
+- deterministic bounded final-temperature solving;
+- exact goethite → hematite + water-vapor stoichiometry;
+- endothermic reaction-energy demand and strict sensible-energy closure;
+- per-fraction particle-size rate factors and tolerance handling;
+- solid product size and liberation-class preservation;
+- reaction-derived mineral texture lineage rather than treating roasted hematite as naturally occurring source texture;
+- solver-evaluation diagnostics used by the existing performance overlay.
+
+`interlink-roasting` composes that kernel with the thermal and process layers. Its packed furnace preserves the production ordering and retained-state model: heat zones, react retained charge only when both outputs are available, then advance pending feed through the zone train and discharge final overflow. It also preserves finite heater power, per-zone heat loss, chamber hold-up, output backpressure, whole-inventory gas venting, solid/gas stream publication, operating state, and furnace diagnostics.
+
+The Rust furnace accepts a generic packed solid-product sink so the later graph scheduler can route product either to a Hopper or directly to another Roasting Furnace without adding furnace-specific graph logic. `WasmPackedRoastingFurnace` currently exposes a coarse Hopper + ExhaustVent migration path; whole-world state import and arbitrary connection ownership intentionally remain the responsibility of the upcoming Rust graph/world scheduler rather than growing a per-apparatus setup protocol.
+
 ## Commands
 
 From the repository root:
@@ -188,7 +209,8 @@ The repository pins the stable Rust toolchain and the `wasm32-unknown-unknown` t
 7. Prefer migrating reusable physical primitives before apparatus-specific behavior so later machine ports build on one Rust-owned material/transfer model.
 8. Apparatus ports must preserve production operating-state and backpressure behavior in addition to numerical mass/energy parity.
 9. Multi-port routing and separation must commit all participating inventories atomically; partial output commits are not acceptable.
-10. Comminution, separation, and extraction metadata must be compiled from canonical material/world definitions; do not hard-code persistent content identity into the Rust execution plane.
+10. Comminution, separation, extraction, thermochemistry, and roasting metadata must be compiled from canonical material/world/content definitions; do not hard-code persistent content identity into the Rust execution plane.
 11. Do not reinterpret qualitative world-generation labels such as `quantityClass` as physical conserved quantities. A finite reserve requires explicit quantitative world data.
 12. Temperature remains derived from authoritative energy plus composition-dependent heat capacity; do not add an independently mutable temperature field that can disagree with the energy ledger.
 13. Do not add gas pressure/volume/phase state speculatively. Introduce new thermodynamic state only when a process actually requires it and conservation/ownership semantics are defined.
+14. Whole-world cutover/import is a scheduler responsibility. Avoid per-apparatus state-loading APIs that would turn startup into thousands of fine-grained JS↔WASM calls.
