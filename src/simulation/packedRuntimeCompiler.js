@@ -6,11 +6,19 @@ import { PackedHopperRuntimeState, PackedSolidRuntimeBody } from './packedStorag
 import { PackedSpeciesThermalRuntimeTable } from './packedThermalRuntime.js';
 
 class RuntimeIdTable {
-  constructor(maxId, startId = 0) {
+  constructor(maxId, startId = 0, seedValues = []) {
     this.maxId = maxId;
     this.nextId = startId;
     this.ids = new Map();
     this.values = [];
+    for (let id = 0; id < (seedValues?.length ?? 0); id++) {
+      const value = seedValues[id];
+      if (typeof value !== 'string' || value.length === 0) continue;
+      if (id > maxId) throw new Error('runtime ID seed exceeds table capacity');
+      this.ids.set(value, id);
+      this.values[id] = value;
+      this.nextId = Math.max(this.nextId, id + 1);
+    }
   }
 
   idFor(value) {
@@ -35,6 +43,21 @@ export function createPackedMaterialIdTables() {
     sizeBin: new RuntimeIdTable(0xff),
     liberationClass: new RuntimeIdTable(0xff),
     textureProfile: new RuntimeIdTable(0xffffffff, 1),
+  };
+}
+
+/**
+ * Recreate the execution-local material vocabulary from a previous Worker setup.
+ * Existing IDs are never renumbered; newly encountered canonical identities append
+ * to the corresponding table. This lets live topology edits preserve Rust-owned
+ * material without translating every fraction back through JavaScript.
+ */
+export function createPackedMaterialIdTablesFromValues(values = {}) {
+  return {
+    species: new RuntimeIdTable(0xffff, 0, values.species ?? []),
+    sizeBin: new RuntimeIdTable(0xff, 0, values.sizeBins ?? []),
+    liberationClass: new RuntimeIdTable(0xff, 0, values.liberationClasses ?? []),
+    textureProfile: new RuntimeIdTable(0xffffffff, 1, values.textureProfiles ?? []),
   };
 }
 
