@@ -21,6 +21,12 @@ import {
 } from '../core/materials/solids/solidMaterialState.js';
 import { PORT_CAPABILITIES } from '../core/systems/ports.js';
 
+// Mass is queried repeatedly by capacity, backpressure, rendering and Inspector
+// code. A Hopper already publishes materialRevision whenever its authoritative
+// body changes, so the expensive sparse-population sum can be reused exactly
+// until that revision advances. WeakMap keeps the cache runtime-only.
+const hopperMassCache = new WeakMap();
+
 function legacyMaterialBody(initialComponentsKg, initialParticleSizeMm, initialLiberationClassId = 'partial') {
   if (!initialComponentsKg || Object.keys(initialComponentsKg).length === 0) {
     return createSolidMaterialBody();
@@ -46,6 +52,7 @@ function legacyMaterialBody(initialComponentsKg, initialParticleSizeMm, initialL
 
 function markHopperMaterialChanged(hopper) {
   hopper.materialRevision = (hopper.materialRevision ?? 0) + 1;
+  hopperMassCache.delete(hopper);
 }
 
 export function createHopper({
@@ -105,6 +112,7 @@ export function createHopper({
     enumerable: true,
     get() { return summarizeSolidMaterialBySpecies(hopper.materialBody.solidState); },
   });
+  hopperMassCache.set(hopper, { revision: 0, massKg: total });
   return hopper;
 }
 
@@ -133,7 +141,12 @@ export function createBoundaryBuffer({
 }
 
 export function hopperStoredMassKg(hopper) {
-  return totalSolidQuantity(hopper.materialBody.solidState);
+  const revision = hopper.materialRevision ?? 0;
+  const cached = hopperMassCache.get(hopper);
+  if (cached?.revision === revision) return cached.massKg;
+  const massKg = totalSolidQuantity(hopper.materialBody.solidState);
+  hopperMassCache.set(hopper, { revision, massKg });
+  return massKg;
 }
 
 export function hopperFreeCapacityKg(hopper) {
