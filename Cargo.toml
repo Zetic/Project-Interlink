@@ -5,6 +5,7 @@ members = [
   "rust/interlink-routing",
   "rust/interlink-comminution",
   "rust/interlink-separation",
+  "rust/interlink-extraction",
   "rust/interlink-wasm",
 ]
 resolver = "2"
