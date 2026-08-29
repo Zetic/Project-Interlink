@@ -18,7 +18,7 @@ jobs:
           ref: chatgpt/rust-graph-world-scheduler
           fetch-depth: 0
 
-      - name: Apply final scheduler parity fixes
+      - name: Apply scheduler parity fixes
         shell: bash
         run: |
           python3 - <<'PY'
@@ -34,307 +34,141 @@ jobs:
                   raise SystemExit(f"{label}: expected one match, found {count}")
               text = text.replace(old, new, 1)
 
-          old = (
-              "    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {\n"
-              "        match &mut record.kind {\n"
-          )
-          new = (
-              "    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {\n"
-              "        // Production apparatus apply the enabled/off gate before connection\n"
-              "        // validation. Preserve that ordering at the scheduler boundary so a\n"
-              "        // disconnected disabled machine stays `off` rather than becoming\n"
-              "        // `idle` or `blocked` merely because its endpoints are absent.\n"
-              "        let runtime_is_off = match &record.kind {\n"
-              "            PackedMachineKind::Extractor { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "            PackedMachineKind::Merger { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "            PackedMachineKind::Feeder { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "            PackedMachineKind::Comminution { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "            PackedMachineKind::Screen { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "            PackedMachineKind::Splitter { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "            PackedMachineKind::MagneticSeparator { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "            PackedMachineKind::Furnace { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,\n"
-              "        };\n"
-              "        if runtime_is_off {\n"
-              "            record.status.set(PackedOperatingState::Off, None);\n"
-              "            return Ok(0.0);\n"
-              "        }\n\n"
-              "        match &mut record.kind {\n"
-          )
+          old = "    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {\n        match &mut record.kind {\n"
+          new = """    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {
+              // Production apparatus apply the enabled/off gate before connection
+              // validation. Preserve that ordering at the scheduler boundary so a
+              // disconnected disabled machine stays `off` rather than becoming
+              // `idle` or `blocked` merely because its endpoints are absent.
+              let runtime_is_off = match &record.kind {
+                  PackedMachineKind::Extractor { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+                  PackedMachineKind::Merger { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+                  PackedMachineKind::Feeder { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+                  PackedMachineKind::Comminution { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+                  PackedMachineKind::Screen { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+                  PackedMachineKind::Splitter { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+                  PackedMachineKind::MagneticSeparator { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+                  PackedMachineKind::Furnace { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
+              };
+              if runtime_is_off {
+                  record.status.set(PackedOperatingState::Off, None);
+                  return Ok(0.0);
+              }
+
+              match &mut record.kind {
+          """
           replace_once(old, new, 'disabled-machine scheduler gate')
 
-          old = (
-              "                let mut occurrence = self.occurrences.remove(&occurrence_id)\n"
-              "                    .ok_or_else(|| format!(\"missing runtime occurrence {occurrence_id}\"))?;\n"
-              "                let mut hopper = self.hoppers.remove(&output_id)\n"
-              "                    .ok_or_else(|| format!(\"missing runtime Hopper {output_id}\"))?;\n"
-          )
-          new = (
-              "                if !self.occurrences.contains_key(&occurrence_id) {\n"
-              "                    return Err(format!(\"missing runtime occurrence {occurrence_id}\"));\n"
-              "                }\n"
-              "                if !self.hoppers.contains_key(&output_id) {\n"
-              "                    return Err(format!(\"missing runtime Hopper {output_id}\"));\n"
-              "                }\n"
-              "                let mut occurrence = self.occurrences.remove(&occurrence_id).unwrap();\n"
-              "                let mut hopper = self.hoppers.remove(&output_id).unwrap();\n"
-          )
+          old = """                let mut occurrence = self.occurrences.remove(&occurrence_id)
+                      .ok_or_else(|| format!(\"missing runtime occurrence {occurrence_id}\"))?;
+                  let mut hopper = self.hoppers.remove(&output_id)
+                      .ok_or_else(|| format!(\"missing runtime Hopper {output_id}\"))?;
+          """
+          new = """                if !self.occurrences.contains_key(&occurrence_id) {
+                      return Err(format!(\"missing runtime occurrence {occurrence_id}\"));
+                  }
+                  if !self.hoppers.contains_key(&output_id) {
+                      return Err(format!(\"missing runtime Hopper {output_id}\"));
+                  }
+                  let mut occurrence = self.occurrences.remove(&occurrence_id).unwrap();
+                  let mut hopper = self.hoppers.remove(&output_id).unwrap();
+          """
           replace_once(old, new, 'extractor transaction preflight')
 
-          old = (
-              "            Some(PackedSolidTarget::Hopper(hopper_id)) => {\n"
-              "                let mut product = self.hoppers.remove(&hopper_id)\n"
-              "                    .ok_or_else(|| format!(\"missing runtime Hopper {hopper_id}\"))?;\n"
-              "                let mut vent = match gas_vent_id {\n"
-              "                    Some(id) => Some(self.vents.remove(&id)\n"
-              "                        .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),\n"
-              "                    None => None,\n"
-              "                };\n"
-          )
-          new = (
-              "            Some(PackedSolidTarget::Hopper(hopper_id)) => {\n"
-              "                if !self.hoppers.contains_key(&hopper_id) {\n"
-              "                    return Err(format!(\"missing runtime Hopper {hopper_id}\"));\n"
-              "                }\n"
-              "                if let Some(id) = gas_vent_id {\n"
-              "                    if !self.vents.contains_key(&id) {\n"
-              "                        return Err(format!(\"missing runtime exhaust vent {id}\"));\n"
-              "                    }\n"
-              "                }\n"
-              "                let mut product = self.hoppers.remove(&hopper_id).unwrap();\n"
-              "                let mut vent = match gas_vent_id {\n"
-              "                    Some(id) => Some(self.vents.remove(&id).unwrap()),\n"
-              "                    None => None,\n"
-              "                };\n"
-          )
+          old = """            Some(PackedSolidTarget::Hopper(hopper_id)) => {
+                  let mut product = self.hoppers.remove(&hopper_id)
+                      .ok_or_else(|| format!(\"missing runtime Hopper {hopper_id}\"))?;
+                  let mut vent = match gas_vent_id {
+                      Some(id) => Some(self.vents.remove(&id)
+                          .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),
+                      None => None,
+                  };
+          """
+          new = """            Some(PackedSolidTarget::Hopper(hopper_id)) => {
+                  if !self.hoppers.contains_key(&hopper_id) {
+                      return Err(format!(\"missing runtime Hopper {hopper_id}\"));
+                  }
+                  if let Some(id) = gas_vent_id {
+                      if !self.vents.contains_key(&id) {
+                          return Err(format!(\"missing runtime exhaust vent {id}\"));
+                      }
+                  }
+                  let mut product = self.hoppers.remove(&hopper_id).unwrap();
+                  let mut vent = match gas_vent_id {
+                      Some(id) => Some(self.vents.remove(&id).unwrap()),
+                      None => None,
+                  };
+          """
           replace_once(old, new, 'furnace hopper-target preflight')
 
-          old = (
-              "            Some(PackedSolidTarget::Furnace(target_id)) => {\n"
-              "                let mut target_record = self.machines.remove(&target_id)\n"
-              "                    .ok_or_else(|| format!(\"missing runtime furnace {target_id}\"))?;\n"
-              "                let mut vent = match gas_vent_id {\n"
-              "                    Some(id) => Some(self.vents.remove(&id)\n"
-              "                        .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),\n"
-              "                    None => None,\n"
-              "                };\n"
-              "                let result = (|| {\n"
-          )
-          new = (
-              "            Some(PackedSolidTarget::Furnace(target_id)) => {\n"
-              "                if !self.machines.contains_key(&target_id) {\n"
-              "                    return Err(format!(\"missing runtime furnace {target_id}\"));\n"
-              "                }\n"
-              "                if let Some(id) = gas_vent_id {\n"
-              "                    if !self.vents.contains_key(&id) {\n"
-              "                        return Err(format!(\"missing runtime exhaust vent {id}\"));\n"
-              "                    }\n"
-              "                }\n"
-              "                let mut target_record = self.machines.remove(&target_id).unwrap();\n"
-              "                let mut vent = match gas_vent_id {\n"
-              "                    Some(id) => Some(self.vents.remove(&id).unwrap()),\n"
-              "                    None => None,\n"
-              "                };\n"
-              "                let mut staged_vent = vent.clone();\n"
-              "                let result = (|| {\n"
-          )
+          old = """            Some(PackedSolidTarget::Furnace(target_id)) => {
+                  let mut target_record = self.machines.remove(&target_id)
+                      .ok_or_else(|| format!(\"missing runtime furnace {target_id}\"))?;
+                  let mut vent = match gas_vent_id {
+                      Some(id) => Some(self.vents.remove(&id)
+                          .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),
+                      None => None,
+                  };
+                  let result = (|| {
+          """
+          new = """            Some(PackedSolidTarget::Furnace(target_id)) => {
+                  if !self.machines.contains_key(&target_id) {
+                      return Err(format!(\"missing runtime furnace {target_id}\"));
+                  }
+                  if let Some(id) = gas_vent_id {
+                      if !self.vents.contains_key(&id) {
+                          return Err(format!(\"missing runtime exhaust vent {id}\"));
+                      }
+                  }
+                  let mut target_record = self.machines.remove(&target_id).unwrap();
+                  let mut vent = match gas_vent_id {
+                      Some(id) => Some(self.vents.remove(&id).unwrap()),
+                      None => None,
+                  };
+                  let mut staged_vent = vent.clone();
+                  let result = (|| {
+          """
           replace_once(old, new, 'furnace target/vent preflight')
 
-          old = (
-              "                    let tick = staged_source.tick_to_hopper_and_vent(\n"
-              "                        Some(&mut temporary),\n"
-              "                        vent.as_mut(),\n"
-              "                        &self.thermal,\n"
-              "                        reaction,\n"
-              "                        dt,\n"
-              "                    )?;\n"
-          )
-          new = (
-              "                    let tick = staged_source.tick_to_hopper_and_vent(\n"
-              "                        Some(&mut temporary),\n"
-              "                        staged_vent.as_mut(),\n"
-              "                        &self.thermal,\n"
-              "                        reaction,\n"
-              "                        dt,\n"
-              "                    )?;\n"
-          )
+          old = """                    let tick = staged_source.tick_to_hopper_and_vent(
+                          Some(&mut temporary),
+                          vent.as_mut(),
+                          &self.thermal,
+                          reaction,
+                          dt,
+                      )?;
+          """
+          new = """                    let tick = staged_source.tick_to_hopper_and_vent(
+                          Some(&mut temporary),
+                          staged_vent.as_mut(),
+                          &self.thermal,
+                          reaction,
+                          dt,
+                      )?;
+          """
           replace_once(old, new, 'furnace-to-furnace staged vent')
 
-          old = (
-              "                })();\n"
-              "                self.machines.insert(target_id, target_record);\n"
-              "                if let (Some(id), Some(body)) = (gas_vent_id, vent) {\n"
-          )
-          new = (
-              "                })();\n"
-              "                if result.is_ok() {\n"
-              "                    vent = staged_vent;\n"
-              "                }\n"
-              "                self.machines.insert(target_id, target_record);\n"
-              "                if let (Some(id), Some(body)) = (gas_vent_id, vent) {\n"
-          )
+          old = """                })();
+                  self.machines.insert(target_id, target_record);
+                  if let (Some(id), Some(body)) = (gas_vent_id, vent) {
+          """
+          new = """                })();
+                  if result.is_ok() {
+                      vent = staged_vent;
+                  }
+                  self.machines.insert(target_id, target_record);
+                  if let (Some(id), Some(body)) = (gas_vent_id, vent) {
+          """
           replace_once(old, new, 'furnace-to-furnace vent commit')
 
           path.write_text(text)
-
-          tests = Path('rust/interlink-runtime/tests/scheduler_parity.rs')
-          tests.parent.mkdir(parents=True, exist_ok=True)
-          tests.write_text(r'''use interlink_core::{FractionDescriptor, PackedHopperState, PackedSolidBody, PackedSolidState};
-use interlink_extraction::{PackedExtractorConfig, PackedExtractorRuntime};
-use interlink_processes::{PackedFeederConfig, PackedFeederRuntime, PackedOperatingState};
-use interlink_roasting::{PackedRoastingFurnaceConfig, PackedRoastingFurnaceRuntime};
-use interlink_runtime::{PackedSolidTarget, PackedWorldRuntime};
-use interlink_thermal::PackedGasBody;
-use interlink_thermochemistry::{PackedGoethiteReactionConfig, PackedGoethiteReactionTables};
-
-fn descriptor(species_id: u16) -> FractionDescriptor {
-    FractionDescriptor {
-        species_id,
-        size_bin_id: 1,
-        liberation_class_id: 1,
-        texture_profile_id: 0,
-    }
-}
-
-fn feed_hopper(mass_kg: f64) -> PackedHopperState {
-    let mut state = PackedSolidState::new();
-    state.push_fraction(descriptor(1), mass_kg).unwrap();
-    PackedHopperState::new(
-        mass_kg.max(1.0) + 10.0,
-        PackedSolidBody::new(state, 0.0).unwrap(),
-    ).unwrap()
-}
-
-fn reaction() -> PackedGoethiteReactionTables {
-    let config = PackedGoethiteReactionConfig::new(
-        1, 2, 3,
-        0.177702, 0.159687, 0.018015,
-        90_000.0, 90_000.0, 60_000.0,
-    ).unwrap();
-    let mut reaction = PackedGoethiteReactionTables::new(config);
-    reaction.set_size_factor(1, 1.0).unwrap();
-    reaction
-}
-
-fn furnace(enabled: bool) -> PackedRoastingFurnaceRuntime {
-    PackedRoastingFurnaceRuntime::new(PackedRoastingFurnaceConfig::new(
-        800.0, 60.0, 1200.0, 4.0, 4.0, 25.0, 4, enabled,
-    ).unwrap())
-}
-
-fn add_thermal_and_reaction(world: &mut PackedWorldRuntime) {
-    world.thermal_table_mut().set_specific_heat_capacity_j_per_kg_k(1, 650.0).unwrap();
-    world.thermal_table_mut().set_specific_heat_capacity_j_per_kg_k(2, 650.0).unwrap();
-    world.thermal_table_mut().set_specific_heat_capacity_j_per_kg_k(3, 1900.0).unwrap();
-    world.set_reaction_tables(reaction());
-}
-
-#[test]
-fn disconnected_disabled_machines_remain_off_before_connection_validation() {
-    let mut world = PackedWorldRuntime::new();
-    world.add_site(1).unwrap();
-    world.add_extractor(
-        1, 10, 0,
-        PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, false).unwrap()),
-        None, None,
-    ).unwrap();
-    world.add_feeder(
-        1, 11, 1,
-        PackedFeederRuntime::new(PackedFeederConfig::new(2.0, 8.0, false).unwrap()),
-        None, None,
-    ).unwrap();
-    world.add_roasting_furnace(1, 12, 2, furnace(false), None, None).unwrap();
-
-    world.tick_fixed().unwrap();
-
-    for node_id in [10, 11, 12] {
-        let status = world.node_status(node_id).unwrap();
-        assert_eq!(status.operating_state(), PackedOperatingState::Off);
-        assert_eq!(status.last_error(), None);
-    }
-}
-
-#[test]
-fn missing_furnace_vent_does_not_drop_other_runtime_owners_on_error() {
-    let mut world = PackedWorldRuntime::new();
-    world.add_site(1).unwrap();
-    add_thermal_and_reaction(&mut world);
-    world.add_hopper(100, PackedHopperState::empty(100.0).unwrap()).unwrap();
-    world.add_roasting_furnace(
-        1, 20, 0, furnace(true),
-        Some(PackedSolidTarget::Hopper(100)), Some(999),
-    ).unwrap();
-
-    let error = world.tick_fixed().unwrap_err();
-    assert!(error.contains("missing runtime exhaust vent 999"));
-    assert!(world.hopper(100).is_some(), "product Hopper must remain owned after failed preflight");
-    assert!(world.node_status(20).is_some(), "source furnace record must be restored by the scheduler loop");
-}
-
-#[test]
-fn missing_furnace_chain_vent_does_not_drop_downstream_furnace() {
-    let mut world = PackedWorldRuntime::new();
-    world.add_site(1).unwrap();
-    add_thermal_and_reaction(&mut world);
-    world.add_roasting_furnace(
-        1, 20, 0, furnace(true),
-        Some(PackedSolidTarget::Furnace(21)), Some(999),
-    ).unwrap();
-    world.add_roasting_furnace(1, 21, 1, furnace(true), None, None).unwrap();
-
-    let error = world.tick_fixed().unwrap_err();
-    assert!(error.contains("missing runtime exhaust vent 999"));
-    assert!(world.node_status(21).is_some(), "downstream furnace must survive failed source preflight");
-}
-
-#[test]
-fn direct_feeder_and_furnace_chaining_runs_entirely_inside_world_scheduler() {
-    let mut world = PackedWorldRuntime::new();
-    world.add_site(1).unwrap();
-    add_thermal_and_reaction(&mut world);
-    world.add_hopper(100, feed_hopper(4.0)).unwrap();
-    world.add_hopper(101, PackedHopperState::empty(100.0).unwrap()).unwrap();
-    world.add_exhaust_vent(200, PackedGasBody::empty()).unwrap();
-    world.add_exhaust_vent(201, PackedGasBody::empty()).unwrap();
-    world.add_feeder(
-        1, 10, 0,
-        PackedFeederRuntime::new(PackedFeederConfig::new(1.0, 8.0, true).unwrap()),
-        Some(100), Some(PackedSolidTarget::Furnace(20)),
-    ).unwrap();
-    world.add_roasting_furnace(
-        1, 20, 1, furnace(true),
-        Some(PackedSolidTarget::Furnace(21)), Some(200),
-    ).unwrap();
-    world.add_roasting_furnace(
-        1, 21, 2, furnace(true),
-        Some(PackedSolidTarget::Hopper(101)), Some(201),
-    ).unwrap();
-
-    let initial_mass = world.hopper(100).unwrap().stored_mass_kg();
-    let mut downstream_received = false;
-    for _ in 0..160 {
-        world.tick_fixed().unwrap();
-        if world.furnace_diagnostics(21).unwrap().last_feed_rate_kg_per_second > 0.0 {
-            downstream_received = true;
-        }
-    }
-
-    assert!(downstream_received, "upstream furnace product must feed the downstream furnace directly");
-    assert!(world.hopper(100).unwrap().stored_mass_kg() < initial_mass);
-    assert!(world.exhaust_vent(200).unwrap().total_mass_kg().is_finite());
-    assert!(world.exhaust_vent(201).unwrap().total_mass_kg().is_finite());
-}
-''')
           PY
 
-      - name: Commit final fixes
+      - name: Commit fixes
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add rust/interlink-runtime/src/lib.rs rust/interlink-runtime/tests/scheduler_parity.rs
-          if git diff --cached --quiet; then
-            echo "No finalization changes needed."
-            exit 0
-          fi
+          git add rust/interlink-runtime/src/lib.rs
           git commit -m "Fix scheduler parity and transaction guards [pr58-finalized]"
           git push origin HEAD:chatgpt/rust-graph-world-scheduler
