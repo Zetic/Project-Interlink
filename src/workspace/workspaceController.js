@@ -19,10 +19,15 @@ import {
   registerBoundaryTransfer,
   removeBoundaryTransfer,
   getSimulationWorkspace,
-  pauseWorldSimulation,
-  resumeWorldSimulation,
-  worldSimulationTick,
 } from '../simulation/worldSimulation.js';
+import {
+  createRealtimeRuntime,
+  REALTIME_RUNTIME_BACKENDS,
+} from '../simulation/realtimeRuntime.js';
+import {
+  applyRustWorkerRuntimeSnapshot,
+  clearRustWorkerRuntimePresentation,
+} from '../simulation/runtimePresentation.js';
 import { getSystemNodePort } from '../core/systems/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';
 import { totalMaterialStreamMassFlowKgPerSecond } from '../simulation/materialStream.js';
@@ -134,6 +139,52 @@ function installWindowDragTracking(moveHandler, upHandler) {
   };
 }
 function currentPlanet() { return wsState.world?.planets?.[wsState.world?.planetId] ?? null; }
+
+function runtimeUsesRustWorker() {
+  return wsState.realtimeRuntime?.backend === REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER;
+}
+
+function projectRuntimeSnapshot(snapshot) {
+  if (!snapshot || !wsState.world || !runtimeUsesRustWorker()) return;
+  applyRustWorkerRuntimeSnapshot(wsState.world, wsState.realtimeRuntime, snapshot);
+}
+
+function handleRuntimeFailure(error, epoch = wsState.runtimeEpoch) {
+  if (epoch !== wsState.runtimeEpoch) return;
+  wsState.runtimeError = error instanceof Error ? error : new Error(String(error));
+  wsState.simRunning = false;
+  wsState.simStepInFlight = false;
+  if (wsState.world?.simulation) wsState.world.simulation.running = false;
+  if (wsState.simRafId != null) cancelAnimationFrame(wsState.simRafId);
+  wsState.simRafId = null;
+  inspector.message = `Simulation runtime error: ${wsState.runtimeError.message}`;
+  inspector.renderKey = null;
+  updateWorldControls();
+  if (wsState.currentLevel === 'site') updateInspector(true);
+}
+
+function queueRuntimeReconfigure({ resetNodeIds = [] } = {}) {
+  const runtime = wsState.realtimeRuntime;
+  if (!runtime || runtime.backend === REALTIME_RUNTIME_BACKENDS.MAIN_THREAD) return Promise.resolve(null);
+  const epoch = wsState.runtimeEpoch;
+  wsState.runtimeMutationPending += 1;
+  const previous = wsState.runtimeMutationChain ?? Promise.resolve();
+  const task = previous.catch(() => null).then(async () => {
+    if (epoch !== wsState.runtimeEpoch) return null;
+    const payload = await runtime.reconfigure(wsState.world, { resetNodeIds });
+    if (epoch !== wsState.runtimeEpoch) return null;
+    projectRuntimeSnapshot(payload?.snapshot ?? runtime.snapshot);
+    renderRealtimePresentation();
+    return payload;
+  }).catch(error => {
+    handleRuntimeFailure(error, epoch);
+    return null;
+  }).finally(() => {
+    if (epoch === wsState.runtimeEpoch) wsState.runtimeMutationPending = Math.max(0, wsState.runtimeMutationPending - 1);
+  });
+  wsState.runtimeMutationChain = task;
+  return task;
+}
 
 function requestPlayerWorldGeneration(seed) {
   const input = el('seed-input');
@@ -553,6 +604,7 @@ function activateSiteSession(occurrenceId, siteId) {
     wsState.siteSessions[siteId] = session;
     registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
     invalidateNavigationIndex();
+    queueRuntimeReconfigure();
   }
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
@@ -773,6 +825,7 @@ function commitCatalogDefinition(definition, graphPosition) {
     inspector.message = '';
     inspector.renderKey = null;
     invalidateNavigationIndex();
+    queueRuntimeReconfigure();
     renderSiteNodes();
     renderNavigationDrawer();
     renderNodeCatalogDrawer();
@@ -1184,6 +1237,7 @@ function renderParentWorkspace(container) {
         inspector.selectedTransferId = transfer.id;
         inspector.selectedSystemId = null;
         inspector.message = 'Transfer connected.';
+        queueRuntimeReconfigure();
       } catch (error) {
         inspector.message = error.message;
       }
@@ -1374,6 +1428,7 @@ function updateCompositeInspector(force = false) {
         disconnectGraphConnection(graph, button.dataset.connId, {
           'boundary-transfer': connection => removeBoundaryTransfer(wsState.world, connection.id),
         });
+        queueRuntimeReconfigure();
         inspector.selectedTransferId = null;
         inspector.renderKey = null;
         renderWorkspace();
@@ -1634,6 +1689,7 @@ function finishConnection(targetNodeId, targetPortId) {
       inspector.selectedConnId = connection.id;
       inspector.selectedNodeId = null;
       inspector.message = '';
+      queueRuntimeReconfigure();
     }
   }
   inspector.renderKey = null;
@@ -1728,6 +1784,7 @@ function attemptNodeRemoval(nodeId) {
   inspector.message = '';
   inspector.renderKey = null;
   invalidateNavigationIndex();
+  queueRuntimeReconfigure();
   renderSiteNodes();
   renderNavigationDrawer();
   renderNodeCatalogDrawer();
@@ -1995,6 +2052,7 @@ function onInspectorParameterChange(event) {
       input.dataset.parameterId,
       Number(input.value),
     );
+    queueRuntimeReconfigure();
     inspector.message = '';
   } catch (error) {
     inspector.message = error.message;
@@ -2007,7 +2065,10 @@ function onInspectorClick(event) {
   const enable = event.target.closest('.ws-btn-enable');
   if (enable) {
     const node = wsState.blueprint.nodes[enable.dataset.nodeId];
-    if (node) setNodeEnabled(wsState.blueprint, node.id, !node.enabled);
+    if (node) {
+      setNodeEnabled(wsState.blueprint, node.id, !node.enabled);
+      queueRuntimeReconfigure();
+    }
     inspector.renderKey = null;
     updateInspector(true);
     return;
@@ -2036,6 +2097,7 @@ function onInspectorClick(event) {
       }
     }
   }
+  queueRuntimeReconfigure();
   inspector.renderKey = null;
   renderSiteNodes();
 }
@@ -2047,18 +2109,30 @@ function onToggleWorldSimulation() {
 }
 
 function startSimulation() {
-  if (wsState.simRunning || !wsState.world) return;
-  resumeWorldSimulation(wsState.world);
+  if (wsState.simRunning || !wsState.world || !wsState.realtimeRuntime || wsState.runtimeError) return;
+  const epoch = wsState.runtimeEpoch;
   wsState.simRunning = true;
+  wsState.world.simulation.running = true;
   wsState.simLastTime = performance.now();
   wsState.simAccumulatedS = 0;
+  Promise.resolve(wsState.realtimeRuntime.resume()).then(() => {
+    if (epoch !== wsState.runtimeEpoch) return;
+    projectRuntimeSnapshot(wsState.realtimeRuntime.snapshot);
+    updateWorldControls();
+  }).catch(error => handleRuntimeFailure(error, epoch));
   wsState.simRafId = requestAnimationFrame(simLoop);
   updateWorldControls();
 }
 
-function stopSimulation() {
+function stopSimulation({ pauseRuntime = true } = {}) {
+  const epoch = wsState.runtimeEpoch;
   wsState.simRunning = false;
-  if (wsState.world) pauseWorldSimulation(wsState.world);
+  if (wsState.world?.simulation) wsState.world.simulation.running = false;
+  if (pauseRuntime && wsState.realtimeRuntime) {
+    Promise.resolve(wsState.realtimeRuntime.pause())
+      .then(() => projectRuntimeSnapshot(wsState.realtimeRuntime?.snapshot))
+      .catch(error => handleRuntimeFailure(error, epoch));
+  }
   if (wsState.simRafId != null) cancelAnimationFrame(wsState.simRafId);
   wsState.simRafId = null;
   updateWorldControls();
@@ -2080,17 +2154,27 @@ function simLoop(now) {
   const elapsed = Math.min((now - wsState.simLastTime) / 1000, 0.25);
   wsState.simLastTime = now;
   wsState.simAccumulatedS += elapsed;
-  let advanced = false;
-  while (wsState.simAccumulatedS >= SIMULATION_STEP_S) {
-    const result = worldSimulationTick(wsState.world, SIMULATION_STEP_S);
-    advanced ||= result.advanced;
+
+  // Never queue catch-up physics. The Worker owns the fixed scheduler state and
+  // the browser permits at most one outstanding 0.1 s step; slow hardware makes
+  // world time advance more slowly instead of creating an unbounded backlog.
+  if (
+    wsState.simAccumulatedS >= SIMULATION_STEP_S
+    && !wsState.simStepInFlight
+    && wsState.runtimeMutationPending === 0
+    && wsState.realtimeRuntime
+  ) {
+    const epoch = wsState.runtimeEpoch;
     wsState.simAccumulatedS -= SIMULATION_STEP_S;
+    wsState.simStepInFlight = true;
+    Promise.resolve(wsState.realtimeRuntime.stepFixed(SIMULATION_STEP_S)).then(result => {
+      if (epoch !== wsState.runtimeEpoch) return;
+      projectRuntimeSnapshot(result?.snapshot ?? wsState.realtimeRuntime.snapshot);
+      if (result?.advanced) renderRealtimePresentation();
+    }).catch(error => handleRuntimeFailure(error, epoch)).finally(() => {
+      if (epoch === wsState.runtimeEpoch) wsState.simStepInFlight = false;
+    });
   }
-  // RAF remains the wall-clock scheduler, but display frequency no longer
-  // dictates simulation presentation work. State-dependent DOM/Inspector work
-  // runs once after one or more authoritative 0.1 s steps, not on every monitor
-  // refresh between those steps. Direct interaction handlers remain immediate.
-  if (advanced) renderRealtimePresentation();
   wsState.simRafId = requestAnimationFrame(simLoop);
 }
 
@@ -2111,6 +2195,7 @@ function onResetSite() {
   wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
   invalidateNavigationIndex();
+  queueRuntimeReconfigure({ resetNodeIds: Object.keys(session.blueprint.nodes ?? {}) });
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
   inspector.selectedNodeId = null;
@@ -2133,7 +2218,16 @@ export function renderWorkspace() {
 }
 
 export function initWorkspace(world, knowledge) {
-  if (wsState.world) stopSimulation();
+  if (wsState.world) stopSimulation({ pauseRuntime: false });
+  wsState.realtimeRuntime?.dispose();
+  if (wsState.world) clearRustWorkerRuntimePresentation(wsState.world);
+  wsState.runtimeEpoch += 1;
+  wsState.realtimeRuntime = null;
+  wsState.runtimeReady = false;
+  wsState.runtimeError = null;
+  wsState.runtimeMutationPending = 0;
+  wsState.runtimeMutationChain = null;
+  wsState.simStepInFlight = false;
   wsState.dragTrackingCleanup?.();
   wsState.dragTrackingCleanup = null;
   wsState.navigationEventController?.abort();
@@ -2176,7 +2270,21 @@ export function initWorkspace(world, knowledge) {
   const navigationSearch = el('ws-navigation-search');
   if (navigationSearch) navigationSearch.value = '';
   renderWorkspace();
-  startSimulation();
+
+  const epoch = wsState.runtimeEpoch;
+  try {
+    wsState.realtimeRuntime = createRealtimeRuntime(world);
+  } catch (error) {
+    handleRuntimeFailure(error, epoch);
+    return;
+  }
+  wsState.realtimeRuntime.ready.then(payload => {
+    if (epoch !== wsState.runtimeEpoch) return;
+    wsState.runtimeReady = true;
+    projectRuntimeSnapshot(payload?.snapshot ?? wsState.realtimeRuntime.snapshot);
+    renderRealtimePresentation();
+    startSimulation();
+  }).catch(error => handleRuntimeFailure(error, epoch));
 }
 
 export function updateWorkspaceKnowledge(knowledge) {

@@ -23,6 +23,13 @@ export function createWorkspaceState() {
     runtimeStepPromise: null,
     runtimeError: null,
     simRunning: false,
+    realtimeRuntime: null,
+    runtimeReady: false,
+    runtimeError: null,
+    runtimeEpoch: 0,
+    runtimeMutationPending: 0,
+    runtimeMutationChain: null,
+    simStepInFlight: false,
     simLastTime: null,
     /**
      * Wall-clock debt is presentation/scheduling state, not physical truth.

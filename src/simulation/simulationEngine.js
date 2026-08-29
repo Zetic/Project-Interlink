@@ -611,6 +611,8 @@ export function setApparatusParameter(blueprint, nodeId, parameterId, value) {
 
 export function getNodeOperatingState(node) {
   if (!node) return null;
+  const projected = node.runtimePresentation?.operatingState;
+  if (typeof projected === 'string') return projected;
   if (typeof apparatusRuntimeFor(node.nodeType)?.simulate === 'function') return node.enabled ? (node.operatingState ?? 'idle') : 'off';
   return null;
 }
