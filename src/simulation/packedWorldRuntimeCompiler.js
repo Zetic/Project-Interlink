@@ -1,6 +1,5 @@
 import { specificHeatCapacityJPerKgKForSpecies } from '../core/materials/properties/thermalProperties.js';
 import { getMaterialSpecies } from '../core/materials/species/materialSpecies.js';
-import { particleSizeBinIdForMm } from '../core/materials/solids/particleSizeBins.js';
 import { resolveBoundaryChain } from '../core/systems/systemNode.js';
 import { compileComminutionTablesForRuntime } from './packedComminutionCompiler.js';
 import { compileExtractableWorldOccurrencesForRuntime } from './packedExtractionCompiler.js';
@@ -41,6 +40,7 @@ class RuntimeObjectIdTable {
     this.label = label;
     this.ids = new Map();
     this.values = [];
+    this.sealed = false;
   }
 
   idFor(value) {
@@ -49,6 +49,7 @@ class RuntimeObjectIdTable {
     }
     const existing = this.ids.get(value);
     if (existing != null) return existing;
+    if (this.sealed) return PACKED_NO_RUNTIME_ID;
     const id = this.values.length;
     if (id >= PACKED_NO_RUNTIME_ID) throw new Error(`${this.label} runtime ID table capacity exceeded`);
     this.ids.set(value, id);
@@ -58,6 +59,10 @@ class RuntimeObjectIdTable {
 
   valueFor(id) {
     return this.values[id] ?? null;
+  }
+
+  seal() {
+    this.sealed = true;
   }
 }
 
@@ -375,6 +380,10 @@ export function compilePackedWorldRuntime(
       ...occurrence,
     });
   }
+  // Only solid occurrences supported by the current Extractor are executable
+  // runtime identities. Once sealed, liquid/gas or otherwise unsupported sources
+  // resolve to PACKED_NO_RUNTIME_ID and therefore keep the Extractor blocked.
+  occurrenceIds.seal();
 
   const runtimeNodes = collectRuntimeNodes(simulation);
   const stored = compileStoredState(runtimeNodes, nodeIds, idTables);
