@@ -8,6 +8,7 @@ mod comminution_bridge;
 mod extraction_bridge;
 mod process_bridge;
 mod separation_bridge;
+mod thermal_bridge;
 pub use comminution_bridge::{WasmPackedComminutionMachine, WasmPackedComminutionTables};
 pub use extraction_bridge::{WasmPackedExtractor, WasmPackedResourceOccurrence};
 pub use process_bridge::{
@@ -16,6 +17,7 @@ pub use process_bridge::{
 pub use separation_bridge::{
     WasmPackedMagneticSeparator, WasmPackedScreen, WasmPackedSeparationTables,
 };
+pub use thermal_bridge::{WasmPackedGasBody, WasmPackedGasStream, WasmPackedThermalModel};
 
 pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 2;
 
