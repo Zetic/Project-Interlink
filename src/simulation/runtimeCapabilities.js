@@ -8,11 +8,11 @@ const WASM_SIMD_PROBE = new Uint8Array([
   0x0b,
 ]);
 
-function wasmSimdAvailable() {
+function wasmSimdAvailable(webAssemblyLike = globalThis.WebAssembly) {
   try {
-    return typeof WebAssembly !== 'undefined'
-      && typeof WebAssembly.validate === 'function'
-      && WebAssembly.validate(WASM_SIMD_PROBE);
+    return typeof webAssemblyLike === 'object'
+      && typeof webAssemblyLike.validate === 'function'
+      && webAssemblyLike.validate(WASM_SIMD_PROBE);
   } catch {
     return false;
   }
@@ -25,6 +25,7 @@ function wasmSimdAvailable() {
  */
 export function browserRuntimeCapabilities(scope = globalThis) {
   const navigatorLike = scope?.navigator ?? {};
+  const webAssemblyLike = scope?.WebAssembly;
   const hasSharedArrayBuffer = typeof scope?.SharedArrayBuffer === 'function';
   const crossOriginIsolated = scope?.crossOriginIsolated === true;
   return {
@@ -32,8 +33,8 @@ export function browserRuntimeCapabilities(scope = globalThis) {
     hardwareConcurrency: Number.isFinite(navigatorLike.hardwareConcurrency)
       ? Math.max(1, Math.floor(navigatorLike.hardwareConcurrency))
       : 1,
-    webAssembly: typeof scope?.WebAssembly === 'object',
-    wasmSimd: wasmSimdAvailable(),
+    webAssembly: typeof webAssemblyLike === 'object',
+    wasmSimd: wasmSimdAvailable(webAssemblyLike),
     sharedArrayBuffer: hasSharedArrayBuffer,
     crossOriginIsolated,
     wasmThreads: hasSharedArrayBuffer && crossOriginIsolated && typeof scope?.Atomics === 'object',
