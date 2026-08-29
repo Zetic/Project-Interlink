@@ -156,7 +156,7 @@ test('stream total-flow cache updates with state and is excluded from serializat
   const state = createSolidMaterialState();
   addSolidFractionDirect(state, {
     speciesId: 'hematite',
-    sizeBinId: '1-2mm',
+    sizeBinId: '1-5mm',
     liberationClassId: 'partial',
     quantity: 3.5,
   });
