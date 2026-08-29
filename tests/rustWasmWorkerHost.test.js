@@ -86,6 +86,24 @@ class FakeWasmWorld {
   }
 }
 
+class FlakyInitWasmWorld extends FakeWasmWorld {
+  static attempts = 0;
+  static freed = 0;
+
+  constructor() {
+    super();
+    this._attempt = ++FlakyInitWasmWorld.attempts;
+  }
+
+  add_site() {
+    if (this._attempt === 1) throw new Error('synthetic population failure');
+  }
+
+  free() {
+    FlakyInitWasmWorld.freed += 1;
+  }
+}
+
 test('Worker host imports state once and owns subsequent fixed-step advancement', () => {
   const host = createRustWasmWorkerHost({
     WasmPackedWorldRuntime: FakeWasmWorld,
@@ -111,6 +129,31 @@ test('Worker host imports state once and owns subsequent fixed-step advancement'
   const advanced = host.handle(createRuntimeCommand(RUNTIME_COMMAND_TYPES.ADVANCE_FIXED, { steps: 3 }));
   assert.equal(advanced.payload.ticks, 3);
   assert.ok(Math.abs(advanced.payload.elapsedSeconds - 4.6) < 1e-12);
+});
+
+test('Worker host initialization is transactional and retryable after population failure', () => {
+  FlakyInitWasmWorld.attempts = 0;
+  FlakyInitWasmWorld.freed = 0;
+  const host = createRustWasmWorkerHost({
+    WasmPackedWorldRuntime: FlakyInitWasmWorld,
+    runtimeProtocolVersion: () => REALTIME_RUNTIME_PROTOCOL_VERSION,
+  });
+  const init = createRuntimeCommand(RUNTIME_COMMAND_TYPES.INIT, { setup: emptySetup() });
+
+  assert.throws(() => host.handle(init), /synthetic population failure/);
+  assert.equal(host.runtime, null);
+  assert.equal(host.setup, null);
+  assert.equal(FlakyInitWasmWorld.freed, 1);
+  assert.throws(
+    () => host.handle(createRuntimeCommand(RUNTIME_COMMAND_TYPES.STEP_FIXED)),
+    /has not been initialized/,
+  );
+
+  const ready = host.handle(init);
+  assert.equal(ready.type, RUNTIME_EVENT_TYPES.READY);
+  assert.equal(ready.payload.elapsedSeconds, 4.2);
+  assert.notEqual(host.runtime, null);
+  assert.notEqual(host.setup, null);
 });
 
 test('Worker host rejects browser/WASM protocol drift before accepting a world', () => {
