@@ -9,19 +9,28 @@ import {
   browserRuntimeCapabilities,
   recommendedRuntimeBackend,
 } from './runtimeCapabilities.js';
+import {
+  REALTIME_RUNTIME_PROTOCOL_VERSION,
+  RUNTIME_COMMAND_TYPES,
+  RUNTIME_EVENT_TYPES,
+  createRuntimeEvent,
+  validateRuntimeCommand,
+} from './runtimeProtocol.js';
 
-export const REALTIME_RUNTIME_PROTOCOL_VERSION = 1;
+export { REALTIME_RUNTIME_PROTOCOL_VERSION } from './runtimeProtocol.js';
+
 export const REALTIME_RUNTIME_BACKENDS = Object.freeze({
   MAIN_THREAD: 'main-thread-compiled',
   WORKER: 'worker',
+  RUST_WASM_WORKER: 'rust-wasm-worker',
 });
 
 /**
  * Backend-neutral execution contract for the runtime migration. The compiled
- * JavaScript implementation is intentionally the only selectable backend in
- * this PR. A later scheduler migration can consume this contract without making
- * an incomplete Worker responsible for cloning authoritative world state every
- * fixed step.
+ * JavaScript implementation remains authoritative while Rust/WASM primitives
+ * reach parity. Presentation code can now communicate through dispatch(command)
+ * without depending on worldSimulationTick, which is the boundary a Worker-owned
+ * Rust runtime will implement later.
  */
 export function createMainThreadRealtimeRuntime(world, {
   capabilities = browserRuntimeCapabilities(),
@@ -32,6 +41,48 @@ export function createMainThreadRealtimeRuntime(world, {
 
   function assertActive() {
     if (disposed) throw new Error('Realtime runtime has been disposed');
+  }
+
+  function pause() {
+    assertActive();
+    pauseWorldSimulation(world);
+    return true;
+  }
+
+  function resume() {
+    assertActive();
+    resumeWorldSimulation(world);
+    return true;
+  }
+
+  function stepFixed(dt = SIMULATION_STEP_S) {
+    assertActive();
+    if (dt !== SIMULATION_STEP_S) {
+      throw new Error(`Realtime runtime requires the authoritative ${SIMULATION_STEP_S} s fixed step`);
+    }
+    return worldSimulationTick(world, dt);
+  }
+
+  function dispatch(command) {
+    assertActive();
+    validateRuntimeCommand(command);
+    switch (command.type) {
+      case RUNTIME_COMMAND_TYPES.PAUSE:
+        pause();
+        return createRuntimeEvent(RUNTIME_EVENT_TYPES.RUN_STATE, { running: false });
+      case RUNTIME_COMMAND_TYPES.RESUME:
+        resume();
+        return createRuntimeEvent(RUNTIME_EVENT_TYPES.RUN_STATE, { running: true });
+      case RUNTIME_COMMAND_TYPES.STEP_FIXED: {
+        const result = stepFixed(command.payload.dt ?? SIMULATION_STEP_S);
+        return createRuntimeEvent(RUNTIME_EVENT_TYPES.STEPPED, {
+          ...result,
+          elapsedSeconds: world.simulation?.elapsedSeconds ?? 0,
+        });
+      }
+      default:
+        throw new Error(`Unsupported runtime command '${command.type}'`);
+    }
   }
 
   return {
@@ -45,25 +96,10 @@ export function createMainThreadRealtimeRuntime(world, {
       return !disposed && world.simulation?.running === true;
     },
 
-    resume() {
-      assertActive();
-      resumeWorldSimulation(world);
-      return true;
-    },
-
-    pause() {
-      assertActive();
-      pauseWorldSimulation(world);
-      return true;
-    },
-
-    stepFixed(dt = SIMULATION_STEP_S) {
-      assertActive();
-      if (dt !== SIMULATION_STEP_S) {
-        throw new Error(`Realtime runtime requires the authoritative ${SIMULATION_STEP_S} s fixed step`);
-      }
-      return worldSimulationTick(world, dt);
-    },
+    pause,
+    resume,
+    stepFixed,
+    dispatch,
 
     dispose() {
       if (disposed) return;
@@ -75,10 +111,9 @@ export function createMainThreadRealtimeRuntime(world, {
 
 /**
  * Runtime factory. `auto` deliberately selects the proven compiled JavaScript
- * backend until a Worker owns canonical simulation state and can exchange compact
- * commands/snapshots. Capability detection may recommend Worker/WASM/WebGPU
- * support, but selecting an incomplete accelerator would regress correctness and
- * can perform worse than the optimized fallback.
+ * backend until Rust/WASM owns canonical packed simulation state inside a Worker.
+ * The new Rust crate is a real execution backend foundation, but selecting it
+ * before full world-state parity would split physical truth across runtimes.
  */
 export function createRealtimeRuntime(world, {
   backend = 'auto',
@@ -87,8 +122,8 @@ export function createRealtimeRuntime(world, {
   if (backend === 'auto' || backend === REALTIME_RUNTIME_BACKENDS.MAIN_THREAD) {
     return createMainThreadRealtimeRuntime(world, { capabilities });
   }
-  if (backend === REALTIME_RUNTIME_BACKENDS.WORKER) {
-    throw new Error('Worker realtime backend is not available until simulation-state ownership is migrated');
+  if (backend === REALTIME_RUNTIME_BACKENDS.WORKER || backend === REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER) {
+    throw new Error('Worker realtime backend is not available until Rust/WASM owns canonical packed simulation state');
   }
   throw new Error(`Unknown realtime runtime backend '${backend}'`);
 }
