@@ -2200,11 +2200,16 @@ function onResetSite() {
   const siteId = wsState.selectedSiteId;
   if (!siteId) return;
   clearCatalogPointerGesture();
+  const previousNodeIds = Object.keys(wsState.siteSessions[siteId]?.blueprint?.nodes ?? {});
   const session = createSiteSession(wsState.selectedOccurrenceId, siteId);
+  const resetNodeIds = [...new Set([
+    ...previousNodeIds,
+    ...Object.keys(session.blueprint.nodes ?? {}),
+  ])];
   wsState.siteSessions[siteId] = session;
   registerSimulationSession(wsState.world, siteId, session.blueprint, session.boundaryNode?.childWorkspaceId);
   invalidateNavigationIndex();
-  queueRuntimeReconfigure({ resetNodeIds: Object.keys(session.blueprint.nodes ?? {}) });
+  queueRuntimeReconfigure({ resetNodeIds });
   wsState.blueprint = session.blueprint;
   wsState.blueprintLayout = session.blueprintLayout;
   inspector.selectedNodeId = null;

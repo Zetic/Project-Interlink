@@ -127,7 +127,18 @@ export function reconfigureWasmPackedWorldRuntime(
   }
 
   for (const hopper of previousSetup?.hoppers ?? []) {
-    if (!nextHopperIds.has(hopper.nodeId)) wasmWorld.remove_hopper_if_empty_live(hopper.nodeId);
+    if (nextHopperIds.has(hopper.nodeId)) continue;
+    if (resetRuntimeIds.has(hopper.nodeId)) {
+      // Reset Site is the explicit destructive exception to ordinary live-edit
+      // removal. Clear the candidate clone first, then use the same empty-only
+      // removal guard so no non-reset edit can discard retained material.
+      wasmWorld.replace_hopper_state_live(
+        hopper.nodeId,
+        hopper.capacityKg,
+        [], [], [], [], [], 0,
+      );
+    }
+    wasmWorld.remove_hopper_if_empty_live(hopper.nodeId);
   }
   for (const hopper of nextSetup.hoppers) {
     if (!previousHopperIds.has(hopper.nodeId) || resetRuntimeIds.has(hopper.nodeId)) {
