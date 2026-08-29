@@ -202,7 +202,9 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
       return;
     }
     if (runtimeEvent.type === RUNTIME_EVENT_TYPES.ERROR) {
-      request.reject(new Error(runtimeEvent.payload?.message ?? 'Rust/WASM Worker runtime failed'));
+      const error = new Error(runtimeEvent.payload?.message ?? 'Rust/WASM Worker runtime failed');
+      request.reject(error);
+      failWorker(error);
       return;
     }
     if (runtimeEvent.type === RUNTIME_EVENT_TYPES.RUN_STATE) {
