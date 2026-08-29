@@ -76,6 +76,8 @@ function projectionFixture() {
   const runtime = {
     setup: {
       machines: [{ canonicalNodeId: 'machine-a', inputPortIds: ['feed'], outputPortIds: [] }],
+      passiveLinks: [{ siteId: 0, canonicalConnectionId: 'conn-passive' }],
+      runtimeIds: { sites: ['site-a'] },
     },
   };
   return { world, runtime, blueprint, hopper, machine, vent, machineStream, passiveStream };
@@ -118,6 +120,52 @@ test('compact Rust Worker snapshots drive scalar presentation without serializin
   assert.equal(Object.prototype.propertyIsEnumerable.call(fixture.machineStream, '_runtimePresentationMassFlowKgPerSecond'), false);
   assert.equal(JSON.stringify(fixture.hopper).includes('runtimePresentation'), false);
   assert.equal(JSON.stringify(fixture.machineStream).includes('_runtimePresentationMassFlowKgPerSecond'), false);
+});
+
+test('passive-link projection is scoped by Site when blueprint-local connection IDs collide', () => {
+  const fixture = projectionFixture();
+  const siteBSource = { id: 'site-b-source', nodeType: 'hopper', capacityKg: 100, materialBody: null };
+  const siteBTarget = { id: 'site-b-target', nodeType: 'hopper', capacityKg: 100, materialBody: null };
+  const siteBStream = createZeroStream({
+    id: 'site-b-stream-passive',
+    connectionId: 'conn-passive',
+    sourceNodeId: 'site-b-source',
+    sourcePortId: 'output',
+    targetNodeId: 'site-b-target',
+    targetPortId: 'input',
+  });
+  fixture.world.simulation.sessions['site-b'] = {
+    id: 'site-b-workspace',
+    nodes: {
+      'site-b-source': siteBSource,
+      'site-b-target': siteBTarget,
+    },
+    connections: {
+      'conn-passive': materialConnection('conn-passive', 'site-b-source', 'output', 'site-b-target', 'input'),
+    },
+    streams: { 'site-b-stream-passive': siteBStream },
+    simulationStats: { elapsedSeconds: 0, extractedKg: 0 },
+  };
+  fixture.runtime.setup.runtimeIds.sites.push('site-b');
+  fixture.runtime.setup.passiveLinks.push({ siteId: 1, canonicalConnectionId: 'conn-passive' });
+
+  applyRustWorkerRuntimeSnapshot(fixture.world, fixture.runtime, {
+    running: true,
+    elapsedSeconds: 1,
+    sites: [],
+    hoppers: [],
+    occurrences: [],
+    machines: [],
+    exhaustVents: [],
+    passiveLinks: [
+      { id: 'conn-passive', lastMovedKg: 0.1, lastRateKgPerSecond: 1 },
+      { id: 'conn-passive', lastMovedKg: 0.2, lastRateKgPerSecond: 2 },
+    ],
+    boundaryTransfers: [],
+  });
+
+  assert.equal(totalMaterialStreamMassFlowKgPerSecond(fixture.passiveStream), 1);
+  assert.equal(totalMaterialStreamMassFlowKgPerSecond(siteBStream), 2);
 });
 
 test('Worker-authoritative inspectors do not present stale JavaScript fractions as current physical truth', () => {
