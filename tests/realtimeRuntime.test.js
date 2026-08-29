@@ -78,7 +78,7 @@ test('realtime runtime preserves pause/play and authoritative fixed-step semanti
   assert.throws(() => runtime.stepFixed(), /disposed/);
 });
 
-test('auto runtime selects the Rust/WASM Worker when Worker and WASM are available', () => {
+test('auto runtime selects the Rust/WASM Worker when Worker and WASM are available', async () => {
   const world = minimalWorld();
   const runtime = createRealtimeRuntime(world, {
     capabilities: {
@@ -94,12 +94,15 @@ test('auto runtime selects the Rust/WASM Worker when Worker and WASM are availab
     },
     workerFactory: () => inertWorker(),
   });
+  const pendingReady = runtime.ready.catch(error => error);
 
   assert.equal(runtime.backend, REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER);
   assert.equal(runtime.recommendation.simulationThread, 'worker');
   assert.equal(runtime.recommendation.cpuParallelism, 'shared-memory-workers');
   assert.equal(runtime.recommendation.gpuCompute, 'webgpu-available');
   runtime.dispose();
+  const disposedError = await pendingReady;
+  assert.match(disposedError.message, /disposed/);
 });
 
 test('Rust/WASM Worker runtime becomes terminal after a Worker crash', async () => {
