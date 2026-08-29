@@ -168,7 +168,10 @@ fn direct_feeder_and_furnace_chaining_runs_entirely_inside_world_scheduler() {
     let mut world = PackedWorldRuntime::new();
     world.add_site(1).unwrap();
     add_thermal_and_reaction(&mut world);
-    world.add_hopper(100, feed_hopper(4.0)).unwrap();
+    // Four 1 kg furnace zones can hold exactly 4 kg without discharging.
+    // Six kilograms guarantees the upstream furnace actually overflows its
+    // final zone and exercises the direct Furnace -> Furnace scheduler path.
+    world.add_hopper(100, feed_hopper(6.0)).unwrap();
     world
         .add_hopper(101, PackedHopperState::empty(100.0).unwrap())
         .unwrap();
