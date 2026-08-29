@@ -7,6 +7,7 @@
 
 import {
   blueprintDisconnect,
+  invalidateBlueprintExecutionPlan,
 } from '../../simulation/simulationEngine.js';
 import {
   HOPPER_TOLERANCE_KG,
@@ -86,6 +87,7 @@ export function removeBlueprintNode(blueprint, layout, nodeOrId) {
     }
   }
   delete blueprint.nodes[nodeId];
+  invalidateBlueprintExecutionPlan(blueprint);
   if (layout?.nodePositions) delete layout.nodePositions[nodeId];
   return { removed: true, ...eligibility };
 }
