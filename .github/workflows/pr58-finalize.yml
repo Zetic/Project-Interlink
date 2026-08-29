@@ -27,6 +27,9 @@ jobs:
           path = Path('rust/interlink-runtime/src/lib.rs')
           text = path.read_text()
 
+          def block(*lines):
+              return "\n".join(lines) + "\n"
+
           def replace_once(old, new, label):
               global text
               count = text.count(old)
@@ -34,132 +37,158 @@ jobs:
                   raise SystemExit(f"{label}: expected one match, found {count}")
               text = text.replace(old, new, 1)
 
-          old = "    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {\n        match &mut record.kind {\n"
-          new = """    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {
-              // Production apparatus apply the enabled/off gate before connection
-              // validation. Preserve that ordering at the scheduler boundary so a
-              // disconnected disabled machine stays `off` rather than becoming
-              // `idle` or `blocked` merely because its endpoints are absent.
-              let runtime_is_off = match &record.kind {
-                  PackedMachineKind::Extractor { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-                  PackedMachineKind::Merger { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-                  PackedMachineKind::Feeder { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-                  PackedMachineKind::Comminution { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-                  PackedMachineKind::Screen { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-                  PackedMachineKind::Splitter { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-                  PackedMachineKind::MagneticSeparator { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-                  PackedMachineKind::Furnace { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,
-              };
-              if runtime_is_off {
-                  record.status.set(PackedOperatingState::Off, None);
-                  return Ok(0.0);
-              }
+          replace_once(
+              block(
+                  "    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {",
+                  "        match &mut record.kind {",
+              ),
+              block(
+                  "    fn execute_machine(&mut self, record: &mut PackedMachineRecord, dt: f64) -> Result<f64, String> {",
+                  "        // Production apparatus apply the enabled/off gate before connection",
+                  "        // validation. Preserve that ordering at the scheduler boundary so a",
+                  "        // disconnected disabled machine stays `off` rather than becoming",
+                  "        // `idle` or `blocked` merely because its endpoints are absent.",
+                  "        let runtime_is_off = match &record.kind {",
+                  "            PackedMachineKind::Extractor { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "            PackedMachineKind::Merger { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "            PackedMachineKind::Feeder { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "            PackedMachineKind::Comminution { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "            PackedMachineKind::Screen { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "            PackedMachineKind::Splitter { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "            PackedMachineKind::MagneticSeparator { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "            PackedMachineKind::Furnace { runtime, .. } => runtime.operating_state() == PackedOperatingState::Off,",
+                  "        };",
+                  "        if runtime_is_off {",
+                  "            record.status.set(PackedOperatingState::Off, None);",
+                  "            return Ok(0.0);",
+                  "        }",
+                  "",
+                  "        match &mut record.kind {",
+              ),
+              'disabled-machine scheduler gate',
+          )
 
-              match &mut record.kind {
-          """
-          replace_once(old, new, 'disabled-machine scheduler gate')
+          replace_once(
+              block(
+                  "                let mut occurrence = self.occurrences.remove(&occurrence_id)",
+                  "                    .ok_or_else(|| format!(\"missing runtime occurrence {occurrence_id}\"))?;",
+                  "                let mut hopper = self.hoppers.remove(&output_id)",
+                  "                    .ok_or_else(|| format!(\"missing runtime Hopper {output_id}\"))?;",
+              ),
+              block(
+                  "                if !self.occurrences.contains_key(&occurrence_id) {",
+                  "                    return Err(format!(\"missing runtime occurrence {occurrence_id}\"));",
+                  "                }",
+                  "                if !self.hoppers.contains_key(&output_id) {",
+                  "                    return Err(format!(\"missing runtime Hopper {output_id}\"));",
+                  "                }",
+                  "                let mut occurrence = self.occurrences.remove(&occurrence_id).unwrap();",
+                  "                let mut hopper = self.hoppers.remove(&output_id).unwrap();",
+              ),
+              'extractor transaction preflight',
+          )
 
-          old = """                let mut occurrence = self.occurrences.remove(&occurrence_id)
-                      .ok_or_else(|| format!(\"missing runtime occurrence {occurrence_id}\"))?;
-                  let mut hopper = self.hoppers.remove(&output_id)
-                      .ok_or_else(|| format!(\"missing runtime Hopper {output_id}\"))?;
-          """
-          new = """                if !self.occurrences.contains_key(&occurrence_id) {
-                      return Err(format!(\"missing runtime occurrence {occurrence_id}\"));
-                  }
-                  if !self.hoppers.contains_key(&output_id) {
-                      return Err(format!(\"missing runtime Hopper {output_id}\"));
-                  }
-                  let mut occurrence = self.occurrences.remove(&occurrence_id).unwrap();
-                  let mut hopper = self.hoppers.remove(&output_id).unwrap();
-          """
-          replace_once(old, new, 'extractor transaction preflight')
+          replace_once(
+              block(
+                  "            Some(PackedSolidTarget::Hopper(hopper_id)) => {",
+                  "                let mut product = self.hoppers.remove(&hopper_id)",
+                  "                    .ok_or_else(|| format!(\"missing runtime Hopper {hopper_id}\"))?;",
+                  "                let mut vent = match gas_vent_id {",
+                  "                    Some(id) => Some(self.vents.remove(&id)",
+                  "                        .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),",
+                  "                    None => None,",
+                  "                };",
+              ),
+              block(
+                  "            Some(PackedSolidTarget::Hopper(hopper_id)) => {",
+                  "                if !self.hoppers.contains_key(&hopper_id) {",
+                  "                    return Err(format!(\"missing runtime Hopper {hopper_id}\"));",
+                  "                }",
+                  "                if let Some(id) = gas_vent_id {",
+                  "                    if !self.vents.contains_key(&id) {",
+                  "                        return Err(format!(\"missing runtime exhaust vent {id}\"));",
+                  "                    }",
+                  "                }",
+                  "                let mut product = self.hoppers.remove(&hopper_id).unwrap();",
+                  "                let mut vent = match gas_vent_id {",
+                  "                    Some(id) => Some(self.vents.remove(&id).unwrap()),",
+                  "                    None => None,",
+                  "                };",
+              ),
+              'furnace hopper-target preflight',
+          )
 
-          old = """            Some(PackedSolidTarget::Hopper(hopper_id)) => {
-                  let mut product = self.hoppers.remove(&hopper_id)
-                      .ok_or_else(|| format!(\"missing runtime Hopper {hopper_id}\"))?;
-                  let mut vent = match gas_vent_id {
-                      Some(id) => Some(self.vents.remove(&id)
-                          .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),
-                      None => None,
-                  };
-          """
-          new = """            Some(PackedSolidTarget::Hopper(hopper_id)) => {
-                  if !self.hoppers.contains_key(&hopper_id) {
-                      return Err(format!(\"missing runtime Hopper {hopper_id}\"));
-                  }
-                  if let Some(id) = gas_vent_id {
-                      if !self.vents.contains_key(&id) {
-                          return Err(format!(\"missing runtime exhaust vent {id}\"));
-                      }
-                  }
-                  let mut product = self.hoppers.remove(&hopper_id).unwrap();
-                  let mut vent = match gas_vent_id {
-                      Some(id) => Some(self.vents.remove(&id).unwrap()),
-                      None => None,
-                  };
-          """
-          replace_once(old, new, 'furnace hopper-target preflight')
+          replace_once(
+              block(
+                  "            Some(PackedSolidTarget::Furnace(target_id)) => {",
+                  "                let mut target_record = self.machines.remove(&target_id)",
+                  "                    .ok_or_else(|| format!(\"missing runtime furnace {target_id}\"))?;",
+                  "                let mut vent = match gas_vent_id {",
+                  "                    Some(id) => Some(self.vents.remove(&id)",
+                  "                        .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),",
+                  "                    None => None,",
+                  "                };",
+                  "                let result = (|| {",
+              ),
+              block(
+                  "            Some(PackedSolidTarget::Furnace(target_id)) => {",
+                  "                if !self.machines.contains_key(&target_id) {",
+                  "                    return Err(format!(\"missing runtime furnace {target_id}\"));",
+                  "                }",
+                  "                if let Some(id) = gas_vent_id {",
+                  "                    if !self.vents.contains_key(&id) {",
+                  "                        return Err(format!(\"missing runtime exhaust vent {id}\"));",
+                  "                    }",
+                  "                }",
+                  "                let mut target_record = self.machines.remove(&target_id).unwrap();",
+                  "                let mut vent = match gas_vent_id {",
+                  "                    Some(id) => Some(self.vents.remove(&id).unwrap()),",
+                  "                    None => None,",
+                  "                };",
+                  "                let mut staged_vent = vent.clone();",
+                  "                let result = (|| {",
+              ),
+              'furnace target/vent preflight',
+          )
 
-          old = """            Some(PackedSolidTarget::Furnace(target_id)) => {
-                  let mut target_record = self.machines.remove(&target_id)
-                      .ok_or_else(|| format!(\"missing runtime furnace {target_id}\"))?;
-                  let mut vent = match gas_vent_id {
-                      Some(id) => Some(self.vents.remove(&id)
-                          .ok_or_else(|| format!(\"missing runtime exhaust vent {id}\"))?),
-                      None => None,
-                  };
-                  let result = (|| {
-          """
-          new = """            Some(PackedSolidTarget::Furnace(target_id)) => {
-                  if !self.machines.contains_key(&target_id) {
-                      return Err(format!(\"missing runtime furnace {target_id}\"));
-                  }
-                  if let Some(id) = gas_vent_id {
-                      if !self.vents.contains_key(&id) {
-                          return Err(format!(\"missing runtime exhaust vent {id}\"));
-                      }
-                  }
-                  let mut target_record = self.machines.remove(&target_id).unwrap();
-                  let mut vent = match gas_vent_id {
-                      Some(id) => Some(self.vents.remove(&id).unwrap()),
-                      None => None,
-                  };
-                  let mut staged_vent = vent.clone();
-                  let result = (|| {
-          """
-          replace_once(old, new, 'furnace target/vent preflight')
+          replace_once(
+              block(
+                  "                    let tick = staged_source.tick_to_hopper_and_vent(",
+                  "                        Some(&mut temporary),",
+                  "                        vent.as_mut(),",
+                  "                        &self.thermal,",
+                  "                        reaction,",
+                  "                        dt,",
+                  "                    )?;",
+              ),
+              block(
+                  "                    let tick = staged_source.tick_to_hopper_and_vent(",
+                  "                        Some(&mut temporary),",
+                  "                        staged_vent.as_mut(),",
+                  "                        &self.thermal,",
+                  "                        reaction,",
+                  "                        dt,",
+                  "                    )?;",
+              ),
+              'furnace-to-furnace staged vent',
+          )
 
-          old = """                    let tick = staged_source.tick_to_hopper_and_vent(
-                          Some(&mut temporary),
-                          vent.as_mut(),
-                          &self.thermal,
-                          reaction,
-                          dt,
-                      )?;
-          """
-          new = """                    let tick = staged_source.tick_to_hopper_and_vent(
-                          Some(&mut temporary),
-                          staged_vent.as_mut(),
-                          &self.thermal,
-                          reaction,
-                          dt,
-                      )?;
-          """
-          replace_once(old, new, 'furnace-to-furnace staged vent')
-
-          old = """                })();
-                  self.machines.insert(target_id, target_record);
-                  if let (Some(id), Some(body)) = (gas_vent_id, vent) {
-          """
-          new = """                })();
-                  if result.is_ok() {
-                      vent = staged_vent;
-                  }
-                  self.machines.insert(target_id, target_record);
-                  if let (Some(id), Some(body)) = (gas_vent_id, vent) {
-          """
-          replace_once(old, new, 'furnace-to-furnace vent commit')
+          replace_once(
+              block(
+                  "                })();",
+                  "                self.machines.insert(target_id, target_record);",
+                  "                if let (Some(id), Some(body)) = (gas_vent_id, vent) {",
+              ),
+              block(
+                  "                })();",
+                  "                if result.is_ok() {",
+                  "                    vent = staged_vent;",
+                  "                }",
+                  "                self.machines.insert(target_id, target_record);",
+                  "                if let (Some(id), Some(body)) = (gas_vent_id, vent) {",
+              ),
+              'furnace-to-furnace vent commit',
+          )
 
           path.write_text(text)
           PY
