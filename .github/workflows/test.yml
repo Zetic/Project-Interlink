@@ -54,3 +54,7 @@ jobs:
         run: |
           test -s target/wasm-package/interlink_wasm.js
           test -s target/wasm-package/interlink_wasm_bg.wasm
+          cmp target/wasm-package/interlink_wasm.js src/wasm/interlink_wasm.js
+          cmp target/wasm-package/interlink_wasm.d.ts src/wasm/interlink_wasm.d.ts
+          cmp target/wasm-package/interlink_wasm_bg.wasm src/wasm/interlink_wasm_bg.wasm
+          cmp target/wasm-package/interlink_wasm_bg.wasm.d.ts src/wasm/interlink_wasm_bg.wasm.d.ts
