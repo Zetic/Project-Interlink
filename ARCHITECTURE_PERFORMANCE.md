@@ -41,6 +41,38 @@ Material-stream total flow is cached when canonical stream state changes, so ren
 
 `realtimeRuntime.js` defines the fixed-step backend contract and validates that the current backend retains authoritative `0.1 s` semantics. PR #48 deliberately keeps the proven compiled JavaScript execution backend as the selectable production path. It does **not** pretend that a Worker backend is complete by copying the object-heavy world across a thread boundary every tick.
 
+## Rust/WASM migration started after PR #48
+
+The permanent high-performance simulation direction is now:
+
+```text
+main browser thread
+  DOM / graph / Inspector / input
+            │
+            │ versioned commands + compact snapshots
+            ▼
+dedicated simulation Worker
+            │
+            ▼
+Rust interlink-core → WebAssembly
+  packed runtime state
+  graph execution
+  process physics
+  material/thermal state
+  conservation
+```
+
+The Rust implementation is split deliberately:
+
+- `rust/interlink-core` is platform-neutral Rust with no browser dependency;
+- `rust/interlink-wasm` is the thin `wasm-bindgen` adapter;
+- `src/simulation/packedRuntimeState.js` is a typed-array JavaScript fallback/reference for the same first packed-state contract;
+- `src/simulation/runtimeProtocol.js` is the versioned browser/runtime command boundary.
+
+The first migrated primitive is solid particulate execution state stored as numeric structure-of-arrays columns (`u16/u8/u8/u32/f64`) rather than repeated string-key parsing. Runtime-local numeric IDs are **not** persistent content IDs. Human-readable save/content state remains canonical and is compiled into runtime state.
+
+The JavaScript engine remains authoritative while parity is established. The Rust Worker backend must not be enabled until enough canonical state has moved that a fixed step can execute without cloning the complete object-heavy world between JavaScript and WASM/Worker memory.
+
 ## Worker boundary — next execution backend
 
 The next backend migration is a dedicated simulation worker. The intended ownership model is:
