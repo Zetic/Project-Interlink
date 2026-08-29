@@ -17,10 +17,11 @@ export const REALTIME_RUNTIME_BACKENDS = Object.freeze({
 });
 
 /**
- * Current production backend. The contract deliberately does not expose the
- * implementation details of worldSimulationTick to presentation code. A Worker
- * runtime can therefore become authoritative behind the same interface once
- * command/snapshot ownership is migrated.
+ * Backend-neutral execution contract for the runtime migration. The compiled
+ * JavaScript implementation is intentionally the only selectable backend in
+ * this PR. A later scheduler migration can consume this contract without making
+ * an incomplete Worker responsible for cloning authoritative world state every
+ * fixed step.
  */
 export function createMainThreadRealtimeRuntime(world, {
   capabilities = browserRuntimeCapabilities(),
@@ -73,10 +74,11 @@ export function createMainThreadRealtimeRuntime(world, {
 }
 
 /**
- * Runtime factory. `auto` intentionally selects the proven compiled JS backend
- * until the Worker implementation owns canonical simulation state. Capability
- * detection may recommend Worker/WASM/WebGPU support, but selecting an
- * incomplete accelerator would be worse than a correct optimized fallback.
+ * Runtime factory. `auto` deliberately selects the proven compiled JavaScript
+ * backend until a Worker owns canonical simulation state and can exchange compact
+ * commands/snapshots. Capability detection may recommend Worker/WASM/WebGPU
+ * support, but selecting an incomplete accelerator would regress correctness and
+ * can perform worse than the optimized fallback.
  */
 export function createRealtimeRuntime(world, {
   backend = 'auto',
