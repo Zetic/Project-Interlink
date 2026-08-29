@@ -37,6 +37,16 @@ export function createRustWasmWorkerHost({
     if (!runtime || !setup) throw new Error('Rust/WASM Worker runtime has not been initialized');
   }
 
+  function releaseCandidate(candidate) {
+    if (!candidate) return;
+    try {
+      if (typeof candidate.free === 'function') candidate.free();
+      else if (typeof candidate[Symbol.dispose] === 'function') candidate[Symbol.dispose]();
+    } catch {
+      // Initialization already failed. Cleanup must not hide the physical/setup error.
+    }
+  }
+
   function snapshot() {
     assertInitialized();
     return snapshotWasmPackedWorldRuntime(runtime, setup);
@@ -47,14 +57,22 @@ export function createRustWasmWorkerHost({
     switch (command.type) {
       case RUNTIME_COMMAND_TYPES.INIT: {
         if (runtime) throw new Error('Rust/WASM Worker runtime is already initialized');
-        setup = command.payload.setup;
-        runtime = new WasmPackedWorldRuntime();
-        populateWasmPackedWorldRuntimeFromWorkerSetup(runtime, setup);
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.READY, {
-          running: runtime.running(),
-          elapsedSeconds: runtime.elapsed_seconds(),
-          snapshot: snapshot(),
-        });
+        const nextSetup = command.payload.setup;
+        const nextRuntime = new WasmPackedWorldRuntime();
+        try {
+          populateWasmPackedWorldRuntimeFromWorkerSetup(nextRuntime, nextSetup);
+          const initialSnapshot = snapshotWasmPackedWorldRuntime(nextRuntime, nextSetup);
+          runtime = nextRuntime;
+          setup = nextSetup;
+          return createRuntimeEvent(RUNTIME_EVENT_TYPES.READY, {
+            running: runtime.running(),
+            elapsedSeconds: runtime.elapsed_seconds(),
+            snapshot: initialSnapshot,
+          });
+        } catch (error) {
+          releaseCandidate(nextRuntime);
+          throw error;
+        }
       }
       case RUNTIME_COMMAND_TYPES.PAUSE:
         assertInitialized();
