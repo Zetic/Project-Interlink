@@ -9,4 +9,5 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 interlink-core = { path = "../interlink-core" }
+interlink-processes = { path = "../interlink-processes" }
 wasm-bindgen = "0.2"
