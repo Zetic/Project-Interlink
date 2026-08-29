@@ -892,6 +892,55 @@ impl WasmPackedWorldRuntime {
             .unwrap_or(0.0)
     }
 
+    pub fn furnace_last_heat_loss_power_kw(&self, node_id: u32) -> f64 {
+        self.inner
+            .furnace_diagnostics(node_id)
+            .map(|value| value.last_heat_loss_power_kw)
+            .unwrap_or(0.0)
+    }
+
+    pub fn furnace_last_feed_rate_kg_per_second(&self, node_id: u32) -> f64 {
+        self.inner
+            .furnace_diagnostics(node_id)
+            .map(|value| value.last_feed_rate_kg_per_second)
+            .unwrap_or(0.0)
+    }
+
+    pub fn furnace_last_product_rate_kg_per_second(&self, node_id: u32) -> f64 {
+        self.inner
+            .furnace_diagnostics(node_id)
+            .map(|value| value.last_product_rate_kg_per_second)
+            .unwrap_or(0.0)
+    }
+
+    pub fn furnace_last_goethite_conversion_fraction(&self, node_id: u32) -> f64 {
+        self.inner
+            .furnace_diagnostics(node_id)
+            .map(|value| value.last_goethite_conversion_fraction)
+            .unwrap_or(0.0)
+    }
+
+    pub fn furnace_last_solver_evaluation_count(&self, node_id: u32) -> u32 {
+        self.inner
+            .furnace_diagnostics(node_id)
+            .map(|value| value.last_solver_evaluation_count as u32)
+            .unwrap_or(0)
+    }
+
+    pub fn site_passive_link_last_moved_kg(&self, site_id: u32, link_index: u32) -> f64 {
+        self.inner
+            .site_passive_storage_link(site_id, link_index as usize)
+            .map(|value| value.last_moved_kg)
+            .unwrap_or(0.0)
+    }
+
+    pub fn site_passive_link_last_rate_kg_per_second(&self, site_id: u32, link_index: u32) -> f64 {
+        self.inner
+            .site_passive_storage_link(site_id, link_index as usize)
+            .map(|value| value.last_rate_kg_per_second)
+            .unwrap_or(0.0)
+    }
+
     pub fn boundary_last_moved_kg(&self, transfer_id: u32) -> f64 {
         self.inner
             .boundary_transfer(transfer_id)

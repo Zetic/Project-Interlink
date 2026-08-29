@@ -345,6 +345,8 @@ function compileSiteMachines(blueprint, siteId, nodeIds, occurrenceIds, comminut
     if (source.boundaryRole !== 'import' && target.boundaryRole !== 'export') continue;
     passiveLinks.push({
       siteId,
+      siteLinkIndex: passiveLinks.length,
+      canonicalConnectionId: connection.id,
       sourceHopperId: nodeIds.idFor(source.id),
       targetHopperId: nodeIds.idFor(target.id),
       rateKgPerSecond: DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_SECOND,

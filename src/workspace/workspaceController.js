@@ -1503,7 +1503,11 @@ function nodeLabel(node) {
   if (node.nodeType === 'feeder') return `Feeder [${getNodeOperatingState(node)}]\nSet ${node.flowRateKgPerSecond.toFixed(2)} kg/s`;
   if (node.nodeType === 'magSep') return `Mag. Sep. [${getNodeOperatingState(node)}]\nB=${node.fieldStrength}\n${node.throughputKgPerSecond} kg/s`;
   if (node.nodeType === 'roastingFurnace') {
-    const temperatureC = Number.isFinite(node.actualChargeTemperatureK) ? node.actualChargeTemperatureK - 273.15 : null;
+    const projectedTemperatureK = node.runtimePresentation?.furnace?.actualChargeTemperatureK;
+    const chargeTemperatureK = Number.isFinite(projectedTemperatureK)
+      ? projectedTemperatureK
+      : node.actualChargeTemperatureK;
+    const temperatureC = Number.isFinite(chargeTemperatureK) ? chargeTemperatureK - 273.15 : null;
     return `Roasting Furnace [${getNodeOperatingState(node)}]\n${node.internalZoneCount ?? 4} zones · ${node.effectiveChamberHoldUpKg} kg\n${temperatureC == null ? 'No charge' : `${temperatureC.toFixed(0)} °C`}`;
   }
   if (node.nodeType === 'exhaustVent') return 'Exhaust Vent\nGas boundary';
@@ -2117,7 +2121,7 @@ function startSimulation() {
   wsState.simAccumulatedS = 0;
   Promise.resolve(wsState.realtimeRuntime.resume()).then(() => {
     if (epoch !== wsState.runtimeEpoch) return;
-    projectRuntimeSnapshot(wsState.realtimeRuntime.snapshot);
+    if (wsState.world?.simulation) wsState.world.simulation.running = true;
     updateWorldControls();
   }).catch(error => handleRuntimeFailure(error, epoch));
   wsState.simRafId = requestAnimationFrame(simLoop);
@@ -2130,7 +2134,12 @@ function stopSimulation({ pauseRuntime = true } = {}) {
   if (wsState.world?.simulation) wsState.world.simulation.running = false;
   if (pauseRuntime && wsState.realtimeRuntime) {
     Promise.resolve(wsState.realtimeRuntime.pause())
-      .then(() => projectRuntimeSnapshot(wsState.realtimeRuntime?.snapshot))
+      .then(() => {
+        if (epoch === wsState.runtimeEpoch && wsState.world?.simulation) {
+          wsState.world.simulation.running = false;
+          updateWorldControls();
+        }
+      })
       .catch(error => handleRuntimeFailure(error, epoch));
   }
   if (wsState.simRafId != null) cancelAnimationFrame(wsState.simRafId);

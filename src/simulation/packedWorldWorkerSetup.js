@@ -444,12 +444,22 @@ export function snapshotWasmPackedWorldRuntime(wasmWorld, setup) {
           actualChargeTemperatureK: wasmWorld.furnace_actual_charge_temperature_k(machine.nodeId),
           lastHeaterPowerKw: wasmWorld.furnace_last_heater_power_kw(machine.nodeId),
           lastReactionPowerKw: wasmWorld.furnace_last_reaction_power_kw(machine.nodeId),
+          lastHeatLossPowerKw: wasmWorld.furnace_last_heat_loss_power_kw(machine.nodeId),
+          lastFeedRateKgPerSecond: wasmWorld.furnace_last_feed_rate_kg_per_second(machine.nodeId),
+          lastProductRateKgPerSecond: wasmWorld.furnace_last_product_rate_kg_per_second(machine.nodeId),
+          lastGoethiteConversionFraction: wasmWorld.furnace_last_goethite_conversion_fraction(machine.nodeId),
+          lastSolverEvaluationCount: wasmWorld.furnace_last_solver_evaluation_count(machine.nodeId),
           chargeMassKg: wasmWorld.furnace_charge_mass_kg(machine.nodeId),
           pendingFeedMassKg: wasmWorld.furnace_pending_feed_mass_kg(machine.nodeId),
         };
       }
       return snapshot;
     }),
+    passiveLinks: setup.passiveLinks.map(link => ({
+      id: link.canonicalConnectionId,
+      lastMovedKg: wasmWorld.site_passive_link_last_moved_kg(link.siteId, link.siteLinkIndex),
+      lastRateKgPerSecond: wasmWorld.site_passive_link_last_rate_kg_per_second(link.siteId, link.siteLinkIndex),
+    })),
     boundaryTransfers: setup.boundaryTransfers.map(transfer => ({
       id: transfer.canonicalTransferId,
       lastMovedKg: wasmWorld.boundary_last_moved_kg(transfer.transferId),

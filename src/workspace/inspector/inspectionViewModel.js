@@ -398,8 +398,22 @@ function exhaustBodyInspection(gasBody) {
 }
 
 export function exhaustVentInspection(blueprint, vent) {
+  const projected = vent?.runtimePresentation?.authority === 'rust-wasm-worker'
+    ? vent.runtimePresentation
+    : null;
   const gasBody = vent?.emittedGasBody ?? createGasMaterialBody(createGasMaterialState());
-  const bodyDetails = exhaustBodyInspection(gasBody);
+  const bodyDetails = projected
+    ? {
+      totalEmittedMassKg: projected.ventedGasMassKg ?? 0,
+      composition: [],
+      temperatureK: null,
+      sensibleEnthalpyJ: 0,
+      thermalError: (projected.ventedGasMassKg ?? 0) > 0
+        ? 'Detailed exhaust state is retained in the Rust/WASM Worker.'
+        : null,
+      detailsUnavailable: true,
+    }
+    : exhaustBodyInspection(gasBody);
   const inputConnection = Object.values(blueprint?.connections ?? {}).find(connection =>
     connection.kind === 'material'
       && connection.targetNodeId === vent?.id
@@ -483,9 +497,8 @@ export function machineInspection(blueprint, node) {
     const projectedFurnace = node.runtimePresentation?.furnace ?? null;
     const chargeMassKg = projectedFurnace?.chargeMassKg ?? roastingFurnaceChargeMassKg(node);
     const pendingFeedMassKg = projectedFurnace?.pendingFeedMassKg ?? roastingFurnacePendingFeedMassKg(node);
-    const feedRateKgPerSecond = actualFeedKgPerSecond > 0
-      ? actualFeedKgPerSecond
-      : (node.lastFeedRateKgPerSecond ?? 0);
+    const feedRateKgPerSecond = projectedFurnace?.lastFeedRateKgPerSecond
+      ?? (actualFeedKgPerSecond > 0 ? actualFeedKgPerSecond : (node.lastFeedRateKgPerSecond ?? 0));
     const zoneCapacityKg = roastingFurnaceZoneCapacityKg(node);
     result.thermochemical = {
       chargeMassKg,
@@ -496,15 +509,19 @@ export function machineInspection(blueprint, node) {
       temperatureSetpointK: node.temperatureSetpointK,
       ratedHeaterPowerKw: node.ratedHeaterPowerKw,
       actualHeaterPowerKw: projectedFurnace?.lastHeaterPowerKw ?? node.lastHeaterPowerKw ?? 0,
-      heatLossPowerKw: projectedFurnace ? 0 : (node.lastHeatLossPowerKw ?? 0),
+      heatLossPowerKw: projectedFurnace?.lastHeatLossPowerKw ?? node.lastHeatLossPowerKw ?? 0,
       reactionPowerKw: projectedFurnace?.lastReactionPowerKw ?? node.lastReactionPowerKw ?? 0,
-      goethiteConversionPercent: (node.lastGoethiteConversionFraction ?? 0) * 100,
+      goethiteConversionPercent: (projectedFurnace?.lastGoethiteConversionFraction
+        ?? node.lastGoethiteConversionFraction
+        ?? 0) * 100,
       meanResidenceTimeSeconds: feedRateKgPerSecond > 0
         ? node.effectiveChamberHoldUpKg / feedRateKgPerSecond
         : null,
       solidProductRateKgPerSecond: outputByPort[node.solidProductPortId]?.totalFlowKgPerSecond ?? 0,
       exhaustRateKgPerSecond: outputByPort[node.gasExhaustPortId]?.totalFlowKgPerSecond ?? 0,
-      solverEvaluationCount: node.lastSolverEvaluationCount ?? 0,
+      solverEvaluationCount: projectedFurnace?.lastSolverEvaluationCount
+        ?? node.lastSolverEvaluationCount
+        ?? 0,
       zones: projectedFurnace ? [] : (node.zones ?? []).map((zone, index) => furnaceZoneInspection(zone, index, zoneCapacityKg)),
       detailsUnavailable: Boolean(projectedFurnace),
     };

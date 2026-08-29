@@ -164,6 +164,8 @@ pub struct PackedStorageLink {
     pub source_hopper_id: RuntimeNodeId,
     pub target_hopper_id: RuntimeNodeId,
     pub rate_kg_per_second: f64,
+    pub last_moved_kg: f64,
+    pub last_rate_kg_per_second: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -691,6 +693,8 @@ impl PackedWorldRuntime {
             source_hopper_id,
             target_hopper_id,
             rate_kg_per_second,
+            last_moved_kg: 0.0,
+            last_rate_kg_per_second: 0.0,
         });
         self.sealed = false;
         Ok(())
@@ -809,6 +813,17 @@ impl PackedWorldRuntime {
         self.boundary_transfers
             .iter()
             .find(|transfer| transfer.id == id)
+    }
+
+    pub fn site_passive_storage_link(
+        &self,
+        site_id: RuntimeSiteId,
+        link_index: usize,
+    ) -> Option<&PackedStorageLink> {
+        self.sites
+            .get(&site_id)?
+            .passive_storage_links
+            .get(link_index)
     }
 
     fn take_two_hoppers(
@@ -1377,8 +1392,16 @@ impl PackedWorldRuntime {
                 self.machines.insert(entry.node_id, record);
                 site_extracted += result?;
             }
-            for link in passive_links {
-                self.execute_storage_link(link, dt)?;
+            for (link_index, link) in passive_links.into_iter().enumerate() {
+                let moved = self.execute_storage_link(link, dt)?;
+                if let Some(runtime_link) = self
+                    .sites
+                    .get_mut(&site_id)
+                    .and_then(|site| site.passive_storage_links.get_mut(link_index))
+                {
+                    runtime_link.last_moved_kg = moved;
+                    runtime_link.last_rate_kg_per_second = moved / dt;
+                }
             }
             let site = self.sites.get_mut(&site_id).unwrap();
             site.elapsed_seconds += dt;
@@ -1393,6 +1416,8 @@ impl PackedWorldRuntime {
                     source_hopper_id: transfer.source_hopper_id,
                     target_hopper_id: transfer.target_hopper_id,
                     rate_kg_per_second: transfer.capacity_kg_per_second,
+                    last_moved_kg: 0.0,
+                    last_rate_kg_per_second: 0.0,
                 },
                 dt,
             )?;

@@ -46,6 +46,14 @@ function streamForConnection(blueprint, connectionId) {
   return Object.values(blueprint?.streams ?? {}).find(stream => stream.connectionId === connectionId) ?? null;
 }
 
+function streamForConnectionAcrossWorld(world, connectionId) {
+  for (const blueprint of uniqueBlueprints(world)) {
+    const stream = streamForConnection(blueprint, connectionId);
+    if (stream) return stream;
+  }
+  return null;
+}
+
 function connectionForPort(blueprint, nodeId, portId, direction) {
   return Object.values(blueprint?.connections ?? {}).find(connection =>
     connection.kind === 'material'
@@ -151,6 +159,11 @@ export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
       authority: RUST_WORKER_PRESENTATION_AUTHORITY,
       ventedGasMassKg: ventSnapshot.ventedGasMassKg ?? 0,
     });
+  }
+
+  for (const linkSnapshot of snapshot.passiveLinks ?? []) {
+    const stream = streamForConnectionAcrossWorld(world, linkSnapshot.id);
+    setStreamFlow(stream, linkSnapshot.lastRateKgPerSecond ?? 0);
   }
 
   for (const transferSnapshot of snapshot.boundaryTransfers ?? []) {
