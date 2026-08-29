@@ -8,6 +8,7 @@ mod comminution_bridge;
 mod extraction_bridge;
 mod process_bridge;
 mod roasting_bridge;
+mod runtime_bridge;
 mod separation_bridge;
 mod thermal_bridge;
 pub use comminution_bridge::{WasmPackedComminutionMachine, WasmPackedComminutionTables};
@@ -16,6 +17,7 @@ pub use process_bridge::{
     WasmPackedFeeder, WasmPackedMerger, WasmPackedSplitter, WasmPackedThermalTable,
 };
 pub use roasting_bridge::{WasmPackedGoethiteReaction, WasmPackedRoastingFurnace};
+pub use runtime_bridge::WasmPackedWorldRuntime;
 pub use separation_bridge::{
     WasmPackedMagneticSeparator, WasmPackedScreen, WasmPackedSeparationTables,
 };
