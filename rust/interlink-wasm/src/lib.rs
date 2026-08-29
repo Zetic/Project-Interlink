@@ -6,9 +6,13 @@ use wasm_bindgen::prelude::*;
 
 mod comminution_bridge;
 mod process_bridge;
+mod separation_bridge;
 pub use comminution_bridge::{WasmPackedComminutionMachine, WasmPackedComminutionTables};
 pub use process_bridge::{
     WasmPackedFeeder, WasmPackedMerger, WasmPackedSplitter, WasmPackedThermalTable,
+};
+pub use separation_bridge::{
+    WasmPackedMagneticSeparator, WasmPackedScreen, WasmPackedSeparationTables,
 };
 
 pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 2;
