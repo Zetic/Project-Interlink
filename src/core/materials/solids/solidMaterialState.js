@@ -15,13 +15,36 @@ import {
 export const SOLID_MATERIAL_TOLERANCE = 1e-9;
 export const SOLID_PARTICULATE_FORM = 'solid-particulate';
 
+// Serialized fraction keys are immutable descriptors. Hot simulation paths can
+// encounter the same keys thousands of times per second, so splitting and
+// validating their static species/size/liberation vocabulary repeatedly is pure
+// overhead. Keep a bounded runtime-only descriptor cache; texture-profile
+// ownership and quantity validity remain state-specific and are still checked.
+const MAX_FRACTION_DESCRIPTOR_CACHE = 32768;
+const fractionDescriptorCache = new Map();
+const staticallyValidatedFractionKeys = new Set();
+
 function fractionKey(speciesId, sizeBinId, liberationClassId, textureProfileId = null) {
   return textureProfileId
     ? `${speciesId}|${sizeBinId}|${liberationClassId}|${textureProfileId}`
     : `${speciesId}|${sizeBinId}|${liberationClassId}`;
 }
 
+function rememberFractionDescriptor(key, descriptor) {
+  if (fractionDescriptorCache.size >= MAX_FRACTION_DESCRIPTOR_CACHE) {
+    const oldestKey = fractionDescriptorCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      fractionDescriptorCache.delete(oldestKey);
+      staticallyValidatedFractionKeys.delete(oldestKey);
+    }
+  }
+  fractionDescriptorCache.set(key, descriptor);
+  return descriptor;
+}
+
 function parseFractionKey(key) {
+  const cached = fractionDescriptorCache.get(key);
+  if (cached) return cached;
   const segments = key.split('|');
   if (segments.length !== 3 && segments.length !== 4) {
     throw new Error(`Solid material fraction key '${key}' must have exactly 3 segments for legacy/untextured material or exactly 4 segments for textured material`);
@@ -30,7 +53,20 @@ function parseFractionKey(key) {
     throw new Error(`Solid material fraction key '${key}' must not contain empty segments`);
   }
   const [speciesId, sizeBinId, liberationClassId, textureProfileId = null] = segments;
-  return { speciesId, sizeBinId, liberationClassId, textureProfileId };
+  return rememberFractionDescriptor(key, Object.freeze({
+    speciesId,
+    sizeBinId,
+    liberationClassId,
+    textureProfileId,
+  }));
+}
+
+function validateStaticFractionKey(key, descriptor) {
+  if (staticallyValidatedFractionKeys.has(key)) return;
+  requireMaterialConstituentId(descriptor.speciesId);
+  requireParticleSizeBin(descriptor.sizeBinId);
+  requireLiberationClass(descriptor.liberationClassId);
+  staticallyValidatedFractionKeys.add(key);
 }
 
 function assertFiniteNonNegative(value, label) {
@@ -107,6 +143,37 @@ function *iterateSolidFractionsUnchecked(state) {
     if (quantity <= SOLID_MATERIAL_TOLERANCE) continue;
     yield { ...parseFractionKey(key), quantity };
   }
+}
+
+function totalSolidQuantityUnchecked(state) {
+  let total = 0;
+  for (const quantity of Object.values(state.fractions)) {
+    if (quantity > SOLID_MATERIAL_TOLERANCE) total += quantity;
+  }
+  return total;
+}
+
+function multiplySolidMaterialStateUnchecked(state, factor) {
+  const scaled = createSolidMaterialState([], { textureProfiles: state.textureProfiles ?? {} });
+  for (const fraction of iterateSolidFractionsUnchecked(state)) {
+    addResolvedSolidFraction(
+      scaled,
+      fraction.speciesId,
+      fraction.sizeBinId,
+      fraction.liberationClassId,
+      fraction.textureProfileId,
+      fraction.quantity * factor,
+    );
+  }
+  return pruneSolidMaterialStateUnchecked(scaled);
+}
+
+function proportionalSolidMaterialShareUnchecked(state, requestedQuantity) {
+  const total = totalSolidQuantityUnchecked(state);
+  if (total <= SOLID_MATERIAL_TOLERANCE || requestedQuantity <= SOLID_MATERIAL_TOLERANCE) {
+    return createSolidMaterialState([], { textureProfiles: state.textureProfiles ?? {} });
+  }
+  return multiplySolidMaterialStateUnchecked(state, Math.min(1, requestedQuantity / total));
 }
 
 export function roundSolidQuantity(value) {
@@ -218,12 +285,10 @@ export function validateSolidMaterialState(state) {
     }
   }
   for (const [key, quantity] of Object.entries(state.fractions)) {
-    const { speciesId, sizeBinId, liberationClassId, textureProfileId } = parseFractionKey(key);
-    requireMaterialConstituentId(speciesId);
-    requireParticleSizeBin(sizeBinId);
-    requireLiberationClass(liberationClassId);
-    if (textureProfileId && !state.textureProfiles?.[textureProfileId]) {
-      throw new Error(`Fraction '${key}' references unknown mineral texture profile '${textureProfileId}'; textured material must have exactly 3 base segments plus a registered texture-profile segment`);
+    const descriptor = parseFractionKey(key);
+    validateStaticFractionKey(key, descriptor);
+    if (descriptor.textureProfileId && !state.textureProfiles?.[descriptor.textureProfileId]) {
+      throw new Error(`Fraction '${key}' references unknown mineral texture profile '${descriptor.textureProfileId}'; textured material must have exactly 3 base segments plus a registered texture-profile segment`);
     }
     assertFiniteNonNegative(quantity, `Fraction '${key}' quantity`);
   }
@@ -316,9 +381,7 @@ export function pruneSolidMaterialState(state, tolerance = SOLID_MATERIAL_TOLERA
 
 export function totalSolidQuantity(state) {
   validateSolidMaterialState(state);
-  let total = 0;
-  for (const fraction of iterateSolidFractionsUnchecked(state)) total += fraction.quantity;
-  return total;
+  return totalSolidQuantityUnchecked(state);
 }
 
 function summarize(state, pickKey) {
@@ -355,18 +418,7 @@ export function multiplySolidMaterialState(state, factor) {
   if (typeof factor !== 'number' || !Number.isFinite(factor) || factor < 0) {
     throw new Error('solid material factor must be a finite non-negative number');
   }
-  const scaled = createSolidMaterialState([], { textureProfiles: state.textureProfiles ?? {} });
-  for (const fraction of iterateSolidFractionsUnchecked(state)) {
-    addResolvedSolidFraction(
-      scaled,
-      fraction.speciesId,
-      fraction.sizeBinId,
-      fraction.liberationClassId,
-      fraction.textureProfileId,
-      fraction.quantity * factor,
-    );
-  }
-  return pruneSolidMaterialStateUnchecked(scaled);
+  return multiplySolidMaterialStateUnchecked(state, factor);
 }
 
 export function scaleSolidMaterialState(state, factor) {
@@ -379,17 +431,13 @@ export function scaleSolidMaterialState(state, factor) {
 export function proportionalSolidMaterialShare(state, requestedQuantity) {
   validateSolidMaterialState(state);
   assertFiniteNonNegative(requestedQuantity, 'requested solid material quantity');
-  const total = totalSolidQuantity(state);
-  if (total <= SOLID_MATERIAL_TOLERANCE || requestedQuantity <= SOLID_MATERIAL_TOLERANCE) {
-    return createSolidMaterialState([], { textureProfiles: state.textureProfiles ?? {} });
-  }
-  return scaleSolidMaterialState(state, Math.min(1, requestedQuantity / total));
+  return proportionalSolidMaterialShareUnchecked(state, requestedQuantity);
 }
 
 export function withdrawSolidMaterialState(state, requestedQuantity) {
   validateSolidMaterialState(state);
   assertFiniteNonNegative(requestedQuantity, 'withdraw requested quantity');
-  const withdrawn = proportionalSolidMaterialShare(state, requestedQuantity);
+  const withdrawn = proportionalSolidMaterialShareUnchecked(state, requestedQuantity);
   for (const fraction of iterateSolidFractionsUnchecked(withdrawn)) {
     const key = fractionKey(
       fraction.speciesId,
