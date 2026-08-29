@@ -5,6 +5,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "npm run test:js",
+    "test:js": "node --test tests/*.test.js",
+    "test:rust": "cargo test --workspace",
+    "check:wasm": "cargo check -p interlink-wasm --target wasm32-unknown-unknown",
+    "check:runtime": "npm run test:js && npm run test:rust && npm run check:wasm"
   }
 }
