@@ -16,6 +16,7 @@ export function createWorkspaceState() {
     workspaceLayouts: {},
     systemNodeElements: new Map(),
     systemConnectionElements: new Map(),
+    realtimeRuntime: null,
     simRunning: false,
     simLastTime: null,
     /**
