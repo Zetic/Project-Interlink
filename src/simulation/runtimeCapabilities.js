@@ -8,7 +8,7 @@ const WASM_SIMD_PROBE = new Uint8Array([
   0x0b,
 ]);
 
-function wasmSimdAvailable(webAssemblyLike = globalThis.WebAssembly) {
+function wasmSimdAvailable(webAssemblyLike) {
   try {
     return typeof webAssemblyLike === 'object'
       && typeof webAssemblyLike.validate === 'function'
