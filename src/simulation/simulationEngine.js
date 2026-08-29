@@ -46,6 +46,46 @@ export const DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S = 10;
 
 const TRANSFER_TOLERANCE_KG = 1e-8;
 
+// The editable Blueprint remains the authoritative, readable graph. The live
+// fixed-step runtime compiles that graph into a transient execution projection
+// and reuses it until a canonical topology mutation invalidates the cache.
+// Nothing in these WeakMaps is serialized or changes physical state semantics.
+const blueprintExecutionPlanCache = new WeakMap();
+const blueprintTopologyRevisionCache = new WeakMap();
+const blueprintPresentationRevisionCache = new WeakMap();
+const layoutPresentationRevisionCache = new WeakMap();
+
+function revisionFor(cache, object) {
+  return object && typeof object === 'object' ? (cache.get(object) ?? 0) : 0;
+}
+
+function bumpRevision(cache, object) {
+  if (!object || typeof object !== 'object') return 0;
+  const revision = revisionFor(cache, object) + 1;
+  cache.set(object, revision);
+  return revision;
+}
+
+export function blueprintTopologyRevision(blueprint) {
+  return revisionFor(blueprintTopologyRevisionCache, blueprint);
+}
+
+export function blueprintPresentationRevision(blueprint) {
+  return revisionFor(blueprintPresentationRevisionCache, blueprint);
+}
+
+export function blueprintLayoutRevision(layout) {
+  return revisionFor(layoutPresentationRevisionCache, layout);
+}
+
+export function invalidateBlueprintPresentation(blueprint) {
+  return bumpRevision(blueprintPresentationRevisionCache, blueprint);
+}
+
+export function invalidateBlueprintLayout(layout) {
+  return bumpRevision(layoutPresentationRevisionCache, layout);
+}
+
 let _nextNodeOrdinal = 1;
 let _nextConnectionOrdinal = 1;
 let _nextStreamOrdinal = 1;
@@ -60,8 +100,15 @@ export function _resetOrdinals() {
   _nextStreamOrdinal = 1;
 }
 
+export function invalidateBlueprintExecutionPlan(blueprint) {
+  if (!blueprint || typeof blueprint !== 'object') return;
+  blueprintExecutionPlanCache.delete(blueprint);
+  bumpRevision(blueprintTopologyRevisionCache, blueprint);
+  invalidateBlueprintPresentation(blueprint);
+}
+
 export function createBlueprint() {
-  return {
+  const blueprint = {
     nodes: {},
     connections: {},
     streams: {},
@@ -70,6 +117,9 @@ export function createBlueprint() {
       extractedKg: 0,
     },
   };
+  blueprintTopologyRevisionCache.set(blueprint, 0);
+  blueprintPresentationRevisionCache.set(blueprint, 0);
+  return blueprint;
 }
 
 /** Add a physical world Feature as a source/opportunity node in a Site graph. */
@@ -101,6 +151,7 @@ export function blueprintAddFeatureSource(blueprint, {
     }],
   };
   blueprint.nodes[nodeId] = node;
+  invalidateBlueprintExecutionPlan(blueprint);
   return node;
 }
 
@@ -163,6 +214,7 @@ export function blueprintAddApparatus(blueprint, nodeType, parameters = {}) {
   const node = createApparatusRuntime(nodeType, runtimeParameters);
   validateApparatusParameters(node);
   blueprint.nodes[node.id] = node;
+  invalidateBlueprintExecutionPlan(blueprint);
   return node;
 }
 
@@ -252,6 +304,57 @@ function isExplicitBoundaryStorageTransition(sourceNode, targetNode) {
   return sourceNode?.nodeType === 'hopper'
     && targetNode?.nodeType === 'hopper'
     && (sourceNode.boundaryRole === 'import' || targetNode.boundaryRole === 'export');
+}
+
+function compileBlueprintExecutionPlan(blueprint) {
+  const nodes = Object.values(blueprint.nodes ?? {});
+  const streams = Object.values(blueprint.streams ?? {});
+  const streamByConnectionId = new Map(streams.map(stream => [stream.connectionId, stream]));
+  const phaseBuckets = new Map();
+
+  for (const node of nodes) {
+    const runtime = apparatusRuntimeFor(node.nodeType);
+    if (!Number.isFinite(runtime?.phase) || typeof runtime.simulate !== 'function') continue;
+    let bucket = phaseBuckets.get(runtime.phase);
+    if (!bucket) {
+      bucket = [];
+      phaseBuckets.set(runtime.phase, bucket);
+    }
+    bucket.push({ node, runtime, extractor: node.nodeType === 'extractor' });
+  }
+
+  const phasePlan = [...phaseBuckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([phase, entries]) => ({ phase, entries }));
+
+  const boundaryStorageLinks = [];
+  for (const connection of Object.values(blueprint.connections ?? {})) {
+    if (connection.kind !== 'material') continue;
+    const source = blueprint.nodes?.[connection.sourceNodeId];
+    const target = blueprint.nodes?.[connection.targetNodeId];
+    if (!isExplicitBoundaryStorageTransition(source, target)) continue;
+    boundaryStorageLinks.push({
+      source,
+      target,
+      stream: streamByConnectionId.get(connection.id) ?? null,
+    });
+  }
+
+  return {
+    streams,
+    streamByConnectionId,
+    phasePlan,
+    boundaryStorageLinks,
+  };
+}
+
+function executionPlanForBlueprint(blueprint) {
+  let plan = blueprintExecutionPlanCache.get(blueprint);
+  if (!plan) {
+    plan = compileBlueprintExecutionPlan(blueprint);
+    blueprintExecutionPlanCache.set(blueprint, plan);
+  }
+  return plan;
 }
 
 function resolveResourceAccessOccurrence(sourceNode, targetNode, requestedOccurrenceId = null) {
@@ -367,6 +470,7 @@ export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNo
         : MATERIAL_FORMS.SOLID_PARTICULATE,
     });
   }
+  invalidateBlueprintExecutionPlan(blueprint);
   return connection;
 }
 
@@ -382,10 +486,11 @@ export function blueprintDisconnect(blueprint, connectionId) {
   for (const [streamId, stream] of Object.entries(blueprint.streams)) {
     if (stream.connectionId === connectionId) delete blueprint.streams[streamId];
   }
+  invalidateBlueprintExecutionPlan(blueprint);
 }
 
 export function getStreamForConnection(blueprint, connectionId) {
-  return Object.values(blueprint.streams).find(stream => stream.connectionId === connectionId) ?? null;
+  return executionPlanForBlueprint(blueprint).streamByConnectionId.get(connectionId) ?? null;
 }
 
 function findInboundConnection(blueprint, targetNodeId, targetPortId) {
@@ -400,14 +505,8 @@ function findOutboundConnection(blueprint, sourceNodeId, sourcePortId) {
   ) ?? null;
 }
 
-function updateConnectionStream(blueprint, connection, solidState) {
-  if (!connection) return;
-  const stream = getStreamForConnection(blueprint, connection.id);
-  if (stream) setMaterialStreamState(stream, solidState);
-}
-
-function zeroAllStreams(blueprint) {
-  for (const stream of Object.values(blueprint.streams)) clearMaterialStream(stream);
+function zeroAllStreams(streams) {
+  for (const stream of streams) clearMaterialStream(stream);
 }
 
 function proportionalSolidStateFromHopper(hopper, requestedTotalRateKgPerSecond) {
@@ -428,13 +527,8 @@ function capacityScaleForOutput(freeCapacityKg, componentRates, dt) {
   return Math.max(0, Math.min(1, freeCapacityKg / requiredKg));
 }
 
-function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
-  for (const connection of Object.values(blueprint.connections)) {
-    if (connection.kind !== 'material') continue;
-    const source = blueprint.nodes[connection.sourceNodeId];
-    const target = blueprint.nodes[connection.targetNodeId];
-    if (!isExplicitBoundaryStorageTransition(source, target)) continue;
-
+function simulateExplicitBoundaryStorageLinks(links, dt) {
+  for (const { source, target, stream } of links) {
     const availableKg = hopperStoredMassKg(source);
     const freeKg = hopperFreeCapacityKg(target);
     if (availableKg <= HOPPER_TOLERANCE_KG || freeKg <= HOPPER_TOLERANCE_KG) continue;
@@ -442,7 +536,6 @@ function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
     const rate = Math.min(DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S, availableKg / dt, freeKg / dt);
     if (rate <= TRANSFER_TOLERANCE_KG) continue;
 
-    const rates = proportionalSolidStateFromHopper(source, rate);
     const stagedSource = cloneHopperMaterialState(source);
     const stagedTarget = cloneHopperMaterialState(target);
     const withdrawal = hopperWithdraw(stagedSource, rate, dt);
@@ -458,39 +551,27 @@ function simulateExplicitBoundaryStorageLinks(blueprint, dt) {
     assertTransferAccepted(withdrawal.actualTotalKg, acceptedKg, 'Boundary storage link');
     commitHopperMaterialState(source, stagedSource);
     commitHopperMaterialState(target, stagedTarget);
-    updateConnectionStream(
-      blueprint,
-      connection,
-      actualFlow,
-      withdrawal.actualSpecificSensibleEnthalpyJPerKg,
-    );
+    if (stream) setMaterialStreamState(stream, actualFlow);
   }
 }
 
 export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
   if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) throw new Error('Simulation dt must be a finite positive number');
-  zeroAllStreams(blueprint);
+  const plan = executionPlanForBlueprint(blueprint);
+  zeroAllStreams(plan.streams);
   let extractedThisTickKg = 0;
 
-  const nodes = Object.values(blueprint.nodes);
-  const runtimeByNode = new Map(nodes.map(node => [node, apparatusRuntimeFor(node.nodeType)]));
-  const phases = [...new Set(
-    nodes
-      .map(node => runtimeByNode.get(node)?.phase)
-      .filter(Number.isFinite)
-  )].sort((a, b) => a - b);
-  for (const phase of phases) {
-    for (const node of nodes) {
-      const runtime = runtimeByNode.get(node);
-      if (runtime?.phase !== phase || typeof runtime.simulate !== 'function') continue;
-      const result = runtime.simulate(blueprint, world, node, dt);
-      if (node.nodeType === 'extractor') extractedThisTickKg += result ?? 0;
+  for (const { entries } of plan.phasePlan) {
+    for (const entry of entries) {
+      const result = entry.runtime.simulate(blueprint, world, entry.node, dt);
+      if (entry.extractor) extractedThisTickKg += result ?? 0;
     }
   }
-  simulateExplicitBoundaryStorageLinks(blueprint, dt);
+  simulateExplicitBoundaryStorageLinks(plan.boundaryStorageLinks, dt);
 
   blueprint.simulationStats.elapsedSeconds += dt;
   blueprint.simulationStats.extractedKg += extractedThisTickKg;
+  invalidateBlueprintPresentation(blueprint);
   return { extractedKg: extractedThisTickKg };
 }
 
@@ -512,6 +593,7 @@ export function setNodeEnabled(blueprint, nodeId, enabled) {
   node.enabled = enabled;
   if (!enabled) node.operatingState = 'off';
   else if (node.operatingState === 'off') node.operatingState = 'idle';
+  invalidateBlueprintPresentation(blueprint);
   return node;
 }
 
@@ -523,6 +605,7 @@ export function setApparatusParameter(blueprint, nodeId, parameterId, value) {
     throw new Error(`Unknown apparatus parameter '${parameterId}' for '${node.nodeType}'`);
   }
   node[parameterId] = normalized[parameterId];
+  invalidateBlueprintPresentation(blueprint);
   return node;
 }
 
@@ -533,10 +616,13 @@ export function getNodeOperatingState(node) {
 }
 
 export function createBlueprintLayout() {
-  return { nodePositions: {} };
+  const layout = { nodePositions: {} };
+  layoutPresentationRevisionCache.set(layout, 0);
+  return layout;
 }
 
 export function layoutMoveNode(layout, nodeId, x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Layout coordinates must be finite numbers');
   layout.nodePositions[nodeId] = { x, y };
+  invalidateBlueprintLayout(layout);
 }

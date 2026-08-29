@@ -1591,6 +1591,8 @@ function startNodeDrag(nodeId, event) {
     startMouseY: point.y,
     startX: position.x,
     startY: position.y,
+    lastX: position.x,
+    lastY: position.y,
   };
   event.preventDefault();
 }
@@ -1647,8 +1649,22 @@ function onCanvasMouseMove(event) {
       { x: dragState.startMouseX, y: dragState.startMouseY },
       point,
     );
-    layoutMoveNode(wsState.blueprintLayout, dragState.nodeId, nextPosition.x, nextPosition.y);
-    renderSiteNodes();
+    // Drag feedback is a presentation concern. Mutate the transient layout
+    // position directly, move only the dragged DOM node, and redraw the SVG
+    // edges. The canonical layout revision is committed once on pointer-up.
+    wsState.blueprintLayout.nodePositions[dragState.nodeId] = nextPosition;
+    dragState.lastX = nextPosition.x;
+    dragState.lastY = nextPosition.y;
+    const element = wsState.nodeElements.get(dragState.nodeId);
+    if (element) {
+      element.style.left = `${nextPosition.x}px`;
+      element.style.top = `${nextPosition.y}px`;
+    }
+    const svg = el('ws-site-svg');
+    if (svg) {
+      svg.dataset.graphConnectionRenderRevision = '';
+      renderConnections(svg);
+    }
   }
   if (pendingGraphConnection.active) {
     const point = eventGraphPoint(event, el('ws-site-canvas')?.parentElement, `site:${wsState.selectedSiteId}`);
@@ -1659,7 +1675,16 @@ function onCanvasMouseMove(event) {
 }
 
 function onCanvasMouseUp() {
-  dragState = null;
+  if (dragState) {
+    layoutMoveNode(
+      wsState.blueprintLayout,
+      dragState.nodeId,
+      dragState.lastX,
+      dragState.lastY,
+    );
+    dragState = null;
+    renderSiteNodes();
+  }
   if (pendingGraphConnection.active) {
     pendingGraphConnection.active = false;
     pendingGraphConnection.adapter = null;
@@ -2039,22 +2064,33 @@ function stopSimulation() {
   updateWorldControls();
 }
 
+function renderRealtimePresentation() {
+  updateWorldControls();
+  if (wsState.currentLevel === 'site') {
+    renderSiteNodes();
+    return;
+  }
+  const definition = systemWorkspaceDefinition();
+  renderSystemConnections(el('ws-system-svg'), definition);
+  updateCompositeInspector();
+}
+
 function simLoop(now) {
   if (!wsState.simRunning) return;
   const elapsed = Math.min((now - wsState.simLastTime) / 1000, 0.25);
   wsState.simLastTime = now;
   wsState.simAccumulatedS += elapsed;
+  let advanced = false;
   while (wsState.simAccumulatedS >= SIMULATION_STEP_S) {
-    worldSimulationTick(wsState.world, SIMULATION_STEP_S);
+    const result = worldSimulationTick(wsState.world, SIMULATION_STEP_S);
+    advanced ||= result.advanced;
     wsState.simAccumulatedS -= SIMULATION_STEP_S;
   }
-  updateWorldControls();
-  if (wsState.currentLevel === 'site') renderSiteNodes();
-  else {
-    const definition = systemWorkspaceDefinition();
-    renderSystemConnections(el('ws-system-svg'), definition);
-    updateCompositeInspector();
-  }
+  // RAF remains the wall-clock scheduler, but display frequency no longer
+  // dictates simulation presentation work. State-dependent DOM/Inspector work
+  // runs once after one or more authoritative 0.1 s steps, not on every monitor
+  // refresh between those steps. Direct interaction handlers remain immediate.
+  if (advanced) renderRealtimePresentation();
   wsState.simRafId = requestAnimationFrame(simLoop);
 }
 

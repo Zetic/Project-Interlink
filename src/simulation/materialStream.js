@@ -65,6 +65,12 @@ export function totalMassFlowKgPerSecond(solidStateOrRates, particleSizeMm = nul
   return totalSolidQuantity(solidState);
 }
 
+function refreshCachedTotalFlow(stream) {
+  stream._cachedTotalMassFlowKgPerSecond = stream.physicalForm === MATERIAL_FORMS.GAS
+    ? totalGasMassKg(stream.gasState)
+    : totalSolidQuantity(stream.solidState);
+}
+
 export function createMaterialStream({
   id,
   sourceNodeId,
@@ -116,6 +122,13 @@ export function createMaterialStream({
     ...(normalizedSolidState ? { solidState: normalizedSolidState } : { gasState: normalizedGasState }),
     specificSensibleEnthalpyJPerKg,
   };
+  Object.defineProperty(stream, '_cachedTotalMassFlowKgPerSecond', {
+    enumerable: false,
+    configurable: true,
+    writable: true,
+    value: 0,
+  });
+  refreshCachedTotalFlow(stream);
   Object.defineProperty(stream, 'componentMassFlowKgPerSecond', {
     enumerable: true,
     get() {
@@ -149,6 +162,7 @@ export function setMaterialStreamState(stream, solidStateOrRates = createSolidMa
   if (!Number.isFinite(stream.specificSensibleEnthalpyJPerKg)) {
     throw new Error('specificSensibleEnthalpyJPerKg must be finite');
   }
+  refreshCachedTotalFlow(stream);
   return stream;
 }
 
@@ -161,6 +175,7 @@ export function setGasMaterialStreamState(stream, gasState = createGasMaterialSt
   stream.gasState = cloneGasMaterialState(gasState);
   stream.specificSensibleEnthalpyJPerKg = specificSensibleEnthalpyJPerKg;
   delete stream.solidState;
+  refreshCachedTotalFlow(stream);
   return stream;
 }
 
@@ -195,9 +210,8 @@ export function clearMaterialStream(stream) {
 }
 
 export function totalMaterialStreamMassFlowKgPerSecond(stream) {
-  return stream.physicalForm === MATERIAL_FORMS.GAS
-    ? totalGasMassKg(stream.gasState)
-    : totalSolidQuantity(stream.solidState);
+  if (!Number.isFinite(stream?._cachedTotalMassFlowKgPerSecond)) refreshCachedTotalFlow(stream);
+  return stream._cachedTotalMassFlowKgPerSecond;
 }
 
 export function scaleFlowRates(solidState, factor) {

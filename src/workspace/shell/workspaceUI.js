@@ -1,6 +1,7 @@
 /** Shared DOM shell for recursive workspace views. */
 
 import { installDebugDrawer } from '../debug/debugDrawer.js';
+import { installRuntimeDebugStats } from '../debug/runtimeDebugStats.js';
 import { escHtml } from './utils.js';
 
 function el(id) { return document.getElementById(id); }
@@ -18,6 +19,15 @@ function debugDrawerMarkup() {
         <div class="ws-debug-metric"><span>Profiled apparatus CPU/tick</span><span data-debug-stat="apparatus-cpu-tick">profiling off</span></div>
         <label class="ws-debug-check"><input id="ws-debug-deep-profile" type="checkbox"> Deep apparatus profiling</label>
         <button class="ws-debug-button" data-debug-action="reset-stats" type="button">Reset Statistics</button>
+      </section>
+      <section class="ws-debug-section"><div class="ws-debug-section-title">Runtime</div>
+        <div class="ws-debug-metric"><span>Production backend</span><span data-debug-stat="runtime-backend">Compiled JS</span></div>
+        <div class="ws-debug-metric"><span>Logical CPU threads</span><span data-debug-stat="logical-cpus">—</span></div>
+        <div class="ws-debug-metric"><span>Web Worker</span><span data-debug-stat="worker-capability">—</span></div>
+        <div class="ws-debug-metric"><span>WebAssembly / SIMD</span><span data-debug-stat="wasm-capability">—</span></div>
+        <div class="ws-debug-metric"><span>Shared-memory threads</span><span data-debug-stat="thread-capability">—</span></div>
+        <div class="ws-debug-metric"><span>WebGPU</span><span data-debug-stat="webgpu-capability">—</span></div>
+        <div class="ws-debug-metric"><span>OffscreenCanvas</span><span data-debug-stat="offscreen-capability">—</span></div>
       </section>
       <section class="ws-debug-section"><div class="ws-debug-section-title">Simulation</div>
         <div class="ws-debug-metric"><span>Active Site sessions</span><span data-debug-stat="sessions">0</span></div>
@@ -66,6 +76,7 @@ export function renderWorkspaceShell(container, options = {}) {
   container.innerHTML = workspaceShellMarkup(options);
   const root = container.querySelector('.ws-workspace');
   installDebugDrawer(root);
+  installRuntimeDebugStats(root);
   return {
     root,
     toolbar: root.querySelector('.ws-toolbar'),

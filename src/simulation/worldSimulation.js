@@ -8,6 +8,25 @@ import { PORT_CAPABILITIES } from '../core/systems/ports.js';
 export const DEFAULT_BOUNDARY_TRANSFER_RATE_KG_PER_SECOND = 10;
 export const DEFAULT_REGIONAL_BUFFER_CAPACITY_KG = 1000;
 
+// Runtime-only execution data must not become serialized world truth. Generated
+// world topology is stable during play, so expensive recursive normalization,
+// session enumeration, and transfer ordering can be reused until an explicit
+// simulation mutation invalidates the affected projection.
+const worldRuntimeCache = new WeakMap();
+
+function runtimeCacheFor(world) {
+  let cache = worldRuntimeCache.get(world);
+  if (!cache) {
+    cache = {
+      initialized: false,
+      sessions: null,
+      orderedTransfers: null,
+    };
+    worldRuntimeCache.set(world, cache);
+  }
+  return cache;
+}
+
 function ensureSimulationShape(world) {
   world.simulation ??= {};
   const simulation = world.simulation;
@@ -212,12 +231,32 @@ function ensureRegionRuntimeWorkspace(world, regionId) {
   return workspace;
 }
 
-export function createWorldSimulation(world) {
-  if (!world || typeof world !== 'object') throw new Error('World simulation requires a world object');
-  const simulation = ensureSimulationShape(world);
+function initializeWorldRuntime(world, simulation, cache) {
   for (const siteId of Object.keys(world.sites ?? {})) ensureSiteRuntimeWorkspace(world, siteId);
   normalizeRecursiveContracts(world);
   for (const regionId of Object.keys(world.regions ?? {})) ensureRegionRuntimeWorkspace(world, regionId);
+  cache.initialized = true;
+  cache.sessions = null;
+  cache.orderedTransfers = null;
+  return simulation;
+}
+
+function simulationSessions(world, simulation) {
+  const cache = runtimeCacheFor(world);
+  return cache.sessions ??= Object.values(simulation.sessions);
+}
+
+function orderedBoundaryTransfers(world, simulation) {
+  const cache = runtimeCacheFor(world);
+  return cache.orderedTransfers ??= Object.values(simulation.transfers)
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+export function createWorldSimulation(world) {
+  if (!world || typeof world !== 'object') throw new Error('World simulation requires a world object');
+  const simulation = ensureSimulationShape(world);
+  const cache = runtimeCacheFor(world);
+  if (!cache.initialized) initializeWorldRuntime(world, simulation, cache);
   return simulation;
 }
 
@@ -233,6 +272,7 @@ export function registerSimulationSession(world, sessionId, blueprint, workspace
   if (typeof sessionId !== 'string' || !sessionId) throw new Error('Simulation sessionId must be a non-empty string');
   const simulation = createWorldSimulation(world);
   simulation.sessions[sessionId] = blueprint;
+  runtimeCacheFor(world).sessions = null;
   if (workspaceId) registerSimulationWorkspace(world, workspaceId, blueprint);
   return blueprint;
 }
@@ -281,6 +321,7 @@ export function registerBoundaryTransfer(world, {
     lastMovedKg: 0,
     lastRateKgPerSecond: 0,
   };
+  runtimeCacheFor(world).orderedTransfers = null;
   return simulation.transfers[transferId];
 }
 
@@ -288,6 +329,7 @@ export function removeBoundaryTransfer(world, transferId) {
   const simulation = createWorldSimulation(world);
   const existed = Boolean(simulation.transfers[transferId]);
   delete simulation.transfers[transferId];
+  if (existed) runtimeCacheFor(world).orderedTransfers = null;
   return existed;
 }
 
@@ -299,10 +341,8 @@ export function resumeWorldSimulation(world) {
   createWorldSimulation(world).running = true;
 }
 
-function runBoundaryTransfers(world, dt) {
-  const simulation = createWorldSimulation(world);
-  const ordered = Object.values(simulation.transfers).sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
-  for (const transfer of ordered) {
+function runBoundaryTransfers(world, simulation, dt) {
+  for (const transfer of orderedBoundaryTransfers(world, simulation)) {
     const result = transferBoundaryMaterial({
       sourceComposite: world.systemNodes?.[transfer.sourceCompositeId],
       sourcePortId: transfer.sourcePortId,
@@ -323,8 +363,8 @@ export function worldSimulationTick(world, dt = SIMULATION_STEP_S) {
   }
   const simulation = createWorldSimulation(world);
   if (!simulation.running) return { advanced: false, ticks: 0 };
-  for (const blueprint of Object.values(simulation.sessions)) simulationTick(blueprint, world, dt);
-  runBoundaryTransfers(world, dt);
+  for (const blueprint of simulationSessions(world, simulation)) simulationTick(blueprint, world, dt);
+  runBoundaryTransfers(world, simulation, dt);
   simulation.elapsedSeconds += dt;
   return { advanced: true, ticks: 1 };
 }
