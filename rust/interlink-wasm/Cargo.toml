@@ -12,4 +12,5 @@ interlink-core = { path = "../interlink-core" }
 interlink-processes = { path = "../interlink-processes" }
 interlink-routing = { path = "../interlink-routing" }
 interlink-comminution = { path = "../interlink-comminution" }
+interlink-separation = { path = "../interlink-separation" }
 wasm-bindgen = "0.2"
