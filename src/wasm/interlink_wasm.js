@@ -2639,6 +2639,54 @@ export class WasmPackedWorldRuntime {
         return ret;
     }
     /**
+     * @param {number} node_id
+     * @returns {Float64Array}
+     */
+    exhaust_vent_quantities(node_id) {
+        const ret = wasm.wasmpackedworldruntime_exhaust_vent_quantities(this.__wbg_ptr, node_id);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    exhaust_vent_sensible_enthalpy_j(node_id) {
+        const ret = wasm.wasmpackedworldruntime_exhaust_vent_sensible_enthalpy_j(this.__wbg_ptr, node_id);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
+     * @param {number} node_id
+     * @returns {Uint16Array}
+     */
+    exhaust_vent_species_ids(node_id) {
+        const ret = wasm.wasmpackedworldruntime_exhaust_vent_species_ids(this.__wbg_ptr, node_id);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    exhaust_vent_temperature_k(node_id) {
+        const ret = wasm.wasmpackedworldruntime_exhaust_vent_temperature_k(this.__wbg_ptr, node_id);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
      * @param {Uint32Array} active_machine_ids
      */
     finish_live_reconfigure(active_machine_ids) {
@@ -2733,9 +2781,178 @@ export class WasmPackedWorldRuntime {
      * @param {number} node_id
      * @returns {number}
      */
+    furnace_zone_count(node_id) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_count(this.__wbg_ptr, node_id);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {Uint8Array}
+     */
+    furnace_zone_liberation_class_ids(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_liberation_class_ids(this.__wbg_ptr, node_id, zone_index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {number}
+     */
+    furnace_zone_mass_kg(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_mass_kg(this.__wbg_ptr, node_id, zone_index);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {Float64Array}
+     */
+    furnace_zone_quantities(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_quantities(this.__wbg_ptr, node_id, zone_index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {number}
+     */
+    furnace_zone_sensible_enthalpy_j(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_sensible_enthalpy_j(this.__wbg_ptr, node_id, zone_index);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {Uint8Array}
+     */
+    furnace_zone_size_bin_ids(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_size_bin_ids(this.__wbg_ptr, node_id, zone_index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {Uint16Array}
+     */
+    furnace_zone_species_ids(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_species_ids(this.__wbg_ptr, node_id, zone_index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {number}
+     */
+    furnace_zone_temperature_k(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_temperature_k(this.__wbg_ptr, node_id, zone_index);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
+     * @param {number} node_id
+     * @param {number} zone_index
+     * @returns {Uint32Array}
+     */
+    furnace_zone_texture_profile_ids(node_id, zone_index) {
+        const ret = wasm.wasmpackedworldruntime_furnace_zone_texture_profile_ids(this.__wbg_ptr, node_id, zone_index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {Uint8Array}
+     */
+    hopper_liberation_class_ids(node_id) {
+        const ret = wasm.wasmpackedworldruntime_hopper_liberation_class_ids(this.__wbg_ptr, node_id);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {Float64Array}
+     */
+    hopper_quantities(node_id) {
+        const ret = wasm.wasmpackedworldruntime_hopper_quantities(this.__wbg_ptr, node_id);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
     hopper_sensible_enthalpy_j(node_id) {
         const ret = wasm.wasmpackedworldruntime_hopper_sensible_enthalpy_j(this.__wbg_ptr, node_id);
         return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {Uint8Array}
+     */
+    hopper_size_bin_ids(node_id) {
+        const ret = wasm.wasmpackedworldruntime_hopper_size_bin_ids(this.__wbg_ptr, node_id);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {Uint16Array}
+     */
+    hopper_species_ids(node_id) {
+        const ret = wasm.wasmpackedworldruntime_hopper_species_ids(this.__wbg_ptr, node_id);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
     }
     /**
      * @param {number} node_id
@@ -2744,6 +2961,30 @@ export class WasmPackedWorldRuntime {
     hopper_stored_mass_kg(node_id) {
         const ret = wasm.wasmpackedworldruntime_hopper_stored_mass_kg(this.__wbg_ptr, node_id);
         return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    hopper_temperature_k(node_id) {
+        const ret = wasm.wasmpackedworldruntime_hopper_temperature_k(this.__wbg_ptr, node_id);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
+     * @param {number} node_id
+     * @returns {Uint32Array}
+     */
+    hopper_texture_profile_ids(node_id) {
+        const ret = wasm.wasmpackedworldruntime_hopper_texture_profile_ids(this.__wbg_ptr, node_id);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
     }
     /**
      * @param {number} node_id

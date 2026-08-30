@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 
 import { createZeroStream, totalMaterialStreamMassFlowKgPerSecond } from '../src/simulation/materialStream.js';
 import { hopperStoredMassKg } from '../src/simulation/hopperNode.js';
-import { getNodeOperatingState } from '../src/simulation/simulationEngine.js';
+import { blueprintPresentationRevision, getNodeOperatingState } from '../src/simulation/simulationEngine.js';
 import {
   applyRustWorkerRuntimeSnapshot,
+  applyRustWorkerRuntimeDetail,
+  clearRustWorkerRuntimePresentation,
   rustWorkerPresentationIsAuthoritative,
 } from '../src/simulation/runtimePresentation.js';
 import {
@@ -167,44 +169,68 @@ test('passive-link projection is scoped by Site when blueprint-local connection 
   assert.equal(totalMaterialStreamMassFlowKgPerSecond(siteBStream), 2);
 });
 
-test('Worker-authoritative inspectors do not present stale JavaScript fractions as current physical truth', () => {
+test('Rust snapshot authority invalidates presentation caches and agrees across duplicate browser node instances', () => {
+  const fixture = projectionFixture();
+  const duplicateHopper = { id: 'hopper-a', nodeType: 'hopper', capacityKg: 100, materialBody: null };
+  fixture.world.simulation.workspaces['duplicate-workspace'] = {
+    nodes: { 'hopper-a': duplicateHopper }, connections: {}, streams: {},
+  };
+  const before = blueprintPresentationRevision(fixture.blueprint);
+  applyRustWorkerRuntimeSnapshot(fixture.world, fixture.runtime, {
+    running: true,
+    elapsedSeconds: 1,
+    sites: [],
+    hoppers: [{ id: 'hopper-a', storedMassKg: 70, sensibleEnthalpyJ: 500 }],
+    occurrences: [], machines: [], exhaustVents: [], passiveLinks: [], boundaryTransfers: [],
+  });
+  assert.equal(hopperStoredMassKg(fixture.hopper), 70);
+  assert.equal(hopperStoredMassKg(duplicateHopper), 70);
+  assert.equal(hopperInspection(fixture.hopper).storedMassKg, 70);
+  assert.equal(fixture.hopper.runtimePresentation, duplicateHopper.runtimePresentation);
+  assert.ok(blueprintPresentationRevision(fixture.blueprint) > before);
+  assert.equal(fixture.hopper.runtimePresentation.revision, 1);
+});
+
+test('selected Hopper detail restores Rust composition, particle size, liberation, and temperature', () => {
   const fixture = projectionFixture();
   applyRustWorkerRuntimeSnapshot(fixture.world, fixture.runtime, {
     running: true,
     elapsedSeconds: 1,
     sites: [],
     hoppers: [{ id: 'hopper-a', storedMassKg: 10, sensibleEnthalpyJ: 500 }],
-    occurrences: [],
-    machines: [{
-      id: 'machine-a',
-      operatingState: 'running',
-      lastError: null,
-      inputMassFlowKgPerSecond: [2],
-      outputMassFlowKgPerSecond: [],
-    }],
-    exhaustVents: [{ id: 'vent-a', ventedGasMassKg: 2 }],
-    passiveLinks: [],
-    boundaryTransfers: [],
+    occurrences: [], machines: [], exhaustVents: [], passiveLinks: [], boundaryTransfers: [],
   });
+  const loading = hopperInspection(fixture.hopper);
+  assert.equal(loading.detailsUnavailable, true);
+  assert.match(loading.thermalError, /Loading current material detail/);
 
-  const hopperDetails = hopperInspection(fixture.hopper);
-  assert.equal(hopperDetails.storedMassKg, 10);
-  assert.equal(hopperDetails.detailsUnavailable, true);
-  assert.deepEqual(hopperDetails.composition, []);
-  assert.deepEqual(hopperDetails.particleSizeDistribution, []);
-  assert.match(hopperDetails.thermalError, /retained in the Rust\/WASM Worker/);
+  applyRustWorkerRuntimeDetail(fixture.world, {
+    kind: 'hopper', id: 'hopper-a', status: 'ready', elapsedSeconds: 1,
+    storedMassKg: 10, sensibleEnthalpyJ: 500, temperatureK: 350, thermalError: null,
+    compositionKg: { iron: 7, silica: 3 },
+    particleSizeDistributionKg: { coarse: 6, fine: 4 },
+    liberationDistributionKg: { locked: 8, liberated: 2 },
+  });
+  const details = hopperInspection(fixture.hopper);
+  assert.equal(details.detailsUnavailable, false);
+  assert.equal(details.temperatureK, 350);
+  assert.deepEqual(details.composition.map(row => [row.id, row.quantity]), [['iron', 7], ['silica', 3]]);
+  assert.deepEqual(details.particleSizeDistribution.map(row => [row.id, row.quantity]), [['coarse', 6], ['fine', 4]]);
+  assert.deepEqual(details.liberationDistribution.map(row => [row.id, row.quantity]), [['locked', 8], ['liberated', 2]]);
+});
 
-  const streamDetails = streamInspection(fixture.machineStream);
-  assert.equal(streamDetails.totalFlowKgPerSecond, 2);
-  assert.equal(streamDetails.detailsUnavailable, true);
-  assert.deepEqual(streamDetails.composition, []);
-  assert.match(streamDetails.thermalError, /retained in the Rust\/WASM Worker/);
-
-  const ventDetails = exhaustVentInspection(fixture.blueprint, fixture.vent);
-  assert.equal(ventDetails.totalEmittedMassKg, 2);
-  assert.equal(ventDetails.detailsUnavailable, true);
-  assert.deepEqual(ventDetails.composition, []);
-  assert.match(ventDetails.thermalError, /retained in the Rust\/WASM Worker/);
+test('clearing a world removes transient Worker scalar/detail projections', () => {
+  const fixture = projectionFixture();
+  applyRustWorkerRuntimeSnapshot(fixture.world, fixture.runtime, {
+    running: true, elapsedSeconds: 1, sites: [],
+    hoppers: [{ id: 'hopper-a', storedMassKg: 10, sensibleEnthalpyJ: 0 }],
+    occurrences: [], machines: [], exhaustVents: [], passiveLinks: [], boundaryTransfers: [],
+  });
+  applyRustWorkerRuntimeDetail(fixture.world, { kind: 'hopper', id: 'hopper-a', status: 'ready' });
+  clearRustWorkerRuntimePresentation(fixture.world);
+  assert.equal(fixture.hopper.runtimePresentation, undefined);
+  assert.equal(fixture.hopper.runtimeDetail, undefined);
+  assert.equal(rustWorkerPresentationIsAuthoritative(fixture.world), false);
 });
 
 test('Rust-retained furnace inventory blocks player deletion even when the canonical JS furnace is empty', () => {

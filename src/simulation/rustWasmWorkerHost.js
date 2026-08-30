@@ -1,3 +1,11 @@
+
+import { SIMULATION_STEP_S } from './simulationEngine.js';
+import {
+  populateWasmPackedWorldRuntimeFromWorkerSetup,
+  snapshotWasmPackedWorldRuntime,
+  detailWasmPackedWorldRuntime,
+} from './packedWorldWorkerSetup.js';
+import { reconfigureWasmPackedWorldRuntime } from './liveWorldReconfigure.js';
 import {
   REALTIME_RUNTIME_PROTOCOL_VERSION,
   RUNTIME_COMMAND_TYPES,
@@ -5,56 +13,43 @@ import {
   createRuntimeEvent,
   validateRuntimeCommand,
 } from './runtimeProtocol.js';
-import {
-  populateWasmPackedWorldRuntimeFromWorkerSetup,
-  snapshotWasmPackedWorldRuntime,
-} from './packedWorldWorkerSetup.js';
-import { reconfigureWasmPackedWorldRuntime } from './liveWorldReconfigure.js';
 
 /**
- * Pure Worker command host. Keeping message handling separate from the browser
- * Worker global makes the protocol testable without loading a real .wasm file.
+ * Pure command host used by the dedicated Worker and by Node regression tests.
+ * Browser globals intentionally stay outside this module.
  */
 export function createRustWasmWorkerHost({
   WasmPackedWorldRuntime,
   runtimeProtocolVersion,
-}) {
+} = {}) {
   if (typeof WasmPackedWorldRuntime !== 'function') {
     throw new Error('WasmPackedWorldRuntime constructor is required');
   }
-  const wasmProtocolVersion = typeof runtimeProtocolVersion === 'function'
-    ? runtimeProtocolVersion()
-    : runtimeProtocolVersion;
+  if (typeof runtimeProtocolVersion !== 'function') {
+    throw new Error('WASM runtime protocol version function is required');
+  }
+  const wasmProtocolVersion = runtimeProtocolVersion();
   if (wasmProtocolVersion !== REALTIME_RUNTIME_PROTOCOL_VERSION) {
     throw new Error(
-      `Rust/WASM runtime protocol ${wasmProtocolVersion} does not match browser protocol ${REALTIME_RUNTIME_PROTOCOL_VERSION}`,
+      `WASM runtime protocol ${wasmProtocolVersion} does not match browser protocol ${REALTIME_RUNTIME_PROTOCOL_VERSION}`,
     );
   }
 
   let runtime = null;
   let setup = null;
 
-  function assertInitialized() {
+  function ensureRuntime() {
     if (!runtime || !setup) throw new Error('Rust/WASM Worker runtime has not been initialized');
   }
 
-  function releaseCandidate(candidate) {
-    if (!candidate) return;
-    try {
-      if (typeof candidate.free === 'function') candidate.free();
-      else if (typeof candidate[Symbol.dispose] === 'function') candidate[Symbol.dispose]();
-    } catch {
-      // Cleanup must not hide the physical/setup error that caused the release.
-    }
-  }
-
-  function snapshot() {
-    assertInitialized();
-    return snapshotWasmPackedWorldRuntime(runtime, setup);
+  function event(type, payload, requestId) {
+    return createRuntimeEvent(type, payload, requestId);
   }
 
   function handle(command) {
     validateRuntimeCommand(command);
+    const requestId = command.requestId ?? null;
+
     switch (command.type) {
       case RUNTIME_COMMAND_TYPES.INIT: {
         if (runtime) throw new Error('Rust/WASM Worker runtime is already initialized');
@@ -65,85 +60,112 @@ export function createRustWasmWorkerHost({
           const initialSnapshot = snapshotWasmPackedWorldRuntime(nextRuntime, nextSetup);
           runtime = nextRuntime;
           setup = nextSetup;
-          return createRuntimeEvent(RUNTIME_EVENT_TYPES.READY, {
+          return event(RUNTIME_EVENT_TYPES.READY, {
             running: runtime.running(),
             elapsedSeconds: runtime.elapsed_seconds(),
             snapshot: initialSnapshot,
-          });
+          }, requestId);
         } catch (error) {
-          releaseCandidate(nextRuntime);
+          if (typeof nextRuntime.free === 'function') nextRuntime.free();
           throw error;
         }
       }
+
       case RUNTIME_COMMAND_TYPES.RECONFIGURE: {
-        assertInitialized();
-        if (typeof runtime.clone_for_live_reconfigure !== 'function') {
-          throw new Error('Rust/WASM runtime does not support live reconfiguration');
-        }
+        ensureRuntime();
         const nextSetup = command.payload.setup;
         const candidate = runtime.clone_for_live_reconfigure();
         try {
-          reconfigureWasmPackedWorldRuntime(candidate, setup, nextSetup, {
-            resetNodeIds: command.payload.resetNodeIds ?? [],
-          });
+          reconfigureWasmPackedWorldRuntime(
+            candidate,
+            setup,
+            nextSetup,
+            { resetNodeIds: command.payload.resetNodeIds ?? [] },
+          );
           const nextSnapshot = snapshotWasmPackedWorldRuntime(candidate, nextSetup);
           const previous = runtime;
           runtime = candidate;
           setup = nextSetup;
-          releaseCandidate(previous);
-          return createRuntimeEvent(RUNTIME_EVENT_TYPES.RECONFIGURED, {
+          if (typeof previous.free === 'function') previous.free();
+          return event(RUNTIME_EVENT_TYPES.RECONFIGURED, {
             running: runtime.running(),
             elapsedSeconds: runtime.elapsed_seconds(),
             snapshot: nextSnapshot,
-          });
+          }, requestId);
         } catch (error) {
-          releaseCandidate(candidate);
+          if (typeof candidate.free === 'function') candidate.free();
           throw error;
         }
       }
+
+      case RUNTIME_COMMAND_TYPES.QUERY_DETAIL: {
+        ensureRuntime();
+        try {
+          return event(RUNTIME_EVENT_TYPES.DETAIL, {
+            ok: true,
+            detail: detailWasmPackedWorldRuntime(runtime, setup, command.payload),
+          }, requestId);
+        } catch (error) {
+          // Inspector/observability failures are deliberately non-terminal. A
+          // bad read request must never tear down otherwise-valid physics.
+          return event(RUNTIME_EVENT_TYPES.DETAIL, {
+            ok: false,
+            error: { message: error instanceof Error ? error.message : String(error) },
+          }, requestId);
+        }
+      }
+
       case RUNTIME_COMMAND_TYPES.PAUSE:
-        assertInitialized();
+        ensureRuntime();
         runtime.pause();
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.RUN_STATE, {
+        return event(RUNTIME_EVENT_TYPES.RUN_STATE, {
           running: false,
           elapsedSeconds: runtime.elapsed_seconds(),
-        });
+          snapshot: snapshotWasmPackedWorldRuntime(runtime, setup),
+        }, requestId);
+
       case RUNTIME_COMMAND_TYPES.RESUME:
-        assertInitialized();
+        ensureRuntime();
         runtime.resume();
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.RUN_STATE, {
+        return event(RUNTIME_EVENT_TYPES.RUN_STATE, {
           running: true,
           elapsedSeconds: runtime.elapsed_seconds(),
-        });
+          snapshot: snapshotWasmPackedWorldRuntime(runtime, setup),
+        }, requestId);
+
       case RUNTIME_COMMAND_TYPES.STEP_FIXED: {
-        assertInitialized();
+        ensureRuntime();
+        const dt = command.payload.dt ?? SIMULATION_STEP_S;
+        if (dt !== SIMULATION_STEP_S) {
+          throw new Error(`Rust/WASM Worker requires the authoritative ${SIMULATION_STEP_S} s fixed step`);
+        }
         const advanced = runtime.tick_fixed();
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.STEPPED, {
+        return event(RUNTIME_EVENT_TYPES.STEPPED, {
           advanced,
           ticks: advanced ? 1 : 0,
           elapsedSeconds: runtime.elapsed_seconds(),
-          snapshot: snapshot(),
-        });
+          snapshot: snapshotWasmPackedWorldRuntime(runtime, setup),
+        }, requestId);
       }
+
       case RUNTIME_COMMAND_TYPES.ADVANCE_FIXED: {
-        assertInitialized();
+        ensureRuntime();
         const ticks = runtime.advance_fixed_steps(command.payload.steps);
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.STEPPED, {
+        return event(RUNTIME_EVENT_TYPES.STEPPED, {
           advanced: ticks > 0,
           ticks,
           elapsedSeconds: runtime.elapsed_seconds(),
-          snapshot: snapshot(),
-        });
+          snapshot: snapshotWasmPackedWorldRuntime(runtime, setup),
+        }, requestId);
       }
+
       default:
         throw new Error(`Unsupported Rust/WASM Worker command '${command.type}'`);
     }
   }
 
   return {
-    protocolVersion: REALTIME_RUNTIME_PROTOCOL_VERSION,
     handle,
-    snapshot,
     get runtime() { return runtime; },
     get setup() { return setup; },
   };

@@ -19,7 +19,7 @@ use interlink_separation::{
     PackedMagneticSeparatorConfig, PackedMagneticSeparatorRuntime, PackedScreenConfig,
     PackedScreenRuntime,
 };
-use interlink_thermal::{PackedGasBody, PackedGasColumns, PackedGasState};
+use interlink_thermal::{gas_body_temperature_k, solid_body_temperature_k, PackedGasBody, PackedGasColumns, PackedGasState};
 use interlink_thermochemistry::{PackedGoethiteReactionConfig, PackedGoethiteReactionTables};
 use wasm_bindgen::prelude::*;
 
@@ -829,6 +829,42 @@ impl WasmPackedWorldRuntime {
             .unwrap_or(0.0)
     }
 
+    pub fn hopper_species_ids(&self, node_id: u32) -> Result<Vec<u16>, JsValue> {
+        let hopper = self.inner.hopper(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
+        Ok(hopper.body().solid_state().to_columns().species_ids)
+    }
+
+    pub fn hopper_size_bin_ids(&self, node_id: u32) -> Result<Vec<u8>, JsValue> {
+        let hopper = self.inner.hopper(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
+        Ok(hopper.body().solid_state().to_columns().size_bin_ids)
+    }
+
+    pub fn hopper_liberation_class_ids(&self, node_id: u32) -> Result<Vec<u8>, JsValue> {
+        let hopper = self.inner.hopper(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
+        Ok(hopper.body().solid_state().to_columns().liberation_class_ids)
+    }
+
+    pub fn hopper_texture_profile_ids(&self, node_id: u32) -> Result<Vec<u32>, JsValue> {
+        let hopper = self.inner.hopper(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
+        Ok(hopper.body().solid_state().to_columns().texture_profile_ids)
+    }
+
+    pub fn hopper_quantities(&self, node_id: u32) -> Result<Vec<f64>, JsValue> {
+        let hopper = self.inner.hopper(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
+        Ok(hopper.body().solid_state().to_columns().quantities)
+    }
+
+    pub fn hopper_temperature_k(&self, node_id: u32) -> Result<f64, JsValue> {
+        let hopper = self.inner.hopper(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
+        solid_body_temperature_k(hopper.body(), self.inner.thermal_table()).map_err(js_error)
+    }
+
     pub fn occurrence_extracted_mass_kg(&self, occurrence_id: u32) -> f64 {
         self.inner
             .occurrence(occurrence_id)
@@ -848,6 +884,30 @@ impl WasmPackedWorldRuntime {
             .exhaust_vent(node_id)
             .map(PackedGasBody::total_mass_kg)
             .unwrap_or(0.0)
+    }
+
+    pub fn exhaust_vent_species_ids(&self, node_id: u32) -> Result<Vec<u16>, JsValue> {
+        let body = self.inner.exhaust_vent(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
+        Ok(body.gas_state().to_columns().species_ids)
+    }
+
+    pub fn exhaust_vent_quantities(&self, node_id: u32) -> Result<Vec<f64>, JsValue> {
+        let body = self.inner.exhaust_vent(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
+        Ok(body.gas_state().to_columns().quantities)
+    }
+
+    pub fn exhaust_vent_sensible_enthalpy_j(&self, node_id: u32) -> Result<f64, JsValue> {
+        let body = self.inner.exhaust_vent(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
+        Ok(body.sensible_enthalpy_j())
+    }
+
+    pub fn exhaust_vent_temperature_k(&self, node_id: u32) -> Result<f64, JsValue> {
+        let body = self.inner.exhaust_vent(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
+        gas_body_temperature_k(body, self.inner.thermal_table()).map_err(js_error)
     }
 
     pub fn node_operating_state(&self, node_id: u32) -> String {
@@ -925,6 +985,76 @@ impl WasmPackedWorldRuntime {
             .furnace_diagnostics(node_id)
             .map(|value| value.last_solver_evaluation_count as u32)
             .unwrap_or(0)
+    }
+
+    pub fn furnace_zone_count(&self, node_id: u32) -> Result<u32, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        Ok(furnace.zones().len() as u32)
+    }
+
+    pub fn furnace_zone_mass_kg(&self, node_id: u32, zone_index: u32) -> Result<f64, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        Ok(zone.total_mass_kg())
+    }
+
+    pub fn furnace_zone_species_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u16>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        Ok(zone.solid_state().to_columns().species_ids)
+    }
+
+    pub fn furnace_zone_size_bin_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u8>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        Ok(zone.solid_state().to_columns().size_bin_ids)
+    }
+
+    pub fn furnace_zone_liberation_class_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u8>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        Ok(zone.solid_state().to_columns().liberation_class_ids)
+    }
+
+    pub fn furnace_zone_texture_profile_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u32>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        Ok(zone.solid_state().to_columns().texture_profile_ids)
+    }
+
+    pub fn furnace_zone_quantities(&self, node_id: u32, zone_index: u32) -> Result<Vec<f64>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        Ok(zone.solid_state().to_columns().quantities)
+    }
+
+    pub fn furnace_zone_sensible_enthalpy_j(&self, node_id: u32, zone_index: u32) -> Result<f64, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        Ok(zone.sensible_enthalpy_j())
+    }
+
+    pub fn furnace_zone_temperature_k(&self, node_id: u32, zone_index: u32) -> Result<f64, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id)
+            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let zone = furnace.zones().get(zone_index as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
+        solid_body_temperature_k(zone, self.inner.thermal_table()).map_err(js_error)
     }
 
     pub fn site_passive_link_last_moved_kg(&self, site_id: u32, link_index: u32) -> f64 {

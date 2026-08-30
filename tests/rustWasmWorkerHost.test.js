@@ -14,7 +14,10 @@ function emptySetup() {
     running: true,
     elapsedSeconds: 4.2,
     sites: [{ siteId: 1, canonicalSiteId: 'site-a', elapsedSeconds: 1.2, extractedKg: 3.4 }],
-    hoppers: [],
+    hoppers: [{
+      nodeId: 7, canonicalNodeId: 'hopper-a', capacityKg: 100,
+      body: { speciesIds: new Uint16Array(), sizeBinIds: new Uint8Array(), liberationClassIds: new Uint8Array(), textureProfileIds: new Uint32Array(), quantities: new Float64Array(), sensibleEnthalpyJ: 0 },
+    }],
     occurrences: [],
     exhaustVents: [],
     machines: [],
@@ -43,8 +46,8 @@ function emptySetup() {
       textureMappings: [],
     },
     furnaceStateSnapshots: [],
-    runtimeIds: { nodes: [], sites: ['site-a'], occurrences: [], transfers: [] },
-    materialIds: { species: [], sizeBins: [], liberationClasses: [], textureProfiles: [] },
+    runtimeIds: { nodes: ['unused', 'unused-1', 'unused-2', 'unused-3', 'unused-4', 'unused-5', 'unused-6', 'hopper-a'], sites: ['site-a'], occurrences: [], transfers: [] },
+    materialIds: { species: ['none', 'iron', 'silica'], sizeBins: ['coarse', 'fine'], liberationClasses: ['locked', 'liberated'], textureProfiles: [] },
   };
 }
 
@@ -74,6 +77,14 @@ class FakeWasmWorld {
   elapsed_seconds() { return this._elapsed; }
   site_elapsed_seconds(id) { return this._sites.get(id)?.elapsedSeconds ?? 0; }
   site_extracted_kg(id) { return this._sites.get(id)?.extractedKg ?? 0; }
+  hopper_stored_mass_kg(id) { return id === 7 ? 10 : 0; }
+  hopper_sensible_enthalpy_j(id) { return id === 7 ? 500 : 0; }
+  hopper_species_ids(id) { return id === 7 ? new Uint16Array([1, 2]) : new Uint16Array(); }
+  hopper_size_bin_ids(id) { return id === 7 ? new Uint8Array([0, 1]) : new Uint8Array(); }
+  hopper_liberation_class_ids(id) { return id === 7 ? new Uint8Array([0, 1]) : new Uint8Array(); }
+  hopper_texture_profile_ids(id) { return id === 7 ? new Uint32Array([0, 0]) : new Uint32Array(); }
+  hopper_quantities(id) { return id === 7 ? new Float64Array([7, 3]) : new Float64Array(); }
+  hopper_temperature_k(id) { if (id !== 7) throw new Error('unknown hopper'); return 350; }
   tick_fixed() {
     if (!this._running) return false;
     this._elapsed += 0.1;
@@ -165,3 +176,44 @@ test('Worker host rejects browser/WASM protocol drift before accepting a world',
     /does not match browser protocol/,
   );
 });
+
+test('Worker host returns canonical selected Hopper detail with request correlation', () => {
+  const host = createRustWasmWorkerHost({
+    WasmPackedWorldRuntime: FakeWasmWorld,
+    runtimeProtocolVersion: () => REALTIME_RUNTIME_PROTOCOL_VERSION,
+  });
+  host.handle(createRuntimeCommand(RUNTIME_COMMAND_TYPES.INIT, { setup: emptySetup() }, 1));
+  const event = host.handle(createRuntimeCommand(
+    RUNTIME_COMMAND_TYPES.QUERY_DETAIL,
+    { entityType: 'hopper', id: 'hopper-a' },
+    41,
+  ));
+  assert.equal(event.type, RUNTIME_EVENT_TYPES.DETAIL);
+  assert.equal(event.requestId, 41);
+  assert.equal(event.payload.ok, true);
+  assert.equal(event.payload.detail.storedMassKg, 10);
+  assert.equal(event.payload.detail.temperatureK, 350);
+  assert.deepEqual(event.payload.detail.compositionKg, { iron: 7, silica: 3 });
+  assert.deepEqual(event.payload.detail.particleSizeDistributionKg, { coarse: 7, fine: 3 });
+  assert.deepEqual(event.payload.detail.liberationDistributionKg, { locked: 7, liberated: 3 });
+});
+
+test('bad detail request is non-terminal at the Worker host boundary', () => {
+  const host = createRustWasmWorkerHost({
+    WasmPackedWorldRuntime: FakeWasmWorld,
+    runtimeProtocolVersion: () => REALTIME_RUNTIME_PROTOCOL_VERSION,
+  });
+  host.handle(createRuntimeCommand(RUNTIME_COMMAND_TYPES.INIT, { setup: emptySetup() }, 1));
+  const detail = host.handle(createRuntimeCommand(
+    RUNTIME_COMMAND_TYPES.QUERY_DETAIL,
+    { entityType: 'hopper', id: 'missing' },
+    2,
+  ));
+  assert.equal(detail.type, RUNTIME_EVENT_TYPES.DETAIL);
+  assert.equal(detail.payload.ok, false);
+  assert.match(detail.payload.error.message, /Unknown runtime Hopper/);
+  const stepped = host.handle(createRuntimeCommand(RUNTIME_COMMAND_TYPES.STEP_FIXED, {}, 3));
+  assert.equal(stepped.payload.advanced, true);
+  assert.equal(stepped.requestId, 3);
+});
+

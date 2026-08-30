@@ -1,3 +1,4 @@
+
 import { SIMULATION_STEP_S } from '../simulation/simulationEngine.js';
 import { createPlacementState } from './nodePlacement.js';
 
@@ -17,27 +18,21 @@ export function createWorkspaceState() {
     systemNodeElements: new Map(),
     systemConnectionElements: new Map(),
     realtimeRuntime: null,
-    runtimeReadyPromise: null,
-    runtimeReconfigurePromise: Promise.resolve(),
-    runtimeReconfigurePending: false,
-    runtimeStepPromise: null,
-    runtimeError: null,
-    simRunning: false,
-    realtimeRuntime: null,
     runtimeReady: false,
     runtimeError: null,
     runtimeEpoch: 0,
     runtimeMutationPending: 0,
     runtimeMutationChain: null,
+    runtimeDetailInFlight: null,
+    runtimeDetailRefreshPending: false,
+    runtimeDetailLastRequest: null,
+    simRunning: false,
     simStepInFlight: false,
     simLastTime: null,
     /**
      * Wall-clock debt is presentation/scheduling state, not physical truth.
-     * Keep at most one authoritative 0.1 s physics step queued so a slow frame
-     * cannot trigger an unbounded catch-up loop that monopolizes the UI thread.
-     * When hardware cannot sustain realtime simulation, world time therefore
-     * advances more slowly instead of accumulating unlimited work. Each physics
-     * step itself is unchanged.
+     * Keep at most one authoritative 0.1 s physics step queued so slow hardware
+     * reduces realtime factor instead of building unbounded catch-up work.
      */
     get simAccumulatedS() { return simAccumulatedS; },
     set simAccumulatedS(value) {

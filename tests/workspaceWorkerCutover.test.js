@@ -20,8 +20,9 @@ test('player graph edits are serialized into Rust Worker live reconfiguration', 
   assert.ok((controllerSource.match(/queueRuntimeReconfigure\(/g) ?? []).length >= 8);
 });
 
-test('normal Worker presentation deliberately mirrors scalar state instead of packed fraction arrays', () => {
-  assert.match(presentationSource, /not reconstruct packed fraction populations/);
+test('normal Worker snapshots stay scalar while selected detail is explicitly on-demand', () => {
+  assert.match(presentationSource, /Compact fixed-step snapshots mirror scalar/);
+  assert.match(presentationSource, /selected-entity detail is attached only on/);
   assert.match(presentationSource, /storedMassKg/);
   assert.match(presentationSource, /inputMassFlowKgPerSecond/);
   assert.match(presentationSource, /outputMassFlowKgPerSecond/);

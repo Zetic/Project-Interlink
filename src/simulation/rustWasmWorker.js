@@ -24,6 +24,6 @@ self.addEventListener('message', async event => {
     self.postMessage(createRuntimeEvent(RUNTIME_EVENT_TYPES.ERROR, {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack ?? '' : '',
-    }));
+    }, event?.data?.requestId ?? null));
   }
 });

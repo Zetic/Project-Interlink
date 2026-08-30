@@ -1,3 +1,4 @@
+
 import { SIMULATION_STEP_S } from './simulationEngine.js';
 import {
   browserRuntimeCapabilities,
@@ -9,7 +10,6 @@ import {
   RUNTIME_COMMAND_TYPES,
   RUNTIME_EVENT_TYPES,
   createRuntimeCommand,
-  createRuntimeEvent,
   validateRuntimeCommand,
 } from './runtimeProtocol.js';
 
@@ -40,6 +40,10 @@ function defaultWorkerFactory(url, options) {
  * Production Rust/WASM execution backend. Canonical authoring state is compiled
  * to a structured-clone-safe setup; after READY, fixed-step physics and retained
  * physical state live only inside the Worker/WASM runtime.
+ *
+ * Every request is correlated by requestId. This is intentionally stronger than
+ * FIFO matching so future read-only detail queries or other Worker events cannot
+ * resolve the wrong caller if response ordering changes.
  */
 export function createRustWasmWorkerRealtimeRuntime(world, {
   capabilities = browserRuntimeCapabilities(),
@@ -62,10 +66,12 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   let terminalError = null;
   let running = setup.running;
   let lastSnapshot = null;
-  const pending = [];
+  let nextRequestId = 1;
+  const pending = new Map();
 
   function rejectAll(error) {
-    while (pending.length) pending.shift().reject(error);
+    for (const request of pending.values()) request.reject(error);
+    pending.clear();
   }
 
   function failWorker(error) {
@@ -76,16 +82,29 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     if (typeof worker.terminate === 'function') worker.terminate();
   }
 
+  function protocolFailure(message) {
+    const error = new Error(message);
+    failWorker(error);
+    return error;
+  }
+
   function onMessage(event) {
-    const request = pending.shift();
-    if (!request) return;
     const runtimeEvent = event?.data;
     if (!runtimeEvent || runtimeEvent.protocolVersion !== REALTIME_RUNTIME_PROTOCOL_VERSION) {
-      const error = new Error('Rust/WASM Worker returned an incompatible runtime event');
-      request.reject(error);
-      failWorker(error);
+      protocolFailure('Rust/WASM Worker returned an incompatible runtime event');
       return;
     }
+    if (!Number.isSafeInteger(runtimeEvent.requestId) || runtimeEvent.requestId <= 0) {
+      protocolFailure('Rust/WASM Worker returned an event without a valid requestId');
+      return;
+    }
+    const request = pending.get(runtimeEvent.requestId);
+    if (!request) {
+      protocolFailure(`Rust/WASM Worker returned unknown requestId ${runtimeEvent.requestId}`);
+      return;
+    }
+    pending.delete(runtimeEvent.requestId);
+
     if (runtimeEvent.type === RUNTIME_EVENT_TYPES.ERROR) {
       const error = new Error(runtimeEvent.payload?.message ?? 'Rust/WASM Worker runtime failed');
       request.reject(error);
@@ -122,12 +141,16 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   function send(command) {
     assertActive();
     validateRuntimeCommand(command);
+    const requestId = nextRequestId++;
+    if (!Number.isSafeInteger(nextRequestId)) nextRequestId = 1;
+    const outbound = { ...command, requestId };
+    validateRuntimeCommand(outbound);
     return new Promise((resolve, reject) => {
-      pending.push({ resolve, reject });
+      pending.set(requestId, { resolve, reject, type: outbound.type });
       try {
-        worker.postMessage(command);
+        worker.postMessage(outbound);
       } catch (error) {
-        pending.pop();
+        pending.delete(requestId);
         reject(error);
       }
     });
@@ -178,6 +201,17 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     return event.payload;
   }
 
+  async function queryDetail(entityType, id) {
+    const event = await dispatch(createRuntimeCommand(RUNTIME_COMMAND_TYPES.QUERY_DETAIL, { entityType, id }));
+    if (event.type !== RUNTIME_EVENT_TYPES.DETAIL) {
+      throw new Error(`Rust/WASM Worker expected DETAIL, got '${event.type}'`);
+    }
+    if (event.payload?.ok !== true) {
+      throw new Error(event.payload?.error?.message ?? 'Rust/WASM Worker detail query failed');
+    }
+    return event.payload.detail;
+  }
+
   async function reconfigure(nextWorld = world, { resetNodeIds = [] } = {}) {
     assertActive();
     await ready;
@@ -212,6 +246,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     resume,
     stepFixed,
     advanceFixedSteps,
+    queryDetail,
     reconfigure,
     dispatch,
 
