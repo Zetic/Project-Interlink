@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from '../src/core/world/worldState.js';
 import { MATERIAL_FORMS, physicalFormForOccurrence } from '../src/core/materials/materialForms.js';
-import { getMaterialSpecies, listMaterialSpecies } from '../src/core/materials/materialSpecies.js';
+import { getMaterialSpecies, listMaterialSpecies } from '../src/core/materials/species/materialSpecies.js';
 
 const PLACEHOLDER_IDS = new Set(['quartzAndGangue', 'gangue-mixture', 'gangue', 'ironOxides', 'other']);
 
