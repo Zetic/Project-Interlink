@@ -30,6 +30,7 @@ jobs:
           python scripts/pr61_rust_only_cleanup.py
           python scripts/pr61_cleanup_followup.py
           python scripts/pr61_cleanup_testfix.py
+          python scripts/pr61_cleanup_finalfix.py
 
       - name: Guard Rust-only production architecture
         run: |
@@ -52,6 +53,7 @@ jobs:
           rm -f scripts/pr61_rust_only_cleanup.py
           rm -f scripts/pr61_cleanup_followup.py
           rm -f scripts/pr61_cleanup_testfix.py
+          rm -f scripts/pr61_cleanup_finalfix.py
           rm -f .github/workflows/pr61-rust-only-cleanup.yml
 
       - name: Commit cleanup
