@@ -16,12 +16,11 @@ function debugDrawerMarkup() {
         <div class="ws-debug-metric"><span>Frame p95</span><span data-debug-stat="frame-p95">—</span></div>
         <div class="ws-debug-metric"><span>Simulation backlog</span><span data-debug-stat="backlog">—</span></div>
         <div class="ws-debug-metric"><span>Realtime factor</span><span data-debug-stat="realtime-factor">—</span></div>
-        <div class="ws-debug-metric"><span>Profiled apparatus CPU/tick</span><span data-debug-stat="apparatus-cpu-tick">profiling off</span></div>
-        <label class="ws-debug-check"><input id="ws-debug-deep-profile" type="checkbox"> Deep apparatus profiling</label>
+        <div class="ws-debug-metric"><span>Physics engine</span><span data-debug-stat="apparatus-cpu-tick">Rust/WASM</span></div>
         <button class="ws-debug-button" data-debug-action="reset-stats" type="button">Reset Statistics</button>
       </section>
       <section class="ws-debug-section"><div class="ws-debug-section-title">Runtime</div>
-        <div class="ws-debug-metric"><span>Production backend</span><span data-debug-stat="runtime-backend">Compiled JS</span></div>
+        <div class="ws-debug-metric"><span>Production backend</span><span data-debug-stat="runtime-backend">Rust/WASM Worker</span></div>
         <div class="ws-debug-metric"><span>Logical CPU threads</span><span data-debug-stat="logical-cpus">—</span></div>
         <div class="ws-debug-metric"><span>Web Worker</span><span data-debug-stat="worker-capability">—</span></div>
         <div class="ws-debug-metric"><span>WebAssembly / SIMD</span><span data-debug-stat="wasm-capability">—</span></div>
@@ -34,28 +33,23 @@ function debugDrawerMarkup() {
         <div class="ws-debug-metric"><span>Nodes</span><span data-debug-stat="nodes">0</span></div>
         <div class="ws-debug-metric"><span>Active machines</span><span data-debug-stat="active-machines">0</span></div>
         <div class="ws-debug-metric"><span>Connections</span><span data-debug-stat="connections">0</span></div>
-        <div class="ws-debug-metric"><span>Material bodies</span><span data-debug-stat="bodies">0</span></div>
-        <div class="ws-debug-metric"><span>Solid/gas populations</span><span data-debug-stat="populations">0</span></div>
-        <div class="ws-debug-metric"><span>Texture profiles</span><span data-debug-stat="textures">0</span></div>
-        <div class="ws-debug-metric"><span>JS heap used</span><span data-debug-stat="heap-used">Unavailable</span></div>
+                <div class="ws-debug-metric"><span>JS heap used</span><span data-debug-stat="heap-used">Unavailable</span></div>
       </section>
       <section class="ws-debug-section"><div class="ws-debug-section-title">Thermochemical</div>
         <div class="ws-debug-metric"><span>Furnaces</span><span data-debug-stat="furnaces">0</span></div>
         <div class="ws-debug-metric"><span>Occupied furnace zones</span><span data-debug-stat="furnace-zones">0</span></div>
         <div class="ws-debug-metric"><span>Solver evaluations (last state)</span><span data-debug-stat="solver-evaluations">0</span></div>
       </section>
-      <section class="ws-debug-section"><div class="ws-debug-section-title">Hotspots</div><div data-debug-hotspots><div class="ws-debug-muted">Enable deep profiling to collect apparatus hotspots.</div></div></section>
-      <section class="ws-debug-section"><div class="ws-debug-section-title">Simulation tools</div>
+            <section class="ws-debug-section"><div class="ws-debug-section-title">Simulation tools</div>
         <div class="ws-debug-button-row"><button data-debug-action="toggle-pause" type="button">Pause World</button><button data-debug-action="step-0.1" type="button">+0.1 s</button><button data-debug-action="step-1" type="button">+1 s</button><button data-debug-action="step-10" type="button">+10 s</button></div>
       </section>
       <section class="ws-debug-section"><div class="ws-debug-section-title">Test factory</div>
         <div class="ws-debug-field"><label for="ws-debug-factory-template">Template</label><select id="ws-debug-factory-template" disabled><option>Iron Roasting Line v1</option></select></div>
         <div class="ws-debug-field"><label for="ws-debug-factory-count">Factory count</label><select id="ws-debug-factory-count"><option value="1">1</option><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></div>
-        <div class="ws-debug-note">Visible placement uses the selected goethite-bearing iron Feature when possible, otherwise the first compatible Feature in the Site. The headless benchmark uses Canonical Iron Ore v1.</div>
-        <div class="ws-debug-button-row"><button data-debug-action="place-factories" type="button">Place Factory</button><button data-debug-action="benchmark" type="button">Run Headless Benchmark</button></div>
+        <div class="ws-debug-note">Visible placement uses the selected goethite-bearing iron Feature when possible, otherwise the first compatible Feature in the Site. Test factories run through the live Rust/WASM Worker.</div>
+        <div class="ws-debug-button-row"><button data-debug-action="place-factories" type="button">Place Factory</button></div>
         <button class="ws-debug-button ws-debug-button--danger" data-debug-action="remove-factories" type="button">Remove Test Factories</button>
         <div id="ws-debug-status" class="ws-debug-status" aria-live="polite"></div>
-        <pre id="ws-debug-benchmark-result" class="ws-debug-benchmark-result">No benchmark run yet.</pre>
       </section>
     </div>
   </aside>`;

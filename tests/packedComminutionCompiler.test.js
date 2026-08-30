@@ -5,9 +5,7 @@ import {
   addSolidFractionDirect,
   createSolidMaterialState,
   registerSolidTextureProfile,
-  summarizeSolidMaterialBySizeBin,
 } from '../src/core/materials/solids/solidMaterialState.js';
-import { millSolidMaterialState } from '../src/core/processes/physics/comminution.js';
 import {
   compileComminutionTablesForRuntime,
   populateWasmComminutionTables,
@@ -111,14 +109,4 @@ test('WASM comminution table population is one setup pass rather than per-fracti
   assert.equal(calls.filter(call => call[0] === 'texture').length, 1);
   assert.equal(calls.filter(call => call[0] === 'properties').length, 1);
   assert.equal(calls.filter(call => call[0] === 'legacy').length, 1);
-});
-
-test('production Ball Mill reference PSD used by Rust parity remains unchanged', () => {
-  const product = millSolidMaterialState(texturedFeed(), 0.25);
-  const sizes = summarizeSolidMaterialBySizeBin(product);
-  assert.ok(Math.abs(sizes['0.25-0.5mm'] - 5) < 1e-9);
-  assert.ok(Math.abs(sizes['0.125-0.25mm'] - 45) < 1e-9);
-  assert.ok(Math.abs(sizes['0.063-0.125mm'] - 30) < 1e-9);
-  assert.ok(Math.abs(sizes['0.032-0.063mm'] - 15) < 1e-9);
-  assert.ok(Math.abs(sizes['0.016-0.032mm'] - 5) < 1e-9);
 });

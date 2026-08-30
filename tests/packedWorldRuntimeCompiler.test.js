@@ -80,11 +80,11 @@ test('equal-phase apparatus retain canonical insertion order through numeric ord
     source: blueprint.nodes.source,
     'jaw-z': {
       id: 'jaw-z', nodeType: 'jawCrusher', inputPortId: 'feed', outputPortId: 'product',
-      targetParticleSizeMm: 120, throughputKgPerSecond: 8, ratedPowerKw: 8, enabled: true,
+      jawProductSizeMm: 120, throughputKgPerSecond: 8, ratedPowerKw: 8, enabled: true,
     },
     'jaw-a': {
       id: 'jaw-a', nodeType: 'jawCrusher', inputPortId: 'feed', outputPortId: 'product',
-      targetParticleSizeMm: 120, throughputKgPerSecond: 8, ratedPowerKw: 8, enabled: true,
+      jawProductSizeMm: 120, throughputKgPerSecond: 8, ratedPowerKw: 8, enabled: true,
     },
     target: blueprint.nodes.target,
   };
@@ -168,4 +168,41 @@ test('WASM population is setup-only and seals one coarse world runtime', () => {
   assert.ok(calls.some(([name]) => name === 'commit_goethite_reaction'));
   assert.equal(calls.at(-1)[0], 'seal');
   assert.equal(result.deferredStateImport.worldElapsedSeconds, 4.2);
+});
+
+
+test('staged comminution compiler uses each apparatus canonical product-size field', () => {
+  const world = simpleWorld();
+  const blueprint = world.simulation.sessions['site-a'];
+  blueprint.nodes = {
+    source: blueprint.nodes.source,
+    jaw: {
+      id: 'jaw', nodeType: 'jawCrusher', inputPortId: 'feed', outputPortId: 'product',
+      jawProductSizeMm: 120, throughputKgPerSecond: 8, ratedPowerKw: 8, enabled: false,
+    },
+    cone: {
+      id: 'cone', nodeType: 'coneCrusher', inputPortId: 'feed', outputPortId: 'product',
+      coneProductSizeMm: 25, throughputKgPerSecond: 5, ratedPowerKw: 10, enabled: false,
+    },
+    mill: {
+      id: 'mill', nodeType: 'ballMill', inputPortId: 'feed', outputPortId: 'product',
+      millProductSizeMm: 0.25, throughputKgPerSecond: 2, ratedPowerKw: 75, enabled: false,
+    },
+    target: blueprint.nodes.target,
+  };
+  blueprint.connections = {};
+
+  const compiled = compilePackedWorldRuntime(world);
+  const byCanonicalId = new Map(
+    compiled.machines
+      .filter(machine => machine.kind === 'comminution')
+      .map(machine => [compiled.runtimeIds.nodeIds.valueFor(machine.nodeId), machine]),
+  );
+
+  assert.equal(byCanonicalId.get('jaw').targetParticleSizeMm, 120);
+  assert.equal(byCanonicalId.get('cone').targetParticleSizeMm, 25);
+  assert.equal(byCanonicalId.get('mill').targetParticleSizeMm, 0.25);
+  assert.notEqual(byCanonicalId.get('jaw').targetSizeId, PACKED_NO_RUNTIME_ID);
+  assert.notEqual(byCanonicalId.get('cone').targetSizeId, PACKED_NO_RUNTIME_ID);
+  assert.notEqual(byCanonicalId.get('mill').targetSizeId, PACKED_NO_RUNTIME_ID);
 });

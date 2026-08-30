@@ -17,7 +17,7 @@ export function installRuntimeDebugStats(root, scope = globalThis) {
   if (!root) return null;
   const capabilities = browserRuntimeCapabilities(scope);
   const recommendation = recommendedRuntimeBackend(capabilities);
-  setText(root, 'runtime-backend', 'Compiled JS');
+  setText(root, 'runtime-backend', 'Rust/WASM Worker');
   setText(root, 'logical-cpus', String(capabilities.hardwareConcurrency));
   setText(root, 'worker-capability', yesNo(capabilities.worker));
   setText(

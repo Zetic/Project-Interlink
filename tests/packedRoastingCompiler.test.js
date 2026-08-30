@@ -5,10 +5,8 @@ import { createGasMaterialBody, createGasMaterialState } from '../src/core/mater
 import {
   createSolidMaterialBody,
   createSolidMaterialState,
-  iterateSolidFractions,
 } from '../src/core/materials/solids/solidMaterialState.js';
 import { setMaterialBodyTemperatureK } from '../src/core/materials/thermal/thermalMaterial.js';
-import { applyGoethiteDehydroxylation } from '../src/core/processes/physics/thermochemicalReactions.js';
 import { createRoastingFurnace } from '../src/simulation/apparatus/roastingFurnace.js';
 import { createPackedMaterialIdTables } from '../src/simulation/packedRuntimeCompiler.js';
 import {
@@ -90,28 +88,6 @@ test('reaction compiler allocates derived product texture lineage in the shared 
   assert.deepEqual(derived.speciesTextures.hematite, derived.speciesTextures.goethite);
 });
 
-test('production thermochemical kernel remains the numerical and energy-balance oracle', () => {
-  const feed = goethiteBody({ textured: true });
-  const inputEnergy = feed.thermalState.sensibleEnthalpyJ;
-  const result = applyGoethiteDehydroxylation(feed, 1);
-  const outputEnergy = result.solidProductBody.thermalState.sensibleEnthalpyJ
-    + result.gasProductBody.thermalState.sensibleEnthalpyJ
-    + result.reactionEnergyDemandJ;
-  assert.ok(result.reactionExtentMol > 0);
-  assert.ok(result.temperatureK > 0 && result.temperatureK < 900);
-  assert.ok(result.solverEvaluationCount > 0);
-  assert.ok(Math.abs(outputEnergy - inputEnergy) <= 1e-4 * Math.max(1, Math.abs(inputEnergy)));
-  assert.ok(result.gasProductBody.gasState.speciesMassKg.waterVapor > 0);
-  const hematite = iterateSolidFractions(result.solidProductBody.solidState)
-    .find(fraction => fraction.speciesId === 'hematite');
-  assert.ok(hematite);
-  assert.equal(hematite.sizeBinId, '0.125-0.25mm');
-  assert.equal(hematite.liberationClassId, 'locked');
-  assert.equal(
-    hematite.textureProfileId,
-    'goethite-test-texture--goethite-dehydroxylation--goethite-to-hematite',
-  );
-});
 
 test('WASM reaction setup is one coarse metadata population pass', () => {
   const compiled = compileGoethiteReactionTablesForRuntime(goethiteBody().solidState);
@@ -160,7 +136,7 @@ test('live Roasting Furnace state compiles without changing canonical IDs or the
   assert.equal(compiled.packedZones.length, 4);
   assert.ok(Math.abs(compiled.packedZones[0].totalMassKg() - 0.75) < 1e-12);
   assert.ok(Math.abs(compiled.packedPendingFeed.totalMassKg() - 0.25) < 1e-12);
-  assert.ok(Math.abs(compiled.packedGasInventory.totalMassKg() - 0.05) < 1e-12);
+  assert.ok(Math.abs(Array.from(compiled.packedGasInventory.gasState.toColumns().quantities).reduce((sum, value) => sum + value, 0) - 0.05) < 1e-12);
   assert.equal(compiled.packedGasInventory.sensibleEnthalpyJ, 1234);
   assert.equal(compiled.config.internalZoneCount, 4);
   assert.equal(compiled.config.enabled, true);

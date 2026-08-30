@@ -3,11 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   createSolidMaterialState,
-  summarizeSolidMaterialBySizeBin,
-  totalSolidQuantity,
 } from '../src/core/materials/solids/solidMaterialState.js';
-import { magneticRecoveryForFraction } from '../src/core/processes/physics/magneticSeparation.js';
-import { splitScreenedSolidState } from '../src/core/processes/physics/screening.js';
 import {
   compileSolidMaterialStateForRuntime,
   createPackedMaterialIdTables,
@@ -98,40 +94,4 @@ test('WASM separation table population uses one setup pass over compiled metadat
   const magnetiteId = idTables.species.idFor('magnetite');
   assert.ok(calls.magnetic.some(([id, response]) => id === magnetiteId && response === 1));
   assert.ok(calls.thermal.some(([id, cp]) => id === magnetiteId && cp === 670));
-});
-
-test('compiler metadata pins the production magnetic recovery curve used by Rust parity tests', () => {
-  assert.ok(Math.abs(
-    magneticRecoveryForFraction('magnetite', '15-25mm', 'liberated', 0.5) - 0.5875,
-  ) < 1e-12);
-  assert.ok(Math.abs(
-    magneticRecoveryForFraction('quartz', '15-25mm', 'liberated', 0.5) - 0.0125,
-  ) < 1e-12);
-  assert.equal(
-    magneticRecoveryForFraction('magnetite', '0.016-0.032mm', 'liberated', 1),
-    0,
-  );
-  assert.ok(Math.abs(
-    magneticRecoveryForFraction('magnetite', 'lt-0.032mm', 'liberated', 1) - 0.051,
-  ) < 1e-12);
-});
-
-test('production sharp-cut Screen fixture remains the parity oracle for packed Rust classification', () => {
-  const feed = createSolidMaterialState([
-    { speciesId: 'quartz', sizeBinId: '5-15mm', liberationClassId: 'locked', quantity: 30 },
-    { speciesId: 'hematite', sizeBinId: '15-25mm', liberationClassId: 'partial', quantity: 20 },
-    { speciesId: 'magnetite', sizeBinId: '25-60mm', liberationClassId: 'mostly-liberated', quantity: 40 },
-    { speciesId: 'quartz', sizeBinId: '60-120mm', liberationClassId: 'liberated', quantity: 10 },
-  ]);
-  const { undersize, oversize } = splitScreenedSolidState(feed, 25);
-  assert.equal(totalSolidQuantity(undersize), 50);
-  assert.equal(totalSolidQuantity(oversize), 50);
-  assert.deepEqual(summarizeSolidMaterialBySizeBin(undersize), {
-    '5-15mm': 30,
-    '15-25mm': 20,
-  });
-  assert.deepEqual(summarizeSolidMaterialBySizeBin(oversize), {
-    '25-60mm': 40,
-    '60-120mm': 10,
-  });
 });

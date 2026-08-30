@@ -1,7 +1,6 @@
-/** World-owned fixed-step simulation clock and recursive boundary transfers. */
-import { simulationTick, SIMULATION_STEP_S } from './simulationEngine.js';
+/** Browser-side world/session topology compiled into the Rust/WASM runtime. */
 import { createBoundaryBuffer } from './hopperNode.js';
-import { transferBoundaryMaterial, validateBoundaryTransfer } from './boundaryTransfer.js';
+import { validateBoundaryTransfer } from './boundaryTransfer.js';
 import { createCompositeNode, createSystemPort, getSystemNodePort } from '../core/systems/systemNode.js';
 import { PORT_CAPABILITIES } from '../core/systems/ports.js';
 
@@ -241,17 +240,6 @@ function initializeWorldRuntime(world, simulation, cache) {
   return simulation;
 }
 
-function simulationSessions(world, simulation) {
-  const cache = runtimeCacheFor(world);
-  return cache.sessions ??= Object.values(simulation.sessions);
-}
-
-function orderedBoundaryTransfers(world, simulation) {
-  const cache = runtimeCacheFor(world);
-  return cache.orderedTransfers ??= Object.values(simulation.transfers)
-    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
-}
-
 export function createWorldSimulation(world) {
   if (!world || typeof world !== 'object') throw new Error('World simulation requires a world object');
   const simulation = ensureSimulationShape(world);
@@ -331,52 +319,4 @@ export function removeBoundaryTransfer(world, transferId) {
   delete simulation.transfers[transferId];
   if (existed) runtimeCacheFor(world).orderedTransfers = null;
   return existed;
-}
-
-export function pauseWorldSimulation(world) {
-  createWorldSimulation(world).running = false;
-}
-
-export function resumeWorldSimulation(world) {
-  createWorldSimulation(world).running = true;
-}
-
-function runBoundaryTransfers(world, simulation, dt) {
-  for (const transfer of orderedBoundaryTransfers(world, simulation)) {
-    const result = transferBoundaryMaterial({
-      sourceComposite: world.systemNodes?.[transfer.sourceCompositeId],
-      sourcePortId: transfer.sourcePortId,
-      targetComposite: world.systemNodes?.[transfer.targetCompositeId],
-      targetPortId: transfer.targetPortId,
-      workspaces: simulation.workspaces,
-      dt,
-      requestedRateKgPerSecond: transfer.capacityKgPerSecond,
-    });
-    transfer.lastMovedKg = result.movedKg;
-    transfer.lastRateKgPerSecond = result.movedKg / dt;
-  }
-}
-
-export function worldSimulationTick(world, dt = SIMULATION_STEP_S) {
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
-    throw new Error('World simulation dt must be a finite positive number');
-  }
-  const simulation = createWorldSimulation(world);
-  if (!simulation.running) return { advanced: false, ticks: 0 };
-  for (const blueprint of simulationSessions(world, simulation)) simulationTick(blueprint, world, dt);
-  runBoundaryTransfers(world, simulation, dt);
-  simulation.elapsedSeconds += dt;
-  return { advanced: true, ticks: 1 };
-}
-
-export function worldSimulationAdvance(world, elapsedSeconds, dt = SIMULATION_STEP_S) {
-  if (typeof elapsedSeconds !== 'number' || !Number.isFinite(elapsedSeconds) || elapsedSeconds < 0) {
-    throw new Error('elapsedSeconds must be a finite non-negative number');
-  }
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
-    throw new Error('World simulation dt must be a finite positive number');
-  }
-  const ticks = Math.floor((elapsedSeconds + 1e-12) / dt);
-  for (let i = 0; i < ticks; i++) worldSimulationTick(world, dt);
-  return ticks;
 }

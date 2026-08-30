@@ -1,11 +1,5 @@
 import { SIMULATION_STEP_S } from './simulationEngine.js';
 import {
-  createWorldSimulation,
-  pauseWorldSimulation,
-  resumeWorldSimulation,
-  worldSimulationTick,
-} from './worldSimulation.js';
-import {
   browserRuntimeCapabilities,
   recommendedRuntimeBackend,
 } from './runtimeCapabilities.js';
@@ -22,8 +16,6 @@ import {
 export { REALTIME_RUNTIME_PROTOCOL_VERSION } from './runtimeProtocol.js';
 
 export const REALTIME_RUNTIME_BACKENDS = Object.freeze({
-  MAIN_THREAD: 'main-thread-compiled',
-  WORKER: 'worker',
   RUST_WASM_WORKER: 'rust-wasm-worker',
 });
 
@@ -37,121 +29,6 @@ function validateStepCount(steps) {
   if (!Number.isInteger(steps) || steps < 0 || steps > 10_000) {
     throw new Error('fixed-step advance count must be an integer from 0 to 10000');
   }
-}
-
-/** Synchronous compatibility runtime used when Worker/WASM is unavailable. */
-export function createMainThreadRealtimeRuntime(world, {
-  capabilities = browserRuntimeCapabilities(),
-} = {}) {
-  if (!world || typeof world !== 'object') throw new Error('Realtime runtime requires a world object');
-  createWorldSimulation(world);
-  let disposed = false;
-
-  function assertActive() {
-    if (disposed) throw new Error('Realtime runtime has been disposed');
-  }
-
-  function pause() {
-    assertActive();
-    pauseWorldSimulation(world);
-    return true;
-  }
-
-  function resume() {
-    assertActive();
-    resumeWorldSimulation(world);
-    return true;
-  }
-
-  function stepFixed(dt = SIMULATION_STEP_S) {
-    assertActive();
-    validateFixedStep(dt);
-    return worldSimulationTick(world, dt);
-  }
-
-  function advanceFixedSteps(steps) {
-    assertActive();
-    validateStepCount(steps);
-    let ticks = 0;
-    let advanced = false;
-    let extractedKg = 0;
-    for (let index = 0; index < steps; index++) {
-      const result = worldSimulationTick(world, SIMULATION_STEP_S);
-      if (result.advanced) ticks += 1;
-      advanced ||= result.advanced;
-      extractedKg += result.extractedKg ?? 0;
-    }
-    return { advanced, ticks, extractedKg };
-  }
-
-  function reconfigure() {
-    assertActive();
-    // Canonical JS objects are already the physical runtime in this fallback.
-    return { snapshot: null, backend: REALTIME_RUNTIME_BACKENDS.MAIN_THREAD };
-  }
-
-  function dispatch(command) {
-    assertActive();
-    validateRuntimeCommand(command);
-    switch (command.type) {
-      case RUNTIME_COMMAND_TYPES.PAUSE:
-        pause();
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.RUN_STATE, { running: false });
-      case RUNTIME_COMMAND_TYPES.RESUME:
-        resume();
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.RUN_STATE, { running: true });
-      case RUNTIME_COMMAND_TYPES.STEP_FIXED: {
-        const result = stepFixed(command.payload.dt ?? SIMULATION_STEP_S);
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.STEPPED, {
-          ...result,
-          ticks: result.advanced ? 1 : 0,
-          elapsedSeconds: world.simulation?.elapsedSeconds ?? 0,
-        });
-      }
-      case RUNTIME_COMMAND_TYPES.ADVANCE_FIXED: {
-        const result = advanceFixedSteps(command.payload.steps);
-        return createRuntimeEvent(RUNTIME_EVENT_TYPES.STEPPED, {
-          ...result,
-          elapsedSeconds: world.simulation?.elapsedSeconds ?? 0,
-        });
-      }
-      case RUNTIME_COMMAND_TYPES.INIT:
-      case RUNTIME_COMMAND_TYPES.RECONFIGURE:
-        throw new Error('main-thread runtime is mutated directly from canonical world state');
-      default:
-        throw new Error(`Unsupported runtime command '${command.type}'`);
-    }
-  }
-
-  return {
-    protocolVersion: REALTIME_RUNTIME_PROTOCOL_VERSION,
-    backend: REALTIME_RUNTIME_BACKENDS.MAIN_THREAD,
-    capabilities,
-    recommendation: recommendedRuntimeBackend(capabilities),
-    world,
-    ready: Promise.resolve(null),
-
-    get running() {
-      return !disposed && world.simulation?.running === true;
-    },
-
-    get snapshot() {
-      return null;
-    },
-
-    pause,
-    resume,
-    stepFixed,
-    advanceFixedSteps,
-    reconfigure,
-    dispatch,
-
-    dispose() {
-      if (disposed) return;
-      pauseWorldSimulation(world);
-      disposed = true;
-    },
-  };
 }
 
 function defaultWorkerFactory(url, options) {
@@ -347,30 +224,17 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   };
 }
 
-/**
- * Worker/WASM is now the preferred player runtime whenever both platform
- * capabilities are available. Main-thread compiled JavaScript remains the
- * deterministic compatibility backend for unsupported browsers and tests.
- */
+/** Rust/WASM Worker is the required production simulation runtime. */
 export function createRealtimeRuntime(world, {
-  backend = 'auto',
+  backend = REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER,
   capabilities = browserRuntimeCapabilities(),
   workerFactory,
 } = {}) {
-  if (backend === 'auto') {
-    if (capabilities?.worker && capabilities?.webAssembly) {
-      return createRustWasmWorkerRealtimeRuntime(world, { capabilities, workerFactory });
-    }
-    return createMainThreadRealtimeRuntime(world, { capabilities });
+  if (backend !== 'auto' && backend !== REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER) {
+    throw new Error(`Unsupported realtime runtime backend '${backend}'; Project Interlink requires rust-wasm-worker`);
   }
-  if (backend === REALTIME_RUNTIME_BACKENDS.MAIN_THREAD) {
-    return createMainThreadRealtimeRuntime(world, { capabilities });
+  if (!capabilities?.worker || !capabilities?.webAssembly) {
+    throw new Error('Project Interlink requires a browser with Web Worker and WebAssembly support');
   }
-  if (backend === REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER) {
-    return createRustWasmWorkerRealtimeRuntime(world, { capabilities, workerFactory });
-  }
-  if (backend === REALTIME_RUNTIME_BACKENDS.WORKER) {
-    throw new Error('generic JavaScript Worker backend is not implemented; use rust-wasm-worker');
-  }
-  throw new Error(`Unknown realtime runtime backend '${backend}'`);
+  return createRustWasmWorkerRealtimeRuntime(world, { capabilities, workerFactory });
 }

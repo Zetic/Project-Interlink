@@ -5,19 +5,16 @@ import {
   SOLID_MATERIAL_TOLERANCE as HOPPER_TOLERANCE_KG,
   SOLID_PARTICULATE_FORM,
   addSolidFractionDirect,
-  addSolidMaterialState,
   cloneSolidMaterialBody,
   createSolidMaterialBody,
   createSolidMaterialState,
   createSolidMaterialStateFromSpeciesQuantities,
-  proportionalSolidMaterialShare,
   summarizeSolidMaterialByLiberationClass,
   summarizeSolidMaterialBySizeBin,
   summarizeSolidMaterialBySpecies,
   totalSolidQuantity,
   validateSolidMaterialBody,
   validateSolidMaterialState,
-  withdrawSolidMaterialState,
 } from '../core/materials/solids/solidMaterialState.js';
 import { PORT_CAPABILITIES } from '../core/systems/ports.js';
 
@@ -152,112 +149,6 @@ export function hopperParticleSizeDistributionKg(hopper) {
 
 export function hopperLiberationDistributionKg(hopper) {
   return summarizeSolidMaterialByLiberationClass(hopper.materialBody.solidState);
-}
-
-/**
- * Receive a finite, already-materialized solid body directly into inventory.
- *
- * Continuous stream callers should keep using hopperReceiveInflow. Apparatus
- * that has already staged a finite product body can avoid converting inventory
- * -> kg/s -> inventory and, critically, avoid cloning the entire destination
- * Hopper just to preserve transactionality. A small profile-only probe catches
- * texture conflicts before the authoritative destination is mutated.
- */
-export function hopperReceiveMaterialBody(hopper, incomingBody) {
-  validateSolidMaterialBody(incomingBody);
-  const incomingMassKg = totalSolidQuantity(incomingBody.solidState);
-  if (incomingMassKg <= HOPPER_TOLERANCE_KG) return 0;
-  const freeKg = hopperFreeCapacityKg(hopper);
-  if (incomingMassKg > freeKg + HOPPER_TOLERANCE_KG) {
-    throw new Error('Hopper could not accept the requested material body atomically');
-  }
-
-  const textureProbe = createSolidMaterialState([], {
-    textureProfiles: hopper.materialBody.solidState.textureProfiles ?? {},
-  });
-  addSolidMaterialState(textureProbe, incomingBody.solidState);
-
-  addSolidMaterialState(hopper.materialBody.solidState, incomingBody.solidState);
-  hopper.materialBody.thermalState.sensibleEnthalpyJ += incomingBody.thermalState?.sensibleEnthalpyJ ?? 0;
-  markHopperMaterialChanged(hopper);
-  return incomingMassKg;
-}
-
-export function hopperReceiveInflow(hopper, inflowSolidStateOrComponents, particleSizeMmOrDt, maybeDt) {
-  const incomingIsSolidState = Boolean(inflowSolidStateOrComponents?.fractions);
-  const usingLegacySignature = !incomingIsSolidState && typeof maybeDt === 'number';
-  const inflowSolidState = usingLegacySignature
-    ? createSolidMaterialStateFromSpeciesQuantities(inflowSolidStateOrComponents, particleSizeMmOrDt)
-    : inflowSolidStateOrComponents;
-  const dt = usingLegacySignature ? maybeDt : particleSizeMmOrDt;
-  const specificSensibleEnthalpyJPerKg = usingLegacySignature
-    ? (arguments[4] ?? 0)
-    : (maybeDt ?? 0);
-  validateSolidMaterialState(inflowSolidState);
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
-    throw new Error('hopperReceiveInflow: dt must be a finite positive number');
-  }
-  if (typeof specificSensibleEnthalpyJPerKg !== 'number' || !Number.isFinite(specificSensibleEnthalpyJPerKg)) {
-    throw new Error('hopperReceiveInflow: specificSensibleEnthalpyJPerKg must be finite');
-  }
-  const freeKg = hopperFreeCapacityKg(hopper);
-  if (freeKg <= HOPPER_TOLERANCE_KG) return 0;
-  const requestedKg = totalSolidQuantity(inflowSolidState) * dt;
-  if (requestedKg <= 0) return 0;
-  const acceptedState = proportionalSolidMaterialShare(inflowSolidState, Math.min(requestedKg, freeKg) / dt);
-  hopper.materialBody.physicalForm = SOLID_PARTICULATE_FORM;
-  if (usingLegacySignature) hopper.nominalParticleSizeMm = particleSizeMmOrDt;
-  addSolidMaterialState(hopper.materialBody.solidState, acceptedState, dt);
-  const acceptedKg = totalSolidQuantity(acceptedState) * dt;
-  hopper.materialBody.thermalState.sensibleEnthalpyJ += acceptedKg * specificSensibleEnthalpyJPerKg;
-  if (acceptedKg > HOPPER_TOLERANCE_KG) markHopperMaterialChanged(hopper);
-  return acceptedKg;
-}
-
-export function hopperWithdraw(hopper, requestedTotalRateKgPerSecond, dt) {
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) {
-    throw new Error('hopperWithdraw: dt must be a finite positive number');
-  }
-  const storedMassKg = hopperStoredMassKg(hopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG) {
-    return { actualSolidState: createSolidMaterialState(), actualTotalKg: 0 };
-  }
-  const requestedRate = typeof requestedTotalRateKgPerSecond === 'number'
-    ? requestedTotalRateKgPerSecond
-    : Object.values(requestedTotalRateKgPerSecond ?? {}).reduce((sum, value) => sum + value, 0);
-  if (typeof requestedRate !== 'number' || !Number.isFinite(requestedRate) || requestedRate < 0) {
-    throw new Error('hopperWithdraw: requestedTotalRateKgPerSecond must be finite and non-negative');
-  }
-  const requestedTotalKg = requestedRate * dt;
-  if (requestedTotalKg <= 0) {
-    return { actualSolidState: createSolidMaterialState(), actualTotalKg: 0 };
-  }
-  const actualSolidState = withdrawSolidMaterialState(hopper.materialBody.solidState, requestedTotalKg);
-  const actualTotalKg = totalSolidQuantity(actualSolidState);
-  const actualSensibleEnthalpyJ = storedMassKg <= 0
-    ? 0
-    : hopper.materialBody.thermalState.sensibleEnthalpyJ * (actualTotalKg / storedMassKg);
-  hopper.materialBody.thermalState.sensibleEnthalpyJ -= actualSensibleEnthalpyJ;
-  if (actualTotalKg > HOPPER_TOLERANCE_KG) markHopperMaterialChanged(hopper);
-  const actualRates = Object.fromEntries(
-    Object.entries(summarizeSolidMaterialBySpecies(actualSolidState)).map(([speciesId, quantity]) => [speciesId, quantity / dt])
-  );
-  return {
-    actualSolidState,
-    actualRates,
-    actualTotalKg,
-    actualSensibleEnthalpyJ,
-    actualSpecificSensibleEnthalpyJPerKg: actualTotalKg <= 0 ? 0 : actualSensibleEnthalpyJ / actualTotalKg,
-  };
-}
-
-export function cloneHopperMaterialState(hopper) {
-  return { ...hopper, materialBody: cloneSolidMaterialBody(hopper.materialBody) };
-}
-
-export function commitHopperMaterialState(target, staged) {
-  target.materialBody = cloneSolidMaterialBody(staged.materialBody);
-  markHopperMaterialChanged(target);
 }
 
 export { HOPPER_TOLERANCE_KG };

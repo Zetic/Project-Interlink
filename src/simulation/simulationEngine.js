@@ -1,27 +1,10 @@
 /**
- * Fixed-timestep Site simulation. Physical material state lives in blueprint
- * runtime objects; node layout and viewport state live separately in UI state.
+ * Browser-side Blueprint authoring model. Physical simulation state is owned
+ * exclusively by the Rust/WASM Worker; this module never advances physical time.
  */
 
 import { DEFAULT_EXTRACTOR_RATE_KG_PER_SECOND } from './extractorNode.js';
-import {
-  hopperFreeCapacityKg,
-  hopperStoredMassKg,
-  hopperReceiveInflow,
-  hopperWithdraw,
-  cloneHopperMaterialState,
-  commitHopperMaterialState,
-  HOPPER_TOLERANCE_KG,
-} from './hopperNode.js';
-import {
-  clearMaterialStream,
-  createZeroStream,
-  setMaterialStreamState,
-} from './materialStream.js';
-import {
-  createSolidMaterialState,
-  multiplySolidMaterialState,
-} from '../core/materials/solids/solidMaterialState.js';
+import { createZeroStream } from './materialStream.js';
 import {
   defaultProcessParameters,
   getProcessDefinition,
@@ -32,7 +15,7 @@ import {
   getApparatusDefinition,
   validateApparatusParameters,
 } from '../content/apparatus/definitions.js';
-import { createApparatusRuntime, apparatusRuntimeFor } from './apparatus/registry.js';
+import { createApparatusRuntime } from './apparatus/registry.js';
 import { PORT_CAPABILITIES, portCapabilityMatches } from '../core/systems/ports.js';
 import { MATERIAL_FORMS } from '../core/materials/materialForms.js';
 
@@ -42,15 +25,10 @@ export const DEFAULT_CRUSHER_THROUGHPUT_KG_PER_S = 4;
 export const DEFAULT_CRUSHER_TARGET_PARTICLE_SIZE_MM = defaultProcessParameters(CRUSHING_PROCESS_ID).targetParticleSizeMm;
 export const DEFAULT_MAG_SEP_THROUGHPUT_KG_PER_S = 4;
 export const DEFAULT_MAG_SEP_FIELD_STRENGTH = defaultProcessParameters(MAGNETIC_SEPARATION_PROCESS_ID).fieldStrength;
-export const DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S = 10;
-
-const TRANSFER_TOLERANCE_KG = 1e-8;
-
 // The editable Blueprint remains the authoritative, readable graph. The live
 // fixed-step runtime compiles that graph into a transient execution projection
 // and reuses it until a canonical topology mutation invalidates the cache.
 // Nothing in these WeakMaps is serialized or changes physical state semantics.
-const blueprintExecutionPlanCache = new WeakMap();
 const blueprintTopologyRevisionCache = new WeakMap();
 const blueprintPresentationRevisionCache = new WeakMap();
 const layoutPresentationRevisionCache = new WeakMap();
@@ -102,7 +80,6 @@ export function _resetOrdinals() {
 
 export function invalidateBlueprintExecutionPlan(blueprint) {
   if (!blueprint || typeof blueprint !== 'object') return;
-  blueprintExecutionPlanCache.delete(blueprint);
   bumpRevision(blueprintTopologyRevisionCache, blueprint);
   invalidateBlueprintPresentation(blueprint);
 }
@@ -300,63 +277,6 @@ export function getNodePortDefinitions(node) {
   ];
 }
 
-function isExplicitBoundaryStorageTransition(sourceNode, targetNode) {
-  return sourceNode?.nodeType === 'hopper'
-    && targetNode?.nodeType === 'hopper'
-    && (sourceNode.boundaryRole === 'import' || targetNode.boundaryRole === 'export');
-}
-
-function compileBlueprintExecutionPlan(blueprint) {
-  const nodes = Object.values(blueprint.nodes ?? {});
-  const streams = Object.values(blueprint.streams ?? {});
-  const streamByConnectionId = new Map(streams.map(stream => [stream.connectionId, stream]));
-  const phaseBuckets = new Map();
-
-  for (const node of nodes) {
-    const runtime = apparatusRuntimeFor(node.nodeType);
-    if (!Number.isFinite(runtime?.phase) || typeof runtime.simulate !== 'function') continue;
-    let bucket = phaseBuckets.get(runtime.phase);
-    if (!bucket) {
-      bucket = [];
-      phaseBuckets.set(runtime.phase, bucket);
-    }
-    bucket.push({ node, runtime, extractor: node.nodeType === 'extractor' });
-  }
-
-  const phasePlan = [...phaseBuckets.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([phase, entries]) => ({ phase, entries }));
-
-  const boundaryStorageLinks = [];
-  for (const connection of Object.values(blueprint.connections ?? {})) {
-    if (connection.kind !== 'material') continue;
-    const source = blueprint.nodes?.[connection.sourceNodeId];
-    const target = blueprint.nodes?.[connection.targetNodeId];
-    if (!isExplicitBoundaryStorageTransition(source, target)) continue;
-    boundaryStorageLinks.push({
-      source,
-      target,
-      stream: streamByConnectionId.get(connection.id) ?? null,
-    });
-  }
-
-  return {
-    streams,
-    streamByConnectionId,
-    phasePlan,
-    boundaryStorageLinks,
-  };
-}
-
-function executionPlanForBlueprint(blueprint) {
-  let plan = blueprintExecutionPlanCache.get(blueprint);
-  if (!plan) {
-    plan = compileBlueprintExecutionPlan(blueprint);
-    blueprintExecutionPlanCache.set(blueprint, plan);
-  }
-  return plan;
-}
-
 function resolveResourceAccessOccurrence(sourceNode, targetNode, requestedOccurrenceId = null) {
   const availableOccurrenceIds = [...new Set(sourceNode?.resourceOccurrenceIds ?? [])];
   if (!availableOccurrenceIds.length) {
@@ -490,105 +410,13 @@ export function blueprintDisconnect(blueprint, connectionId) {
 }
 
 export function getStreamForConnection(blueprint, connectionId) {
-  return executionPlanForBlueprint(blueprint).streamByConnectionId.get(connectionId) ?? null;
-}
-
-function findInboundConnection(blueprint, targetNodeId, targetPortId) {
-  return Object.values(blueprint.connections).find(
-    connection => connection.targetNodeId === targetNodeId && connection.targetPortId === targetPortId
-  ) ?? null;
-}
-
-function findOutboundConnection(blueprint, sourceNodeId, sourcePortId) {
-  return Object.values(blueprint.connections).find(
-    connection => connection.sourceNodeId === sourceNodeId && connection.sourcePortId === sourcePortId
-  ) ?? null;
-}
-
-function zeroAllStreams(streams) {
-  for (const stream of streams) clearMaterialStream(stream);
-}
-
-function proportionalSolidStateFromHopper(hopper, requestedTotalRateKgPerSecond) {
-  const storedMassKg = hopperStoredMassKg(hopper);
-  if (storedMassKg <= HOPPER_TOLERANCE_KG || requestedTotalRateKgPerSecond <= 0) return createSolidMaterialState();
-  return multiplySolidMaterialState(hopper.materialBody.solidState, requestedTotalRateKgPerSecond / storedMassKg);
-}
-
-function assertTransferAccepted(expectedKg, acceptedKg, context) {
-  if (Math.abs(expectedKg - acceptedKg) > TRANSFER_TOLERANCE_KG * Math.max(1, expectedKg)) {
-    throw new Error(`${context} could not commit its planned output atomically`);
-  }
-}
-
-function capacityScaleForOutput(freeCapacityKg, componentRates, dt) {
-  const requiredKg = totalMassFlowKgPerSecond(componentRates) * dt;
-  if (requiredKg <= TRANSFER_TOLERANCE_KG) return 1;
-  return Math.max(0, Math.min(1, freeCapacityKg / requiredKg));
-}
-
-function simulateExplicitBoundaryStorageLinks(links, dt) {
-  for (const { source, target, stream } of links) {
-    const availableKg = hopperStoredMassKg(source);
-    const freeKg = hopperFreeCapacityKg(target);
-    if (availableKg <= HOPPER_TOLERANCE_KG || freeKg <= HOPPER_TOLERANCE_KG) continue;
-
-    const rate = Math.min(DEFAULT_PASSIVE_STORAGE_TRANSFER_KG_PER_S, availableKg / dt, freeKg / dt);
-    if (rate <= TRANSFER_TOLERANCE_KG) continue;
-
-    const stagedSource = cloneHopperMaterialState(source);
-    const stagedTarget = cloneHopperMaterialState(target);
-    const withdrawal = hopperWithdraw(stagedSource, rate, dt);
-    if (withdrawal.actualTotalKg <= TRANSFER_TOLERANCE_KG) continue;
-
-    const actualFlow = multiplySolidMaterialState(withdrawal.actualSolidState, 1 / dt);
-    const acceptedKg = hopperReceiveInflow(
-      stagedTarget,
-      actualFlow,
-      dt,
-      withdrawal.actualSpecificSensibleEnthalpyJPerKg,
-    );
-    assertTransferAccepted(withdrawal.actualTotalKg, acceptedKg, 'Boundary storage link');
-    commitHopperMaterialState(source, stagedSource);
-    commitHopperMaterialState(target, stagedTarget);
-    if (stream) setMaterialStreamState(stream, actualFlow);
-  }
-}
-
-export function simulationTick(blueprint, world, dt = SIMULATION_STEP_S) {
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) throw new Error('Simulation dt must be a finite positive number');
-  const plan = executionPlanForBlueprint(blueprint);
-  zeroAllStreams(plan.streams);
-  let extractedThisTickKg = 0;
-
-  for (const { entries } of plan.phasePlan) {
-    for (const entry of entries) {
-      const result = entry.runtime.simulate(blueprint, world, entry.node, dt);
-      if (entry.extractor) extractedThisTickKg += result ?? 0;
-    }
-  }
-  simulateExplicitBoundaryStorageLinks(plan.boundaryStorageLinks, dt);
-
-  blueprint.simulationStats.elapsedSeconds += dt;
-  blueprint.simulationStats.extractedKg += extractedThisTickKg;
-  invalidateBlueprintPresentation(blueprint);
-  return { extractedKg: extractedThisTickKg };
-}
-
-export function simulationAdvance(blueprint, world, elapsedSeconds, dt = SIMULATION_STEP_S) {
-  if (typeof elapsedSeconds !== 'number' || !Number.isFinite(elapsedSeconds) || elapsedSeconds < 0) {
-    throw new Error('elapsedSeconds must be a finite non-negative number');
-  }
-  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) throw new Error('Simulation dt must be a finite positive number');
-  const ticks = Math.floor((elapsedSeconds + 1e-12) / dt);
-  for (let i = 0; i < ticks; i++) simulationTick(blueprint, world, dt);
-  return ticks;
+  return Object.values(blueprint?.streams ?? {}).find(stream => stream.connectionId === connectionId) ?? null;
 }
 
 export function setNodeEnabled(blueprint, nodeId, enabled) {
   const node = blueprint?.nodes?.[nodeId];
   if (!node) throw new Error(`Unknown node '${nodeId}'`);
-  if (typeof apparatusRuntimeFor(node.nodeType)?.simulate !== 'function') throw new Error(`Node '${nodeId}' is not active machinery`);
+  if (typeof node.enabled !== 'boolean') throw new Error(`Node '${nodeId}' is not active machinery`);
   if (typeof enabled !== 'boolean') throw new Error('enabled must be boolean');
   node.enabled = enabled;
   if (!enabled) node.operatingState = 'off';
@@ -613,7 +441,7 @@ export function getNodeOperatingState(node) {
   if (!node) return null;
   const projected = node.runtimePresentation?.operatingState;
   if (typeof projected === 'string') return projected;
-  if (typeof apparatusRuntimeFor(node.nodeType)?.simulate === 'function') return node.enabled ? (node.operatingState ?? 'idle') : 'off';
+  if (typeof node.enabled === 'boolean') return node.enabled ? (node.operatingState ?? 'idle') : 'off';
   return null;
 }
 

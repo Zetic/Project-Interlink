@@ -1,5 +1,3 @@
-import { PACKED_SOLID_TOLERANCE, PackedSolidRuntimeState } from './packedRuntimeState.js';
-
 function assertUnsigned16(value, label) {
   if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
     throw new Error(`${label} must be an integer from 0 to 65535`);
@@ -40,17 +38,4 @@ export class PackedSpeciesThermalRuntimeTable {
     return value;
   }
 
-  heatCapacityJPerK(state) {
-    if (!(state instanceof PackedSolidRuntimeState)) throw new Error('packed solid state is required');
-    let total = 0;
-    for (let index = 0; index < state.length; index++) {
-      const quantity = state.quantities[index];
-      if (quantity <= PACKED_SOLID_TOLERANCE) continue;
-      total += quantity * this.specificHeatCapacityJPerKgK(state.speciesIds[index]);
-    }
-    if (!Number.isFinite(total) || total < 0) {
-      throw new Error('packed material heat capacity must be finite and non-negative');
-    }
-    return total;
-  }
 }
