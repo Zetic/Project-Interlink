@@ -1,5 +1,5 @@
 import { getApparatusDefinition } from '../../content/apparatus/definitions.js';
-import { apparatusRuntimeFor } from '../../simulation/apparatus/registry.js';
+import { apparatusNodeFactoryFor } from '../../simulation/apparatus/registry.js';
 import { machineInspection } from './inspectionViewModel.js';
 import { wsState, inspector } from '../workspaceState.js';
 import { escHtml } from '../shell/utils.js';
@@ -73,8 +73,8 @@ export function upgradeGenericApparatusInspector(root) {
   for (const body of inspectorBodies(root)) {
     const node = wsState.blueprint?.nodes?.[inspector.selectedNodeId];
     const definition = getApparatusDefinition(node?.nodeType);
-    const runtime = apparatusRuntimeFor(node?.nodeType);
-    if (!node || !definition || typeof runtime?.create !== 'function') continue;
+    const factory = apparatusNodeFactoryFor(node?.nodeType);
+    if (!node || !definition || typeof factory?.create !== 'function') continue;
 
     if (body.querySelector?.('[data-generic-apparatus-inspector]')) {
       refreshGenericApparatusInspector(body, node);
