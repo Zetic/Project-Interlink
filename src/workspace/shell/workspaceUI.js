@@ -14,14 +14,17 @@ function debugDrawerMarkup() {
         <div class="ws-debug-metric"><span>FPS</span><span data-debug-stat="fps">—</span></div>
         <div class="ws-debug-metric"><span>Frame average</span><span data-debug-stat="frame-average">—</span></div>
         <div class="ws-debug-metric"><span>Frame p95</span><span data-debug-stat="frame-p95">—</span></div>
-        <div class="ws-debug-metric"><span>Simulation backlog</span><span data-debug-stat="backlog">—</span></div>
-        <div class="ws-debug-metric"><span>Realtime factor</span><span data-debug-stat="realtime-factor">—</span></div>
+        <div class="ws-debug-metric"><span>Fixed-step accumulator</span><span data-debug-stat="step-accumulator">—</span></div>
+        <div class="ws-debug-metric"><span>Scheduler debt</span><span data-debug-stat="scheduler-debt">—</span></div>
+        <div class="ws-debug-metric"><span>Realtime factor (5 s)</span><span data-debug-stat="realtime-factor">—</span></div>
         <div class="ws-debug-metric"><span>Physics engine</span><span data-debug-stat="apparatus-cpu-tick">Rust/WASM</span></div>
         <div class="ws-debug-metric"><span>Rust tick average</span><span data-debug-stat="profile-tick-average">—</span></div>
         <div class="ws-debug-metric"><span>Apparatus average</span><span data-debug-stat="profile-apparatus-average">—</span></div>
         <div class="ws-debug-metric"><span>Other runtime average</span><span data-debug-stat="profile-other-average">—</span></div>
+        <div class="ws-debug-metric"><span>Worker step round-trip</span><span data-debug-stat="profile-worker-roundtrip">—</span></div>
+        <div class="ws-debug-metric"><span>Presentation update</span><span data-debug-stat="profile-presentation-update">—</span></div>
         <label class="ws-debug-check"><input id="ws-debug-deep-profiling" type="checkbox">Deep Rust apparatus profiling</label>
-        <div class="ws-debug-note">Timing percentages use the authoritative 100 ms fixed-step realtime budget. Profiling is debug-only and turns off when this drawer closes.</div>
+        <div class="ws-debug-note">Timing percentages use the authoritative 100 ms fixed-step realtime budget. Worker round-trip includes dispatch, Rust/WASM execution, snapshot creation, and return transport; presentation update measures main-thread projection/rendering. The accumulator is normal fixed-step phase; only scheduler debt represents time beyond one step window. Profiling is debug-only and turns off when this drawer closes.</div>
         <div id="ws-debug-profile-breakdown" class="ws-debug-profile-breakdown">Enable deep profiling to measure Rust apparatus hotspots.</div>
         <button class="ws-debug-button" data-debug-action="reset-stats" type="button">Reset Statistics</button>
       </section>

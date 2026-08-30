@@ -8,6 +8,8 @@ import {
 
 const FRAME_SAMPLE_LIMIT = 300;
 const DEBUG_REFRESH_MS = 250;
+const REALTIME_FACTOR_WINDOW_MS = 5000;
+const REALTIME_FACTOR_MIN_WINDOW_MS = 2000;
 
 let installedController = null;
 let drawerOpen = false;
@@ -16,7 +18,7 @@ let lastFrameAtMs = null;
 let refreshTimerId = null;
 let frameSamplesMs = [];
 let fixtureRecords = [];
-let lastRealtimeSample = null;
+let realtimeSamples = [];
 let liveRealtimeFactor = null;
 let deepProfilingEnabled = false;
 let profileQueryPending = false;
@@ -53,6 +55,36 @@ function escapeHtml(value) {
 function formatBudget(valueMs, percent) {
   if (!Number.isFinite(valueMs) || !Number.isFinite(percent)) return '—';
   return `${valueMs.toFixed(3)} ms · ${percent.toFixed(2)}%`;
+}
+
+function formatBudgetWithP95(valueMs, percent, p95Ms, samples) {
+  if (!samples || !Number.isFinite(valueMs) || !Number.isFinite(percent) || !Number.isFinite(p95Ms)) return '—';
+  return `${valueMs.toFixed(3)} ms · ${percent.toFixed(2)}% · p95 ${p95Ms.toFixed(3)} ms`;
+}
+
+export function rollingRealtimeFactor(samples, {
+  windowMs = REALTIME_FACTOR_WINDOW_MS,
+  minimumWindowMs = REALTIME_FACTOR_MIN_WINDOW_MS,
+} = {}) {
+  if (!Array.isArray(samples) || samples.length < 2) return null;
+  const last = samples[samples.length - 1];
+  if (!Number.isFinite(last?.wallMs) || !Number.isFinite(last?.simulationSeconds)) return null;
+  const cutoff = last.wallMs - windowMs;
+  const first = samples.find(sample => Number.isFinite(sample?.wallMs) && sample.wallMs >= cutoff);
+  if (!first || !Number.isFinite(first.simulationSeconds)) return null;
+  const wallDeltaMs = last.wallMs - first.wallMs;
+  const simulationDeltaSeconds = last.simulationSeconds - first.simulationSeconds;
+  if (wallDeltaMs < minimumWindowMs || simulationDeltaSeconds < 0) return null;
+  return simulationDeltaSeconds / (wallDeltaMs / 1000);
+}
+
+export function schedulerTimingSnapshot(accumulatedSeconds, stepSeconds = SIMULATION_STEP_S) {
+  const accumulatorSeconds = Number.isFinite(accumulatedSeconds) ? Math.max(0, accumulatedSeconds) : 0;
+  const validStepSeconds = Number.isFinite(stepSeconds) && stepSeconds > 0 ? stepSeconds : SIMULATION_STEP_S;
+  return {
+    accumulatorMs: accumulatorSeconds * 1000,
+    debtMs: Math.max(0, accumulatorSeconds - validStepSeconds) * 1000,
+  };
 }
 
 function setText(root, name, value) {
@@ -115,14 +147,26 @@ function collectSimulationStats() {
 }
 
 function updateLiveRates() {
-  const elapsedSeconds = wsState.world?.simulation?.elapsedSeconds ?? 0;
+  const simulation = wsState.world?.simulation;
+  const elapsedSeconds = simulation?.elapsedSeconds ?? 0;
   const wallNow = nowMs();
-  if (lastRealtimeSample) {
-    const wallDeltaSeconds = (wallNow - lastRealtimeSample.wallMs) / 1000;
-    const simulationDeltaSeconds = elapsedSeconds - lastRealtimeSample.simulationSeconds;
-    if (wallDeltaSeconds > 0.05) liveRealtimeFactor = simulationDeltaSeconds / wallDeltaSeconds;
+  if (!simulation?.running) {
+    realtimeSamples = [];
+    liveRealtimeFactor = null;
+    return;
   }
-  lastRealtimeSample = { wallMs: wallNow, simulationSeconds: elapsedSeconds };
+
+  const previous = realtimeSamples[realtimeSamples.length - 1];
+  if (previous && (
+    elapsedSeconds < previous.simulationSeconds
+    || wallNow <= previous.wallMs
+    || wallNow - previous.wallMs > REALTIME_FACTOR_WINDOW_MS * 2
+  )) realtimeSamples = [];
+
+  realtimeSamples.push({ wallMs: wallNow, simulationSeconds: elapsedSeconds });
+  const cutoff = wallNow - REALTIME_FACTOR_WINDOW_MS;
+  while (realtimeSamples.length > 2 && realtimeSamples[1].wallMs < cutoff) realtimeSamples.shift();
+  liveRealtimeFactor = rollingRealtimeFactor(realtimeSamples);
 }
 
 function renderProfile(root, profile) {
@@ -131,6 +175,8 @@ function renderProfile(root, profile) {
     setText(root, 'profile-tick-average', profile?.enabled ? 'Collecting…' : '—');
     setText(root, 'profile-apparatus-average', '—');
     setText(root, 'profile-other-average', '—');
+    setText(root, 'profile-worker-roundtrip', '—');
+    setText(root, 'profile-presentation-update', '—');
     const breakdown = root.querySelector('#ws-debug-profile-breakdown');
     if (breakdown) breakdown.textContent = profile?.enabled
       ? 'Collecting authoritative Rust timing samples…'
@@ -141,6 +187,18 @@ function renderProfile(root, profile) {
   setText(root, 'profile-tick-average', formatBudget(profile.tickAverageMs, profile.tickBudgetPercent));
   setText(root, 'profile-apparatus-average', formatBudget(profile.apparatusAverageMs, profile.apparatusBudgetPercent));
   setText(root, 'profile-other-average', formatBudget(profile.otherAverageMs, profile.otherBudgetPercent));
+  setText(root, 'profile-worker-roundtrip', formatBudgetWithP95(
+    profile.workerStepRoundTripAverageMs,
+    profile.workerStepRoundTripBudgetPercent,
+    profile.workerStepRoundTripP95Ms,
+    profile.workerStepRoundTripSamples,
+  ));
+  setText(root, 'profile-presentation-update', formatBudgetWithP95(
+    profile.presentationUpdateAverageMs,
+    profile.presentationUpdateBudgetPercent,
+    profile.presentationUpdateP95Ms,
+    profile.presentationUpdateSamples,
+  ));
 
   const breakdown = root.querySelector('#ws-debug-profile-breakdown');
   if (!breakdown) return;
@@ -192,14 +250,15 @@ function renderDebugStats(root) {
   const fps = frameAverage > 0 ? 1000 / frameAverage : 0;
   updateLiveRates();
   const simulation = collectSimulationStats();
-  const backlogMs = Math.max(0, (wsState.simAccumulatedS ?? 0) * 1000);
+  const scheduler = schedulerTimingSnapshot(wsState.simAccumulatedS, SIMULATION_STEP_S);
   const heap = globalThis.performance?.memory;
 
   setText(root, 'fps', frameSamplesMs.length ? fps.toFixed(1) : '—');
   setText(root, 'frame-average', frameSamplesMs.length ? formatMs(frameAverage) : '—');
   setText(root, 'frame-p95', frameSamplesMs.length ? formatMs(frameP95) : '—');
-  setText(root, 'backlog', formatMs(backlogMs));
-  setText(root, 'realtime-factor', liveRealtimeFactor == null ? '—' : `${liveRealtimeFactor.toFixed(2)}×`);
+  setText(root, 'step-accumulator', formatMs(scheduler.accumulatorMs));
+  setText(root, 'scheduler-debt', formatMs(scheduler.debtMs));
+  setText(root, 'realtime-factor', liveRealtimeFactor == null ? 'Collecting…' : `${liveRealtimeFactor.toFixed(2)}×`);
   setText(root, 'apparatus-cpu-tick', 'Rust/WASM');
   setText(root, 'sessions', String(simulation.sessions));
   setText(root, 'nodes', String(simulation.nodes));
@@ -339,7 +398,7 @@ async function stepWorld(root, seconds) {
 function resetStats(root) {
   frameSamplesMs = [];
   liveRealtimeFactor = null;
-  lastRealtimeSample = null;
+  realtimeSamples = [];
   lastProfile = null;
   if (deepProfilingEnabled) void setDeepProfiling(root, true, { reset: true });
   status(root, 'Performance statistics reset.');

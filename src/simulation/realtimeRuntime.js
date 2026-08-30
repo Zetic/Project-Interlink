@@ -19,6 +19,30 @@ export const REALTIME_RUNTIME_BACKENDS = Object.freeze({
   RUST_WASM_WORKER: 'rust-wasm-worker',
 });
 
+const RUNTIME_TIMING_SAMPLE_LIMIT = 256;
+
+function defaultNowMs() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function timingPercentile(values, fraction) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1));
+  return sorted[index];
+}
+
+function timingSummary(values, budgetMs) {
+  const averageMs = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  return {
+    samples: values.length,
+    averageMs,
+    p95Ms: timingPercentile(values, 0.95),
+    maxMs: values.length ? Math.max(...values) : 0,
+    budgetPercent: budgetMs > 0 ? averageMs / budgetMs * 100 : 0,
+  };
+}
+
 function validateFixedStep(dt) {
   if (dt !== SIMULATION_STEP_S) {
     throw new Error(`Realtime runtime requires the authoritative ${SIMULATION_STEP_S} s fixed step`);
@@ -48,6 +72,7 @@ function defaultWorkerFactory(url, options) {
 export function createRustWasmWorkerRealtimeRuntime(world, {
   capabilities = browserRuntimeCapabilities(),
   workerFactory = defaultWorkerFactory,
+  nowMs = defaultNowMs,
 } = {}) {
   if (!world || typeof world !== 'object') throw new Error('Realtime runtime requires a world object');
   if (!capabilities?.worker) throw new Error('Rust/WASM Worker backend requires Web Worker support');
@@ -68,6 +93,42 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   let lastSnapshot = null;
   let nextRequestId = 1;
   const pending = new Map();
+  let profilingEnabled = false;
+  let workerStepRoundTripSamplesMs = [];
+  let presentationUpdateSamplesMs = [];
+
+  function resetClientTimingSamples() {
+    workerStepRoundTripSamplesMs = [];
+    presentationUpdateSamplesMs = [];
+  }
+
+  function recordTimingSample(samples, valueMs) {
+    if (!Number.isFinite(valueMs) || valueMs < 0) return;
+    samples.push(valueMs);
+    if (samples.length > RUNTIME_TIMING_SAMPLE_LIMIT) samples.shift();
+  }
+
+  function clientTimingSnapshot() {
+    const budgetMs = SIMULATION_STEP_S * 1000;
+    const worker = timingSummary(workerStepRoundTripSamplesMs, budgetMs);
+    const presentation = timingSummary(presentationUpdateSamplesMs, budgetMs);
+    return {
+      workerStepRoundTripSamples: worker.samples,
+      workerStepRoundTripAverageMs: worker.averageMs,
+      workerStepRoundTripP95Ms: worker.p95Ms,
+      workerStepRoundTripMaxMs: worker.maxMs,
+      workerStepRoundTripBudgetPercent: worker.budgetPercent,
+      presentationUpdateSamples: presentation.samples,
+      presentationUpdateAverageMs: presentation.averageMs,
+      presentationUpdateP95Ms: presentation.p95Ms,
+      presentationUpdateMaxMs: presentation.maxMs,
+      presentationUpdateBudgetPercent: presentation.budgetPercent,
+    };
+  }
+
+  function withClientTiming(profile) {
+    return { ...profile, ...clientTimingSnapshot() };
+  }
 
   function rejectAll(error) {
     for (const request of pending.values()) request.reject(error);
@@ -191,7 +252,9 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
 
   async function stepFixed(dt = SIMULATION_STEP_S) {
     validateFixedStep(dt);
+    const startedAtMs = profilingEnabled ? nowMs() : null;
     const event = await dispatch(createRuntimeCommand(RUNTIME_COMMAND_TYPES.STEP_FIXED, { dt }));
+    if (startedAtMs != null) recordTimingSample(workerStepRoundTripSamplesMs, nowMs() - startedAtMs);
     return event.payload;
   }
 
@@ -213,14 +276,17 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
   }
 
   async function setDeepProfiling(enabled, { reset = false } = {}) {
+    const nextEnabled = Boolean(enabled);
+    if (reset) resetClientTimingSamples();
     const event = await dispatch(createRuntimeCommand(RUNTIME_COMMAND_TYPES.SET_PROFILING, {
-      enabled: Boolean(enabled),
+      enabled: nextEnabled,
       reset: Boolean(reset),
     }));
     if (event.type !== RUNTIME_EVENT_TYPES.PROFILE || event.payload?.ok !== true) {
       throw new Error(event.payload?.error?.message ?? 'Rust/WASM Worker profiling command failed');
     }
-    return event.payload.profile;
+    profilingEnabled = nextEnabled;
+    return withClientTiming(event.payload.profile);
   }
 
   async function queryProfile() {
@@ -231,7 +297,12 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     if (event.payload?.ok !== true) {
       throw new Error(event.payload?.error?.message ?? 'Rust/WASM Worker profile query failed');
     }
-    return event.payload.profile;
+    return withClientTiming(event.payload.profile);
+  }
+
+  function recordPresentationTiming(durationMs) {
+    if (!profilingEnabled) return;
+    recordTimingSample(presentationUpdateSamplesMs, durationMs);
   }
 
   async function reconfigure(nextWorld = world, { resetNodeIds = [] } = {}) {
@@ -263,6 +334,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     get running() { return !disposed && !terminalError && running; },
     get snapshot() { return lastSnapshot; },
     get error() { return terminalError; },
+    get profilingEnabled() { return profilingEnabled; },
 
     pause,
     resume,
@@ -271,6 +343,7 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     queryDetail,
     setDeepProfiling,
     queryProfile,
+    recordPresentationTiming,
     reconfigure,
     dispatch,
 
@@ -288,6 +361,7 @@ export function createRealtimeRuntime(world, {
   backend = REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER,
   capabilities = browserRuntimeCapabilities(),
   workerFactory,
+  nowMs,
 } = {}) {
   if (backend !== 'auto' && backend !== REALTIME_RUNTIME_BACKENDS.RUST_WASM_WORKER) {
     throw new Error(`Unsupported realtime runtime backend '${backend}'; Project Interlink requires rust-wasm-worker`);
@@ -295,5 +369,5 @@ export function createRealtimeRuntime(world, {
   if (!capabilities?.worker || !capabilities?.webAssembly) {
     throw new Error('Project Interlink requires a browser with Web Worker and WebAssembly support');
   }
-  return createRustWasmWorkerRealtimeRuntime(world, { capabilities, workerFactory });
+  return createRustWasmWorkerRealtimeRuntime(world, { capabilities, workerFactory, nowMs });
 }

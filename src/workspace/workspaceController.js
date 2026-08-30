@@ -2265,8 +2265,17 @@ function simLoop(now) {
     wsState.simStepInFlight = true;
     Promise.resolve(wsState.realtimeRuntime.stepFixed(SIMULATION_STEP_S)).then(result => {
       if (epoch !== wsState.runtimeEpoch) return;
-      projectRuntimeSnapshot(result?.snapshot ?? wsState.realtimeRuntime.snapshot);
-      if (result?.advanced) renderRealtimePresentation();
+      const runtime = wsState.realtimeRuntime;
+      const measurePresentation = runtime?.profilingEnabled && typeof runtime.recordPresentationTiming === 'function';
+      const presentationStartedAtMs = measurePresentation ? performance.now() : null;
+      try {
+        projectRuntimeSnapshot(result?.snapshot ?? runtime.snapshot);
+        if (result?.advanced) renderRealtimePresentation();
+      } finally {
+        if (presentationStartedAtMs != null) {
+          runtime.recordPresentationTiming(performance.now() - presentationStartedAtMs);
+        }
+      }
     }).catch(error => handleRuntimeFailure(error, epoch)).finally(() => {
       if (epoch === wsState.runtimeEpoch) wsState.simStepInFlight = false;
     });
