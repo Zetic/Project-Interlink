@@ -12,7 +12,7 @@ import { createExhaustVent } from './exhaustVent.js';
 import { createHopper } from '../hopperNode.js';
 import { apparatusPortsForNode } from '../../content/apparatus/definitions.js';
 
-export const APPARATUS_RUNTIME_REGISTRY = Object.freeze({
+export const APPARATUS_NODE_FACTORY_REGISTRY = Object.freeze({
   extractor: Object.freeze({ create: createExtractor }),
   hopper: Object.freeze({ create: createHopper }),
   merger: Object.freeze({ create: createMaterialMerger }),
@@ -28,18 +28,18 @@ export const APPARATUS_RUNTIME_REGISTRY = Object.freeze({
   exhaustVent: Object.freeze({ create: createExhaustVent }),
 });
 
-export function apparatusRuntimeFor(nodeType) {
-  return APPARATUS_RUNTIME_REGISTRY[nodeType] ?? null;
+export function apparatusNodeFactoryFor(nodeType) {
+  return APPARATUS_NODE_FACTORY_REGISTRY[nodeType] ?? null;
 }
 
-export function createApparatusRuntime(nodeType, parameters) {
-  const entry = apparatusRuntimeFor(nodeType);
-  if (!entry?.create) throw new Error(`Unknown apparatus runtime '${nodeType}'`);
+export function createApparatusNode(nodeType, parameters) {
+  const entry = apparatusNodeFactoryFor(nodeType);
+  if (!entry?.create) throw new Error(`Unknown apparatus node type '${nodeType}'`);
   const node = entry.create(parameters);
   node.ports = apparatusPortsForNode(nodeType, node);
   return node;
 }
 
 export function registeredApparatusNodeTypes() {
-  return Object.keys(APPARATUS_RUNTIME_REGISTRY);
+  return Object.keys(APPARATUS_NODE_FACTORY_REGISTRY);
 }
