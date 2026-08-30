@@ -6,7 +6,7 @@ import {
   blueprintAddMagSep, blueprintConnect, createBlueprint, createBlueprintLayout,
 } from '../src/simulation/simulationEngine.js';
 import { HOPPER_TOLERANCE_KG } from '../src/simulation/hopperNode.js';
-import { canRemoveNode, nodeOwnedMatterKg, nodeRemovalEligibility, removeBlueprintNode } from '../src/workspace/nodeRemoval.js';
+import { canRemoveNode, nodeOwnedMatterKg, nodeRemovalEligibility, removeBlueprintNode } from '../src/workspace/graph/nodeRemoval.js';
 
 test('empty player-authored node removal clears layout, connections, and material streams', () => {
   const blueprint = createBlueprint(); const layout = createBlueprintLayout();
