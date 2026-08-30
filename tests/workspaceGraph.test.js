@@ -7,7 +7,7 @@ import {
   blueprintAddCrusher,
   blueprintConnect,
 } from '../src/simulation/simulationEngine.js';
-import { createCompositeNode, createSystemPort } from '../src/simulation/systemNode.js';
+import { createCompositeNode, createSystemPort } from '../src/core/systems/systemNode.js';
 import {
   projectBlueprintGraph,
   projectBoundaryGraph,
@@ -15,7 +15,7 @@ import {
   disconnectGraphConnection,
   renderGraphConnections,
   renderGraphConnectionPreview,
-} from '../src/workspace/workspaceGraph.js';
+} from '../src/workspace/graph/workspaceGraph.js';
 
 test('shared graph projects local connections with the original endpoints', () => {
   const blueprint = createBlueprint();
