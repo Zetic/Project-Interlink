@@ -14,7 +14,7 @@ Project Interlink's production physical simulation is owned by Rust compiled to 
 - `interlink-thermochemistry` — reaction kinetics, stoichiometry, and energy solves.
 - `interlink-roasting` — retained-zone Roasting Furnace runtime.
 - `interlink-runtime` — complete packed world graph, deterministic fixed-step scheduler, apparatus routing, boundary transfers, and simulation clock.
-- `interlink-wasm` — thin `wasm-bindgen` browser adapter exposing coarse stateful operations.
+- `interlink-wasm` — thin `wasm-bindgen` browser adapter exposing only the coarse `WasmPackedWorldRuntime` production surface plus protocol/fixed-step helpers.
 
 The platform-neutral crates intentionally contain no DOM or Worker dependencies so the same simulation code can be exercised in native Rust tests and future headless/native frontends.
 
@@ -83,7 +83,9 @@ The authoritative fixed step is `0.1 s`.
 
 ## Browser boundary
 
-`interlink-wasm` is intentionally a coarse adapter. Setup commands populate packed world state and property tables; live ticks remain inside Rust/WASM until a compact presentation snapshot or requested detail is returned.
+`interlink-wasm` intentionally exposes one production state owner: `WasmPackedWorldRuntime`. Setup commands populate the packed world and property tables through that object; live ticks remain inside Rust/WASM until a compact presentation snapshot or requested detail is returned.
+
+Standalone browser-facing WASM wrappers for individual Hoppers, Extractors, comminution machines, separators, furnaces, gas bodies, and material states are not part of the production API. Their physics remains in the platform-neutral Rust crates and is orchestrated internally by `PackedWorldRuntime`.
 
 Do not add a protocol that synchronizes individual populations, fractions, species, or machines each tick. Do not reintroduce JavaScript physics for unsupported browsers; Worker + WebAssembly support is part of the production runtime requirement.
 
