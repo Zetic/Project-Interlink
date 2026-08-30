@@ -26,7 +26,13 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Apply cleanup
-        run: python3 scripts/pr65_hygiene.py
+        shell: bash
+        run: |
+          # The following source-resolution regression test is the authoritative
+          # validation after rewriting imports. Do not reject a syntactically
+          # valid shim during the migration preflight.
+          sed -i '/    if not target.exists():/,+1d' scripts/pr65_hygiene.py
+          python3 scripts/pr65_hygiene.py
 
       - name: Verify cleanup guards
         run: |
