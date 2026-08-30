@@ -139,3 +139,45 @@ test('profiling facade toggles and queries Worker-owned timing without affecting
   assert.equal(runtime.error, null);
   runtime.dispose();
 });
+
+
+test('deep profiling adds Worker round-trip and presentation timing to the Rust profile', async () => {
+  let clockMs = 0;
+  const harness = workerHarness((command, emit) => {
+    if (command.type === RUNTIME_COMMAND_TYPES.INIT) return emit(readyEvent(command));
+    if (command.type === RUNTIME_COMMAND_TYPES.SET_PROFILING || command.type === RUNTIME_COMMAND_TYPES.QUERY_PROFILE) {
+      return emit(createRuntimeEvent(RUNTIME_EVENT_TYPES.PROFILE, {
+        ok: true,
+        profile: { enabled: true, budgetMs: 100, profiledTicks: 1 },
+      }, command.requestId));
+    }
+    if (command.type === RUNTIME_COMMAND_TYPES.STEP_FIXED) {
+      clockMs += 2.5;
+      return emit(createRuntimeEvent(RUNTIME_EVENT_TYPES.STEPPED, {
+        advanced: true,
+        ticks: 1,
+        elapsedSeconds: 0.1,
+        snapshot: { running: true, elapsedSeconds: 0.1, sites: [], hoppers: [], occurrences: [], machines: [], exhaustVents: [], passiveLinks: [], boundaryTransfers: [] },
+      }, command.requestId));
+    }
+  });
+  const runtime = createRealtimeRuntime(world(), {
+    capabilities: capabilities(),
+    workerFactory: () => harness.worker,
+    nowMs: () => clockMs,
+  });
+  await runtime.ready;
+  await runtime.setDeepProfiling(true, { reset: true });
+  await runtime.stepFixed();
+  runtime.recordPresentationTiming(1.25);
+  const profile = await runtime.queryProfile();
+  assert.equal(profile.workerStepRoundTripSamples, 1);
+  assert.equal(profile.workerStepRoundTripAverageMs, 2.5);
+  assert.equal(profile.workerStepRoundTripP95Ms, 2.5);
+  assert.equal(profile.workerStepRoundTripBudgetPercent, 2.5);
+  assert.equal(profile.presentationUpdateSamples, 1);
+  assert.equal(profile.presentationUpdateAverageMs, 1.25);
+  assert.equal(profile.presentationUpdateP95Ms, 1.25);
+  assert.equal(profile.presentationUpdateBudgetPercent, 1.25);
+  runtime.dispose();
+});
