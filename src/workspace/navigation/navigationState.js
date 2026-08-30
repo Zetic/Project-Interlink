@@ -1,7 +1,7 @@
 import {
   navigationCategoryVocabulary,
   navigationVisibleCategories,
-} from '../navigationProjection.js';
+} from './navigationProjection.js';
 
 export function navigationVisibilityState(open) {
   const visible = Boolean(open);
