@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use interlink_comminution::{
     PackedComminutionConfig, PackedComminutionEquipment, PackedComminutionProperties,
     PackedComminutionRuntime, PackedSpeciesTexture,
@@ -12,14 +14,17 @@ use interlink_routing::{
     PackedMergerConfig, PackedMergerRuntime, PackedSplitterConfig, PackedSplitterRuntime,
 };
 use interlink_runtime::{
-    PackedSolidTarget, PackedWorldRuntime, PHASE_BALL_MILL, PHASE_CONE_CRUSHER, PHASE_JAW_CRUSHER,
-    PHASE_LEGACY_CRUSHER,
+    PackedProfiledWorldTickResult, PackedSolidTarget, PackedWorldRuntime, PHASE_BALL_MILL,
+    PHASE_CONE_CRUSHER, PHASE_JAW_CRUSHER, PHASE_LEGACY_CRUSHER,
 };
 use interlink_separation::{
     PackedMagneticSeparatorConfig, PackedMagneticSeparatorRuntime, PackedScreenConfig,
     PackedScreenRuntime,
 };
-use interlink_thermal::{gas_body_temperature_k, solid_body_temperature_k, PackedGasBody, PackedGasColumns, PackedGasState};
+use interlink_thermal::{
+    gas_body_temperature_k, solid_body_temperature_k, PackedGasBody, PackedGasColumns,
+    PackedGasState,
+};
 use interlink_thermochemistry::{PackedGoethiteReactionConfig, PackedGoethiteReactionTables};
 use wasm_bindgen::prelude::*;
 
@@ -114,9 +119,56 @@ fn comminution_equipment(kind: u8) -> Result<(PackedComminutionEquipment, i32), 
 /// sealed, normal simulation advances through one `tick_fixed()` call; no
 /// per-apparatus or per-fraction JavaScript loop is required.
 #[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = performance, js_name = now)]
+    fn performance_now() -> f64;
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProfileAccumulator {
+    calls: u32,
+    total_duration_ms: f64,
+    max_duration_ms: f64,
+}
+
+#[wasm_bindgen]
 pub struct WasmPackedWorldRuntime {
     inner: PackedWorldRuntime,
     reaction_builder: Option<PackedGoethiteReactionTables>,
+    profiling_enabled: bool,
+    profiled_ticks: u32,
+    profile_tick_total_duration_ms: f64,
+    profile_tick_max_duration_ms: f64,
+    profile_apparatus_total_duration_ms: f64,
+    profile_by_node: HashMap<u32, ProfileAccumulator>,
+}
+
+impl WasmPackedWorldRuntime {
+    fn reset_profile_data(&mut self) {
+        self.profiled_ticks = 0;
+        self.profile_tick_total_duration_ms = 0.0;
+        self.profile_tick_max_duration_ms = 0.0;
+        self.profile_apparatus_total_duration_ms = 0.0;
+        self.profile_by_node.clear();
+    }
+
+    fn record_profile_tick(&mut self, result: &PackedProfiledWorldTickResult) {
+        if !result.tick.advanced {
+            return;
+        }
+        self.profiled_ticks = self.profiled_ticks.saturating_add(1);
+        self.profile_tick_total_duration_ms += result.total_duration_ms;
+        self.profile_tick_max_duration_ms = self
+            .profile_tick_max_duration_ms
+            .max(result.total_duration_ms);
+        self.profile_apparatus_total_duration_ms += result.apparatus_total_duration_ms;
+        for timing in &result.apparatus_timings {
+            let accumulator = self.profile_by_node.entry(timing.node_id).or_default();
+            accumulator.calls = accumulator.calls.saturating_add(1);
+            accumulator.total_duration_ms += timing.duration_ms;
+            accumulator.max_duration_ms = accumulator.max_duration_ms.max(timing.duration_ms);
+        }
+    }
 }
 
 #[wasm_bindgen]
@@ -126,6 +178,12 @@ impl WasmPackedWorldRuntime {
         Self {
             inner: PackedWorldRuntime::new(),
             reaction_builder: None,
+            profiling_enabled: false,
+            profiled_ticks: 0,
+            profile_tick_total_duration_ms: 0.0,
+            profile_tick_max_duration_ms: 0.0,
+            profile_apparatus_total_duration_ms: 0.0,
+            profile_by_node: HashMap::new(),
         }
     }
 
@@ -789,12 +847,89 @@ impl WasmPackedWorldRuntime {
         self.inner.running()
     }
 
+    pub fn set_profiling_enabled(&mut self, enabled: bool) {
+        if self.profiling_enabled != enabled {
+            self.profiling_enabled = enabled;
+            self.reset_profile_data();
+        }
+    }
+
+    pub fn profiling_enabled(&self) -> bool {
+        self.profiling_enabled
+    }
+
+    pub fn reset_profiling_stats(&mut self) {
+        self.reset_profile_data();
+    }
+
+    pub fn profile_tick_count(&self) -> u32 {
+        self.profiled_ticks
+    }
+
+    pub fn profile_tick_total_duration_ms(&self) -> f64 {
+        self.profile_tick_total_duration_ms
+    }
+
+    pub fn profile_tick_max_duration_ms(&self) -> f64 {
+        self.profile_tick_max_duration_ms
+    }
+
+    pub fn profile_apparatus_total_duration_ms(&self) -> f64 {
+        self.profile_apparatus_total_duration_ms
+    }
+
+    pub fn profile_node_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<_> = self.profile_by_node.keys().copied().collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    pub fn profile_node_calls(&self, node_id: u32) -> u32 {
+        self.profile_by_node
+            .get(&node_id)
+            .map(|value| value.calls)
+            .unwrap_or(0)
+    }
+
+    pub fn profile_node_total_duration_ms(&self, node_id: u32) -> f64 {
+        self.profile_by_node
+            .get(&node_id)
+            .map(|value| value.total_duration_ms)
+            .unwrap_or(0.0)
+    }
+
+    pub fn profile_node_max_duration_ms(&self, node_id: u32) -> f64 {
+        self.profile_by_node
+            .get(&node_id)
+            .map(|value| value.max_duration_ms)
+            .unwrap_or(0.0)
+    }
+
     pub fn tick_fixed(&mut self) -> Result<bool, JsValue> {
-        Ok(self.inner.tick_fixed().map_err(js_error)?.advanced)
+        if !self.profiling_enabled {
+            return Ok(self.inner.tick_fixed().map_err(js_error)?.advanced);
+        }
+        let mut clock = || performance_now();
+        let result = self
+            .inner
+            .tick_fixed_profiled(&mut clock)
+            .map_err(js_error)?;
+        let advanced = result.tick.advanced;
+        self.record_profile_tick(&result);
+        Ok(advanced)
     }
 
     pub fn advance_fixed_steps(&mut self, steps: u32) -> Result<u32, JsValue> {
-        self.inner.advance_fixed_steps(steps).map_err(js_error)
+        if !self.profiling_enabled {
+            return self.inner.advance_fixed_steps(steps).map_err(js_error);
+        }
+        let mut advanced = 0;
+        for _ in 0..steps {
+            if self.tick_fixed()? {
+                advanced += 1;
+            }
+        }
+        Ok(advanced)
     }
 
     pub fn elapsed_seconds(&self) -> f64 {
@@ -830,37 +965,53 @@ impl WasmPackedWorldRuntime {
     }
 
     pub fn hopper_species_ids(&self, node_id: u32) -> Result<Vec<u16>, JsValue> {
-        let hopper = self.inner.hopper(node_id)
+        let hopper = self
+            .inner
+            .hopper(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
         Ok(hopper.body().solid_state().to_columns().species_ids)
     }
 
     pub fn hopper_size_bin_ids(&self, node_id: u32) -> Result<Vec<u8>, JsValue> {
-        let hopper = self.inner.hopper(node_id)
+        let hopper = self
+            .inner
+            .hopper(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
         Ok(hopper.body().solid_state().to_columns().size_bin_ids)
     }
 
     pub fn hopper_liberation_class_ids(&self, node_id: u32) -> Result<Vec<u8>, JsValue> {
-        let hopper = self.inner.hopper(node_id)
+        let hopper = self
+            .inner
+            .hopper(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
-        Ok(hopper.body().solid_state().to_columns().liberation_class_ids)
+        Ok(hopper
+            .body()
+            .solid_state()
+            .to_columns()
+            .liberation_class_ids)
     }
 
     pub fn hopper_texture_profile_ids(&self, node_id: u32) -> Result<Vec<u32>, JsValue> {
-        let hopper = self.inner.hopper(node_id)
+        let hopper = self
+            .inner
+            .hopper(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
         Ok(hopper.body().solid_state().to_columns().texture_profile_ids)
     }
 
     pub fn hopper_quantities(&self, node_id: u32) -> Result<Vec<f64>, JsValue> {
-        let hopper = self.inner.hopper(node_id)
+        let hopper = self
+            .inner
+            .hopper(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
         Ok(hopper.body().solid_state().to_columns().quantities)
     }
 
     pub fn hopper_temperature_k(&self, node_id: u32) -> Result<f64, JsValue> {
-        let hopper = self.inner.hopper(node_id)
+        let hopper = self
+            .inner
+            .hopper(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime Hopper {node_id}")))?;
         solid_body_temperature_k(hopper.body(), self.inner.thermal_table()).map_err(js_error)
     }
@@ -887,25 +1038,33 @@ impl WasmPackedWorldRuntime {
     }
 
     pub fn exhaust_vent_species_ids(&self, node_id: u32) -> Result<Vec<u16>, JsValue> {
-        let body = self.inner.exhaust_vent(node_id)
+        let body = self
+            .inner
+            .exhaust_vent(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
         Ok(body.gas_state().to_columns().species_ids)
     }
 
     pub fn exhaust_vent_quantities(&self, node_id: u32) -> Result<Vec<f64>, JsValue> {
-        let body = self.inner.exhaust_vent(node_id)
+        let body = self
+            .inner
+            .exhaust_vent(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
         Ok(body.gas_state().to_columns().quantities)
     }
 
     pub fn exhaust_vent_sensible_enthalpy_j(&self, node_id: u32) -> Result<f64, JsValue> {
-        let body = self.inner.exhaust_vent(node_id)
+        let body = self
+            .inner
+            .exhaust_vent(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
         Ok(body.sensible_enthalpy_j())
     }
 
     pub fn exhaust_vent_temperature_k(&self, node_id: u32) -> Result<f64, JsValue> {
-        let body = self.inner.exhaust_vent(node_id)
+        let body = self
+            .inner
+            .exhaust_vent(node_id)
             .ok_or_else(|| JsValue::from_str(&format!("unknown runtime exhaust vent {node_id}")))?;
         gas_body_temperature_k(body, self.inner.thermal_table()).map_err(js_error)
     }
@@ -988,71 +1147,124 @@ impl WasmPackedWorldRuntime {
     }
 
     pub fn furnace_zone_count(&self, node_id: u32) -> Result<u32, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
         Ok(furnace.zones().len() as u32)
     }
 
     pub fn furnace_zone_mass_kg(&self, node_id: u32, zone_index: u32) -> Result<f64, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         Ok(zone.total_mass_kg())
     }
 
-    pub fn furnace_zone_species_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u16>, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+    pub fn furnace_zone_species_ids(
+        &self,
+        node_id: u32,
+        zone_index: u32,
+    ) -> Result<Vec<u16>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         Ok(zone.solid_state().to_columns().species_ids)
     }
 
-    pub fn furnace_zone_size_bin_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u8>, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+    pub fn furnace_zone_size_bin_ids(
+        &self,
+        node_id: u32,
+        zone_index: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         Ok(zone.solid_state().to_columns().size_bin_ids)
     }
 
-    pub fn furnace_zone_liberation_class_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u8>, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+    pub fn furnace_zone_liberation_class_ids(
+        &self,
+        node_id: u32,
+        zone_index: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         Ok(zone.solid_state().to_columns().liberation_class_ids)
     }
 
-    pub fn furnace_zone_texture_profile_ids(&self, node_id: u32, zone_index: u32) -> Result<Vec<u32>, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+    pub fn furnace_zone_texture_profile_ids(
+        &self,
+        node_id: u32,
+        zone_index: u32,
+    ) -> Result<Vec<u32>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         Ok(zone.solid_state().to_columns().texture_profile_ids)
     }
 
-    pub fn furnace_zone_quantities(&self, node_id: u32, zone_index: u32) -> Result<Vec<f64>, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+    pub fn furnace_zone_quantities(
+        &self,
+        node_id: u32,
+        zone_index: u32,
+    ) -> Result<Vec<f64>, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         Ok(zone.solid_state().to_columns().quantities)
     }
 
-    pub fn furnace_zone_sensible_enthalpy_j(&self, node_id: u32, zone_index: u32) -> Result<f64, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+    pub fn furnace_zone_sensible_enthalpy_j(
+        &self,
+        node_id: u32,
+        zone_index: u32,
+    ) -> Result<f64, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         Ok(zone.sensible_enthalpy_j())
     }
 
-    pub fn furnace_zone_temperature_k(&self, node_id: u32, zone_index: u32) -> Result<f64, JsValue> {
-        let furnace = self.inner.furnace_runtime(node_id)
-            .ok_or_else(|| JsValue::from_str(&format!("runtime node {node_id} is not a furnace")))?;
-        let zone = furnace.zones().get(zone_index as usize)
+    pub fn furnace_zone_temperature_k(
+        &self,
+        node_id: u32,
+        zone_index: u32,
+    ) -> Result<f64, JsValue> {
+        let furnace = self.inner.furnace_runtime(node_id).ok_or_else(|| {
+            JsValue::from_str(&format!("runtime node {node_id} is not a furnace"))
+        })?;
+        let zone = furnace
+            .zones()
+            .get(zone_index as usize)
             .ok_or_else(|| JsValue::from_str(&format!("unknown furnace zone {zone_index}")))?;
         solid_body_temperature_k(zone, self.inner.thermal_table()).map_err(js_error)
     }
@@ -1092,6 +1304,12 @@ impl WasmPackedWorldRuntime {
         WasmPackedWorldRuntime {
             inner: self.inner.clone(),
             reaction_builder: None,
+            profiling_enabled: self.profiling_enabled,
+            profiled_ticks: 0,
+            profile_tick_total_duration_ms: 0.0,
+            profile_tick_max_duration_ms: 0.0,
+            profile_apparatus_total_duration_ms: 0.0,
+            profile_by_node: HashMap::new(),
         }
     }
 

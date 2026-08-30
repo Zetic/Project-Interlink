@@ -17,6 +17,8 @@ export const CANONICAL_IRON_BENCHMARK_OCCURRENCE = Object.freeze({
   composition: Object.freeze({ hematite: 60, magnetite: 20, goethite: 10, quartz: 10 }),
 });
 
+export const TEST_FACTORY_FEEDER_RATE_KG_PER_SECOND = 0.2;
+
 let fixtureOrdinal = 1;
 
 function connectOrThrow(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId, options = {}) {
@@ -27,24 +29,44 @@ function connectOrThrow(blueprint, sourceNodeId, sourcePortId, targetNodeId, tar
   return connection;
 }
 
-function addRoastingLine(blueprint, {
+function addProcessingLine(blueprint, {
   prefix,
   sourceNode,
   occurrenceId,
-  feederRateKgPerSecond = 4,
-  extractorRateKgPerSecond = 5,
-  feedHopperCapacityKg = 5000,
-  productHopperCapacityKg = 5000,
+  feederRateKgPerSecond = TEST_FACTORY_FEEDER_RATE_KG_PER_SECOND,
 } = {}) {
   const extractor = blueprintAddApparatus(blueprint, 'extractor', {
     id: `${prefix}-extractor`,
     enabled: true,
-    prototypeRateKgPerSecond: extractorRateKgPerSecond,
   });
-  const feedHopper = blueprintAddApparatus(blueprint, 'hopper', {
-    id: `${prefix}-feed-hopper`,
-    capacityKg: feedHopperCapacityKg,
+  const rawHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-raw-hopper` });
+  const jawCrusher = blueprintAddApparatus(blueprint, 'jawCrusher', {
+    id: `${prefix}-jaw-crusher`,
+    enabled: true,
   });
+  const jawProductHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-jaw-product-hopper` });
+  const coneCrusher = blueprintAddApparatus(blueprint, 'coneCrusher', {
+    id: `${prefix}-cone-crusher`,
+    enabled: true,
+  });
+  const coneProductHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-cone-product-hopper` });
+  const screen = blueprintAddApparatus(blueprint, 'screen', {
+    id: `${prefix}-screen`,
+    enabled: true,
+  });
+  const screenMillHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-screen-mill-hopper` });
+  const screenBranchHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-screen-branch-hopper` });
+  const ballMill = blueprintAddApparatus(blueprint, 'ballMill', {
+    id: `${prefix}-ball-mill`,
+    enabled: true,
+  });
+  const millProductHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-mill-product-hopper` });
+  const splitter = blueprintAddApparatus(blueprint, 'splitter', {
+    id: `${prefix}-splitter`,
+    enabled: true,
+  });
+  const splitBranchHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-split-branch-hopper` });
+  const furnaceFeedHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-furnace-feed-hopper` });
   const feeder = blueprintAddApparatus(blueprint, 'feeder', {
     id: `${prefix}-feeder`,
     enabled: true,
@@ -53,38 +75,70 @@ function addRoastingLine(blueprint, {
   const furnace = blueprintAddApparatus(blueprint, 'roastingFurnace', {
     id: `${prefix}-furnace`,
     enabled: true,
-    temperatureSetpointK: 900,
   });
-  const productHopper = blueprintAddApparatus(blueprint, 'hopper', {
-    id: `${prefix}-product-hopper`,
-    capacityKg: productHopperCapacityKg,
-  });
-  const vent = blueprintAddApparatus(blueprint, 'exhaustVent', {
-    id: `${prefix}-vent`,
-  });
+  const productHopper = blueprintAddApparatus(blueprint, 'hopper', { id: `${prefix}-product-hopper` });
+  const vent = blueprintAddApparatus(blueprint, 'exhaustVent', { id: `${prefix}-vent` });
 
   const connections = [
-    connectOrThrow(
-      blueprint,
-      sourceNode.id,
-      sourceNode.resourceAccessPortId,
-      extractor.id,
-      extractor.sourceInputPortId,
-      { occurrenceId },
-    ),
-    connectOrThrow(blueprint, extractor.id, extractor.outputPortId, feedHopper.id, feedHopper.inputPortId),
-    connectOrThrow(blueprint, feedHopper.id, feedHopper.outputPortId, feeder.id, feeder.inputPortId),
+    connectOrThrow(blueprint, sourceNode.id, sourceNode.resourceAccessPortId, extractor.id, extractor.sourceInputPortId, { occurrenceId }),
+    connectOrThrow(blueprint, extractor.id, extractor.outputPortId, rawHopper.id, rawHopper.inputPortId),
+    connectOrThrow(blueprint, rawHopper.id, rawHopper.outputPortId, jawCrusher.id, jawCrusher.inputPortId),
+    connectOrThrow(blueprint, jawCrusher.id, jawCrusher.outputPortId, jawProductHopper.id, jawProductHopper.inputPortId),
+    connectOrThrow(blueprint, jawProductHopper.id, jawProductHopper.outputPortId, coneCrusher.id, coneCrusher.inputPortId),
+    connectOrThrow(blueprint, coneCrusher.id, coneCrusher.outputPortId, coneProductHopper.id, coneProductHopper.inputPortId),
+    connectOrThrow(blueprint, coneProductHopper.id, coneProductHopper.outputPortId, screen.id, screen.inputPortId),
+    connectOrThrow(blueprint, screen.id, screen.undersizePortId, screenMillHopper.id, screenMillHopper.inputPortId),
+    connectOrThrow(blueprint, screen.id, screen.oversizePortId, screenBranchHopper.id, screenBranchHopper.inputPortId),
+    connectOrThrow(blueprint, screenMillHopper.id, screenMillHopper.outputPortId, ballMill.id, ballMill.inputPortId),
+    connectOrThrow(blueprint, ballMill.id, ballMill.outputPortId, millProductHopper.id, millProductHopper.inputPortId),
+    connectOrThrow(blueprint, millProductHopper.id, millProductHopper.outputPortId, splitter.id, splitter.inputPortId),
+    connectOrThrow(blueprint, splitter.id, splitter.outputAPortId, splitBranchHopper.id, splitBranchHopper.inputPortId),
+    connectOrThrow(blueprint, splitter.id, splitter.outputBPortId, furnaceFeedHopper.id, furnaceFeedHopper.inputPortId),
+    connectOrThrow(blueprint, furnaceFeedHopper.id, furnaceFeedHopper.outputPortId, feeder.id, feeder.inputPortId),
     connectOrThrow(blueprint, feeder.id, feeder.outputPortId, furnace.id, furnace.inputPortId),
     connectOrThrow(blueprint, furnace.id, furnace.solidProductPortId, productHopper.id, productHopper.inputPortId),
     connectOrThrow(blueprint, furnace.id, furnace.gasExhaustPortId, vent.id, vent.gasInputPortId),
   ];
 
+  const nodeIds = [
+    extractor.id,
+    rawHopper.id,
+    jawCrusher.id,
+    jawProductHopper.id,
+    coneCrusher.id,
+    coneProductHopper.id,
+    screen.id,
+    screenMillHopper.id,
+    screenBranchHopper.id,
+    ballMill.id,
+    millProductHopper.id,
+    splitter.id,
+    splitBranchHopper.id,
+    furnaceFeedHopper.id,
+    feeder.id,
+    furnace.id,
+    productHopper.id,
+    vent.id,
+  ];
+
   return {
     id: prefix,
-    nodeIds: [extractor.id, feedHopper.id, feeder.id, furnace.id, productHopper.id, vent.id],
+    nodeIds,
     connectionIds: connections.map(connection => connection.id),
     extractor,
-    feedHopper,
+    rawHopper,
+    jawCrusher,
+    jawProductHopper,
+    coneCrusher,
+    coneProductHopper,
+    screen,
+    screenMillHopper,
+    screenBranchHopper,
+    ballMill,
+    millProductHopper,
+    splitter,
+    splitBranchHopper,
+    furnaceFeedHopper,
     feeder,
     furnace,
     productHopper,
@@ -92,7 +146,10 @@ function addRoastingLine(blueprint, {
   };
 }
 
-export function createRoastingBenchmarkFixture({ count = 1, feederRateKgPerSecond = 4 } = {}) {
+export function createRoastingBenchmarkFixture({
+  count = 1,
+  feederRateKgPerSecond = TEST_FACTORY_FEEDER_RATE_KG_PER_SECOND,
+} = {}) {
   if (!Number.isInteger(count) || count < 1 || count > 1000) {
     throw new Error('Benchmark factory count must be an integer from 1 to 1000');
   }
@@ -113,13 +170,14 @@ export function createRoastingBenchmarkFixture({ count = 1, feederRateKgPerSecon
 
   const manifests = [];
   for (let index = 0; index < count; index += 1) {
-    const prefix = `debug-benchmark-roast-${index + 1}`;
-    const manifest = addRoastingLine(blueprint, {
+    const prefix = `debug-benchmark-process-${index + 1}`;
+    const manifest = addProcessingLine(blueprint, {
       prefix,
       sourceNode,
       occurrenceId: occurrence.id,
       feederRateKgPerSecond,
     });
+    layoutProcessingLine(blueprintLayout, manifest, 260 + index * 1250, 0);
     manifests.push(manifest);
   }
   return { blueprint, blueprintLayout, world, sourceNode, occurrence, manifests };
@@ -134,10 +192,7 @@ export function findRoastableWorldSource(blueprint, world, preferredFeatureNodeI
   for (const sourceNode of candidates) {
     for (const occurrenceId of sourceNode.resourceOccurrenceIds ?? []) {
       const occurrence = world?.resourceOccurrences?.[occurrenceId];
-      if (
-        occurrence?.resourceId === 'iron-ore'
-        && Number(occurrence?.composition?.goethite ?? 0) > 0
-      ) {
+      if (occurrence?.resourceId === 'iron-ore' && Number(occurrence?.composition?.goethite ?? 0) > 0) {
         return { sourceNode, occurrence };
       }
     }
@@ -152,14 +207,25 @@ function fixtureOrigin(blueprintLayout) {
   return { x: maxX + 260, y: minY };
 }
 
-function layoutRoastingLine(blueprintLayout, manifest, baseX, baseY) {
-  const [extractorId, feedHopperId, feederId, furnaceId, productHopperId, ventId] = manifest.nodeIds;
-  layoutMoveNode(blueprintLayout, extractorId, baseX, baseY);
-  layoutMoveNode(blueprintLayout, feedHopperId, baseX + 210, baseY);
-  layoutMoveNode(blueprintLayout, feederId, baseX + 420, baseY);
-  layoutMoveNode(blueprintLayout, furnaceId, baseX + 630, baseY);
-  layoutMoveNode(blueprintLayout, productHopperId, baseX + 870, baseY);
-  layoutMoveNode(blueprintLayout, ventId, baseX + 630, baseY + 150);
+function layoutProcessingLine(blueprintLayout, manifest, baseX, baseY) {
+  layoutMoveNode(blueprintLayout, manifest.extractor.id, baseX, baseY);
+  layoutMoveNode(blueprintLayout, manifest.rawHopper.id, baseX, baseY + 140);
+  layoutMoveNode(blueprintLayout, manifest.jawCrusher.id, baseX, baseY + 280);
+  layoutMoveNode(blueprintLayout, manifest.jawProductHopper.id, baseX, baseY + 420);
+  layoutMoveNode(blueprintLayout, manifest.coneCrusher.id, baseX, baseY + 560);
+  layoutMoveNode(blueprintLayout, manifest.coneProductHopper.id, baseX, baseY + 700);
+  layoutMoveNode(blueprintLayout, manifest.screen.id, baseX, baseY + 840);
+  layoutMoveNode(blueprintLayout, manifest.screenMillHopper.id, baseX, baseY + 980);
+  layoutMoveNode(blueprintLayout, manifest.screenBranchHopper.id, baseX + 220, baseY + 980);
+  layoutMoveNode(blueprintLayout, manifest.ballMill.id, baseX, baseY + 1120);
+  layoutMoveNode(blueprintLayout, manifest.millProductHopper.id, baseX, baseY + 1260);
+  layoutMoveNode(blueprintLayout, manifest.splitter.id, baseX, baseY + 1400);
+  layoutMoveNode(blueprintLayout, manifest.splitBranchHopper.id, baseX, baseY + 1540);
+  layoutMoveNode(blueprintLayout, manifest.furnaceFeedHopper.id, baseX + 220, baseY + 1540);
+  layoutMoveNode(blueprintLayout, manifest.feeder.id, baseX + 440, baseY + 1540);
+  layoutMoveNode(blueprintLayout, manifest.furnace.id, baseX + 650, baseY + 1540);
+  layoutMoveNode(blueprintLayout, manifest.productHopper.id, baseX + 900, baseY + 1540);
+  layoutMoveNode(blueprintLayout, manifest.vent.id, baseX + 900, baseY + 1700);
 }
 
 export function placeRoastingTestFactories({
@@ -168,33 +234,33 @@ export function placeRoastingTestFactories({
   world,
   count = 1,
   preferredFeatureNodeId = null,
-  feederRateKgPerSecond = 4,
+  feederRateKgPerSecond = TEST_FACTORY_FEEDER_RATE_KG_PER_SECOND,
 } = {}) {
   if (!blueprint || !blueprintLayout || !world) throw new Error('Visible debug fixtures require an active Site blueprint');
   if (!Number.isInteger(count) || count < 1 || count > 100) {
     throw new Error('Visible debug factory count must be an integer from 1 to 100');
   }
   const source = findRoastableWorldSource(blueprint, world, preferredFeatureNodeId);
-  if (!source) throw new Error('This Site has no iron-ore Feature containing goethite for the roasting test fixture');
+  if (!source) throw new Error('This Site has no iron-ore Feature containing goethite for the processing test fixture');
 
-  const fixtureId = `debug-roasting-fixture-${fixtureOrdinal++}`;
+  const fixtureId = `debug-processing-fixture-${fixtureOrdinal++}`;
   const origin = fixtureOrigin(blueprintLayout);
   const manifests = [];
   const rowsPerBlock = 10;
-  const blockWidth = 1180;
-  const rowHeight = 290;
+  const blockWidth = 1250;
+  const rowHeight = 1900;
 
   for (let index = 0; index < count; index += 1) {
     const block = Math.floor(index / rowsPerBlock);
     const row = index % rowsPerBlock;
     const prefix = `${fixtureId}-line-${index + 1}`;
-    const manifest = addRoastingLine(blueprint, {
+    const manifest = addProcessingLine(blueprint, {
       prefix,
       sourceNode: source.sourceNode,
       occurrenceId: source.occurrence.id,
       feederRateKgPerSecond,
     });
-    layoutRoastingLine(
+    layoutProcessingLine(
       blueprintLayout,
       manifest,
       origin.x + block * blockWidth,

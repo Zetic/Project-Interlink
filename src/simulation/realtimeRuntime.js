@@ -212,6 +212,28 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     return event.payload.detail;
   }
 
+  async function setDeepProfiling(enabled, { reset = false } = {}) {
+    const event = await dispatch(createRuntimeCommand(RUNTIME_COMMAND_TYPES.SET_PROFILING, {
+      enabled: Boolean(enabled),
+      reset: Boolean(reset),
+    }));
+    if (event.type !== RUNTIME_EVENT_TYPES.PROFILE || event.payload?.ok !== true) {
+      throw new Error(event.payload?.error?.message ?? 'Rust/WASM Worker profiling command failed');
+    }
+    return event.payload.profile;
+  }
+
+  async function queryProfile() {
+    const event = await dispatch(createRuntimeCommand(RUNTIME_COMMAND_TYPES.QUERY_PROFILE));
+    if (event.type !== RUNTIME_EVENT_TYPES.PROFILE) {
+      throw new Error(`Rust/WASM Worker expected PROFILE, got '${event.type}'`);
+    }
+    if (event.payload?.ok !== true) {
+      throw new Error(event.payload?.error?.message ?? 'Rust/WASM Worker profile query failed');
+    }
+    return event.payload.profile;
+  }
+
   async function reconfigure(nextWorld = world, { resetNodeIds = [] } = {}) {
     assertActive();
     await ready;
@@ -247,6 +269,8 @@ export function createRustWasmWorkerRealtimeRuntime(world, {
     stepFixed,
     advanceFixedSteps,
     queryDetail,
+    setDeepProfiling,
+    queryProfile,
     reconfigure,
     dispatch,
 

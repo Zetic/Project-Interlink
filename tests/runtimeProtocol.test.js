@@ -80,3 +80,15 @@ test('init/reconfigure and detail commands validate typed payload contracts', ()
     /entityType/,
   );
 });
+
+
+test('deep profiling protocol is explicitly typed and read-only', () => {
+  const enable = createRuntimeCommand(RUNTIME_COMMAND_TYPES.SET_PROFILING, { enabled: true, reset: true });
+  assert.equal(enable.payload.enabled, true);
+  assert.equal(enable.payload.reset, true);
+  assert.equal(createRuntimeCommand(RUNTIME_COMMAND_TYPES.QUERY_PROFILE).type, RUNTIME_COMMAND_TYPES.QUERY_PROFILE);
+  assert.throws(
+    () => createRuntimeCommand(RUNTIME_COMMAND_TYPES.SET_PROFILING, { enabled: 'yes' }),
+    /enabled must be boolean/,
+  );
+});

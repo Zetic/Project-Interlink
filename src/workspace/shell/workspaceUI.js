@@ -17,6 +17,12 @@ function debugDrawerMarkup() {
         <div class="ws-debug-metric"><span>Simulation backlog</span><span data-debug-stat="backlog">—</span></div>
         <div class="ws-debug-metric"><span>Realtime factor</span><span data-debug-stat="realtime-factor">—</span></div>
         <div class="ws-debug-metric"><span>Physics engine</span><span data-debug-stat="apparatus-cpu-tick">Rust/WASM</span></div>
+        <div class="ws-debug-metric"><span>Rust tick average</span><span data-debug-stat="profile-tick-average">—</span></div>
+        <div class="ws-debug-metric"><span>Apparatus average</span><span data-debug-stat="profile-apparatus-average">—</span></div>
+        <div class="ws-debug-metric"><span>Other runtime average</span><span data-debug-stat="profile-other-average">—</span></div>
+        <label class="ws-debug-check"><input id="ws-debug-deep-profiling" type="checkbox">Deep Rust apparatus profiling</label>
+        <div class="ws-debug-note">Timing percentages use the authoritative 100 ms fixed-step realtime budget. Profiling is debug-only and turns off when this drawer closes.</div>
+        <div id="ws-debug-profile-breakdown" class="ws-debug-profile-breakdown">Enable deep profiling to measure Rust apparatus hotspots.</div>
         <button class="ws-debug-button" data-debug-action="reset-stats" type="button">Reset Statistics</button>
       </section>
       <section class="ws-debug-section"><div class="ws-debug-section-title">Runtime</div>
@@ -44,7 +50,7 @@ function debugDrawerMarkup() {
         <div class="ws-debug-button-row"><button data-debug-action="toggle-pause" type="button">Pause World</button><button data-debug-action="step-0.1" type="button">+0.1 s</button><button data-debug-action="step-1" type="button">+1 s</button><button data-debug-action="step-10" type="button">+10 s</button></div>
       </section>
       <section class="ws-debug-section"><div class="ws-debug-section-title">Test factory</div>
-        <div class="ws-debug-field"><label for="ws-debug-factory-template">Template</label><select id="ws-debug-factory-template" disabled><option>Iron Roasting Line v1</option></select></div>
+        <div class="ws-debug-field"><label for="ws-debug-factory-template">Template</label><select id="ws-debug-factory-template" disabled><option>Iron Processing Line v2</option></select></div>
         <div class="ws-debug-field"><label for="ws-debug-factory-count">Factory count</label><select id="ws-debug-factory-count"><option value="1">1</option><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></div>
         <div class="ws-debug-note">Visible placement uses the selected goethite-bearing iron Feature when possible, otherwise the first compatible Feature in the Site. Test factories run through the live Rust/WASM Worker.</div>
         <div class="ws-debug-button-row"><button data-debug-action="place-factories" type="button">Place Factory</button></div>

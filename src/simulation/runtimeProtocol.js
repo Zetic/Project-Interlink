@@ -1,7 +1,7 @@
 
 import { SIMULATION_STEP_S } from './simulationEngine.js';
 
-export const REALTIME_RUNTIME_PROTOCOL_VERSION = 5;
+export const REALTIME_RUNTIME_PROTOCOL_VERSION = 6;
 
 export const RUNTIME_COMMAND_TYPES = Object.freeze({
   INIT: 'init',
@@ -11,6 +11,8 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
   STEP_FIXED: 'step-fixed',
   ADVANCE_FIXED: 'advance-fixed',
   QUERY_DETAIL: 'query-detail',
+  SET_PROFILING: 'set-profiling',
+  QUERY_PROFILE: 'query-profile',
 });
 
 export const RUNTIME_EVENT_TYPES = Object.freeze({
@@ -19,6 +21,7 @@ export const RUNTIME_EVENT_TYPES = Object.freeze({
   STEPPED: 'stepped',
   RUN_STATE: 'run-state',
   DETAIL: 'detail',
+  PROFILE: 'profile',
   ERROR: 'error',
 });
 
@@ -84,6 +87,14 @@ export function validateRuntimeCommand(command) {
     }
     if (typeof id !== 'string' || id.length === 0) {
       throw new Error('query-detail id must be a canonical non-empty string ID');
+    }
+  }
+  if (command.type === RUNTIME_COMMAND_TYPES.SET_PROFILING) {
+    if (typeof command.payload.enabled !== 'boolean') {
+      throw new Error('set-profiling enabled must be boolean');
+    }
+    if (command.payload.reset != null && typeof command.payload.reset !== 'boolean') {
+      throw new Error('set-profiling reset must be boolean when provided');
     }
   }
   return command;
