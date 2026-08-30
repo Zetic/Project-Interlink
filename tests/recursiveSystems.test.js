@@ -17,7 +17,7 @@ import {
   resolveBoundaryPort,
   resolveBoundaryChain,
   setBoundaryMapping,
-} from '../src/simulation/systemNode.js';
+} from '../src/core/systems/systemNode.js';
 import {
   createWorldSimulation,
   registerBoundaryTransfer,
