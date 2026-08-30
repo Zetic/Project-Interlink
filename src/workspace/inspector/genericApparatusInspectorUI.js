@@ -74,7 +74,7 @@ export function upgradeGenericApparatusInspector(root) {
     const node = wsState.blueprint?.nodes?.[inspector.selectedNodeId];
     const definition = getApparatusDefinition(node?.nodeType);
     const runtime = apparatusRuntimeFor(node?.nodeType);
-    if (!node || !definition || typeof runtime?.simulate !== 'function') continue;
+    if (!node || !definition || typeof runtime?.create !== 'function') continue;
 
     if (body.querySelector?.('[data-generic-apparatus-inspector]')) {
       refreshGenericApparatusInspector(body, node);

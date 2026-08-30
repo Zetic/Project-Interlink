@@ -35,6 +35,13 @@ const COMMINUTION_KIND = Object.freeze({
   ballMill: 3,
 });
 
+const COMMINUTION_TARGET_SIZE_FIELD = Object.freeze({
+  crusher: 'targetParticleSizeMm',
+  jawCrusher: 'jawProductSizeMm',
+  coneCrusher: 'coneProductSizeMm',
+  ballMill: 'millProductSizeMm',
+});
+
 class RuntimeObjectIdTable {
   constructor(label, seedValues = []) {
     this.label = label;
@@ -254,7 +261,7 @@ function compileSiteMachines(blueprint, siteId, nodeIds, occurrenceIds, comminut
       case 'ballMill': {
         const input = nodeForConnection(blueprint, inboundConnection(blueprint, node.id, node.inputPortId ?? 'feed'), 'source');
         const output = nodeForConnection(blueprint, outboundConnection(blueprint, node.id, node.outputPortId ?? 'product'), 'target');
-        const targetParticleSizeMm = node.targetParticleSizeMm;
+        const targetParticleSizeMm = node[COMMINUTION_TARGET_SIZE_FIELD[node.nodeType]];
         machines.push({
           kind: 'comminution', siteId, nodeId, ordinal,
           equipmentKind: COMMINUTION_KIND[node.nodeType],

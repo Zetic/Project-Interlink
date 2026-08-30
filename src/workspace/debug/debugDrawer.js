@@ -1,26 +1,13 @@
 import { wsState, inspector } from '../workspaceState.js';
-import { SIMULATION_STEP_S, simulationTick } from '../../simulation/simulationEngine.js';
+import { SIMULATION_STEP_S } from '../../simulation/simulationEngine.js';
+import { applyRustWorkerRuntimeSnapshot } from '../../simulation/runtimePresentation.js';
 import {
-  pauseWorldSimulation,
-  resumeWorldSimulation,
-  worldSimulationTick,
-} from '../../simulation/worldSimulation.js';
-import {
-  isDeepProfilingEnabled,
-  performanceTelemetrySnapshot,
-  resetPerformanceTelemetry,
-  setDeepProfilingEnabled,
-} from '../../debug/performanceTelemetry.js';
-import {
-  createRoastingBenchmarkFixture,
   placeRoastingTestFactories,
   removeRoastingTestFixture,
 } from '../../debug/fixtures/roastingBenchmark.js';
 
 const FRAME_SAMPLE_LIMIT = 300;
 const DEBUG_REFRESH_MS = 250;
-const BENCHMARK_WARMUP_TICKS = 60;
-const BENCHMARK_SAMPLE_TICKS = 30;
 
 let installedController = null;
 let drawerOpen = false;
@@ -29,11 +16,8 @@ let lastFrameAtMs = null;
 let refreshTimerId = null;
 let frameSamplesMs = [];
 let fixtureRecords = [];
-let lastProfileTotals = { durationMs: 0, elapsedSeconds: 0 };
-let liveApparatusCpuPerTickMs = null;
 let lastRealtimeSample = null;
 let liveRealtimeFactor = null;
-let benchmarkRunning = false;
 
 function nowMs() {
   return globalThis.performance?.now?.() ?? Date.now();
@@ -87,30 +71,6 @@ function stopFrameSampler() {
   lastFrameAtMs = null;
 }
 
-function solidBodyStats(body) {
-  if (!body?.solidState) return { bodies: 0, populations: 0, textureProfiles: 0 };
-  return {
-    bodies: 1,
-    populations: Object.keys(body.solidState.fractions ?? {}).length,
-    textureProfiles: Object.keys(body.solidState.textureProfiles ?? {}).length,
-  };
-}
-
-function gasBodyStats(body) {
-  if (!body?.gasState) return { bodies: 0, populations: 0, textureProfiles: 0 };
-  return {
-    bodies: 1,
-    populations: Object.keys(body.gasState.speciesMassKg ?? {}).length,
-    textureProfiles: 0,
-  };
-}
-
-function addStats(target, value) {
-  target.bodies += value.bodies;
-  target.populations += value.populations;
-  target.textureProfiles += value.textureProfiles;
-}
-
 function collectSimulationStats() {
   const sessions = [...new Set(Object.values(wsState.world?.simulation?.sessions ?? {}))];
   const totals = {
@@ -118,9 +78,6 @@ function collectSimulationStats() {
     nodes: 0,
     activeMachines: 0,
     connections: 0,
-    bodies: 0,
-    populations: 0,
-    textureProfiles: 0,
     furnaces: 0,
     activeFurnaceZones: 0,
     solverEvaluations: 0,
@@ -131,37 +88,17 @@ function collectSimulationStats() {
     totals.connections += Object.keys(blueprint?.connections ?? {}).length;
     for (const node of Object.values(blueprint?.nodes ?? {})) {
       if (node?.enabled === true) totals.activeMachines += 1;
-      if (node?.materialBody) addStats(totals, solidBodyStats(node.materialBody));
       if (node?.nodeType === 'roastingFurnace') {
         totals.furnaces += 1;
         totals.solverEvaluations += node.lastSolverEvaluationCount ?? 0;
-        for (const zone of node.zones ?? []) {
-          const stats = solidBodyStats(zone);
-          addStats(totals, stats);
-          if (stats.populations > 0) totals.activeFurnaceZones += 1;
-        }
-        if (node.pendingFeed) addStats(totals, solidBodyStats(node.pendingFeed));
-        if (node.gasInventory) addStats(totals, gasBodyStats(node.gasInventory));
-      }
-      if (node?.nodeType === 'exhaustVent' && node.emittedGasBody) {
-        addStats(totals, gasBodyStats(node.emittedGasBody));
       }
     }
   }
   return totals;
 }
 
-function updateLiveRates(profileSnapshot) {
+function updateLiveRates() {
   const elapsedSeconds = wsState.world?.simulation?.elapsedSeconds ?? 0;
-  const currentProfileDurationMs = profileSnapshot.totalProfileDurationMs;
-  const deltaElapsed = elapsedSeconds - lastProfileTotals.elapsedSeconds;
-  const deltaProfileDurationMs = currentProfileDurationMs - lastProfileTotals.durationMs;
-  const ticksAdvanced = deltaElapsed > 0 ? deltaElapsed / SIMULATION_STEP_S : 0;
-  if (ticksAdvanced > 0 && deltaProfileDurationMs >= 0) {
-    liveApparatusCpuPerTickMs = deltaProfileDurationMs / ticksAdvanced;
-  }
-  lastProfileTotals = { durationMs: currentProfileDurationMs, elapsedSeconds };
-
   const wallNow = nowMs();
   if (lastRealtimeSample) {
     const wallDeltaSeconds = (wallNow - lastRealtimeSample.wallMs) / 1000;
@@ -171,29 +108,12 @@ function updateLiveRates(profileSnapshot) {
   lastRealtimeSample = { wallMs: wallNow, simulationSeconds: elapsedSeconds };
 }
 
-function renderHotspots(root, profileSnapshot) {
-  const container = root.querySelector('[data-debug-hotspots]');
-  if (!container) return;
-  if (!profileSnapshot.deepProfilingEnabled) {
-    container.innerHTML = '<div class="ws-debug-muted">Enable deep profiling to collect apparatus hotspots.</div>';
-    return;
-  }
-  if (!profileSnapshot.byType.length) {
-    container.innerHTML = '<div class="ws-debug-muted">Waiting for apparatus samples…</div>';
-    return;
-  }
-  container.innerHTML = profileSnapshot.byType.slice(0, 6).map(profile => (
-    `<div class="ws-debug-metric"><span>${profile.nodeType}</span><span>${profile.averageDurationMs.toFixed(3)} ms avg · ${profile.p95DurationMs.toFixed(3)} p95</span></div>`
-  )).join('');
-}
-
 function renderDebugStats(root) {
   if (!drawerOpen || !root?.isConnected) return;
   const frameAverage = mean(frameSamplesMs);
   const frameP95 = percentile(frameSamplesMs, 0.95);
   const fps = frameAverage > 0 ? 1000 / frameAverage : 0;
-  const profile = performanceTelemetrySnapshot();
-  updateLiveRates(profile);
+  updateLiveRates();
   const simulation = collectSimulationStats();
   const backlogMs = Math.max(0, (wsState.simAccumulatedS ?? 0) * 1000);
   const heap = globalThis.performance?.memory;
@@ -203,19 +123,15 @@ function renderDebugStats(root) {
   setText(root, 'frame-p95', frameSamplesMs.length ? formatMs(frameP95) : '—');
   setText(root, 'backlog', formatMs(backlogMs));
   setText(root, 'realtime-factor', liveRealtimeFactor == null ? '—' : `${liveRealtimeFactor.toFixed(2)}×`);
-  setText(root, 'apparatus-cpu-tick', profile.deepProfilingEnabled ? formatMs(liveApparatusCpuPerTickMs) : 'profiling off');
+  setText(root, 'apparatus-cpu-tick', 'Rust/WASM');
   setText(root, 'sessions', String(simulation.sessions));
   setText(root, 'nodes', String(simulation.nodes));
   setText(root, 'active-machines', String(simulation.activeMachines));
   setText(root, 'connections', String(simulation.connections));
-  setText(root, 'bodies', String(simulation.bodies));
-  setText(root, 'populations', String(simulation.populations));
-  setText(root, 'textures', String(simulation.textureProfiles));
   setText(root, 'furnaces', String(simulation.furnaces));
   setText(root, 'furnace-zones', String(simulation.activeFurnaceZones));
   setText(root, 'solver-evaluations', String(simulation.solverEvaluations));
   setText(root, 'heap-used', heap?.usedJSHeapSize ? `${(heap.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'Unavailable');
-  renderHotspots(root, profile);
 }
 
 function stopRefreshLoop() {
@@ -323,80 +239,27 @@ async function removeFactories(root) {
 }
 
 async function stepWorld(root, seconds) {
-  if (!wsState.world) return;
-  const simulation = wsState.world.simulation;
-  const wasRunning = Boolean(simulation?.running);
-  if (!wasRunning) resumeWorldSimulation(wsState.world);
+  const runtime = wsState.realtimeRuntime;
+  if (!runtime) return status(root, 'Rust/WASM runtime is not initialized.', true);
   const ticks = Math.floor((seconds + 1e-12) / SIMULATION_STEP_S);
-  for (let index = 0; index < ticks; index += 1) worldSimulationTick(wsState.world, SIMULATION_STEP_S);
-  if (!wasRunning) pauseWorldSimulation(wsState.world);
-  status(root, `Advanced world by ${(ticks * SIMULATION_STEP_S).toFixed(1)} s (${ticks} ticks).`);
-  await refreshCurrentWorkspace();
-}
-
-function yieldToBrowser() {
-  return new Promise(resolve => setTimeout(resolve, 0));
-}
-
-function benchmarkTick(fixture) {
-  return simulationTick(fixture.blueprint, fixture.world, SIMULATION_STEP_S);
-}
-
-async function runHeadlessBenchmark(root) {
-  if (benchmarkRunning) return;
-  benchmarkRunning = true;
-  const count = selectedFactoryCount(root);
-  const output = root.querySelector('#ws-debug-benchmark-result');
-  if (output) output.textContent = `Building ${count} canonical roasting line${count === 1 ? '' : 's'}…`;
-  const profilingWasEnabled = isDeepProfilingEnabled();
-  setDeepProfilingEnabled(false);
+  const wasRunning = runtime.running;
   try {
-    const fixture = createRoastingBenchmarkFixture({ count });
-    for (let index = 0; index < BENCHMARK_WARMUP_TICKS; index += 1) {
-      benchmarkTick(fixture);
-      if (index % 5 === 4) await yieldToBrowser();
-    }
-
-    const samples = [];
-    for (let index = 0; index < BENCHMARK_SAMPLE_TICKS; index += 1) {
-      const start = nowMs();
-      benchmarkTick(fixture);
-      samples.push(nowMs() - start);
-      if (index % 5 === 4) await yieldToBrowser();
-    }
-    const average = mean(samples);
-    const p95 = percentile(samples, 0.95);
-    const maximum = Math.max(...samples);
-    const realtimeFactor = average > 0 ? (SIMULATION_STEP_S * 1000) / average : Infinity;
-    if (output) {
-      output.textContent = [
-        `${count} canonical roasting line${count === 1 ? '' : 's'}`,
-        `Warmup: ${BENCHMARK_WARMUP_TICKS} ticks`,
-        `Samples: ${BENCHMARK_SAMPLE_TICKS} ticks`,
-        `Mean tick: ${average.toFixed(2)} ms`,
-        `p95 tick: ${p95.toFixed(2)} ms`,
-        `Max tick: ${maximum.toFixed(2)} ms`,
-        `Realtime capacity: ${Number.isFinite(realtimeFactor) ? realtimeFactor.toFixed(2) : '∞'}×`,
-      ].join('\n');
-    }
+    if (!wasRunning) await runtime.resume();
+    const result = await runtime.advanceFixedSteps(ticks);
+    applyRustWorkerRuntimeSnapshot(wsState.world, runtime, result?.snapshot ?? runtime.snapshot);
+    if (!wasRunning) await runtime.pause();
+    if (!wasRunning && wsState.world?.simulation) wsState.world.simulation.running = false;
+    status(root, `Advanced Rust/WASM world by ${(ticks * SIMULATION_STEP_S).toFixed(1)} s (${ticks} ticks).`);
+    await refreshCurrentWorkspace();
   } catch (error) {
-    if (output) output.textContent = `Benchmark failed: ${error.message}`;
-  } finally {
-    setDeepProfilingEnabled(profilingWasEnabled);
-    benchmarkRunning = false;
+    status(root, error.message, true);
   }
 }
 
 function resetStats(root) {
   frameSamplesMs = [];
-  liveApparatusCpuPerTickMs = null;
   liveRealtimeFactor = null;
   lastRealtimeSample = null;
-  resetPerformanceTelemetry();
-  lastProfileTotals = {
-    durationMs: 0,
-    elapsedSeconds: wsState.world?.simulation?.elapsedSeconds ?? 0,
-  };
   status(root, 'Performance statistics reset.');
   renderDebugStats(root);
 }
@@ -435,7 +298,6 @@ export function installDebugDrawer(root) {
     if (action === 'reset-stats') resetStats(root);
     else if (action === 'place-factories') await placeFactories(root);
     else if (action === 'remove-factories') await removeFactories(root);
-    else if (action === 'benchmark') await runHeadlessBenchmark(root);
     else if (action === 'step-0.1') await stepWorld(root, 0.1);
     else if (action === 'step-1') await stepWorld(root, 1);
     else if (action === 'step-10') await stepWorld(root, 10);
@@ -445,16 +307,4 @@ export function installDebugDrawer(root) {
     }
   }, { signal });
 
-  root.addEventListener('change', event => {
-    if (event.target.matches('#ws-debug-deep-profile')) {
-      setDeepProfilingEnabled(event.target.checked);
-      resetPerformanceTelemetry();
-      lastProfileTotals = {
-        durationMs: 0,
-        elapsedSeconds: wsState.world?.simulation?.elapsedSeconds ?? 0,
-      };
-      liveApparatusCpuPerTickMs = null;
-      renderDebugStats(root);
-    }
-  }, { signal });
 }

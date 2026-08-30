@@ -58,7 +58,7 @@ export function createExtractor({
         id: 'output',
         direction: 'output',
         kind: 'material',
-        label: 'material out',
+        label: 'output',
         provides: [PORT_CAPABILITIES.SOLID_PARTICULATE],
       },
     ],

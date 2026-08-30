@@ -44,12 +44,14 @@ export function browserRuntimeCapabilities(scope = globalThis) {
 }
 
 export function recommendedRuntimeBackend(capabilities = browserRuntimeCapabilities()) {
+  const supported = Boolean(capabilities.worker && capabilities.webAssembly);
   return {
-    simulationThread: capabilities.worker ? 'worker' : 'main-thread',
-    numericCore: capabilities.webAssembly ? 'wasm-ready' : 'javascript',
+    supported,
+    simulationThread: capabilities.worker ? 'worker' : 'unavailable',
+    numericCore: capabilities.webAssembly ? 'rust-wasm' : 'unavailable',
     cpuParallelism: capabilities.wasmThreads
       ? 'shared-memory-workers'
-      : (capabilities.worker ? 'message-workers' : 'single-thread'),
-    gpuCompute: capabilities.webGpu ? 'webgpu-available' : 'cpu-fallback',
+      : (capabilities.worker ? 'message-workers' : 'unavailable'),
+    gpuCompute: capabilities.webGpu ? 'webgpu-available' : 'cpu',
   };
 }

@@ -215,20 +215,3 @@ export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
   }
   return snapshot;
 }
-
-/** Drop presentation authority when falling back to the synchronous JS runtime. */
-export function clearRustWorkerRuntimePresentation(world) {
-  if (!world?.simulation) return;
-  if (Object.prototype.hasOwnProperty.call(world.simulation, 'runtimePresentationAuthority')) {
-    world.simulation.runtimePresentationAuthority = null;
-  }
-  const index = buildPresentationIndex(world);
-  for (const node of index.nodeById.values()) {
-    if (node?.runtimePresentation?.authority === RUST_WORKER_PRESENTATION_AUTHORITY) node.runtimePresentation = null;
-  }
-  for (const stream of index.streams) {
-    if (Object.prototype.hasOwnProperty.call(stream, '_runtimePresentationMassFlowKgPerSecond')) {
-      stream._runtimePresentationMassFlowKgPerSecond = null;
-    }
-  }
-}

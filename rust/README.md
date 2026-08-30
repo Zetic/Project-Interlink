@@ -214,3 +214,8 @@ The repository pins the stable Rust toolchain and the `wasm32-unknown-unknown` t
 12. Temperature remains derived from authoritative energy plus composition-dependent heat capacity; do not add an independently mutable temperature field that can disagree with the energy ledger.
 13. Do not add gas pressure/volume/phase state speculatively. Introduce new thermodynamic state only when a process actually requires it and conservation/ownership semantics are defined.
 14. Whole-world cutover/import is a scheduler responsibility. Avoid per-apparatus state-loading APIs that would turn startup into thousands of fine-grained JS↔WASM calls.
+
+
+## Rust-only production authority
+
+The browser no longer contains a JavaScript physics fallback. JavaScript owns UI, authoring, world/content compilation, Worker messaging, serialization, and presentation only. All physical time advancement, retained material state, apparatus execution, routing, thermal behavior, chemistry, and world scheduling are owned by Rust/WASM in the dedicated simulation Worker. Browsers without both Web Worker and WebAssembly support are unsupported rather than silently selecting a second simulation engine.
