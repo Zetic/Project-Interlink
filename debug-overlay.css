@@ -132,3 +132,32 @@
   line-height: 1.45;
   white-space: pre-wrap;
 }
+
+.ws-debug-profile-breakdown {
+  margin: 7px 0 9px;
+  padding: 6px;
+  border: 1px solid #3b2c21;
+  background: #0d0b09;
+  color: #8f857c;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.ws-debug-profile-group + .ws-debug-profile-group { margin-top: 7px; }
+.ws-debug-profile-heading {
+  margin-bottom: 3px;
+  color: #d39a66;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ws-debug-profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 1px 0;
+}
+.ws-debug-profile-row > span:last-child {
+  color: #ead8c7;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

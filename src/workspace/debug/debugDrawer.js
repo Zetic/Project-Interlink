@@ -18,6 +18,9 @@ let frameSamplesMs = [];
 let fixtureRecords = [];
 let lastRealtimeSample = null;
 let liveRealtimeFactor = null;
+let deepProfilingEnabled = false;
+let profileQueryPending = false;
+let lastProfile = null;
 
 function nowMs() {
   return globalThis.performance?.now?.() ?? Date.now();
@@ -36,6 +39,20 @@ function mean(values) {
 
 function formatMs(value) {
   return Number.isFinite(value) ? `${value.toFixed(2)} ms` : '—';
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function formatBudget(valueMs, percent) {
+  if (!Number.isFinite(valueMs) || !Number.isFinite(percent)) return '—';
+  return `${valueMs.toFixed(3)} ms · ${percent.toFixed(2)}%`;
 }
 
 function setText(root, name, value) {
@@ -108,6 +125,66 @@ function updateLiveRates() {
   lastRealtimeSample = { wallMs: wallNow, simulationSeconds: elapsedSeconds };
 }
 
+function renderProfile(root, profile) {
+  lastProfile = profile;
+  if (!profile?.enabled || !profile.profiledTicks) {
+    setText(root, 'profile-tick-average', profile?.enabled ? 'Collecting…' : '—');
+    setText(root, 'profile-apparatus-average', '—');
+    setText(root, 'profile-other-average', '—');
+    const breakdown = root.querySelector('#ws-debug-profile-breakdown');
+    if (breakdown) breakdown.textContent = profile?.enabled
+      ? 'Collecting authoritative Rust timing samples…'
+      : 'Enable deep profiling to measure Rust apparatus hotspots.';
+    return;
+  }
+
+  setText(root, 'profile-tick-average', formatBudget(profile.tickAverageMs, profile.tickBudgetPercent));
+  setText(root, 'profile-apparatus-average', formatBudget(profile.apparatusAverageMs, profile.apparatusBudgetPercent));
+  setText(root, 'profile-other-average', formatBudget(profile.otherAverageMs, profile.otherBudgetPercent));
+
+  const breakdown = root.querySelector('#ws-debug-profile-breakdown');
+  if (!breakdown) return;
+  const typeRows = (profile.byType ?? []).slice(0, 10).map(row =>
+    `<div class="ws-debug-profile-row"><span>${escapeHtml(row.type)}</span><span>${escapeHtml(formatBudget(row.averageMsPerTick, row.budgetPercent))}</span></div>`
+  ).join('');
+  const nodeRows = (profile.nodes ?? []).slice(0, 5).map(row =>
+    `<div class="ws-debug-profile-row"><span>${escapeHtml(row.nodeId)}</span><span>${escapeHtml(formatBudget(row.averageMsPerTick, row.budgetPercent))}</span></div>`
+  ).join('');
+  breakdown.innerHTML = `<div class="ws-debug-profile-group"><div class="ws-debug-profile-heading">By apparatus type · ${profile.profiledTicks} ticks</div>${typeRows || '<div>—</div>'}</div><div class="ws-debug-profile-group"><div class="ws-debug-profile-heading">Hottest nodes</div>${nodeRows || '<div>—</div>'}</div>`;
+}
+
+async function refreshDeepProfile(root) {
+  if (!deepProfilingEnabled || profileQueryPending || !wsState.realtimeRuntime) return;
+  profileQueryPending = true;
+  try {
+    renderProfile(root, await wsState.realtimeRuntime.queryProfile());
+  } catch (error) {
+    const breakdown = root.querySelector('#ws-debug-profile-breakdown');
+    if (breakdown) breakdown.textContent = `Profiling unavailable: ${error.message}`;
+  } finally {
+    profileQueryPending = false;
+  }
+}
+
+async function setDeepProfiling(root, enabled, { reset = false } = {}) {
+  const runtime = wsState.realtimeRuntime;
+  const checkbox = root.querySelector('#ws-debug-deep-profiling');
+  deepProfilingEnabled = Boolean(enabled && runtime);
+  if (checkbox) checkbox.checked = deepProfilingEnabled;
+  lastProfile = null;
+  renderProfile(root, { enabled: deepProfilingEnabled, profiledTicks: 0 });
+  if (!runtime) return;
+  try {
+    const profile = await runtime.setDeepProfiling(deepProfilingEnabled, { reset });
+    renderProfile(root, profile);
+  } catch (error) {
+    deepProfilingEnabled = false;
+    if (checkbox) checkbox.checked = false;
+    const breakdown = root.querySelector('#ws-debug-profile-breakdown');
+    if (breakdown) breakdown.textContent = `Profiling unavailable: ${error.message}`;
+  }
+}
+
 function renderDebugStats(root) {
   if (!drawerOpen || !root?.isConnected) return;
   const frameAverage = mean(frameSamplesMs);
@@ -132,7 +209,9 @@ function renderDebugStats(root) {
   setText(root, 'furnace-zones', String(simulation.activeFurnaceZones));
   setText(root, 'solver-evaluations', String(simulation.solverEvaluations));
   setText(root, 'heap-used', heap?.usedJSHeapSize ? `${(heap.usedJSHeapSize / 1048576).toFixed(1)} MB` : 'Unavailable');
+  if (deepProfilingEnabled) void refreshDeepProfile(root);
 }
+
 
 function stopRefreshLoop() {
   if (refreshTimerId != null) clearInterval(refreshTimerId);
@@ -181,6 +260,7 @@ function applyDrawerVisibility(root) {
 
 function setDrawerOpen(root, open) {
   drawerOpen = Boolean(open);
+  if (!drawerOpen && deepProfilingEnabled) void setDeepProfiling(root, false);
   applyDrawerVisibility(root);
 }
 
@@ -260,6 +340,8 @@ function resetStats(root) {
   frameSamplesMs = [];
   liveRealtimeFactor = null;
   lastRealtimeSample = null;
+  lastProfile = null;
+  if (deepProfilingEnabled) void setDeepProfiling(root, true, { reset: true });
   status(root, 'Performance statistics reset.');
   renderDebugStats(root);
 }
@@ -279,6 +361,18 @@ export function installDebugDrawer(root) {
   if (!toggle) return;
   applyDrawerVisibility(root);
   updatePauseButton(root);
+  deepProfilingEnabled = false;
+  profileQueryPending = false;
+  lastProfile = null;
+  const profilingCheckbox = root.querySelector('#ws-debug-deep-profiling');
+  if (profilingCheckbox) profilingCheckbox.checked = false;
+  if (wsState.realtimeRuntime) void wsState.realtimeRuntime.setDeepProfiling(false).catch(() => {});
+
+  root.addEventListener('change', event => {
+    if (event.target?.id === 'ws-debug-deep-profiling') {
+      void setDeepProfiling(root, event.target.checked, { reset: event.target.checked });
+    }
+  }, { signal });
 
   root.addEventListener('click', async event => {
     if (event.target.closest('#ws-navigation-toggle, #ws-node-catalog-toggle')) {

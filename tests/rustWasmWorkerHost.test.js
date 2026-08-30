@@ -217,3 +217,50 @@ test('bad detail request is non-terminal at the Worker host boundary', () => {
   assert.equal(stepped.requestId, 3);
 });
 
+
+
+class ProfilingWasmWorld extends FakeWasmWorld {
+  constructor() {
+    super();
+    this._profiling = false;
+  }
+  set_profiling_enabled(value) { this._profiling = value; }
+  profiling_enabled() { return this._profiling; }
+  reset_profiling_stats() {}
+  profile_tick_count() { return 4; }
+  profile_tick_total_duration_ms() { return 20; }
+  profile_tick_max_duration_ms() { return 8; }
+  profile_apparatus_total_duration_ms() { return 12; }
+  profile_node_ids() { return new Uint32Array([12]); }
+  profile_node_calls(id) { return id === 12 ? 4 : 0; }
+  profile_node_total_duration_ms(id) { return id === 12 ? 12 : 0; }
+  profile_node_max_duration_ms(id) { return id === 12 ? 4 : 0; }
+}
+
+test('Worker profile reports values and percentages of the authoritative 100 ms budget', () => {
+  const host = createRustWasmWorkerHost({
+    WasmPackedWorldRuntime: ProfilingWasmWorld,
+    runtimeProtocolVersion: () => REALTIME_RUNTIME_PROTOCOL_VERSION,
+  });
+  host.handle(createRuntimeCommand(RUNTIME_COMMAND_TYPES.INIT, { setup: emptySetup() }, 1));
+  host.setup.machines.push({ nodeId: 12, canonicalNodeId: 'furnace-a', kind: 'roastingFurnace' });
+
+  const enabled = host.handle(createRuntimeCommand(
+    RUNTIME_COMMAND_TYPES.SET_PROFILING,
+    { enabled: true, reset: true },
+    2,
+  ));
+  assert.equal(enabled.type, RUNTIME_EVENT_TYPES.PROFILE);
+  assert.equal(enabled.requestId, 2);
+  assert.equal(enabled.payload.profile.budgetMs, 100);
+  assert.equal(enabled.payload.profile.tickAverageMs, 5);
+  assert.equal(enabled.payload.profile.tickBudgetPercent, 5);
+  assert.equal(enabled.payload.profile.apparatusAverageMs, 3);
+  assert.equal(enabled.payload.profile.apparatusBudgetPercent, 3);
+  assert.equal(enabled.payload.profile.otherAverageMs, 2);
+  assert.equal(enabled.payload.profile.otherBudgetPercent, 2);
+  assert.equal(enabled.payload.profile.byType[0].type, 'Roasting Furnace');
+  assert.equal(enabled.payload.profile.byType[0].budgetPercent, 3);
+  assert.equal(enabled.payload.profile.nodes[0].nodeId, 'furnace-a');
+  assert.equal(enabled.payload.profile.nodes[0].budgetPercent, 3);
+});

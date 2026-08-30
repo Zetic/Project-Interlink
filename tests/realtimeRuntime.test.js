@@ -120,3 +120,22 @@ test('Worker protocol ERROR is terminal', async () => {
   assert.equal(runtime.running, false);
   assert.equal(harness.terminated, true);
 });
+
+
+test('profiling facade toggles and queries Worker-owned timing without affecting physics state', async () => {
+  const harness = workerHarness((command, emit) => {
+    if (command.type === RUNTIME_COMMAND_TYPES.INIT) return emit(readyEvent(command));
+    if (command.type === RUNTIME_COMMAND_TYPES.SET_PROFILING || command.type === RUNTIME_COMMAND_TYPES.QUERY_PROFILE) {
+      return emit(createRuntimeEvent(RUNTIME_EVENT_TYPES.PROFILE, {
+        ok: true,
+        profile: { enabled: command.type === RUNTIME_COMMAND_TYPES.SET_PROFILING ? command.payload.enabled : true, budgetMs: 100 },
+      }, command.requestId));
+    }
+  });
+  const runtime = createRealtimeRuntime(world(), { capabilities: capabilities(), workerFactory: () => harness.worker });
+  await runtime.ready;
+  assert.equal((await runtime.setDeepProfiling(true, { reset: true })).enabled, true);
+  assert.equal((await runtime.queryProfile()).budgetMs, 100);
+  assert.equal(runtime.error, null);
+  runtime.dispose();
+});

@@ -2263,12 +2263,6 @@ export class WasmPackedThermalTable {
 }
 if (Symbol.dispose) WasmPackedThermalTable.prototype[Symbol.dispose] = WasmPackedThermalTable.prototype.free;
 
-/**
- * Browser adapter for the complete packed graph/world runtime. Setup calls are
- * intentionally bulk-oriented and happen when compiling/importing a world. Once
- * sealed, normal simulation advances through one `tick_fixed()` call; no
- * per-apparatus or per-fraction JavaScript loop is required.
- */
 export class WasmPackedWorldRuntime {
     static __wrap(ptr) {
         const obj = Object.create(WasmPackedWorldRuntime.prototype);
@@ -3142,6 +3136,74 @@ export class WasmPackedWorldRuntime {
         wasm.wasmpackedworldruntime_pause(this.__wbg_ptr);
     }
     /**
+     * @returns {number}
+     */
+    profile_apparatus_total_duration_ms() {
+        const ret = wasm.wasmpackedworldruntime_profile_apparatus_total_duration_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    profile_node_calls(node_id) {
+        const ret = wasm.wasmpackedworldruntime_profile_node_calls(this.__wbg_ptr, node_id);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    profile_node_ids() {
+        const ret = wasm.wasmpackedworldruntime_profile_node_ids(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    profile_node_max_duration_ms(node_id) {
+        const ret = wasm.wasmpackedworldruntime_profile_node_max_duration_ms(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @param {number} node_id
+     * @returns {number}
+     */
+    profile_node_total_duration_ms(node_id) {
+        const ret = wasm.wasmpackedworldruntime_profile_node_total_duration_ms(this.__wbg_ptr, node_id);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    profile_tick_count() {
+        const ret = wasm.wasmpackedworldruntime_profile_tick_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    profile_tick_max_duration_ms() {
+        const ret = wasm.wasmpackedworldruntime_profile_tick_max_duration_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    profile_tick_total_duration_ms() {
+        const ret = wasm.wasmpackedworldruntime_profile_tick_total_duration_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {boolean}
+     */
+    profiling_enabled() {
+        const ret = wasm.wasmpackedworldruntime_profiling_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * @param {number} node_id
      */
     remove_exhaust_vent_live(node_id) {
@@ -3198,6 +3260,9 @@ export class WasmPackedWorldRuntime {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
+    reset_profiling_stats() {
+        wasm.wasmpackedworldruntime_reset_profiling_stats(this.__wbg_ptr);
+    }
     resume() {
         wasm.wasmpackedworldruntime_resume(this.__wbg_ptr);
     }
@@ -3245,6 +3310,12 @@ export class WasmPackedWorldRuntime {
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
+    }
+    /**
+     * @param {boolean} enabled
+     */
+    set_profiling_enabled(enabled) {
+        wasm.wasmpackedworldruntime_set_profiling_enabled(this.__wbg_ptr, enabled);
     }
     /**
      * @param {number} source_texture_profile_id
@@ -3503,6 +3574,10 @@ function __wbg_get_imports() {
         __proto__: null,
         __wbg___wbindgen_throw_bb96b2010945f0bc: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_now_a5e43af595f1b51e: function() {
+            const ret = performance.now();
+            return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.

@@ -51,6 +51,13 @@ fn validate_non_negative_finite(value: f64, label: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn profiling_clock_read(clock: &mut Option<&mut dyn FnMut() -> f64>) -> Option<f64> {
+    match clock {
+        Some(clock) => Some((**clock)()),
+        None => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackedSolidTarget {
     Hopper(RuntimeNodeId),
@@ -218,6 +225,20 @@ pub struct PackedWorldTickResult {
     pub advanced: bool,
     pub ticks: u32,
     pub extracted_kg: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PackedApparatusTiming {
+    pub node_id: RuntimeNodeId,
+    pub duration_ms: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PackedProfiledWorldTickResult {
+    pub tick: PackedWorldTickResult,
+    pub total_duration_ms: f64,
+    pub apparatus_total_duration_ms: f64,
+    pub apparatus_timings: Vec<PackedApparatusTiming>,
 }
 
 #[derive(Debug, Clone)]
@@ -1363,18 +1384,31 @@ impl PackedWorldRuntime {
         moved
     }
 
-    pub fn tick(&mut self, dt: f64) -> Result<PackedWorldTickResult, String> {
+    fn tick_internal(
+        &mut self,
+        dt: f64,
+        mut clock: Option<&mut dyn FnMut() -> f64>,
+    ) -> Result<PackedProfiledWorldTickResult, String> {
         validate_positive_finite(dt, "world simulation dt")?;
         if !self.running {
-            return Ok(PackedWorldTickResult {
-                advanced: false,
-                ticks: 0,
-                extracted_kg: 0.0,
+            return Ok(PackedProfiledWorldTickResult {
+                tick: PackedWorldTickResult {
+                    advanced: false,
+                    ticks: 0,
+                    extracted_kg: 0.0,
+                },
+                total_duration_ms: 0.0,
+                apparatus_total_duration_ms: 0.0,
+                apparatus_timings: Vec::new(),
             });
         }
+
+        let tick_started_ms = profiling_clock_read(&mut clock);
         self.ensure_sealed();
         let site_order = self.site_order.clone();
         let mut world_extracted = 0.0;
+        let mut apparatus_timings = Vec::new();
+        let mut apparatus_total_duration_ms = 0.0;
 
         for site_id in site_order {
             let (schedule, passive_links) = {
@@ -1399,8 +1433,22 @@ impl PackedWorldRuntime {
                         "runtime schedule metadata drifted from machine ownership".to_string()
                     );
                 }
+
+                let apparatus_started_ms = profiling_clock_read(&mut clock);
                 let result = self.execute_machine(&mut record, dt);
+                let apparatus_finished_ms = profiling_clock_read(&mut clock);
                 self.machines.insert(entry.node_id, record);
+
+                if let (Some(started_ms), Some(finished_ms)) =
+                    (apparatus_started_ms, apparatus_finished_ms)
+                {
+                    let duration_ms = (finished_ms - started_ms).max(0.0);
+                    apparatus_total_duration_ms += duration_ms;
+                    apparatus_timings.push(PackedApparatusTiming {
+                        node_id: entry.node_id,
+                        duration_ms,
+                    });
+                }
                 site_extracted += result?;
             }
             for (link_index, link) in passive_links.into_iter().enumerate() {
@@ -1437,15 +1485,44 @@ impl PackedWorldRuntime {
         }
 
         self.elapsed_seconds += dt;
-        Ok(PackedWorldTickResult {
+        let tick = PackedWorldTickResult {
             advanced: true,
             ticks: 1,
             extracted_kg: world_extracted,
+        };
+        let total_duration_ms = match (tick_started_ms, profiling_clock_read(&mut clock)) {
+            (Some(started_ms), Some(finished_ms)) => (finished_ms - started_ms).max(0.0),
+            _ => 0.0,
+        };
+        Ok(PackedProfiledWorldTickResult {
+            tick,
+            total_duration_ms,
+            apparatus_total_duration_ms,
+            apparatus_timings,
         })
+    }
+
+    pub fn tick(&mut self, dt: f64) -> Result<PackedWorldTickResult, String> {
+        Ok(self.tick_internal(dt, None)?.tick)
+    }
+
+    pub fn tick_profiled(
+        &mut self,
+        dt: f64,
+        clock: &mut dyn FnMut() -> f64,
+    ) -> Result<PackedProfiledWorldTickResult, String> {
+        self.tick_internal(dt, Some(clock))
     }
 
     pub fn tick_fixed(&mut self) -> Result<PackedWorldTickResult, String> {
         self.tick(SIMULATION_STEP_SECONDS)
+    }
+
+    pub fn tick_fixed_profiled(
+        &mut self,
+        clock: &mut dyn FnMut() -> f64,
+    ) -> Result<PackedProfiledWorldTickResult, String> {
+        self.tick_profiled(SIMULATION_STEP_SECONDS, clock)
     }
 
     pub fn advance_fixed_steps(&mut self, steps: u32) -> Result<u32, String> {
@@ -1588,6 +1665,37 @@ mod tests {
         assert_eq!(world.elapsed_seconds(), 0.0);
         assert_eq!(world.site(1).unwrap().elapsed_seconds(), 0.0);
         assert_eq!(world.hopper(100).unwrap().stored_mass_kg(), 0.0);
+    }
+
+    #[test]
+    fn profiled_tick_reports_authoritative_machine_and_tick_time_without_changing_physics() {
+        let mut world = PackedWorldRuntime::new();
+        world.add_site(1).unwrap();
+        world.add_occurrence(1, occurrence()).unwrap();
+        world.add_hopper(100, hopper(100.0)).unwrap();
+        world
+            .add_extractor(
+                1,
+                10,
+                0,
+                PackedExtractorRuntime::new(PackedExtractorConfig::new(5.0, true).unwrap()),
+                Some(1),
+                Some(100),
+            )
+            .unwrap();
+
+        // One tick-start read, one apparatus start/end pair, and one tick-end read.
+        let mut samples = [10.0, 11.0, 13.0, 15.0].into_iter();
+        let mut clock = || samples.next().expect("profile clock sample");
+        let profiled = world.tick_fixed_profiled(&mut clock).unwrap();
+
+        assert!(profiled.tick.advanced);
+        assert_eq!(profiled.apparatus_timings.len(), 1);
+        assert_eq!(profiled.apparatus_timings[0].node_id, 10);
+        assert!((profiled.apparatus_timings[0].duration_ms - 2.0).abs() < 1e-12);
+        assert!((profiled.apparatus_total_duration_ms - 2.0).abs() < 1e-12);
+        assert!((profiled.total_duration_ms - 5.0).abs() < 1e-12);
+        assert!((world.hopper(100).unwrap().stored_mass_kg() - 0.5).abs() < 1e-12);
     }
 
     fn reaction() -> PackedGoethiteReactionTables {

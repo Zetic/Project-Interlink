@@ -385,12 +385,6 @@ export class WasmPackedThermalTable {
     set_specific_heat_capacity_j_per_kg_k(species_id: number, value: number): void;
 }
 
-/**
- * Browser adapter for the complete packed graph/world runtime. Setup calls are
- * intentionally bulk-oriented and happen when compiling/importing a world. Once
- * sealed, normal simulation advances through one `tick_fixed()` call; no
- * per-apparatus or per-fraction JavaScript loop is required.
- */
 export class WasmPackedWorldRuntime {
     free(): void;
     [Symbol.dispose](): void;
@@ -464,16 +458,27 @@ export class WasmPackedWorldRuntime {
     occurrence_extracted_mass_kg(occurrence_id: number): number;
     occurrence_remaining_mass_kg(occurrence_id: number): number;
     pause(): void;
+    profile_apparatus_total_duration_ms(): number;
+    profile_node_calls(node_id: number): number;
+    profile_node_ids(): Uint32Array;
+    profile_node_max_duration_ms(node_id: number): number;
+    profile_node_total_duration_ms(node_id: number): number;
+    profile_tick_count(): number;
+    profile_tick_max_duration_ms(): number;
+    profile_tick_total_duration_ms(): number;
+    profiling_enabled(): boolean;
     remove_exhaust_vent_live(node_id: number): void;
     remove_hopper_if_empty_live(node_id: number): void;
     replace_exhaust_vent_state_live(node_id: number, species_ids: Uint16Array, quantities: Float64Array, sensible_enthalpy_j: number): void;
     replace_hopper_state_live(node_id: number, capacity_kg: number, species_ids: Uint16Array, size_bin_ids: Uint8Array, liberation_class_ids: Uint8Array, texture_profile_ids: Uint32Array, quantities: Float64Array, sensible_enthalpy_j: number): void;
+    reset_profiling_stats(): void;
     resume(): void;
     running(): boolean;
     seal(): void;
     set_comminution_legacy_lt_one_mm_id(runtime_id: number): void;
     set_comminution_species_texture(texture_profile_id: number, species_id: number, d10_um: number, d50_um: number, d90_um: number, free: number, boundary: number, intergrown: number, included: number): void;
     set_comminution_texture_properties(texture_profile_id: number, cwi_kwh_per_t: number, bwi_kwh_per_t: number, abrasion_index: number): void;
+    set_profiling_enabled(enabled: boolean): void;
     set_reaction_product_texture_mapping(source_texture_profile_id: number, product_texture_profile_id: number): void;
     set_reaction_size_factor(size_bin_id: number, factor: number): void;
     set_species_magnetic_response(runtime_id: number, coefficient: number): void;
@@ -763,16 +768,25 @@ export interface InitOutput {
     readonly wasmpackedworldruntime_occurrence_extracted_mass_kg: (a: number, b: number) => number;
     readonly wasmpackedworldruntime_occurrence_remaining_mass_kg: (a: number, b: number) => number;
     readonly wasmpackedworldruntime_pause: (a: number) => void;
+    readonly wasmpackedworldruntime_profile_apparatus_total_duration_ms: (a: number) => number;
+    readonly wasmpackedworldruntime_profile_node_calls: (a: number, b: number) => number;
+    readonly wasmpackedworldruntime_profile_node_ids: (a: number) => [number, number];
+    readonly wasmpackedworldruntime_profile_node_max_duration_ms: (a: number, b: number) => number;
+    readonly wasmpackedworldruntime_profile_node_total_duration_ms: (a: number, b: number) => number;
+    readonly wasmpackedworldruntime_profile_tick_count: (a: number) => number;
+    readonly wasmpackedworldruntime_profiling_enabled: (a: number) => number;
     readonly wasmpackedworldruntime_remove_exhaust_vent_live: (a: number, b: number) => void;
     readonly wasmpackedworldruntime_remove_hopper_if_empty_live: (a: number, b: number) => [number, number];
     readonly wasmpackedworldruntime_replace_exhaust_vent_state_live: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly wasmpackedworldruntime_replace_hopper_state_live: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => [number, number];
+    readonly wasmpackedworldruntime_reset_profiling_stats: (a: number) => void;
     readonly wasmpackedworldruntime_resume: (a: number) => void;
     readonly wasmpackedworldruntime_running: (a: number) => number;
     readonly wasmpackedworldruntime_seal: (a: number) => void;
     readonly wasmpackedworldruntime_set_comminution_legacy_lt_one_mm_id: (a: number, b: number) => void;
     readonly wasmpackedworldruntime_set_comminution_species_texture: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number];
     readonly wasmpackedworldruntime_set_comminution_texture_properties: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmpackedworldruntime_set_profiling_enabled: (a: number, b: number) => void;
     readonly wasmpackedworldruntime_set_reaction_product_texture_mapping: (a: number, b: number, c: number) => [number, number];
     readonly wasmpackedworldruntime_set_reaction_size_factor: (a: number, b: number, c: number) => [number, number];
     readonly wasmpackedworldruntime_set_species_magnetic_response: (a: number, b: number, c: number) => [number, number];
@@ -816,6 +830,8 @@ export interface InitOutput {
     readonly wasmpackedsplitter_output_a_total_mass_flow_kg_per_second: (a: number) => number;
     readonly wasmpackedsplitter_output_b_specific_sensible_enthalpy_j_per_kg: (a: number) => number;
     readonly wasmpackedsplitter_output_b_total_mass_flow_kg_per_second: (a: number) => number;
+    readonly wasmpackedworldruntime_profile_tick_max_duration_ms: (a: number) => number;
+    readonly wasmpackedworldruntime_profile_tick_total_duration_ms: (a: number) => number;
     readonly wasmpackedsplitter_set_enabled: (a: number, b: number) => void;
     readonly __wbg_wasmpackedsplitter_free: (a: number, b: number) => void;
     readonly wasmpackedsplitter_last_error: (a: number) => [number, number];

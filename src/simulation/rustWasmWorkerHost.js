@@ -14,6 +14,93 @@ import {
   validateRuntimeCommand,
 } from './runtimeProtocol.js';
 
+const PROFILE_TYPE_LABELS = Object.freeze({
+  extractor: 'Extractor',
+  merger: 'Material Merger',
+  feeder: 'Feeder',
+  screen: 'Screen',
+  splitter: 'Splitter',
+  magneticSeparator: 'Magnetic Separator',
+  roastingFurnace: 'Roasting Furnace',
+});
+
+function profileTypeForMachine(machine) {
+  if (machine?.kind !== 'comminution') return PROFILE_TYPE_LABELS[machine?.kind] ?? machine?.kind ?? 'Unknown';
+  return ['Legacy Crusher', 'Jaw Crusher', 'Cone Crusher', 'Ball Mill'][machine.equipmentKind] ?? 'Comminution';
+}
+
+function runtimeProfileSnapshot(runtime, setup) {
+  const budgetMs = SIMULATION_STEP_S * 1000;
+  const profiledTicks = Number(runtime.profile_tick_count()) || 0;
+  const tickTotalDurationMs = Number(runtime.profile_tick_total_duration_ms()) || 0;
+  const tickMaxDurationMs = Number(runtime.profile_tick_max_duration_ms()) || 0;
+  const apparatusTotalDurationMs = Number(runtime.profile_apparatus_total_duration_ms()) || 0;
+  const tickAverageMs = profiledTicks ? tickTotalDurationMs / profiledTicks : 0;
+  const apparatusAverageMs = profiledTicks ? apparatusTotalDurationMs / profiledTicks : 0;
+  const otherAverageMs = Math.max(0, tickAverageMs - apparatusAverageMs);
+  const percent = value => budgetMs > 0 ? (value / budgetMs) * 100 : 0;
+  const machinesByRuntimeId = new Map((setup?.machines ?? []).map(machine => [machine.nodeId, machine]));
+
+  const nodes = Array.from(runtime.profile_node_ids?.() ?? []).map(runtimeNodeId => {
+    const machine = machinesByRuntimeId.get(Number(runtimeNodeId));
+    const calls = Number(runtime.profile_node_calls(runtimeNodeId)) || 0;
+    const totalDurationMs = Number(runtime.profile_node_total_duration_ms(runtimeNodeId)) || 0;
+    const averageMsPerTick = profiledTicks ? totalDurationMs / profiledTicks : 0;
+    return {
+      nodeId: machine?.canonicalNodeId ?? `runtime-node-${runtimeNodeId}`,
+      runtimeNodeId: Number(runtimeNodeId),
+      type: profileTypeForMachine(machine),
+      calls,
+      totalDurationMs,
+      averageMsPerTick,
+      averageMsPerCall: calls ? totalDurationMs / calls : 0,
+      maxDurationMs: Number(runtime.profile_node_max_duration_ms(runtimeNodeId)) || 0,
+      budgetPercent: percent(averageMsPerTick),
+    };
+  }).sort((a, b) => b.averageMsPerTick - a.averageMsPerTick);
+
+  const byTypeMap = new Map();
+  for (const node of nodes) {
+    const aggregate = byTypeMap.get(node.type) ?? {
+      type: node.type,
+      calls: 0,
+      totalDurationMs: 0,
+      maxDurationMs: 0,
+      nodeCount: 0,
+    };
+    aggregate.calls += node.calls;
+    aggregate.totalDurationMs += node.totalDurationMs;
+    aggregate.maxDurationMs = Math.max(aggregate.maxDurationMs, node.maxDurationMs);
+    aggregate.nodeCount += 1;
+    byTypeMap.set(node.type, aggregate);
+  }
+  const byType = [...byTypeMap.values()].map(row => {
+    const averageMsPerTick = profiledTicks ? row.totalDurationMs / profiledTicks : 0;
+    return {
+      ...row,
+      averageMsPerTick,
+      averageMsPerCall: row.calls ? row.totalDurationMs / row.calls : 0,
+      budgetPercent: percent(averageMsPerTick),
+    };
+  }).sort((a, b) => b.averageMsPerTick - a.averageMsPerTick);
+
+  return {
+    enabled: runtime.profiling_enabled() === true,
+    profiledTicks,
+    budgetMs,
+    tickAverageMs,
+    tickMaxMs: tickMaxDurationMs,
+    tickBudgetPercent: percent(tickAverageMs),
+    tickMaxBudgetPercent: percent(tickMaxDurationMs),
+    apparatusAverageMs,
+    apparatusBudgetPercent: percent(apparatusAverageMs),
+    otherAverageMs,
+    otherBudgetPercent: percent(otherAverageMs),
+    byType,
+    nodes,
+  };
+}
+
 /**
  * Pure command host used by the dedicated Worker and by Node regression tests.
  * Browser globals intentionally stay outside this module.
@@ -109,6 +196,31 @@ export function createRustWasmWorkerHost({
           // Inspector/observability failures are deliberately non-terminal. A
           // bad read request must never tear down otherwise-valid physics.
           return event(RUNTIME_EVENT_TYPES.DETAIL, {
+            ok: false,
+            error: { message: error instanceof Error ? error.message : String(error) },
+          }, requestId);
+        }
+      }
+
+      case RUNTIME_COMMAND_TYPES.SET_PROFILING: {
+        ensureRuntime();
+        runtime.set_profiling_enabled(command.payload.enabled);
+        if (command.payload.reset === true) runtime.reset_profiling_stats();
+        return event(RUNTIME_EVENT_TYPES.PROFILE, {
+          ok: true,
+          profile: runtimeProfileSnapshot(runtime, setup),
+        }, requestId);
+      }
+
+      case RUNTIME_COMMAND_TYPES.QUERY_PROFILE: {
+        ensureRuntime();
+        try {
+          return event(RUNTIME_EVENT_TYPES.PROFILE, {
+            ok: true,
+            profile: runtimeProfileSnapshot(runtime, setup),
+          }, requestId);
+        } catch (error) {
+          return event(RUNTIME_EVENT_TYPES.PROFILE, {
             ok: false,
             error: { message: error instanceof Error ? error.message : String(error) },
           }, requestId);
