@@ -159,7 +159,8 @@ function nodeContentSignature(node) {
   for (const quantity of Object.values(source.materialBody?.solidState?.fractions ?? {})) {
     if (Number.isFinite(quantity) && quantity > 0) storedMass += quantity;
   }
-  return `${node.label}|${primitives.join('|')}|mass=${storedMass}`;
+  const runtimeRevision = source.runtimePresentation?.revision ?? '';
+  return `${node.label}|${primitives.join('|')}|mass=${storedMass}|runtime=${runtimeRevision}`;
 }
 
 /**

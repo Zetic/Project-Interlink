@@ -1,10 +1,13 @@
+
 /**
  * Read-only presentation projection for the authoritative Rust/WASM Worker.
  *
- * The Worker owns physical truth after the player-facing cutover. This module
- * mirrors only compact scalar state required by the existing renderer. It does
- * not reconstruct packed fraction populations on every fixed step.
+ * The Worker owns physical truth. Compact fixed-step snapshots mirror scalar
+ * state needed by normal rendering; selected-entity detail is attached only on
+ * demand and never becomes a second simulation state.
  */
+
+import { invalidateBlueprintPresentation } from './simulationEngine.js';
 
 export const RUST_WORKER_PRESENTATION_AUTHORITY = 'rust-wasm-worker';
 
@@ -20,6 +23,10 @@ function setHidden(target, key, value) {
     writable: true,
     value,
   });
+}
+
+function deleteHidden(target, key) {
+  if (target && Object.prototype.hasOwnProperty.call(target, key)) delete target[key];
 }
 
 function uniqueBlueprints(world) {
@@ -38,14 +45,25 @@ function passiveLinkKey(siteId, connectionId) {
   return `${siteId}\u0000${connectionId}`;
 }
 
+function addNodeInstance(nodesById, node) {
+  if (!node?.id) return;
+  let values = nodesById.get(node.id);
+  if (!values) {
+    values = new Set();
+    nodesById.set(node.id, values);
+  }
+  values.add(node);
+}
+
 /**
- * Build every lookup needed by one compact Worker snapshot in a single pass.
- * Projection therefore scales with the visible runtime graph rather than doing
- * a workspace scan for every Hopper, machine, vent, and passive link.
+ * Build every lookup needed by one Worker projection in a single pass. Node IDs
+ * may legitimately be represented by multiple browser object instances across
+ * recursive workspace registries, so every instance is retained and receives
+ * the same projection object.
  */
 function buildPresentationIndex(world) {
   const blueprints = uniqueBlueprints(world);
-  const nodeById = new Map();
+  const nodesById = new Map();
   const inputStreamByPort = new Map();
   const outputStreamByPort = new Map();
   const passiveStreamBySiteConnection = new Map();
@@ -55,9 +73,7 @@ function buildPresentationIndex(world) {
   );
 
   for (const blueprint of blueprints) {
-    for (const node of Object.values(blueprint.nodes ?? {})) {
-      if (node?.id) nodeById.set(node.id, node);
-    }
+    for (const node of Object.values(blueprint.nodes ?? {})) addNodeInstance(nodesById, node);
 
     const streamByConnectionId = new Map();
     for (const stream of Object.values(blueprint.streams ?? {})) {
@@ -81,14 +97,23 @@ function buildPresentationIndex(world) {
     }
   }
 
+  // Composite/system workspaces can hold material owners that are not members of
+  // an active Site blueprint. Include them so one canonical runtime ID projects
+  // consistently into every browser view.
+  for (const node of Object.values(world?.systemNodes ?? {})) addNodeInstance(nodesById, node);
+
   return {
     blueprints,
-    nodeById,
+    nodesById,
     inputStreamByPort,
     outputStreamByPort,
     passiveStreamBySiteConnection,
     streams,
   };
+}
+
+function setOnNodeInstances(index, id, key, value) {
+  for (const node of index.nodesById.get(id) ?? []) setHidden(node, key, value);
 }
 
 function setStreamFlow(stream, value) {
@@ -117,19 +142,43 @@ function projectMachineFlows(index, setupMachine, machineSnapshot) {
   });
 }
 
+function invalidateProjectedBlueprints(index) {
+  for (const blueprint of index.blueprints) invalidateBlueprintPresentation(blueprint);
+}
+
 /** Return true when browser-visible physical state is a Worker projection. */
 export function rustWorkerPresentationIsAuthoritative(world) {
   return world?.simulation?.runtimePresentationAuthority === RUST_WORKER_PRESENTATION_AUTHORITY;
 }
 
 /**
- * Apply one compact snapshot to presentation mirrors only. Packed material and
- * thermochemical state remain owned by Rust in the Worker.
+ * Attach one selected-entity detail result/status to every browser object that
+ * represents the same canonical runtime node. The property is non-enumerable so
+ * saves/serialization cannot accidentally persist transient physical truth.
+ */
+export function applyRustWorkerRuntimeDetail(world, detail) {
+  if (!world?.simulation || !detail?.id) return detail;
+  const index = buildPresentationIndex(world);
+  const normalized = {
+    authority: RUST_WORKER_PRESENTATION_AUTHORITY,
+    status: detail.status ?? 'ready',
+    ...detail,
+  };
+  setOnNodeInstances(index, detail.id, 'runtimeDetail', normalized);
+  invalidateProjectedBlueprints(index);
+  return normalized;
+}
+
+/**
+ * Apply one compact scalar snapshot. Packed material populations remain in Rust;
+ * node-card and edge render caches are explicitly invalidated so non-enumerable
+ * Worker projections cannot be skipped as "unchanged" DOM.
  */
 export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
   if (!world?.simulation || !snapshot) return snapshot;
   const simulation = world.simulation;
   const index = buildPresentationIndex(world);
+  const revision = Number.isFinite(snapshot.elapsedSeconds) ? snapshot.elapsedSeconds : 0;
   setHidden(simulation, 'runtimePresentationAuthority', RUST_WORKER_PRESENTATION_AUTHORITY);
   simulation.running = Boolean(snapshot.running);
   if (Number.isFinite(snapshot.elapsedSeconds)) simulation.elapsedSeconds = snapshot.elapsedSeconds;
@@ -142,13 +191,13 @@ export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
   }
 
   for (const hopperSnapshot of snapshot.hoppers ?? []) {
-    const node = index.nodeById.get(hopperSnapshot.id);
-    if (!node) continue;
-    setHidden(node, 'runtimePresentation', {
+    const presentation = {
       authority: RUST_WORKER_PRESENTATION_AUTHORITY,
+      revision,
       storedMassKg: Math.max(0, hopperSnapshot.storedMassKg ?? 0),
       sensibleEnthalpyJ: hopperSnapshot.sensibleEnthalpyJ ?? 0,
-    });
+    };
+    setOnNodeInstances(index, hopperSnapshot.id, 'runtimePresentation', presentation);
   }
 
   for (const occurrenceSnapshot of snapshot.occurrences ?? []) {
@@ -156,6 +205,7 @@ export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
     if (!occurrence) continue;
     setHidden(occurrence, 'runtimePresentation', {
       authority: RUST_WORKER_PRESENTATION_AUTHORITY,
+      revision,
       extractedMassKg: occurrenceSnapshot.extractedMassKg ?? 0,
       remainingMassKg: occurrenceSnapshot.remainingMassKg ?? null,
     });
@@ -164,10 +214,9 @@ export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
   clearProjectedStreamFlows(index);
   const setupMachines = new Map((runtime?.setup?.machines ?? []).map(machine => [machine.canonicalNodeId, machine]));
   for (const machineSnapshot of snapshot.machines ?? []) {
-    const node = index.nodeById.get(machineSnapshot.id);
-    if (!node) continue;
     const presentation = {
       authority: RUST_WORKER_PRESENTATION_AUTHORITY,
+      revision,
       operatingState: machineSnapshot.operatingState ?? 'idle',
       lastError: machineSnapshot.lastError ?? null,
       inputMassFlowKgPerSecond: [...(machineSnapshot.inputMassFlowKgPerSecond ?? [])],
@@ -178,23 +227,18 @@ export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
           + (machineSnapshot.furnace.pendingFeedMassKg ?? 0),
       } : {}),
     };
-    setHidden(node, 'runtimePresentation', presentation);
+    setOnNodeInstances(index, machineSnapshot.id, 'runtimePresentation', presentation);
     projectMachineFlows(index, setupMachines.get(machineSnapshot.id), machineSnapshot);
   }
 
   for (const ventSnapshot of snapshot.exhaustVents ?? []) {
-    const node = index.nodeById.get(ventSnapshot.id);
-    if (!node) continue;
-    setHidden(node, 'runtimePresentation', {
+    setOnNodeInstances(index, ventSnapshot.id, 'runtimePresentation', {
       authority: RUST_WORKER_PRESENTATION_AUTHORITY,
+      revision,
       ventedGasMassKg: ventSnapshot.ventedGasMassKg ?? 0,
     });
   }
 
-  // Snapshot passive-link rows deliberately stay compact. They retain the same
-  // ordering as setup.passiveLinks, whose numeric Site ID resolves through the
-  // stable runtime Site table. Connection IDs are only blueprint-local, so the
-  // Site component is required to avoid projecting one Site's flow into another.
   const setupPassiveLinks = runtime?.setup?.passiveLinks ?? [];
   const runtimeSiteIds = runtime?.setup?.runtimeIds?.sites ?? [];
   (snapshot.passiveLinks ?? []).forEach((linkSnapshot, linkIndex) => {
@@ -213,5 +257,25 @@ export function applyRustWorkerRuntimeSnapshot(world, runtime, snapshot) {
     transfer.lastMovedKg = transferSnapshot.lastMovedKg ?? 0;
     transfer.lastRateKgPerSecond = transferSnapshot.lastRateKgPerSecond ?? 0;
   }
+
+  // This is a presentation invalidation, not a topology/runtime rebuild. It is
+  // the hard contract that makes every visible card/edge re-evaluate Rust state.
+  invalidateProjectedBlueprints(index);
   return snapshot;
+}
+
+/** Remove transient Worker projections when replacing the entire canonical world. */
+export function clearRustWorkerRuntimePresentation(world) {
+  if (!world?.simulation) return;
+  const index = buildPresentationIndex(world);
+  for (const nodes of index.nodesById.values()) {
+    for (const node of nodes) {
+      deleteHidden(node, 'runtimePresentation');
+      deleteHidden(node, 'runtimeDetail');
+    }
+  }
+  for (const stream of index.streams) deleteHidden(stream, '_runtimePresentationMassFlowKgPerSecond');
+  for (const occurrence of Object.values(world.resourceOccurrences ?? {})) deleteHidden(occurrence, 'runtimePresentation');
+  deleteHidden(world.simulation, 'runtimePresentationAuthority');
+  invalidateProjectedBlueprints(index);
 }

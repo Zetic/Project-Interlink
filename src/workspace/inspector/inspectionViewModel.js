@@ -158,12 +158,17 @@ export function hopperInspection(hopper) {
   const materialBody = hopper?.materialBody ?? null;
   const runtimePresentation = hopper?.runtimePresentation ?? null;
   const workerProjected = runtimePresentation?.authority === 'rust-wasm-worker';
+  const runtimeDetail = workerProjected && hopper?.runtimeDetail?.kind === 'hopper'
+    ? hopper.runtimeDetail
+    : null;
+  const detailReady = runtimeDetail?.status === 'ready';
   const cached = HOPPER_INSPECTION_CACHE.get(hopper);
   if (
     cached
     && cached.revision === revision
     && cached.materialBody === materialBody
     && cached.runtimePresentation === runtimePresentation
+    && cached.runtimeDetail === runtimeDetail
     && cached.capacityKg === hopper?.capacityKg
     && cached.nominalParticleSizeMm === hopper?.nominalParticleSizeMm
   ) {
@@ -171,14 +176,39 @@ export function hopperInspection(hopper) {
   }
 
   const storedMassKg = hopperStoredMassKg(hopper);
-  const thermal = workerProjected
-    ? {
+  let thermal;
+  let compositionSummary;
+  let particleSizeSummary;
+  let liberationSummary;
+  if (detailReady) {
+    thermal = {
+      temperatureK: storedMassKg > 0 ? runtimeDetail.temperatureK : null,
+      sensibleEnthalpyJ: runtimeDetail.sensibleEnthalpyJ ?? runtimePresentation?.sensibleEnthalpyJ ?? 0,
+      thermalError: runtimeDetail.thermalError ?? null,
+    };
+    compositionSummary = runtimeDetail.compositionKg ?? {};
+    particleSizeSummary = runtimeDetail.particleSizeDistributionKg ?? {};
+    liberationSummary = runtimeDetail.liberationDistributionKg ?? {};
+  } else if (workerProjected) {
+    thermal = {
       temperatureK: null,
-      sensibleEnthalpyJ: runtimePresentation.sensibleEnthalpyJ ?? 0,
-      thermalError: storedMassKg > 0 ? 'Detailed material state is retained in the Rust/WASM Worker.' : null,
-    }
-    : thermalDetailsForBody(materialBody, storedMassKg);
-  const compositionSummary = workerProjected ? {} : hopperCompositionKg(hopper);
+      sensibleEnthalpyJ: runtimePresentation?.sensibleEnthalpyJ ?? 0,
+      thermalError: storedMassKg <= 0
+        ? null
+        : (runtimeDetail?.status === 'error'
+          ? `Material detail query failed: ${runtimeDetail.error ?? 'unknown error'}`
+          : 'Loading current material detail from the Rust/WASM Worker…'),
+    };
+    compositionSummary = {};
+    particleSizeSummary = {};
+    liberationSummary = {};
+  } else {
+    thermal = thermalDetailsForBody(materialBody, storedMassKg);
+    compositionSummary = hopperCompositionKg(hopper);
+    particleSizeSummary = hopperParticleSizeDistributionKg(hopper);
+    liberationSummary = hopperLiberationDistributionKg(hopper);
+  }
+
   const compositionRows = summaryRows(compositionSummary, storedMassKg, speciesLabel);
   const value = {
     kind: hopper?.systemType === 'boundary-buffer' ? 'boundaryBuffer' : 'hopper',
@@ -191,18 +221,18 @@ export function hopperInspection(hopper) {
     temperatureK: thermal.temperatureK,
     sensibleEnthalpyJ: thermal.sensibleEnthalpyJ,
     thermalError: thermal.thermalError,
-    // Historical components and current composition intentionally expose the
-    // same summary rows; compute them once rather than traversing twice.
     components: compositionRows,
     composition: compositionRows,
-    particleSizeDistribution: workerProjected ? [] : summaryRows(hopperParticleSizeDistributionKg(hopper), storedMassKg, sizeBinLabel),
-    liberationDistribution: workerProjected ? [] : summaryRows(hopperLiberationDistributionKg(hopper), storedMassKg, liberationLabel),
-    detailsUnavailable: workerProjected,
+    particleSizeDistribution: summaryRows(particleSizeSummary, storedMassKg, sizeBinLabel),
+    liberationDistribution: summaryRows(liberationSummary, storedMassKg, liberationLabel),
+    detailsUnavailable: workerProjected && storedMassKg > 0 && !detailReady,
+    detailsLoading: workerProjected && storedMassKg > 0 && !detailReady && runtimeDetail?.status !== 'error',
   };
   HOPPER_INSPECTION_CACHE.set(hopper, {
     revision,
     materialBody,
     runtimePresentation,
+    runtimeDetail,
     capacityKg: hopper?.capacityKg,
     nominalParticleSizeMm: hopper?.nominalParticleSizeMm,
     value,
@@ -401,19 +431,38 @@ export function exhaustVentInspection(blueprint, vent) {
   const projected = vent?.runtimePresentation?.authority === 'rust-wasm-worker'
     ? vent.runtimePresentation
     : null;
+  const runtimeDetail = projected && vent?.runtimeDetail?.kind === 'exhaustVent'
+    ? vent.runtimeDetail
+    : null;
+  const detailReady = runtimeDetail?.status === 'ready';
   const gasBody = vent?.emittedGasBody ?? createGasMaterialBody(createGasMaterialState());
-  const bodyDetails = projected
-    ? {
+  let bodyDetails;
+  if (detailReady) {
+    const totalEmittedMassKg = projected?.ventedGasMassKg ?? runtimeDetail.totalEmittedMassKg ?? 0;
+    bodyDetails = {
+      totalEmittedMassKg,
+      composition: summaryRows(runtimeDetail.compositionKg ?? {}, totalEmittedMassKg, speciesLabel),
+      temperatureK: totalEmittedMassKg > 0 ? runtimeDetail.temperatureK : null,
+      sensibleEnthalpyJ: runtimeDetail.sensibleEnthalpyJ ?? 0,
+      thermalError: runtimeDetail.thermalError ?? null,
+      detailsUnavailable: false,
+    };
+  } else if (projected) {
+    bodyDetails = {
       totalEmittedMassKg: projected.ventedGasMassKg ?? 0,
       composition: [],
       temperatureK: null,
       sensibleEnthalpyJ: 0,
       thermalError: (projected.ventedGasMassKg ?? 0) > 0
-        ? 'Detailed exhaust state is retained in the Rust/WASM Worker.'
+        ? (runtimeDetail?.status === 'error'
+          ? `Exhaust detail query failed: ${runtimeDetail.error ?? 'unknown error'}`
+          : 'Loading current exhaust detail from the Rust/WASM Worker…')
         : null,
-      detailsUnavailable: true,
-    }
-    : exhaustBodyInspection(gasBody);
+      detailsUnavailable: (projected.ventedGasMassKg ?? 0) > 0,
+    };
+  } else {
+    bodyDetails = exhaustBodyInspection(gasBody);
+  }
   const inputConnection = Object.values(blueprint?.connections ?? {}).find(connection =>
     connection.kind === 'material'
       && connection.targetNodeId === vent?.id
@@ -495,11 +544,26 @@ export function machineInspection(blueprint, node) {
 
   if (node?.nodeType === 'roastingFurnace') {
     const projectedFurnace = node.runtimePresentation?.furnace ?? null;
+    const runtimeDetail = projectedFurnace && node?.runtimeDetail?.kind === 'furnace'
+      ? node.runtimeDetail
+      : null;
+    const detailReady = runtimeDetail?.status === 'ready';
     const chargeMassKg = projectedFurnace?.chargeMassKg ?? roastingFurnaceChargeMassKg(node);
     const pendingFeedMassKg = projectedFurnace?.pendingFeedMassKg ?? roastingFurnacePendingFeedMassKg(node);
     const feedRateKgPerSecond = projectedFurnace?.lastFeedRateKgPerSecond
       ?? (actualFeedKgPerSecond > 0 ? actualFeedKgPerSecond : (node.lastFeedRateKgPerSecond ?? 0));
     const zoneCapacityKg = roastingFurnaceZoneCapacityKg(node);
+    const detailedZones = detailReady
+      ? (runtimeDetail.zones ?? []).map(zone => ({
+        index: zone.index,
+        massKg: zone.massKg ?? 0,
+        capacityKg: zone.capacityKg ?? zoneCapacityKg,
+        temperatureK: zone.massKg > 0 ? zone.temperatureK : null,
+        thermalError: zone.thermalError ?? null,
+        goethiteKg: zone.compositionKg?.goethite ?? 0,
+        hematiteKg: zone.compositionKg?.hematite ?? 0,
+      }))
+      : null;
     result.thermochemical = {
       chargeMassKg,
       pendingFeedMassKg,
@@ -522,8 +586,9 @@ export function machineInspection(blueprint, node) {
       solverEvaluationCount: projectedFurnace?.lastSolverEvaluationCount
         ?? node.lastSolverEvaluationCount
         ?? 0,
-      zones: projectedFurnace ? [] : (node.zones ?? []).map((zone, index) => furnaceZoneInspection(zone, index, zoneCapacityKg)),
-      detailsUnavailable: Boolean(projectedFurnace),
+      zones: detailedZones ?? (projectedFurnace ? [] : (node.zones ?? []).map((zone, index) => furnaceZoneInspection(zone, index, zoneCapacityKg))),
+      detailsUnavailable: Boolean(projectedFurnace && !detailReady),
+      detailError: runtimeDetail?.status === 'error' ? runtimeDetail.error ?? 'unknown error' : null,
     };
   }
 

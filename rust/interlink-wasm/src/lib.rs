@@ -23,7 +23,7 @@ pub use separation_bridge::{
 };
 pub use thermal_bridge::{WasmPackedGasBody, WasmPackedGasStream, WasmPackedThermalModel};
 
-pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 4;
+pub const WASM_RUNTIME_PROTOCOL_VERSION: u32 = 5;
 
 #[wasm_bindgen]
 pub fn runtime_protocol_version() -> u32 {
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn bridge_uses_same_fixed_step_as_core() {
         assert_eq!(simulation_step_seconds(), 0.1);
-        assert_eq!(runtime_protocol_version(), 4);
+        assert_eq!(runtime_protocol_version(), 5);
     }
 
     #[test]

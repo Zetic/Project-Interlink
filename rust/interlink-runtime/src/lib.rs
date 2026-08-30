@@ -809,6 +809,17 @@ impl PackedWorldRuntime {
         }
     }
 
+    /// Read-only retained furnace state for observability/Inspector queries.
+    /// This does not expose mutation or alter scheduler ownership.
+    pub fn furnace_runtime(&self, node_id: RuntimeNodeId) -> Option<&PackedRoastingFurnaceRuntime> {
+        let record = self.machines.get(&node_id)?;
+        if let PackedMachineKind::Furnace { runtime, .. } = &record.kind {
+            Some(runtime)
+        } else {
+            None
+        }
+    }
+
     pub fn boundary_transfer(&self, id: RuntimeTransferId) -> Option<&PackedBoundaryTransfer> {
         self.boundary_transfers
             .iter()

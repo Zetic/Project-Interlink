@@ -26,6 +26,8 @@ import {
 } from '../simulation/realtimeRuntime.js';
 import {
   applyRustWorkerRuntimeSnapshot,
+  applyRustWorkerRuntimeDetail,
+  clearRustWorkerRuntimePresentation,
 } from '../simulation/runtimePresentation.js';
 import { getSystemNodePort } from '../core/systems/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';
@@ -98,6 +100,7 @@ export { navigationVisibilityState, navigationFilterState, nodeCatalogFilterStat
 const NODE_WIDTH = 160;
 const NODE_HEIGHT = 100;
 const PORT_RADIUS = 7;
+const RUNTIME_DETAIL_REFRESH_SECONDS = 0.5;
 const MACHINE_NODE_TYPES = new Set([
   'extractor',
   'crusher',
@@ -146,6 +149,88 @@ function runtimeUsesRustWorker() {
 function projectRuntimeSnapshot(snapshot) {
   if (!snapshot || !wsState.world || !runtimeUsesRustWorker()) return;
   applyRustWorkerRuntimeSnapshot(wsState.world, wsState.realtimeRuntime, snapshot);
+  refreshSelectedRuntimeDetail();
+}
+
+function selectedRuntimeDetailTarget() {
+  let node = null;
+  if (inspector.selectedNodeId) node = wsState.blueprint?.nodes?.[inspector.selectedNodeId] ?? null;
+  if (!node && inspector.selectedSystemId) {
+    node = wsState.world?.systemNodes?.[inspector.selectedSystemId]
+      ?? (wsState.selectedRegionId
+        ? getSimulationWorkspace(wsState.world, `${wsState.selectedRegionId}-workspace`)?.nodes?.[inspector.selectedSystemId]
+        : null);
+  }
+  if (!node?.id) return null;
+  if (node.nodeType === 'hopper') return { entityType: 'hopper', id: node.id, node };
+  if (node.nodeType === 'exhaustVent') return { entityType: 'exhaustVent', id: node.id, node };
+  if (node.nodeType === 'roastingFurnace') return { entityType: 'furnace', id: node.id, node };
+  return null;
+}
+
+function selectedRuntimeDetailKey(target = selectedRuntimeDetailTarget()) {
+  return target ? `${target.entityType}:${target.id}` : null;
+}
+
+function updateSelectedInspectorAfterDetail(key) {
+  if (key !== selectedRuntimeDetailKey()) return;
+  inspector.renderKey = null;
+  if (wsState.currentLevel === 'site') updateInspector(true);
+  else updateCompositeInspector(true);
+}
+
+function refreshSelectedRuntimeDetail({ force = false } = {}) {
+  const target = selectedRuntimeDetailTarget();
+  const runtime = wsState.realtimeRuntime;
+  if (!target || !runtimeUsesRustWorker() || !wsState.runtimeReady || typeof runtime?.queryDetail !== 'function') return;
+  const key = selectedRuntimeDetailKey(target);
+  const elapsedSeconds = runtime.snapshot?.elapsedSeconds ?? wsState.world?.simulation?.elapsedSeconds ?? 0;
+  const last = wsState.runtimeDetailLastRequest;
+  if (
+    !force
+    && last?.key === key
+    && Number.isFinite(elapsedSeconds)
+    && elapsedSeconds - last.elapsedSeconds < RUNTIME_DETAIL_REFRESH_SECONDS
+  ) return;
+
+  if (wsState.runtimeDetailInFlight) {
+    wsState.runtimeDetailRefreshPending = true;
+    return;
+  }
+
+  const existing = target.node.runtimeDetail;
+  if (existing?.status !== 'ready') {
+    applyRustWorkerRuntimeDetail(wsState.world, {
+      kind: target.entityType,
+      id: target.id,
+      status: 'loading',
+    });
+  }
+
+  const epoch = wsState.runtimeEpoch;
+  wsState.runtimeDetailLastRequest = { key, elapsedSeconds };
+  wsState.runtimeDetailInFlight = key;
+  Promise.resolve(runtime.queryDetail(target.entityType, target.id)).then(detail => {
+    if (epoch !== wsState.runtimeEpoch) return;
+    applyRustWorkerRuntimeDetail(wsState.world, { ...detail, status: 'ready' });
+    updateSelectedInspectorAfterDetail(key);
+  }).catch(error => {
+    if (epoch !== wsState.runtimeEpoch) return;
+    applyRustWorkerRuntimeDetail(wsState.world, {
+      kind: target.entityType,
+      id: target.id,
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    updateSelectedInspectorAfterDetail(key);
+  }).finally(() => {
+    if (epoch !== wsState.runtimeEpoch) return;
+    wsState.runtimeDetailInFlight = null;
+    if (wsState.runtimeDetailRefreshPending) {
+      wsState.runtimeDetailRefreshPending = false;
+      refreshSelectedRuntimeDetail({ force: true });
+    }
+  });
 }
 
 function handleRuntimeFailure(error, epoch = wsState.runtimeEpoch) {
@@ -164,7 +249,7 @@ function handleRuntimeFailure(error, epoch = wsState.runtimeEpoch) {
 
 function queueRuntimeReconfigure({ resetNodeIds = [] } = {}) {
   const runtime = wsState.realtimeRuntime;
-  if (!runtime || runtime.backend === REALTIME_RUNTIME_BACKENDS.MAIN_THREAD) return Promise.resolve(null);
+  if (!runtime) return Promise.resolve(null);
   const epoch = wsState.runtimeEpoch;
   wsState.runtimeMutationPending += 1;
   const previous = wsState.runtimeMutationChain ?? Promise.resolve();
@@ -1296,6 +1381,7 @@ function selectSystem(systemId) {
   inspector.message = '';
   inspector.renderKey = null;
   renderWorkspace();
+  refreshSelectedRuntimeDetail({ force: true });
 }
 
 function summaryRowsHtml(rows, emptyLabel, suffix = 'kg') {
@@ -1316,7 +1402,8 @@ function formatEnergyMj(energyJ) {
   return Number.isFinite(energyJ) ? `${(energyJ / 1e6).toFixed(3)} MJ` : 'Unavailable';
 }
 
-function furnaceZonesHtml(zones) {
+function furnaceZonesHtml(zones, detailsUnavailable = false) {
+  if (detailsUnavailable) return '<span>Loading current furnace detail from the Rust/WASM Worker…</span>';
   if (!zones?.length) return '<span>No retained process material.</span>';
   return zones.map(zone => `<div class="ws-ins-comp-row"><span>Zone ${zone.index}</span><span>${zone.massKg.toFixed(3)} / ${zone.capacityKg.toFixed(3)} kg · ${escHtml(formatTemperature(zone.temperatureK))} · Goethite ${zone.goethiteKg.toFixed(3)} kg · Hematite ${zone.hematiteKg.toFixed(3)} kg</span></div>`).join('');
 }
@@ -1758,6 +1845,7 @@ function selectNode(nodeId) {
   inspector.renderKey = null;
   renderSiteNodes();
   renderNavigationDrawer();
+  refreshSelectedRuntimeDetail({ force: true });
 }
 
 function selectConnection(connectionId) {
@@ -1852,7 +1940,7 @@ function formatNodeInspector(node) {
         <div class="ws-ins-row"><b>Goethite conversion this tick:</b> <span data-live="furnace-conversion">${thermo.goethiteConversionPercent.toFixed(2)}</span>%</div>
         <div class="ws-ins-row"><b>Solid product:</b> <span data-live="furnace-product">${thermo.solidProductRateKgPerSecond.toFixed(3)}</span> kg/s</div>
         <div class="ws-ins-row"><b>Exhaust:</b> <span data-live="furnace-exhaust">${thermo.exhaustRateKgPerSecond.toFixed(3)}</span> kg/s</div>
-        <div class="ws-ins-comp"><b>Internal zones</b><div data-live-section="furnace-zones">${furnaceZonesHtml(thermo.zones)}</div></div>`;
+        <div class="ws-ins-comp"><b>Internal zones</b><div data-live-section="furnace-zones">${furnaceZonesHtml(thermo.zones, thermo.detailsUnavailable)}</div></div>`;
     }
     html += `<div class="ws-ins-note" data-live="error"${details.lastError ? '' : ' hidden'}>${escHtml(details.lastError ?? '')}</div>`;
   } else if (hopper) {
@@ -1989,7 +2077,7 @@ function updateInspector(force = false) {
           if (span) span.textContent = value;
         }
         const zones = body.querySelector('[data-live-section="furnace-zones"]');
-        if (zones) zones.innerHTML = furnaceZonesHtml(thermo.zones);
+        if (zones) zones.innerHTML = furnaceZonesHtml(thermo.zones, thermo.detailsUnavailable);
       }
       const error = body.querySelector('[data-live="error"]');
       if (error) {
@@ -2240,6 +2328,9 @@ export function initWorkspace(world, knowledge) {
   wsState.runtimeError = null;
   wsState.runtimeMutationPending = 0;
   wsState.runtimeMutationChain = null;
+  wsState.runtimeDetailInFlight = null;
+  wsState.runtimeDetailRefreshPending = false;
+  wsState.runtimeDetailLastRequest = null;
   wsState.simStepInFlight = false;
   wsState.dragTrackingCleanup?.();
   wsState.dragTrackingCleanup = null;

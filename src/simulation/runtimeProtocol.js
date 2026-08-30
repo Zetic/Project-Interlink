@@ -1,6 +1,7 @@
+
 import { SIMULATION_STEP_S } from './simulationEngine.js';
 
-export const REALTIME_RUNTIME_PROTOCOL_VERSION = 4;
+export const REALTIME_RUNTIME_PROTOCOL_VERSION = 5;
 
 export const RUNTIME_COMMAND_TYPES = Object.freeze({
   INIT: 'init',
@@ -9,6 +10,7 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
   RESUME: 'resume',
   STEP_FIXED: 'step-fixed',
   ADVANCE_FIXED: 'advance-fixed',
+  QUERY_DETAIL: 'query-detail',
 });
 
 export const RUNTIME_EVENT_TYPES = Object.freeze({
@@ -16,14 +18,23 @@ export const RUNTIME_EVENT_TYPES = Object.freeze({
   RECONFIGURED: 'reconfigured',
   STEPPED: 'stepped',
   RUN_STATE: 'run-state',
+  DETAIL: 'detail',
   ERROR: 'error',
 });
 
-export function createRuntimeCommand(type, payload = {}) {
+function validateRequestId(requestId, label = 'runtime requestId') {
+  if (requestId == null) return;
+  if (!Number.isSafeInteger(requestId) || requestId <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+}
+
+export function createRuntimeCommand(type, payload = {}, requestId = null) {
   const command = {
     protocolVersion: REALTIME_RUNTIME_PROTOCOL_VERSION,
     type,
     payload,
+    ...(requestId == null ? {} : { requestId }),
   };
   validateRuntimeCommand(command);
   return command;
@@ -36,6 +47,7 @@ export function validateRuntimeCommand(command) {
   if (command.protocolVersion !== REALTIME_RUNTIME_PROTOCOL_VERSION) {
     throw new Error(`runtime command protocolVersion must be ${REALTIME_RUNTIME_PROTOCOL_VERSION}`);
   }
+  validateRequestId(command.requestId);
   if (!Object.values(RUNTIME_COMMAND_TYPES).includes(command.type)) {
     throw new Error(`unknown runtime command '${command.type}'`);
   }
@@ -65,16 +77,27 @@ export function validateRuntimeCommand(command) {
       throw new Error('advance-fixed requires an integer steps value between 0 and 10000');
     }
   }
+  if (command.type === RUNTIME_COMMAND_TYPES.QUERY_DETAIL) {
+    const { entityType, id } = command.payload;
+    if (!['hopper', 'exhaustVent', 'furnace'].includes(entityType)) {
+      throw new Error('query-detail entityType must be hopper, exhaustVent, or furnace');
+    }
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error('query-detail id must be a canonical non-empty string ID');
+    }
+  }
   return command;
 }
 
-export function createRuntimeEvent(type, payload = {}) {
+export function createRuntimeEvent(type, payload = {}, requestId = null) {
   if (!Object.values(RUNTIME_EVENT_TYPES).includes(type)) {
     throw new Error(`unknown runtime event '${type}'`);
   }
+  validateRequestId(requestId, 'runtime event requestId');
   return {
     protocolVersion: REALTIME_RUNTIME_PROTOCOL_VERSION,
     type,
     payload,
+    ...(requestId == null ? {} : { requestId }),
   };
 }

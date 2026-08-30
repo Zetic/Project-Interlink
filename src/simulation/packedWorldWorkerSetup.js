@@ -467,3 +467,164 @@ export function snapshotWasmPackedWorldRuntime(wasmWorld, setup) {
     })),
   };
 }
+
+
+function addSummaryQuantity(summary, id, quantity) {
+  if (!Number.isFinite(quantity) || quantity <= 0) return;
+  const key = id ?? 'unknown';
+  summary[key] = (summary[key] ?? 0) + quantity;
+}
+
+function runtimeMaterialId(values, runtimeId, family) {
+  return values?.[runtimeId] ?? `${family}:${runtimeId}`;
+}
+
+function aggregateSolidColumns(setup, columns) {
+  const compositionKg = {};
+  const particleSizeDistributionKg = {};
+  const liberationDistributionKg = {};
+  const quantities = Array.from(columns.quantities ?? []);
+  const speciesIds = Array.from(columns.speciesIds ?? []);
+  const sizeBinIds = Array.from(columns.sizeBinIds ?? []);
+  const liberationClassIds = Array.from(columns.liberationClassIds ?? []);
+  if (
+    quantities.length !== speciesIds.length
+    || quantities.length !== sizeBinIds.length
+    || quantities.length !== liberationClassIds.length
+  ) {
+    throw new Error('Rust solid detail columns are misaligned');
+  }
+  quantities.forEach((quantity, index) => {
+    addSummaryQuantity(
+      compositionKg,
+      runtimeMaterialId(setup.materialIds.species, speciesIds[index], 'species'),
+      quantity,
+    );
+    addSummaryQuantity(
+      particleSizeDistributionKg,
+      runtimeMaterialId(setup.materialIds.sizeBins, sizeBinIds[index], 'size-bin'),
+      quantity,
+    );
+    addSummaryQuantity(
+      liberationDistributionKg,
+      runtimeMaterialId(setup.materialIds.liberationClasses, liberationClassIds[index], 'liberation'),
+      quantity,
+    );
+  });
+  return { compositionKg, particleSizeDistributionKg, liberationDistributionKg };
+}
+
+function aggregateGasColumns(setup, speciesIdsValue, quantitiesValue) {
+  const compositionKg = {};
+  const speciesIds = Array.from(speciesIdsValue ?? []);
+  const quantities = Array.from(quantitiesValue ?? []);
+  if (speciesIds.length !== quantities.length) throw new Error('Rust gas detail columns are misaligned');
+  quantities.forEach((quantity, index) => {
+    addSummaryQuantity(
+      compositionKg,
+      runtimeMaterialId(setup.materialIds.species, speciesIds[index], 'species'),
+      quantity,
+    );
+  });
+  return compositionKg;
+}
+
+function thermalQuery(query) {
+  try {
+    return { temperatureK: query(), thermalError: null };
+  } catch (error) {
+    return { temperatureK: null, thermalError: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function solidColumnsForHopper(wasmWorld, runtimeId) {
+  return {
+    speciesIds: wasmWorld.hopper_species_ids(runtimeId),
+    sizeBinIds: wasmWorld.hopper_size_bin_ids(runtimeId),
+    liberationClassIds: wasmWorld.hopper_liberation_class_ids(runtimeId),
+    textureProfileIds: wasmWorld.hopper_texture_profile_ids(runtimeId),
+    quantities: wasmWorld.hopper_quantities(runtimeId),
+  };
+}
+
+function solidColumnsForFurnaceZone(wasmWorld, runtimeId, zoneIndex) {
+  return {
+    speciesIds: wasmWorld.furnace_zone_species_ids(runtimeId, zoneIndex),
+    sizeBinIds: wasmWorld.furnace_zone_size_bin_ids(runtimeId, zoneIndex),
+    liberationClassIds: wasmWorld.furnace_zone_liberation_class_ids(runtimeId, zoneIndex),
+    textureProfileIds: wasmWorld.furnace_zone_texture_profile_ids(runtimeId, zoneIndex),
+    quantities: wasmWorld.furnace_zone_quantities(runtimeId, zoneIndex),
+  };
+}
+
+/**
+ * Read detailed physical state only for the currently inspected entity. Packed
+ * arrays cross Rust->Worker on demand and are reduced to canonical summaries in
+ * the Worker before they cross to the browser main thread.
+ */
+export function detailWasmPackedWorldRuntime(wasmWorld, setup, { entityType, id } = {}) {
+  if (entityType === 'hopper') {
+    const hopper = setup.hoppers.find(row => row.canonicalNodeId === id);
+    if (!hopper) throw new Error(`Unknown runtime Hopper '${id}'`);
+    const summaries = aggregateSolidColumns(setup, solidColumnsForHopper(wasmWorld, hopper.nodeId));
+    const thermal = thermalQuery(() => wasmWorld.hopper_temperature_k(hopper.nodeId));
+    return {
+      kind: 'hopper',
+      id,
+      elapsedSeconds: wasmWorld.elapsed_seconds(),
+      storedMassKg: wasmWorld.hopper_stored_mass_kg(hopper.nodeId),
+      sensibleEnthalpyJ: wasmWorld.hopper_sensible_enthalpy_j(hopper.nodeId),
+      ...thermal,
+      ...summaries,
+    };
+  }
+
+  if (entityType === 'exhaustVent') {
+    const vent = setup.exhaustVents.find(row => row.canonicalNodeId === id);
+    if (!vent) throw new Error(`Unknown runtime exhaust vent '${id}'`);
+    const thermal = thermalQuery(() => wasmWorld.exhaust_vent_temperature_k(vent.nodeId));
+    return {
+      kind: 'exhaustVent',
+      id,
+      elapsedSeconds: wasmWorld.elapsed_seconds(),
+      totalEmittedMassKg: wasmWorld.vented_gas_mass_kg(vent.nodeId),
+      sensibleEnthalpyJ: wasmWorld.exhaust_vent_sensible_enthalpy_j(vent.nodeId),
+      compositionKg: aggregateGasColumns(
+        setup,
+        wasmWorld.exhaust_vent_species_ids(vent.nodeId),
+        wasmWorld.exhaust_vent_quantities(vent.nodeId),
+      ),
+      ...thermal,
+    };
+  }
+
+  if (entityType === 'furnace') {
+    const machine = setup.machines.find(row => row.kind === 'roastingFurnace' && row.canonicalNodeId === id);
+    if (!machine) throw new Error(`Unknown runtime furnace '${id}'`);
+    const zoneCount = wasmWorld.furnace_zone_count(machine.nodeId);
+    const zoneCapacityKg = machine.effectiveChamberHoldUpKg / Math.max(1, zoneCount);
+    const zones = Array.from({ length: zoneCount }, (_, zoneIndex) => {
+      const summaries = aggregateSolidColumns(
+        setup,
+        solidColumnsForFurnaceZone(wasmWorld, machine.nodeId, zoneIndex),
+      );
+      const thermal = thermalQuery(() => wasmWorld.furnace_zone_temperature_k(machine.nodeId, zoneIndex));
+      return {
+        index: zoneIndex + 1,
+        massKg: wasmWorld.furnace_zone_mass_kg(machine.nodeId, zoneIndex),
+        capacityKg: zoneCapacityKg,
+        sensibleEnthalpyJ: wasmWorld.furnace_zone_sensible_enthalpy_j(machine.nodeId, zoneIndex),
+        ...thermal,
+        ...summaries,
+      };
+    });
+    return {
+      kind: 'furnace',
+      id,
+      elapsedSeconds: wasmWorld.elapsed_seconds(),
+      zones,
+    };
+  }
+
+  throw new Error(`Unsupported runtime detail entityType '${entityType}'`);
+}
