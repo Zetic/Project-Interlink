@@ -1,143 +1,132 @@
 # Project Interlink realtime browser runtime architecture
 
-This document defines the performance direction for the realtime simulation runtime.
+This document defines the current production performance architecture for the realtime simulation.
 
 ## Player-facing contract
 
-Project Interlink remains a continuously running fixed-step simulation with explicit **Pause / Resume** controls. The authoritative physics step remains `0.1 s` unless a future physics change deliberately revises it. Performance work must not replace realtime play with batch/event fast-forward semantics.
+Project Interlink is a continuously running fixed-step simulation with explicit **Pause / Resume** controls. The authoritative physics step is `0.1 s` unless a future physics change deliberately revises it. Performance work must preserve realtime play rather than replace it with batch/event fast-forward semantics.
 
-## Runtime layers
-
-The browser runtime is split conceptually into four independent layers:
-
-1. **Presentation** — DOM/UI, graph interaction, Inspector, input, navigation.
-2. **Scheduling** — wall-clock accumulation and fixed-step realtime pacing.
-3. **Simulation execution** — compiled graph topology, apparatus order, material routing, thermochemical/process state.
-4. **Numerical acceleration** — WASM/SIMD/worker or WebGPU kernels where workload shape justifies them.
-
-The readable Blueprint/world structures remain the authoring, persistence, debugging, and test representation. Performance-specific projections are transient runtime state and must not become serialized physical truth.
-
-## Implemented in PR #48
-
-### Compiled fixed-step execution
-
-Stable Blueprint topology is projected once into an execution plan containing apparatus phase buckets, direct runtime references, stream lookup, and explicit boundary-storage links. Topology edits invalidate this plan.
-
-World session enumeration and boundary-transfer ordering are cached until their registries change. Solid fraction descriptor parsing/static registry validation is also bounded and cached because descriptor keys are immutable, while quantity and texture ownership remain state-specific and continue to be validated.
-
-### Dirty-driven presentation
-
-Simulation, topology, and graph layout publish transient revision counters. Graph projections and node/edge DOM walks are reused or skipped when no relevant revision changed.
-
-The requestAnimationFrame loop remains the wall-clock scheduler, but state-dependent Site presentation runs after an authoritative physics step rather than once per monitor refresh. A 60/120/240 Hz monitor therefore no longer forces identical graph/Inspector work between 10 Hz physics steps. Node dragging also updates the affected element and connection geometry directly instead of invoking a complete Site render for every pointer movement.
-
-### Hot presentation summaries
-
-Material-stream total flow is cached when canonical stream state changes, so rendering an edge no longer has to sum every solid/gas population every presentation query. The cache is non-enumerable and does not affect serialization.
-
-### Acceleration capability and backend contract
-
-`runtimeCapabilities.js` reports Web Worker, hardware-concurrency, WebAssembly/SIMD, shared-memory threading, WebGPU and OffscreenCanvas support. The DEBUG panel exposes the relevant browser capabilities so benchmark results can be compared across machines.
-
-`realtimeRuntime.js` defines the fixed-step backend contract and validates that the current backend retains authoritative `0.1 s` semantics. PR #48 deliberately keeps the proven compiled JavaScript execution backend as the selectable production path. It does **not** pretend that a Worker backend is complete by copying the object-heavy world across a thread boundary every tick.
-
-## Rust/WASM migration started after PR #48
-
-The permanent high-performance simulation direction is now:
+## Production ownership model
 
 ```text
 main browser thread
   DOM / graph / Inspector / input
+  readable Blueprint authoring state
+  presentation projection
             │
             │ versioned commands + compact snapshots
             ▼
 dedicated simulation Worker
             │
             ▼
-Rust interlink-core → WebAssembly
-  packed runtime state
-  graph execution
+Rust interlink-runtime → interlink-core/process crates → WebAssembly
+  fixed-step scheduling
+  packed retained runtime state
+  graph/apparatus execution
+  routing and boundary transfer
   process physics
-  material/thermal state
+  material / thermal / chemistry state
   conservation
 ```
 
-The Rust implementation is split deliberately:
+The production authority rules are strict:
 
-- `rust/interlink-core` is platform-neutral Rust with no browser dependency;
-- `rust/interlink-wasm` is the thin `wasm-bindgen` adapter;
-- `src/simulation/packedRuntimeState.js` is a typed-array JavaScript fallback/reference for the same first packed-state contract;
-- `src/simulation/runtimeProtocol.js` is the versioned browser/runtime command boundary.
+- the main browser thread owns UI, input, navigation, authoring, persistence-oriented structures, compilation, and presentation;
+- the dedicated Worker owns the live simulation session boundary;
+- Rust/WASM owns all physical time advancement and retained physical state;
+- JavaScript must not provide a second physics engine or fallback execution path;
+- browsers without both Web Worker and WebAssembly support are unsupported rather than silently selecting different simulation semantics.
 
-The first migrated primitive is solid particulate execution state stored as numeric structure-of-arrays columns (`u16/u8/u8/u32/f64`) rather than repeated string-key parsing. Runtime-local numeric IDs are **not** persistent content IDs. Human-readable save/content state remains canonical and is compiled into runtime state.
+Readable Blueprint/world structures remain the authoring, persistence, debugging, and test representation. They are compiled into the packed Rust/WASM runtime and must not be treated as a second live physical state.
 
-The JavaScript engine remains authoritative while parity is established. The Rust Worker backend must not be enabled until enough canonical state has moved that a fixed step can execute without cloning the complete object-heavy world between JavaScript and WASM/Worker memory.
+## Runtime layers
 
-## Worker boundary — next execution backend
+The browser runtime is split conceptually into four layers:
 
-The next backend migration is a dedicated simulation worker. The intended ownership model is:
+1. **Presentation** — DOM/UI, graph interaction, Inspector, input, navigation.
+2. **Realtime pacing** — wall-clock accumulation on the main thread and one outstanding fixed-step request at a time.
+3. **Authoritative simulation** — Worker-hosted Rust/WASM scheduling, apparatus execution, routing, thermochemistry, and retained state.
+4. **Selective acceleration** — SIMD, future WASM threading, or WebGPU only where workload shape justifies them.
 
-- main thread owns DOM, pointer/input events, graph interaction and presentation;
-- worker owns fixed-step simulation execution;
-- topology/command edits cross the boundary as explicit commands;
-- presentation receives compact snapshots/deltas rather than cloning the complete world every frame;
-- detailed Inspector state is queried/snapshotted only when required.
+The main-thread accumulator represents normal fixed-step phase. Only time beyond one normal step window is scheduler debt. Realtime-factor telemetry must use a rolling observation window long enough to avoid quantization from the `0.1 s` step.
 
-A full-world `structuredClone` every physics step is explicitly not the target architecture because it moves the bottleneck to serialization and garbage collection.
+## Worker boundary
 
-The Worker should become authoritative only after simulation state has a coarse command/snapshot boundary. Until that point, the compiled main-thread backend remains the correct fallback and reference implementation.
+Topology and parameter edits cross the Worker boundary as explicit versioned commands. Presentation receives compact authoritative snapshots rather than cloning an object-heavy world every frame. Detailed Inspector state is queried only when required.
 
-## Data-oriented / WASM boundary
+A full-world `structuredClone` every physics step is explicitly prohibited as a target architecture because it moves the bottleneck to serialization and garbage collection.
 
-The long-term simulation execution representation should stop using string-heavy sparse-object structures in numerical hot paths. Readable serialized material state can be compiled to numeric IDs and packed arrays for execution.
+The normal live step path is:
 
-Target execution data includes typed arrays for species, size-bin, liberation/texture identifiers and quantities. This representation enables better JavaScript cache locality immediately and provides a natural boundary for Rust/WebAssembly and SIMD later.
+```text
+requestAnimationFrame pacing
+  → STEP_FIXED(0.1 s)
+  → Worker command dispatch
+  → Rust/WASM authoritative tick
+  → compact snapshot construction
+  → Worker response
+  → main-thread projection/render
+```
 
-WASM should own coarse simulation kernels/state rather than receive one JS→WASM call per fraction or apparatus. The browser UI should communicate through coarse commands such as advancing one fixed step, changing an apparatus parameter, or requesting an inspection snapshot.
+Deep profiling may measure the Rust tick, apparatus execution, Worker round trip, and presentation update separately. Profiling must remain optional so the disabled path does not add per-apparatus timers or message traffic.
+
+## Packed runtime state
+
+Numerical hot paths use compact runtime-local numeric IDs and packed arrays rather than repeatedly parsing string-heavy serialized structures. Runtime-local IDs are execution details, not persistent content IDs.
+
+JavaScript compilation modules may translate readable content/Blueprint definitions into packed initialization data, but they do not advance physical state. WASM should receive coarse commands rather than one JS→WASM call per material fraction or apparatus.
+
+## Presentation policy
+
+State-dependent presentation runs from authoritative Worker snapshots rather than once per monitor refresh. A 60/120/240 Hz monitor therefore does not force identical graph/Inspector work between 10 Hz physics steps.
+
+Graph and Inspector projections should remain dirty/revision-driven where possible. Expensive detail is queried on demand instead of being attached to every routine snapshot.
 
 ## CPU parallelism
 
-Worker parallelism should be applied to genuinely independent work, such as independent Site simulation components, world-generation batches, Monte Carlo generation, or large numerical material transforms. Parallelism must preserve deterministic ordering at synchronization boundaries and must not weaken conservation rules.
+Parallelism should be introduced only for genuinely independent work, such as independent simulation components, world-generation batches, Monte Carlo work, or large regular material transforms. Parallel execution must preserve deterministic ordering at synchronization boundaries and must not weaken conservation rules.
 
-Shared-memory WASM threading can be introduced once the runtime state is packed sufficiently to justify `SharedArrayBuffer`/cross-origin-isolated deployment.
+Shared-memory WASM threading can be considered when measured workloads justify the deployment and synchronization complexity. It requires cross-origin isolation (`SharedArrayBuffer` / COOP / COEP).
 
 ## GPU / WebGPU policy
 
 WebGPU is a selective numerical backend, not a blanket replacement for CPU simulation.
 
-Current factory graphs are relatively small, branch-heavy and dependency-heavy. Crushers, routing, backpressure, state machines and most furnace orchestration are generally better CPU workloads.
+Current factory graphs are relatively small, branch-heavy, and dependency-heavy. Routing, backpressure, apparatus state machines, and most furnace orchestration are generally better CPU workloads.
 
 WebGPU becomes appropriate for large regular workloads such as:
 
 - planetary/geological spatial fields;
-- millions of cells/voxels;
-- heat, diffusion, erosion or fluid grids;
+- millions of cells or voxels;
+- heat, diffusion, erosion, or fluid grids;
 - bulk reaction/property evaluation over large homogeneous arrays;
 - Monte Carlo or matrix-style numerical batches;
 - future high-volume particle/cellular simulations.
 
-Sending a small graph of apparatus through the GPU simply to claim GPU usage is prohibited by this architecture because transfer/synchronization overhead can make it slower.
+Moving a small apparatus graph to the GPU merely to use the GPU is not an optimization target.
 
 ## Deployment
 
-The application remains compatible with static hosting. Basic Worker/WASM/WebGPU paths require no application server. Shared-memory WASM threading requires cross-origin isolation headers, so maximum-performance deployments may require a static host that allows COOP/COEP headers rather than relying on a host that cannot configure them.
+The application remains compatible with static hosting. Worker/WASM/WebGPU paths require no application server. Shared-memory WASM threading requires cross-origin isolation headers, so maximum-performance deployments may require a static host that supports COOP/COEP configuration.
 
 ## Performance acceptance criteria
 
-Performance changes should be evaluated on both strong and weak hardware with the same deterministic fixtures. At minimum measure 1, 10, 25, 50 and 100 factory lines and capture:
+Performance changes should use deterministic fixtures on both strong and weak hardware. At minimum capture:
 
 - display FPS / frame average / frame p95;
-- physics CPU time per fixed step;
-- presentation CPU time;
-- realtime factor;
-- simulation backlog/debt;
+- Rust/WASM physics CPU time per fixed step;
+- apparatus execution time and hotspot breakdown when deep profiling is enabled;
+- Worker step round-trip average / p95;
+- main-thread presentation update average / p95;
+- fixed-step accumulator and scheduler debt;
+- rolling realtime factor;
 - JS heap;
-- population count;
-- apparatus hotspot breakdown when deep profiling is enabled.
+- simulated population / apparatus count.
 
-The primary success metric is not maximum FPS on a strong desktop. It is how far the runtime can scale while keeping realtime factor near `1.0x` and presentation near the display target on weaker hardware.
+Percentages reported for physics/profile timings use the authoritative `100 ms` fixed-step budget. They are simulation-budget utilization, not operating-system CPU utilization.
 
+The primary success metric is how far the runtime scales while keeping realtime factor near `1.0x`, scheduler debt near zero, and presentation responsive on weaker hardware. High display FPS alone does not demonstrate simulation capacity.
 
-## Rust-only production authority
+## Architecture guardrail
 
-The browser no longer contains a JavaScript physics fallback. JavaScript owns UI, authoring, world/content compilation, Worker messaging, serialization, and presentation only. All physical time advancement, retained material state, apparatus execution, routing, thermal behavior, chemistry, and world scheduling are owned by Rust/WASM in the dedicated simulation Worker. Browsers without both Web Worker and WebAssembly support are unsupported rather than silently selecting a second simulation engine.
+All future physical mechanics must enter the Rust/WASM Worker authority boundary. Browser JavaScript may define content, authoring metadata, compilation inputs, commands, and presentation projections, but it must not retain or advance a duplicate physical simulation state.
