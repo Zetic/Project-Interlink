@@ -15,7 +15,7 @@ import {
   getApparatusDefinition,
   validateApparatusParameters,
 } from '../content/apparatus/definitions.js';
-import { createApparatusRuntime } from './apparatus/registry.js';
+import { createApparatusNode } from './apparatus/registry.js';
 import { PORT_CAPABILITIES, portCapabilityMatches } from '../core/systems/ports.js';
 import { MATERIAL_FORMS } from '../core/materials/materialForms.js';
 
@@ -188,7 +188,7 @@ export function blueprintAddApparatus(blueprint, nodeType, parameters = {}) {
     }
   }
 
-  const node = createApparatusRuntime(nodeType, runtimeParameters);
+  const node = createApparatusNode(nodeType, runtimeParameters);
   validateApparatusParameters(node);
   blueprint.nodes[node.id] = node;
   invalidateBlueprintExecutionPlan(blueprint);
