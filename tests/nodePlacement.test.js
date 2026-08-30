@@ -4,7 +4,7 @@ import {
   createBlueprint,
   createBlueprintLayout,
 } from '../src/simulation/simulationEngine.js';
-import { NODE_DEFINITIONS } from '../src/workspace/nodeCatalog.js';
+import { NODE_DEFINITIONS } from '../src/workspace/catalog/nodeCatalog.js';
 import {
   armPlacement,
   cancelPlacement,
@@ -15,7 +15,7 @@ import {
   pointerMovementExceedsThreshold,
   placementIsActive,
   updatePlacementPosition,
-} from '../src/workspace/nodePlacement.js';
+} from '../src/workspace/graph/nodePlacement.js';
 
 const coneCrusher = NODE_DEFINITIONS.find(definition => definition.id === 'cone-crusher');
 
