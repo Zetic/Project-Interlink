@@ -1,4 +1,4 @@
-import { listProcessDefinitions } from '../../core/processes/processDefinitions.js';
+import { listProcessDefinitions } from '../../core/processes/definitions/index.js';
 
 const parameterDefinitionsById = new Map();
 
