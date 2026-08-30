@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createWorld } from '../src/core/world/worldState.js';
+import { generateWorld as createWorld } from '../src/generator/generateWorld.js';
 import { buildSiteSession } from '../src/workspace/siteSession.js';
 import { createWorldSimulation } from '../src/simulation/worldSimulation.js';
 import {

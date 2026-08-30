@@ -1,7 +1,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorld } from '../src/core/world/worldState.js';
+import { generateWorld as createWorld } from '../src/generator/generateWorld.js';
 import { createSolidMaterialBodyFromOccurrence } from '../src/core/materials/occurrenceMaterialization.js';
 import {
   addSolidMaterialState, createSolidMaterialState, summarizeSolidMaterialByLiberationClass,

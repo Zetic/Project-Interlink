@@ -5,7 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorld, validateWorld } from '../src/core/world/worldState.js';
+import { createWorld } from '../src/generator/generateWorld.js';
+import { validateWorld } from '../src/core/world/validation/worldValidation.js';
 import { createKnowledge, validateKnowledge } from '../src/core/world/knowledgeState.js';
 
 const SEED_COUNT = 250;

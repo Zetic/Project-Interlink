@@ -8,7 +8,6 @@ import {
 } from '../src/core/materials/solids/solidMaterialState.js';
 import {
   compileComminutionTablesForRuntime,
-  populateWasmComminutionTables,
 } from '../src/simulation/packedComminutionCompiler.js';
 import { createPackedMaterialIdTables } from '../src/simulation/packedRuntimeCompiler.js';
 
@@ -88,25 +87,4 @@ test('packed comminution compiler preserves texture grain data and measured engi
     },
     { cwi: 11, bwi: 19, ai: 0.42 },
   );
-});
-
-test('WASM comminution table population is one setup pass rather than per-fraction bridge traffic', () => {
-  const state = texturedFeed();
-  const idTables = createPackedMaterialIdTables();
-  const compiled = compileComminutionTablesForRuntime(state, idTables);
-  const calls = [];
-  const mockWasmTable = {
-    add_size_bin: (...args) => calls.push(['size', ...args]),
-    set_legacy_lt_one_mm_id: (...args) => calls.push(['legacy', ...args]),
-    add_liberation_class: (...args) => calls.push(['lib', ...args]),
-    set_species_texture: (...args) => calls.push(['texture', ...args]),
-    set_texture_properties: (...args) => calls.push(['properties', ...args]),
-  };
-
-  assert.equal(populateWasmComminutionTables(mockWasmTable, compiled), mockWasmTable);
-  assert.equal(calls.filter(call => call[0] === 'size').length, 21);
-  assert.equal(calls.filter(call => call[0] === 'lib').length, 4);
-  assert.equal(calls.filter(call => call[0] === 'texture').length, 1);
-  assert.equal(calls.filter(call => call[0] === 'properties').length, 1);
-  assert.equal(calls.filter(call => call[0] === 'legacy').length, 1);
 });

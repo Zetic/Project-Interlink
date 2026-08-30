@@ -6,7 +6,7 @@ import {
   apparatusChoiceParameterDefinition,
   apparatusParameterSelectionOptions,
   installCompositionDisclosureUI,
-} from '../src/workspace/apparatusControlUI.js';
+} from '../src/workspace/inspector/apparatusControlUI.js';
 
 test('choice-backed apparatus parameters expose canonical dropdown options from process definitions', () => {
   const definition = apparatusChoiceParameterDefinition('targetParticleSizeMm');
@@ -38,7 +38,7 @@ test('legacy noncanonical values remain visible but disabled until a canonical s
 test('application installs the apparatus control upgrader and loads matching control styles', () => {
   const appSource = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
   const indexSource = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  assert.match(appSource, /import \{ installApparatusControlUI \} from '\.\/workspace\/apparatusControlUI\.js'/);
+  assert.match(appSource, /import \{ installApparatusControlUI \} from '\.\/workspace\/inspector\/apparatusControlUI\.js'/);
   assert.match(appSource, /installApparatusControlUI\(\)/);
   assert.match(indexSource, /href="apparatus-controls\.css"/);
 });

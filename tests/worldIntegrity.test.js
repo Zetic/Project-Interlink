@@ -2,7 +2,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorld, validateWorld } from '../src/core/world/worldState.js';
+import { createWorld } from '../src/generator/generateWorld.js';
+import { validateWorld } from '../src/core/world/validation/worldValidation.js';
 import { SCHEMA_VERSION, GENERATOR_VERSION } from '../src/core/world/versions.js';
 import { FEATURE_ALLOWED_FAMILIES } from '../src/generator/generateFeatures.js';
 import { getResourceDefinition } from '../src/generator/generateResources.js';

@@ -22,7 +22,7 @@ function validateReserveMass(value) {
  * one-kilogram packed material template. The compiler deliberately reuses the
  * production occurrence materialization path so ore/non-ore fragmentation,
  * composition normalization, mineral texture lineage, and current eligibility
- * semantics remain the parity oracle during migration.
+ * semantics remain the canonical setup source for Rust execution.
  *
  * Current generated worlds have qualitative `quantityClass` only; that value is
  * not a measured physical reserve and is therefore never converted into mass.
@@ -103,26 +103,4 @@ export function compileExtractableWorldOccurrencesForRuntime(
     occurrences[occurrenceId] = compiled.occurrence;
   }
   return { occurrences, unsupported, idTables: resolvedTables };
-}
-
-/** Apply a compiled occurrence snapshot to `WasmPackedResourceOccurrence`. */
-export function populateWasmResourceOccurrence(wasmOccurrence, compiledOccurrence) {
-  if (!wasmOccurrence) throw new Error('WASM packed ResourceOccurrence is required');
-  if (!compiledOccurrence?.materialPerKg?.toColumns) {
-    throw new Error('compiled packed ResourceOccurrence is required');
-  }
-  const columns = compiledOccurrence.materialPerKg.toColumns();
-  for (let index = 0; index < columns.quantities.length; index++) {
-    wasmOccurrence.push_material_fraction(
-      columns.speciesIds[index],
-      columns.sizeBinIds[index],
-      columns.liberationClassIds[index],
-      columns.textureProfileIds[index],
-      columns.quantities[index],
-    );
-  }
-  if (compiledOccurrence.reserveMassKg != null) {
-    wasmOccurrence.set_finite_reserve_mass_kg(compiledOccurrence.reserveMassKg);
-  }
-  return wasmOccurrence;
 }

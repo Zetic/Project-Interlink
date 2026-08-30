@@ -112,34 +112,3 @@ export function compileSeparationTablesForRuntime(idTables) {
     idTables,
   };
 }
-
-/** Apply one compiled setup snapshot to `WasmPackedSeparationTables`. */
-export function populateWasmSeparationTables(wasmTable, compiled) {
-  if (!wasmTable) throw new Error('WASM separation table is required');
-  if (!compiled?.sizeBins || !compiled?.liberationClasses) {
-    throw new Error('compiled separation metadata is required');
-  }
-  for (const row of compiled.sizeBins) {
-    wasmTable.add_size_bin(
-      row.runtimeId,
-      row.maxMm,
-      row.magneticSuitability,
-    );
-  }
-  for (const row of compiled.liberationClasses) {
-    wasmTable.add_liberation_class(row.runtimeId, row.recoveryFactor);
-  }
-  for (const row of compiled.magneticResponses) {
-    wasmTable.set_species_magnetic_response(
-      row.runtimeId,
-      row.normalizedSeparationCoefficient,
-    );
-  }
-  for (const row of compiled.thermalProperties) {
-    wasmTable.set_specific_heat_capacity_j_per_kg_k(
-      row.runtimeId,
-      row.specificHeatCapacityJPerKgK,
-    );
-  }
-  return wasmTable;
-}

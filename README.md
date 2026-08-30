@@ -65,11 +65,15 @@ The current build has a coherent vertical slice from deterministic planet genera
 Current serialized versions are:
 
 ```text
-schemaVersion: 9
+schemaVersion: 10
 generatorVersion: 7
 ```
 
-`schemaVersion: 9` adds persistent mineral-texture lineage to ore-body ResourceOccurrences and textured solid populations. `generatorVersion: 7` generates deterministic occurrence-specific mineral texture profiles in addition to concrete registered species compositions.
+`schemaVersion: 10` adds conserved `MaterialBody` thermal state and persistent Roasting Furnace staged thermal inventories on top of the mineral-texture lineage introduced in schema 9. `generatorVersion: 7` generates deterministic occurrence-specific mineral texture profiles and comminution engineering properties.
+
+## Production runtime authority
+
+Production physical simulation runs in a dedicated browser Worker through one coarse `WasmPackedWorldRuntime` interface. Rust owns fixed-step time advancement, retained material/thermal state, apparatus execution, routing, conservation, and world scheduling. JavaScript remains responsible for deterministic world/content authoring, compiling canonical state into packed Worker setup data, commands, presentation projection, and DOM interaction. There is no JavaScript physics fallback and no standalone per-apparatus WASM runtime surface.
 
 ## Implemented foundation
 

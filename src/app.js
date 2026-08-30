@@ -8,7 +8,7 @@
 
 import { generateWorld } from './generator/generateWorld.js';
 import { createKnowledge } from './core/world/knowledgeState.js';
-import { installApparatusControlUI } from './workspace/apparatusControlUI.js';
+import { installApparatusControlUI } from './workspace/inspector/apparatusControlUI.js';
 import { initWorkspace } from './workspace/workspaceController.js';
 
 function el(id) {

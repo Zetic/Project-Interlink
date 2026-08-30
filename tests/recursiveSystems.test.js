@@ -9,7 +9,7 @@ import {
   blueprintAddMagSep,
   getNodePortDefinitions,
 } from '../src/simulation/simulationEngine.js';
-import { createWorld } from '../src/core/world/worldState.js';
+import { generateWorld as createWorld } from '../src/generator/generateWorld.js';
 import { SCHEMA_VERSION } from '../src/core/world/versions.js';
 import {
   createCompositeNode,

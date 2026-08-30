@@ -12,9 +12,6 @@ import { createPackedMaterialIdTables } from '../src/simulation/packedRuntimeCom
 import {
   compileGoethiteReactionTablesForRuntime,
   compileRoastingFurnaceForRuntime,
-  populateWasmGoethiteReactionTables,
-  wasmGoethiteReactionConstructorArgs,
-  wasmRoastingFurnaceConstructorArgs,
 } from '../src/simulation/packedRoastingCompiler.js';
 
 function textureProfile() {
@@ -89,30 +86,6 @@ test('reaction compiler allocates derived product texture lineage in the shared 
 });
 
 
-test('WASM reaction setup is one coarse metadata population pass', () => {
-  const compiled = compileGoethiteReactionTablesForRuntime(goethiteBody().solidState);
-  const sizeFactors = [];
-  const textures = [];
-  const fake = {
-    set_size_factor(...args) { sizeFactors.push(args); },
-    set_product_texture_mapping(...args) { textures.push(args); },
-  };
-  assert.equal(populateWasmGoethiteReactionTables(fake, compiled), fake);
-  assert.equal(sizeFactors.length, compiled.sizeFactors.length);
-  assert.equal(textures.length, 0);
-  assert.deepEqual(wasmGoethiteReactionConstructorArgs(compiled), [
-    compiled.sourceSpeciesId,
-    compiled.solidProductSpeciesId,
-    compiled.gasProductSpeciesId,
-    0.177702,
-    0.159687,
-    0.018015,
-    90000,
-    90000,
-    60000,
-  ]);
-});
-
 test('live Roasting Furnace state compiles without changing canonical IDs or thermal ledgers', () => {
   const furnace = createRoastingFurnace({
     id: 'furnace-test',
@@ -141,7 +114,4 @@ test('live Roasting Furnace state compiles without changing canonical IDs or the
   assert.equal(compiled.config.internalZoneCount, 4);
   assert.equal(compiled.config.enabled, true);
   assert.equal(compiled.idTables.species.valueFor(compiled.reaction.gasProductSpeciesId), 'waterVapor');
-  assert.deepEqual(wasmRoastingFurnaceConstructorArgs(compiled), [
-    900, 120, 1200, 5, 20, 25, 4, true,
-  ]);
 });

@@ -8,7 +8,6 @@ import {
 import {
   compileExtractableWorldOccurrencesForRuntime,
   compileResourceOccurrenceForRuntime,
-  populateWasmResourceOccurrence,
 } from '../src/simulation/packedExtractionCompiler.js';
 import { createPackedMaterialIdTables } from '../src/simulation/packedRuntimeCompiler.js';
 import { iterateSolidFractions } from '../src/core/materials/solids/solidMaterialState.js';
@@ -171,25 +170,6 @@ test('world extraction compiler shares one numeric ID space and leaves unsupport
     compiled.occurrences['occ-iron'].materialPerKg.toColumns().speciesIds.some(id => id === compiled.idTables.species.idFor('hematite')),
     true,
   );
-});
-
-test('WASM occurrence setup crosses the bridge only during compilation/setup', () => {
-  const { occurrence: packed } = compileResourceOccurrenceForRuntime(
-    basaltOccurrence(),
-    createPackedMaterialIdTables(),
-    { reserveMassKg: 50 },
-  );
-  const calls = { fractions: [], reserve: [] };
-  const fakeWasmOccurrence = {
-    push_material_fraction(...args) { calls.fractions.push(args); },
-    set_finite_reserve_mass_kg(value) { calls.reserve.push(value); },
-  };
-
-  assert.equal(populateWasmResourceOccurrence(fakeWasmOccurrence, packed), fakeWasmOccurrence);
-  assert.equal(calls.fractions.length, packed.materialPerKg.toColumns().quantities.length);
-  assert.deepEqual(calls.reserve, [50]);
-  const total = calls.fractions.reduce((sum, args) => sum + args[4], 0);
-  assert.ok(Math.abs(total - 1) < 1e-12);
 });
 
 test('unsupported liquid occurrence fails compilation with the same production eligibility reason', () => {

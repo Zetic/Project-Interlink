@@ -134,33 +134,6 @@ export function compileGoethiteReactionTablesForRuntime(
   };
 }
 
-export function populateWasmGoethiteReactionTables(wasmReaction, compiled) {
-  if (!wasmReaction || typeof wasmReaction.set_size_factor !== 'function') {
-    throw new Error('WASM goethite reaction bridge is required');
-  }
-  for (const row of compiled.sizeFactors) {
-    wasmReaction.set_size_factor(row.runtimeId, row.factor);
-  }
-  for (const row of compiled.textureMappings) {
-    wasmReaction.set_product_texture_mapping(row.sourceRuntimeId, row.productRuntimeId);
-  }
-  return wasmReaction;
-}
-
-export function wasmGoethiteReactionConstructorArgs(compiled) {
-  return [
-    compiled.sourceSpeciesId,
-    compiled.solidProductSpeciesId,
-    compiled.gasProductSpeciesId,
-    compiled.sourceMassPerExtentKg,
-    compiled.solidProductMassPerExtentKg,
-    compiled.gasProductMassPerExtentKg,
-    compiled.reactionEnthalpyJPerMolExtent,
-    compiled.activationEnergyJPerMol,
-    compiled.preExponentialFactorPerSecond,
-  ];
-}
-
 function furnaceConfig(node) {
   if (!node || node.nodeType !== 'roastingFurnace') {
     throw new Error('canonical roasting furnace node is required');
@@ -179,7 +152,7 @@ function furnaceConfig(node) {
 
 /**
  * Compile an existing live JavaScript furnace into packed state data. Importing
- * that snapshot into the eventual authoritative Rust world is intentionally a
+ * that snapshot into the authoritative Rust world is intentionally a
  * graph/world-scheduler concern rather than a per-apparatus bridge protocol.
  */
 export function compileRoastingFurnaceForRuntime(
@@ -208,18 +181,4 @@ export function compileRoastingFurnaceForRuntime(
     reaction,
     idTables,
   };
-}
-
-export function wasmRoastingFurnaceConstructorArgs(compiled) {
-  const config = compiled.config ?? compiled;
-  return [
-    config.temperatureSetpointK,
-    config.ratedHeaterPowerKw,
-    config.maximumOperatingTemperatureK,
-    config.maximumSolidThroughputKgPerSecond,
-    config.effectiveChamberHoldUpKg,
-    config.heatLossCoefficientWPerK,
-    config.internalZoneCount,
-    config.enabled,
-  ];
 }
