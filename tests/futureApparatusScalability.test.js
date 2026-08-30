@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { APPARATUS_DEFINITIONS } from '../src/content/apparatus/definitions.js';
 import { NODE_DEFINITIONS } from '../src/workspace/catalog/nodeCatalog.js';
@@ -152,14 +152,14 @@ test('player removal policy derives eligibility from canonical apparatus definit
   assert.doesNotMatch(source, /REMOVABLE_NODE_TYPES/);
 });
 
-test('workspace implementation has a controller owner and a small compatibility UI surface', () => {
-  const facade = readFileSync(new URL('../src/workspace/workspaceUI.js', import.meta.url), 'utf8');
+test('workspace implementation is owned directly by the canonical controller', () => {
+  const compatibilityFacade = new URL('../src/workspace/workspaceUI.js', import.meta.url);
   const controller = readFileSync(new URL('../src/workspace/workspaceController.js', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
-  assert.match(facade, /export \* from '\.\/workspaceController\.js'/);
+
+  assert.equal(existsSync(compatibilityFacade), false, 'obsolete workspaceUI compatibility facade should stay removed');
   assert.ok(controller.includes('export function initWorkspace'));
   assert.match(app, /from '\.\/workspace\/workspaceController\.js'/);
-  assert.ok(facade.length < 1000, 'workspaceUI compatibility facade should stay small');
 });
 
 test('application composes world generation directly instead of routing through core world state', () => {

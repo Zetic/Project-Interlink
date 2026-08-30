@@ -11,10 +11,10 @@ import {
   navigationExpandableKeys,
   navigationCategoryVocabulary,
   navigationVisibleCategories,
-} from '../src/workspace/navigationProjection.js';
-import { NODE_CATEGORIES } from '../src/workspace/nodePresentation.js';
-import { NODE_DEFINITIONS } from '../src/workspace/nodeCatalog.js';
-import { commitNodePlacement } from '../src/workspace/nodePlacement.js';
+} from '../src/workspace/navigation/navigationProjection.js';
+import { NODE_CATEGORIES } from '../src/workspace/graph/nodePresentation.js';
+import { NODE_DEFINITIONS } from '../src/workspace/catalog/nodeCatalog.js';
+import { commitNodePlacement } from '../src/workspace/graph/nodePlacement.js';
 
 function findWorldWithIron() {
   for (let index = 0; index < 200; index++) {

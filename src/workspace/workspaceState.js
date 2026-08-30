@@ -1,6 +1,6 @@
 
 import { SIMULATION_STEP_S } from '../simulation/simulationEngine.js';
-import { createPlacementState } from './nodePlacement.js';
+import { createPlacementState } from './graph/nodePlacement.js';
 
 export function createWorkspaceState() {
   let simAccumulatedS = 0;

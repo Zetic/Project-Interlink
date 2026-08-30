@@ -7,7 +7,7 @@ import {
   screenToGraph,
   translateGraphPosition,
   zoomAroundPoint,
-} from '../src/workspace/viewport.js';
+} from '../src/workspace/graph/viewport.js';
 
 test('screenToGraph applies pan and zoom', () => {
   assert.deepEqual(screenToGraph({ x: 140, y: 90 }, { panX: 20, panY: 10, zoom: 2 }), { x: 60, y: 40 });

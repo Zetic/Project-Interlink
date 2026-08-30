@@ -7,7 +7,7 @@ import {
 } from '../src/simulation/simulationEngine.js';
 import { createBoundaryBuffer } from '../src/simulation/hopperNode.js';
 import { createMaterialStream } from '../src/simulation/materialStream.js';
-import { hopperInspection, streamInspection, connectionInspection, featureInspection, machineInspection } from '../src/workspace/inspectionViewModel.js';
+import { hopperInspection, streamInspection, connectionInspection, featureInspection, machineInspection } from '../src/workspace/inspector/inspectionViewModel.js';
 
 test('hopper and boundary inspection exposes canonical initial composition and particle size', () => {
   const hopper = createBoundaryBuffer({ id: 'site-export', capacityKg: 10, role: 'export', initialComponentsKg: { hematite: 3, quartz: 1 }, initialParticleSizeMm: 12 });

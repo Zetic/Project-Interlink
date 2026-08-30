@@ -6,8 +6,8 @@ import {
   blueprintAddCrusher,
   blueprintAddHopper,
 } from '../src/simulation/simulationEngine.js';
-import { NODE_CATEGORIES, nodeCategory } from '../src/workspace/nodePresentation.js';
-import { projectBlueprintGraph } from '../src/workspace/workspaceGraph.js';
+import { NODE_CATEGORIES, nodeCategory } from '../src/workspace/graph/nodePresentation.js';
+import { projectBlueprintGraph } from '../src/workspace/graph/workspaceGraph.js';
 
 test('hierarchy and natural-world nodes keep stable recognition categories', () => {
   assert.equal(nodeCategory({ nodeType: 'planet' }), NODE_CATEGORIES.PLANET);

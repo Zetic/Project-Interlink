@@ -6,7 +6,7 @@ import {
   nodeCatalogCategoryVocabulary,
   nodeCatalogVisibleCategories,
   projectNodeCatalog,
-} from '../src/workspace/nodeCatalog.js';
+} from '../src/workspace/catalog/nodeCatalog.js';
 
 const byId = id => NODE_DEFINITIONS.find(definition => definition.id === id);
 

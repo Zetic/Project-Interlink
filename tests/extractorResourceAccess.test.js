@@ -5,7 +5,7 @@ import {
   blueprintAddExtractor, blueprintAddFeatureSource, blueprintConnect, blueprintDisconnect,
   checkBlueprintConnection, createBlueprint, _resetOrdinals,
 } from '../src/simulation/simulationEngine.js';
-import { nodeDefinitionById } from '../src/workspace/nodeCatalog.js';
+import { nodeDefinitionById } from '../src/workspace/catalog/nodeCatalog.js';
 
 function occurrence(id, featureId) { return { id, sourceId: featureId }; }
 function addSource(blueprint, item) {
