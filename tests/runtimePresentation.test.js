@@ -6,7 +6,6 @@ import { hopperStoredMassKg } from '../src/simulation/hopperNode.js';
 import { getNodeOperatingState } from '../src/simulation/simulationEngine.js';
 import {
   applyRustWorkerRuntimeSnapshot,
-  clearRustWorkerRuntimePresentation,
   rustWorkerPresentationIsAuthoritative,
 } from '../src/simulation/runtimePresentation.js';
 import {
@@ -218,25 +217,4 @@ test('Rust-retained furnace inventory blocks player deletion even when the canon
     },
   };
   assert.equal(nodeOwnedMatterKg(furnace), 4.5);
-});
-
-test('clearing Worker presentation restores scalar helpers to canonical browser state', () => {
-  const fixture = projectionFixture();
-  applyRustWorkerRuntimeSnapshot(fixture.world, fixture.runtime, {
-    running: true,
-    elapsedSeconds: 1,
-    sites: [],
-    hoppers: [{ id: 'hopper-a', storedMassKg: 9, sensibleEnthalpyJ: 0 }],
-    occurrences: [],
-    machines: [{ id: 'machine-a', operatingState: 'running', inputMassFlowKgPerSecond: [2], outputMassFlowKgPerSecond: [] }],
-    exhaustVents: [],
-    passiveLinks: [],
-    boundaryTransfers: [],
-  });
-
-  clearRustWorkerRuntimePresentation(fixture.world);
-  assert.equal(rustWorkerPresentationIsAuthoritative(fixture.world), false);
-  assert.equal(fixture.hopper.runtimePresentation, null);
-  assert.equal(fixture.machineStream._runtimePresentationMassFlowKgPerSecond, null);
-  assert.equal(totalMaterialStreamMassFlowKgPerSecond(fixture.machineStream), 0);
 });

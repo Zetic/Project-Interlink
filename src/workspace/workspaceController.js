@@ -26,7 +26,6 @@ import {
 } from '../simulation/realtimeRuntime.js';
 import {
   applyRustWorkerRuntimeSnapshot,
-  clearRustWorkerRuntimePresentation,
 } from '../simulation/runtimePresentation.js';
 import { getSystemNodePort } from '../core/systems/systemNode.js';
 import { hopperStoredMassKg } from '../simulation/hopperNode.js';

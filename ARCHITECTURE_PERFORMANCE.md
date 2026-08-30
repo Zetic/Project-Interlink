@@ -136,3 +136,8 @@ Performance changes should be evaluated on both strong and weak hardware with th
 - apparatus hotspot breakdown when deep profiling is enabled.
 
 The primary success metric is not maximum FPS on a strong desktop. It is how far the runtime can scale while keeping realtime factor near `1.0x` and presentation near the display target on weaker hardware.
+
+
+## Rust-only production authority
+
+The browser no longer contains a JavaScript physics fallback. JavaScript owns UI, authoring, world/content compilation, Worker messaging, serialization, and presentation only. All physical time advancement, retained material state, apparatus execution, routing, thermal behavior, chemistry, and world scheduling are owned by Rust/WASM in the dedicated simulation Worker. Browsers without both Web Worker and WebAssembly support are unsupported rather than silently selecting a second simulation engine.
