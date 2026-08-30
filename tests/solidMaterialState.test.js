@@ -7,8 +7,8 @@ import {
   addSolidMaterialState, createSolidMaterialState, summarizeSolidMaterialByLiberationClass,
   summarizeSolidMaterialBySizeBin, summarizeSolidMaterialBySpecies, totalSolidQuantity,
   withdrawSolidMaterialState, SOLID_MATERIAL_TOLERANCE, validateSolidMaterialState,
-} from '../src/core/materials/solidMaterialState.js';
-import { particleSizeBinIdForMm } from '../src/core/materials/particleSizeBins.js';
+} from '../src/core/materials/solids/solidMaterialState.js';
+import { particleSizeBinIdForMm } from '../src/core/materials/solids/particleSizeBins.js';
 
 const TOL = 1e-9;
 const close = (a, b) => assert.ok(Math.abs(a - b) <= TOL, `${a} != ${b}`);
