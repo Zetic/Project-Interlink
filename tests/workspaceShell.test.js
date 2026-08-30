@@ -7,7 +7,7 @@ import {
   nodeCatalogFilterState,
   navigationVisibilityState,
   workspaceShellMarkup,
-} from '../src/workspace/workspaceUI.js';
+} from '../src/workspace/workspaceController.js';
 
 const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const workspaceOverrides = readFileSync(new URL('../workspace-overrides.css', import.meta.url), 'utf8');
