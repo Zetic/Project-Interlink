@@ -1,8 +1,12 @@
-
 import { SIMULATION_STEP_S } from '../simulation/simulationEngine.js';
 import { createPlacementState } from './graph/nodePlacement.js';
+import type {
+  InspectorState,
+  PendingGraphConnectionState,
+  WorkspaceState,
+} from './types.js';
 
-export function createWorkspaceState() {
+export function createWorkspaceState(): WorkspaceState {
   let simAccumulatedS = 0;
   return {
     currentLevel: 'planet',
@@ -35,7 +39,7 @@ export function createWorkspaceState() {
      * reduces realtime factor instead of building unbounded catch-up work.
      */
     get simAccumulatedS() { return simAccumulatedS; },
-    set simAccumulatedS(value) {
+    set simAccumulatedS(value: number) {
       simAccumulatedS = Number.isFinite(value)
         ? Math.max(0, Math.min(SIMULATION_STEP_S, value))
         : 0;
@@ -65,7 +69,7 @@ export function createWorkspaceState() {
 
 export const wsState = createWorkspaceState();
 
-export const pendingGraphConnection = {
+export const pendingGraphConnection: PendingGraphConnectionState = {
   active: false,
   source: null,
   x: 0,
@@ -74,7 +78,7 @@ export const pendingGraphConnection = {
   adapter: null,
 };
 
-export const inspector = {
+export const inspector: InspectorState = {
   selectedNodeId: null,
   selectedConnId: null,
   selectedSystemId: null,
