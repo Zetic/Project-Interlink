@@ -51,7 +51,7 @@
   user-select: none;
 }
 
-/* Resource FEATURE cards are world-space geometry, not screen-space overlays. */
+/* Resource FEATURE cards use a stable 160x100 local SVG coordinate system. */
 .ws-map-resource-node {
   cursor: pointer;
 }
@@ -120,7 +120,7 @@
 
 /* Flat-map mechanical graph using the original fixed node-card visual grammar. */
 .ws-map-mechanical-node { cursor: move; }
-.ws-map-mechanical-card-body { fill: #111922; stroke: #52677a; stroke-width: 0.0000184; }
+.ws-map-mechanical-card-body { fill: #111922; stroke: #52677a; stroke-width: 1.5; }
 .ws-map-mechanical-card-body--extractor { fill: #1e3a2f; }
 .ws-map-mechanical-card-body--hopper { fill: #1e2a3a; }
 .ws-map-mechanical-card-body--crusher,
@@ -138,31 +138,45 @@
 }
 .ws-map-mechanical-category { fill: #e7edf3; font-weight: 700; letter-spacing: 0.12em; text-anchor: start; }
 .ws-map-mechanical-label { fill: #d6e4ed; text-anchor: middle; }
-.ws-map-mechanical-port { fill: #172431; stroke: #8aa1b3; stroke-width: 0.0000225; cursor: crosshair; }
+.ws-map-mechanical-port { fill: #172431; stroke: #8aa1b3; stroke-width: 2; cursor: crosshair; }
 .ws-map-port--resource-access { fill: #1f3823; stroke: #7aa879; }
 .ws-map-port--gas { fill: #29324a; stroke: #8c9bd0; }
-.ws-map-port--pending { stroke: #ffcc44 !important; stroke-width: 0.00004 !important; }
+.ws-map-port--pending { stroke: #ffcc44 !important; stroke-width: 3 !important; }
 .ws-map-mechanical-node.ws-map-selected .ws-map-mechanical-card-body { stroke: #ffcc44; }
+
+/* Connections are still authored directly in world/render-origin coordinates. */
 .ws-map-connection { fill: none; stroke: #5599cc; stroke-width: 0.000025; pointer-events: stroke; }
 .ws-map-connection--resource-access { stroke: #7aa879; stroke-dasharray: 0.00008 0.00005; }
 .ws-map-connection--gas { stroke: #8c9bd0; }
 .ws-map-placement-preview { pointer-events: none; opacity: 0.72; }
-.ws-map-placement-preview-body { fill: #6c4d2433; stroke: #ffcc44; stroke-width: 0.000025; stroke-dasharray: 0.00006 0.00004; }
+.ws-map-placement-preview-body { fill: #6c4d2433; stroke: #ffcc44; stroke-width: 2; stroke-dasharray: 6 4; }
 .ws-map-placement-preview-label { fill: #ffdf80; text-anchor: middle; }
 
+/* Compact Phase 5 apparatus authoring controls in the existing Inspector. */
+.ws-ins-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 3px 0;
+  font-size: 11px;
+}
+.ws-ins-config-row input[type='number'] {
+  width: 88px;
+  background: #101820;
+  border: 1px solid #334454;
+  color: #d6e4ed;
+  font: inherit;
+  padding: 2px 4px;
+}
+.ws-ins-config-row button {
+  font-size: 10px;
+  padding: 2px 7px;
+}
 
-/* Deep-zoom SVG rasterization hints. */
+/* Deep-zoom shape hint only; text remains normal-sized in local card units. */
 .ws-map-resource-node,
 .ws-map-mechanical-node,
 .ws-map-connection {
   shape-rendering: geometricPrecision;
-}
-
-.ws-map-resource-category,
-.ws-map-resource-name,
-.ws-map-resource-type,
-.ws-map-resource-material,
-.ws-map-mechanical-category,
-.ws-map-mechanical-label {
-  text-rendering: geometricPrecision;
 }

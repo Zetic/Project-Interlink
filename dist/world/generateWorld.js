@@ -1,6 +1,7 @@
+import { createResourceSource } from '../material/resourceSources.js';
 import { polygonBounds, polygonCentroid, pointInPolygon } from './geometry.js';
 import { createRng } from './random.js';
-import { RESOURCE_DEFINITIONS } from './resources.js';
+import { RESOURCE_DEFINITIONS, resourceDefinitionById } from './resources.js';
 import { EARTH_SCALE_PHYSICAL_HEIGHT_METERS, EARTH_SCALE_PHYSICAL_WIDTH_METERS, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH, } from './scale.js';
 export { PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from './scale.js';
 export const REGION_COUNT = 5;
@@ -131,19 +132,26 @@ function randomPointInRegion(seed, region, index) {
 }
 function createResources(seed, regions) {
     const nodes = [];
+    const ironOre = resourceDefinitionById('iron-ore');
+    if (!ironOre)
+        throw new Error('Phase 5 requires the Iron Ore resource definition.');
     for (const region of regions) {
         const rng = createRng(seed, `${region.id}:resources`);
         const count = rng.int(3, 6);
         for (let index = 0; index < count; index += 1) {
-            const definition = rng.pick(RESOURCE_DEFINITIONS);
+            // Keep one guaranteed Iron Ore FEATURE in every generated test world so the
+            // extraction/material contract always has a stable source to exercise.
+            const definition = region.id === 'region-0' && index === 0 ? ironOre : rng.pick(RESOURCE_DEFINITIONS);
+            const id = `${region.id}-resource-${index}`;
             const node = {
-                id: `${region.id}-resource-${index}`,
+                id,
                 name: `${definition.name} Deposit ${index + 1}`,
                 resourceId: definition.id,
                 regionId: region.id,
                 position: randomPointInRegion(seed, region, index),
                 nodeType: 'feature',
                 featureType: 'mineral-deposit',
+                source: createResourceSource(definition.id, createRng(seed, `${id}:source-composition`)),
                 resourceAccessPortId: 'resource-access',
                 ports: [{
                         id: 'resource-access',
