@@ -1,4 +1,4 @@
-name: TypeScript Conversion Pass
+name: TypeScript Migration Experiment
 
 on:
   push:
@@ -8,8 +8,8 @@ permissions:
   contents: write
 
 jobs:
-  pass:
-    if: ${{ !contains(github.event.head_commit.message, '[ts-pass]') }}
+  experiment:
+    if: ${{ !contains(github.event.head_commit.message, '[ts-experiment]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,65 +21,46 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-
-      - name: Fix source-inspection test paths after extension conversion
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          existing = {p.as_posix() for p in Path('src').rglob('*.ts')}
-          pattern = re.compile(r"(?P<q>['\"])(?P<path>src/[^'\"]+\.js)(?P=q)")
-          for test in Path('tests').rglob('*.ts'):
-              lines = test.read_text().splitlines(keepends=True)
-              changed = []
-              for line in lines:
-                  stripped = line.lstrip()
-                  if stripped.startswith('import ') or ' from ' in line:
-                      changed.append(line)
-                      continue
-                  def repl(match):
-                      old = match.group('path')
-                      candidate = old[:-3] + '.ts'
-                      if candidate in existing:
-                          return f"{match.group('q')}{candidate}{match.group('q')}"
-                      return match.group(0)
-                  changed.append(pattern.sub(repl, line))
-              test.write_text(''.join(changed))
-          PY
-
-      - name: Produce relaxed diagnostic summary
+      - name: Run ts-migrate on throwaway working tree
         run: |
           set +e
-          npx tsc --noEmit -p tsconfig.json --noImplicitAny false > typescript-relaxed-diagnostics.txt 2>&1
-          RELAXED_EXIT=$?
-          npm test > typescript-tests.txt 2>&1
-          TEST_EXIT=$?
+          npm install --no-save ts-migrate > /tmp/install.log 2>&1
+          INSTALL_EXIT=$?
+          npx ts-migrate-full src > /tmp/migrate.log 2>&1
+          MIGRATE_EXIT=$?
+          npx tsc --noEmit -p tsconfig.json > /tmp/tsc.log 2>&1
+          TSC_EXIT=$?
           python3 - <<'PY'
           from pathlib import Path
-          from collections import Counter
           import re
-
-          text = Path('typescript-relaxed-diagnostics.txt').read_text()
-          errors = re.findall(r'^(.*?\.ts)\((\d+),(\d+)\): error (TS\d+):', text, re.M)
-          by_file = Counter(e[0] for e in errors)
-          by_code = Counter(e[3] for e in errors)
-          out = [f'errors={len(errors)}', '', 'By code:']
-          out += [f'{code}: {count}' for code, count in by_code.most_common()]
-          out += ['', 'By file:']
-          out += [f'{path}: {count}' for path, count in by_file.most_common()]
-          Path('typescript-error-summary.txt').write_text('\n'.join(out) + '\n')
+          src = '\n'.join(p.read_text(errors='ignore') for p in Path('src').rglob('*.ts'))
+          tsc = Path('/tmp/tsc.log').read_text(errors='ignore')
+          errors = re.findall(r'error (TS\d+):', tsc)
+          out = [
+              f"explicit_any_tokens={len(re.findall(r'\\bany\\b', src))}",
+              f"ts_expect_error={src.count('@ts-expect-error')}",
+              f"ts_ignore={src.count('@ts-ignore')}",
+              f"ts_nocheck={src.count('@ts-nocheck')}",
+              f"remaining_tsc_errors={len(errors)}",
+              '',
+              'ts-migrate output tail:',
+              '\n'.join(Path('/tmp/migrate.log').read_text(errors='ignore').splitlines()[-80:]),
+              '',
+              'tsc output head:',
+              '\n'.join(tsc.splitlines()[:120]),
+          ]
+          Path('/tmp/typescript-migrate-experiment.txt').write_text('\n'.join(out) + '\n')
           PY
-          echo "RELAXED_EXIT=$RELAXED_EXIT" >> typescript-error-summary.txt
-          echo "TEST_EXIT=$TEST_EXIT" >> typescript-error-summary.txt
+          git reset --hard HEAD
+          cp /tmp/typescript-migrate-experiment.txt .
+          echo "INSTALL_EXIT=$INSTALL_EXIT" >> typescript-migrate-experiment.txt
+          echo "MIGRATE_EXIT=$MIGRATE_EXIT" >> typescript-migrate-experiment.txt
+          echo "TSC_EXIT=$TSC_EXIT" >> typescript-migrate-experiment.txt
           exit 0
-
-      - name: Commit diagnostic pass
+      - name: Commit experiment report only
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tests typescript-relaxed-diagnostics.txt typescript-tests.txt typescript-error-summary.txt
-          if ! git diff --cached --quiet; then
-            git commit -m "Measure TypeScript conversion blockers [ts-pass]"
-            git push origin HEAD:chatgpt/typescript-browser-conversion
-          fi
+          git add typescript-migrate-experiment.txt
+          git commit -m "Measure automated TypeScript migration quality [ts-experiment]"
+          git push origin HEAD:chatgpt/typescript-browser-conversion
