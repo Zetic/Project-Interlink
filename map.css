@@ -123,14 +123,25 @@
   stroke: #ffcc44;
 }
 
-
-/* Phase 4 mechanical graph: world-space machinery and connections. */
+/* Flat-map mechanical graph using the original fixed node-card visual grammar. */
 .ws-map-mechanical-layer { transition: opacity 90ms linear; }
 .ws-map-mechanical-node { cursor: move; }
-.ws-map-mechanical-card-body { fill: #111922; stroke: #866a42; stroke-width: 0.0000184; }
+.ws-map-mechanical-card-body { fill: #111922; stroke: #52677a; stroke-width: 0.0000184; }
+.ws-map-mechanical-card-body--extractor { fill: #1e3a2f; }
+.ws-map-mechanical-card-body--hopper { fill: #1e2a3a; }
+.ws-map-mechanical-card-body--crusher,
+.ws-map-mechanical-card-body--jawCrusher,
+.ws-map-mechanical-card-body--coneCrusher { fill: #3a2a1e; }
+.ws-map-mechanical-card-body--magSep { fill: #2a1e3a; }
 .ws-map-mechanical-card-header--apparatus { fill: #6c4d24; }
 .ws-map-mechanical-card-header--container { fill: #324a66; }
-.ws-map-mechanical-category, .ws-map-mechanical-label, .ws-map-placement-preview-label { font-family: 'Courier New', Courier, monospace; user-select: none; pointer-events: none; }
+.ws-map-mechanical-category,
+.ws-map-mechanical-label,
+.ws-map-placement-preview-label {
+  font-family: 'Courier New', Courier, monospace;
+  user-select: none;
+  pointer-events: none;
+}
 .ws-map-mechanical-category { fill: #e7edf3; font-weight: 700; letter-spacing: 0.12em; text-anchor: start; }
 .ws-map-mechanical-label { fill: #d6e4ed; text-anchor: middle; }
 .ws-map-mechanical-port { fill: #172431; stroke: #8aa1b3; stroke-width: 0.0000225; cursor: crosshair; }

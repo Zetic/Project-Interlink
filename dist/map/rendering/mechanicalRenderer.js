@@ -1,29 +1,33 @@
+import { apparatusDefinitionById } from '../../apparatus/definitions.js';
 import { mechanicalNodeById, resourceNodeById } from '../../graph/graphQueries.js';
 import { metersToWorldUnits } from '../../world/scale.js';
 import { MECHANICAL_PLACEMENT_MIN_ZOOM, smoothStep } from '../camera/mapCamera.js';
-import { resourcePortWorldPosition } from './resourceRenderer.js';
+import { RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, resourcePortWorldPosition, } from './resourceRenderer.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 export const MECHANICAL_NODE_FADE_START_ZOOM = MECHANICAL_PLACEMENT_MIN_ZOOM;
 export const MECHANICAL_NODE_FULL_OPACITY_ZOOM = 2 ** 18;
 export const MECHANICAL_NODE_DETAIL_MIN_TEXT_PIXELS = 5.75;
-const HEADER_HEIGHT_METERS = 2.5;
+export const ENGINEERING_NODE_CARD_PHYSICAL_WIDTH_METERS = RESOURCE_NODE_PHYSICAL_WIDTH_METERS;
+export const ENGINEERING_NODE_CARD_PHYSICAL_HEIGHT_METERS = RESOURCE_NODE_PHYSICAL_HEIGHT_METERS;
+const HEADER_HEIGHT = RESOURCE_NODE_WORLD_HEIGHT * 0.2;
 const FONT_SIZE_METERS = 1.05;
-const PORT_RADIUS_METERS = 0.75;
+const CATEGORY_FONT_SIZE_METERS = 0.9;
+const PORT_RADIUS_METERS = 0.875;
 function svgElement(tagName) {
     return document.createElementNS(SVG_NS, tagName);
-}
-function worldSize(node) {
-    return { width: metersToWorldUnits(node.physicalWidthMeters), height: metersToWorldUnits(node.physicalHeightMeters) };
 }
 export function mechanicalPortWorldPosition(node, portId) {
     const port = node.ports.find(candidate => candidate.id === portId);
     if (!port)
         return null;
-    const size = worldSize(node);
     const sameSide = node.ports.filter(candidate => candidate.direction === port.direction);
     const index = sameSide.findIndex(candidate => candidate.id === port.id);
-    const y = node.position.y - size.height / 2 + size.height * ((index + 1) / (sameSide.length + 1));
-    return { x: node.position.x + (port.direction === 'input' ? -size.width / 2 : size.width / 2), y };
+    const y = node.position.y - RESOURCE_NODE_WORLD_HEIGHT / 2
+        + RESOURCE_NODE_WORLD_HEIGHT * ((index + 1) / (sameSide.length + 1));
+    return {
+        x: node.position.x + (port.direction === 'input' ? -RESOURCE_NODE_WORLD_WIDTH / 2 : RESOURCE_NODE_WORLD_WIDTH / 2),
+        y,
+    };
 }
 export function endpointWorldPosition(planet, graph, endpoint) {
     const mechanical = mechanicalNodeById(graph, endpoint.nodeId);
@@ -35,41 +39,40 @@ export function endpointWorldPosition(planet, graph, endpoint) {
     return null;
 }
 function appendNodeCard(group, node) {
-    const size = worldSize(node);
-    const halfWidth = size.width / 2;
-    const halfHeight = size.height / 2;
-    const headerHeight = metersToWorldUnits(Math.min(HEADER_HEIGHT_METERS, node.physicalHeightMeters * 0.32));
+    const halfWidth = RESOURCE_NODE_WORLD_WIDTH / 2;
+    const halfHeight = RESOURCE_NODE_WORLD_HEIGHT / 2;
     const body = svgElement('rect');
     body.setAttribute('x', String(-halfWidth));
     body.setAttribute('y', String(-halfHeight));
-    body.setAttribute('width', String(size.width));
-    body.setAttribute('height', String(size.height));
-    body.setAttribute('rx', String(metersToWorldUnits(0.4)));
-    body.setAttribute('class', 'ws-map-mechanical-card-body');
+    body.setAttribute('width', String(RESOURCE_NODE_WORLD_WIDTH));
+    body.setAttribute('height', String(RESOURCE_NODE_WORLD_HEIGHT));
+    body.setAttribute('rx', String(metersToWorldUnits(0.25)));
+    body.setAttribute('class', `ws-map-mechanical-card-body ws-map-mechanical-card-body--${node.nodeType}`);
     group.appendChild(body);
     const header = svgElement('rect');
     header.setAttribute('x', String(-halfWidth));
     header.setAttribute('y', String(-halfHeight));
-    header.setAttribute('width', String(size.width));
-    header.setAttribute('height', String(headerHeight));
+    header.setAttribute('width', String(RESOURCE_NODE_WORLD_WIDTH));
+    header.setAttribute('height', String(HEADER_HEIGHT));
     header.setAttribute('class', `ws-map-mechanical-card-header ws-map-mechanical-card-header--${node.category}`);
     group.appendChild(header);
     const details = svgElement('g');
     details.setAttribute('class', 'ws-map-mechanical-details');
     group.appendChild(details);
     const category = svgElement('text');
-    category.setAttribute('x', String(-halfWidth + metersToWorldUnits(0.7)));
-    category.setAttribute('y', String(-halfHeight + headerHeight * 0.7));
-    category.setAttribute('font-size', String(metersToWorldUnits(0.85)));
+    category.setAttribute('x', String(-halfWidth + metersToWorldUnits(0.9)));
+    category.setAttribute('y', String(-halfHeight + HEADER_HEIGHT * 0.7));
+    category.setAttribute('font-size', String(metersToWorldUnits(CATEGORY_FONT_SIZE_METERS)));
     category.setAttribute('class', 'ws-map-mechanical-category');
     category.textContent = node.category.toUpperCase();
     details.appendChild(category);
+    const definition = apparatusDefinitionById(node.definitionId);
     const label = svgElement('text');
     label.setAttribute('x', '0');
-    label.setAttribute('y', String(metersToWorldUnits(0.7)));
+    label.setAttribute('y', String(metersToWorldUnits(0.8)));
     label.setAttribute('font-size', String(metersToWorldUnits(FONT_SIZE_METERS)));
     label.setAttribute('class', 'ws-map-mechanical-label');
-    label.textContent = node.label;
+    label.textContent = `${definition?.label ?? node.label} [${node.enabled ? 'on' : 'off'}]`;
     details.appendChild(label);
     for (const port of node.ports) {
         const position = mechanicalPortWorldPosition({ ...node, position: { x: 0, y: 0 } }, port.id);
@@ -165,12 +168,10 @@ export function updatePlacementPreview(svg, definition, position) {
     preview.style.display = 'block';
     preview.setAttribute('transform', `translate(${position.x} ${position.y})`);
     const rect = svgElement('rect');
-    const width = metersToWorldUnits(definition.physicalWidthMeters);
-    const height = metersToWorldUnits(definition.physicalHeightMeters);
-    rect.setAttribute('x', String(-width / 2));
-    rect.setAttribute('y', String(-height / 2));
-    rect.setAttribute('width', String(width));
-    rect.setAttribute('height', String(height));
+    rect.setAttribute('x', String(-RESOURCE_NODE_WORLD_WIDTH / 2));
+    rect.setAttribute('y', String(-RESOURCE_NODE_WORLD_HEIGHT / 2));
+    rect.setAttribute('width', String(RESOURCE_NODE_WORLD_WIDTH));
+    rect.setAttribute('height', String(RESOURCE_NODE_WORLD_HEIGHT));
     rect.setAttribute('class', 'ws-map-placement-preview-body');
     preview.appendChild(rect);
     const text = svgElement('text');
