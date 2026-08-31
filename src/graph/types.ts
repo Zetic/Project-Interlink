@@ -1,6 +1,7 @@
 import type { NodePort, Point } from '../world/types.js';
 
 export type MechanicalNodeCategory = 'apparatus' | 'container';
+export type MechanicalParameterValue = number | boolean | string;
 
 export interface MechanicalNode {
   id: string;
@@ -13,6 +14,7 @@ export interface MechanicalNode {
   physicalHeightMeters: number;
   ports: NodePort[];
   enabled: boolean;
+  parameters: Record<string, MechanicalParameterValue>;
 }
 
 export interface PortEndpoint {
