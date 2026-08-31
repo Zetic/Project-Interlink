@@ -9,9 +9,14 @@
   user-select: none;
 }
 
+#ws-map-svg.ws-map-panning,
+#ws-map-svg.ws-map-panning * {
+  cursor: grabbing !important;
+}
+
 .ws-map-background {
   fill: #101720;
-  cursor: grab;
+  cursor: default;
 }
 
 .ws-map-region {
