@@ -1,0 +1,34 @@
+name: Export TypeScript Snapshot
+on:
+  push:
+    branches: [chatgpt/typescript-infer-sandbox]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/typescript-infer-sandbox
+      - uses: actions/upload-artifact@v4
+        with:
+          name: typescript-snapshot
+          path: |
+            .github
+            src
+            tests
+            scripts
+            rust
+            Cargo.toml
+            Cargo.lock
+            package.json
+            package-lock.json
+            tsconfig.json
+            index.html
+            *.md
+            *.css
+            rust-toolchain.toml
+          include-hidden-files: true
+          retention-days: 1
