@@ -24,7 +24,14 @@ function sectionTitle(container: HTMLElement, value: string): void { const title
 function speciesLabel(speciesId: string): string { return speciesId.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|[- ])\w/g, value => value.toUpperCase()).replaceAll('-', ' '); }
 function formatMass(value: number | null | undefined): string { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg`; }
 function formatRate(value: number | null | undefined): string { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg/s`; }
-function runtimeStatus(state: Readonly<AppState>): string { return state.runtime.status === 'ready' ? (state.runtime.running ? 'Connected · running' : 'Connected · paused') : state.runtime.status === 'error' ? `Error · ${state.runtime.error ?? 'unknown'}` : state.runtime.status; }
+function runtimeStatus(state: Readonly<AppState>): string {
+  const runtime = state.runtime;
+  if (runtime.status === 'ready') {
+    const connection = runtime.running ? 'Connected · running' : 'Connected · paused';
+    return runtime.error ? `${connection} · warning: ${runtime.error}` : connection;
+  }
+  return runtime.status === 'error' ? `Error · ${runtime.error ?? 'unknown'}` : runtime.status;
+}
 
 function renderPlanet(container: HTMLElement, planet: Planet): void {
   typeLabel(container, 'PLANET'); addRow(container, 'Name', planet.name); addRow(container, 'Seed', planet.seed); addRow(container, 'Map', `${planet.width} × ${planet.height}`);
