@@ -110,6 +110,8 @@ test('Phase 6 runtime boundary does not restore the recursive browser simulation
   const worker = fs.readFileSync('src/runtime/flatRuntimeWorker.ts', 'utf8');
   const controller = fs.readFileSync('src/runtime/runtimeController.ts', 'utf8');
   const setup = fs.readFileSync('src/runtime/workerSetup.ts', 'utf8');
+  const debug = fs.readFileSync('src/ui/debugPanel.ts', 'utf8');
+  const inspector = fs.readFileSync('src/ui/inspectorPanel.ts', 'utf8');
 
   assert.match(worker, /clone_for_live_reconfigure/);
   assert.match(worker, /replace_hopper_state_live/);
@@ -120,6 +122,8 @@ test('Phase 6 runtime boundary does not restore the recursive browser simulation
   assert.match(controller, /manualStepInFlight/);
   assert.match(controller, /if \(inFlight\) await inFlight/);
   assert.match(controller, /!automaticAdvancePromise && !manualStepInFlight/);
+  assert.match(debug, /Runtime warning:/);
+  assert.match(inspector, /warning: \$\{runtime\.error\}/);
   assert.match(setup, /scheduler partition inside Rust/);
 
   for (const source of [worker, controller, setup]) {
