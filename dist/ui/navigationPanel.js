@@ -117,7 +117,7 @@ export function installNavigationPanel(root, store) {
             else
                 expandedKeys.add(key);
             render();
-        }, selection => store.setSelection(selection))));
+        }, selection => store.focusSelection(selection))));
         count.textContent = query ? `${matches.length} match${matches.length === 1 ? '' : 'es'}` : `${rows.length} map objects`;
     };
     search.addEventListener('input', render);
