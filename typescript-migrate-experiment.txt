@@ -1,0 +1,154 @@
+explicit_any_tokens=0
+ts_expect_error=0
+ts_ignore=0
+ts_nocheck=0
+remaining_tsc_errors=3154
+
+ts-migrate output tail:
+Welcome to TS Migrate! :D
+
+This script will migrate a frontend folder to a compiling (or almost compiling) TS project.
+
+It is recommended that you take the following steps before continuing...
+
+1. Make sure you have a clean git slate.
+   Run `git status` to make sure you have no local changes that may get lost.
+   Check in or stash your changes, then re-run this script.
+
+2. Check out a new branch for the migration.
+   For example, `git checkout -b runner--ts-migrate` if you're migrating several folders or
+   `git checkout -b runner--ts-migrate-src` if you're just migrating src.
+
+3. Make sure you're on the latest, clean master.
+   `git fetch origin master && git reset --hard origin/master`
+
+4. Make sure you have the latest npm modules installed.
+   `npm install` or `yarn install`
+
+If you need help or have feedback, please file an issue on Github!
+
+
+tsc output head:
+src/app.ts(14,13): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/app.ts(19,34): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+src/content/apparatus/definitions.ts(19,28): error TS7006: Parameter 'processId' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(23,18): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(23,22): error TS7006: Parameter 'label' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(23,29): error TS7006: Parameter 'category' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(23,39): error TS7006: Parameter 'description' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(23,52): error TS7006: Parameter 'searchTerms' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(23,65): error TS7006: Parameter 'order' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(42,3): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(55,3): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(68,3): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(80,3): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(125,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(144,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(161,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(178,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(194,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(212,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(230,33): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(231,33): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(248,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(251,9): error TS2322: Type '"metered-solid-particulate"' is not assignable to type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(268,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(292,30): error TS2345: Argument of type '"metered-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(295,9): error TS2322: Type '"metered-solid-particulate"' is not assignable to type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(327,9): error TS2322: Type '"stored-solid-particulate"' is not assignable to type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(337,40): error TS7006: Parameter 'nodeType' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(338,10): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type 'Readonly<{ extractor: Readonly<{ nodeType: "extractor"; catalog: Readonly<{ id: any; label: any; category: any; description: any; searchTerms: readonly any[]; order: any; placeable: boolean; }>; defaults: Readonly<{ prototypeRateKgPerSecond: 5; }>; placementParameterAliases: Readonly<...>; ports: readonly (Readonly<...'.
+src/content/apparatus/definitions.ts(342,39): error TS7006: Parameter 'nodeType' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(345,31): error TS7006: Parameter 'port' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(349,31): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{}'.
+src/content/apparatus/definitions.ts(354,44): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(358,45): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/content/apparatus/definitions.ts(363,46): error TS7006: Parameter 'parameter' implicitly has an 'any' type.
+src/content/features/featureCompatibility.ts(20,39): error TS7006: Parameter 'featureType' implicitly has an 'any' type.
+src/content/features/featureGeneration.ts(49,34): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/content/features/featureGeneration.ts(49,41): error TS7006: Parameter 'condition' implicitly has an 'any' type.
+src/content/reactions/reactionDefinitions.ts(31,39): error TS7006: Parameter 'reactionId' implicitly has an 'any' type.
+src/content/reactions/reactionDefinitions.ts(32,10): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type 'Readonly<{ "goethite-dehydroxylation": Readonly<{ id: "goethite-dehydroxylation"; name: "Goethite Dehydroxylation"; reactants: readonly Readonly<{ speciesId: "goethite"; stoichiometricMoles: 2; }>[]; products: readonly (Readonly<...> | Readonly<...>)[]; thermochemistry: Readonly<...>; kinetics: Readonly<...>; }>; }>'.
+src/content/resources/resourceCompositions.ts(1,16): error TS7006: Parameter 'min' implicitly has an 'any' type.
+src/content/resources/resourceCompositions.ts(1,21): error TS7006: Parameter 'max' implicitly has an 'any' type.
+src/content/resources/resourceDefinitions.ts(16,39): error TS7006: Parameter 'resourceId' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(7,34): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(7,41): error TS7006: Parameter 'label' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(21,42): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.
+  No index signature with a parameter of type 'string' was found on type '{}'.
+src/core/materials/gas/gasMaterialState.ts(26,39): error TS7006: Parameter 'gasState' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(31,42): error TS7006: Parameter 'gasState' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(38,32): error TS7006: Parameter 'gasState' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(40,72): error TS18046: 'sum' is of type 'unknown'.
+src/core/materials/gas/gasMaterialState.ts(40,78): error TS18046: 'massKg' is of type 'unknown'.
+src/core/materials/gas/gasMaterialState.ts(43,37): error TS7006: Parameter 'target' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(43,45): error TS7006: Parameter 'source' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(48,80): error TS18046: 'massKg' is of type 'unknown'.
+src/core/materials/gas/gasMaterialState.ts(51,9): error TS18046: 'massKg' is of type 'unknown'.
+src/core/materials/gas/gasMaterialState.ts(56,39): error TS7006: Parameter 'gasState' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(56,49): error TS7006: Parameter 'factor' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(72,41): error TS7006: Parameter 'body' implicitly has an 'any' type.
+src/core/materials/gas/gasMaterialState.ts(80,38): error TS7006: Parameter 'body' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(22,40): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(22,47): error TS7006: Parameter 'label' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(31,37): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(40,33): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(40,40): error TS7006: Parameter 'label' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(62,44): error TS2339: Property 'createdByProcessRunId' does not exist on type 'object'.
+src/core/materials/materialBatches.ts(68,60): error TS2339: Property 'sourceOccurrenceIds' does not exist on type 'object'.
+src/core/materials/materialBatches.ts(69,55): error TS2339: Property 'sourceBatchIds' does not exist on type 'object'.
+src/core/materials/materialBatches.ts(74,25): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(78,36): error TS7006: Parameter 'componentsKg' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(79,61): error TS18046: 'sum' is of type 'unknown'.
+src/core/materials/materialBatches.ts(79,67): error TS18046: 'value' is of type 'unknown'.
+src/core/materials/materialBatches.ts(82,38): error TS7006: Parameter 'componentsKg' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(97,43): error TS7006: Parameter 'componentsKg' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(97,57): error TS7006: Parameter 'particleSizeMm' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(103,40): error TS2739: Type '{ speciesId: string; sizeBinId: string; liberationClassId: string; quantity: number; }' is missing the following properties from type '{ liberationClassId: any; massKg: any; quantity: any; rateKgPerSecond: any; sizeBinId: any; speciesId: any; textureProfileId?: null | undefined; }': massKg, rateKgPerSecond
+src/core/materials/materialBatches.ts(108,32): error TS7006: Parameter 'materialBody' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(129,3): error TS7031: Binding element 'id' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(172,35): error TS7006: Parameter 'componentsKg' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(175,7): error TS18046: 'totalMassKg' is of type 'unknown'.
+src/core/materials/materialBatches.ts(181,5): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.
+  No index signature with a parameter of type 'string' was found on type '{}'.
+src/core/materials/materialBatches.ts(181,41): error TS18046: 'massKg' is of type 'unknown'.
+src/core/materials/materialBatches.ts(181,50): error TS18046: 'totalMassKg' is of type 'unknown'.
+src/core/materials/materialBatches.ts(186,42): error TS7006: Parameter 'batch' implicitly has an 'any' type.
+src/core/materials/materialBatches.ts(190,45): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/core/materials/materialBody.ts(24,38): error TS7006: Parameter 'body' implicitly has an 'any' type.
+src/core/materials/materialBody.ts(30,35): error TS7006: Parameter 'body' implicitly has an 'any' type.
+src/core/materials/materialForms.ts(32,41): error TS7006: Parameter 'resourceOrId' implicitly has an 'any' type.
+src/core/materials/materialForms.ts(41,43): error TS7006: Parameter 'occurrence' implicitly has an 'any' type.
+src/core/materials/occurrenceMaterialization.ts(30,32): error TS7006: Parameter 'profileId' implicitly has an 'any' type.
+src/core/materials/occurrenceMaterialization.ts(36,31): error TS7006: Parameter 'occurrence' implicitly has an 'any' type.
+src/core/materials/occurrenceMaterialization.ts(49,58): error TS18046: 'value' is of type 'unknown'.
+src/core/materials/occurrenceMaterialization.ts(53,44): error TS18046: 'amount' is of type 'unknown'.
+src/core/materials/occurrenceMaterialization.ts(57,37): error TS7006: Parameter 'occurrence' implicitly has an 'any' type.
+src/core/materials/occurrenceMaterialization.ts(65,29): error TS18046: 'texture' is of type 'unknown'.
+src/core/materials/occurrenceMaterialization.ts(66,33): error TS18046: 'texture' is of type 'unknown'.
+src/core/materials/occurrenceMaterialization.ts(76,55): error TS7006: Parameter 'occurrence' implicitly has an 'any' type.
+src/core/materials/occurrenceMaterialization.ts(76,67): error TS7006: Parameter 'quantity' implicitly has an 'any' type.
+src/core/materials/occurrenceMaterialization.ts(95,44): error TS2739: Type '{ speciesId: string; sizeBinId: "120-250mm" | "120mm-plus" | "250-500mm" | "500-1000mm" | "60-120mm"; liberationClassId: string; textureProfileId: any; quantity: number; }' is missing the following properties from type '{ liberationClassId: any; massKg: any; quantity: any; rateKgPerSecond: any; sizeBinId: any; speciesId: any; textureProfileId?: null | undefined; }': massKg, rateKgPerSecond
+src/core/materials/properties/magneticProperties.ts(5,44): error TS7006: Parameter 'species' implicitly has an 'any' type.
+src/core/materials/properties/thermalProperties.ts(5,55): error TS7006: Parameter 'species' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(1,31): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(1,38): error TS7006: Parameter 'label' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(7,34): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(7,41): error TS7006: Parameter 'label' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(20,47): error TS7006: Parameter 'properties' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(36,44): error TS7006: Parameter 'properties' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(45,44): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(45,47): error TS7006: Parameter 'b' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(56,43): error TS7006: Parameter 'workIndexKWhPerT' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(56,61): error TS7006: Parameter 'feedP80Um' implicitly has an 'any' type.
+src/core/materials/solids/comminutionProperties.ts(56,72): error TS7006: Parameter 'productP80Um' implicitly has an 'any' type.
+src/core/materials/solids/liberationClasses.ts(14,36): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/core/materials/solids/liberationClasses.ts(18,40): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/core/materials/solids/liberationClasses.ts(24,38): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/core/materials/solids/mineralTextures.ts(35,31): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/solids/mineralTextures.ts(35,38): error TS7006: Parameter 'label' implicitly has an 'any' type.
+src/core/materials/solids/mineralTextures.ts(41,29): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/core/materials/solids/mineralTextures.ts(41,36): error TS7006: Parameter 'label' implicitly has an 'any' type.
+INSTALL_EXIT=0
+MIGRATE_EXIT=1
+TSC_EXIT=1
