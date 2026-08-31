@@ -6,9 +6,12 @@ export type IdMap<T> = Record<string, T>;
 
 export interface ResourceOccurrence {
   id: string;
+  name?: string;
   sourceType: string;
   sourceId: string;
   resourceId?: string | null;
+  descriptor?: string | null;
+  accessScope?: string | null;
   composition?: Record<string, number>;
   mineralTexture?: MineralTextureProfile | null;
   comminutionProperties?: ComminutionProperties | null;
@@ -18,6 +21,8 @@ export interface ResourceOccurrence {
 export interface GeneratedFeature extends Record<string, unknown> {
   id: string;
   name?: string;
+  type?: string;
+  regionalAccess?: boolean;
   resourceOccurrences?: ResourceOccurrence[];
 }
 
@@ -30,17 +35,22 @@ export interface GeneratedSite extends Record<string, unknown> {
 
 export interface GeneratedRegion extends Record<string, unknown> {
   id: string;
+  name?: string;
+  surfaceCover?: string;
   sites?: GeneratedSite[];
 }
 
 export interface GeneratedPlanet extends Record<string, unknown> {
   id: string;
+  name?: string;
   regions: GeneratedRegion[];
 }
 
 export interface Feature {
   id: string;
   name?: string;
+  type?: string;
+  regionalAccess?: boolean;
   siteId: string;
   regionId: string;
   resourceOccurrences: string[];
@@ -62,14 +72,19 @@ export interface Site {
 
 export interface Region {
   id: string;
+  name?: string;
+  surfaceCover?: string;
   siteIds: string[];
+  childWorkspaceId?: string | null;
   boundaryPorts: SystemPort[];
   [key: string]: unknown;
 }
 
 export interface Planet {
   id: string;
+  name?: string;
   regions: string[];
+  childWorkspaceId?: string | null;
   [key: string]: unknown;
 }
 
