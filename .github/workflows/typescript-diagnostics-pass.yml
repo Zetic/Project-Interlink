@@ -1,0 +1,54 @@
+name: TypeScript Strict Diagnostics
+on:
+  push:
+    branches: [chatgpt/typescript-browser-conversion]
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    if: ${{ !contains(github.event.head_commit.message, '[ts-diagnostics]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/typescript-browser-conversion
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Measure strict compiler and tests
+        run: |
+          set +e
+          npm run typecheck > /tmp/strict.log 2>&1
+          STRICT_EXIT=$?
+          npm test > /tmp/tests.log 2>&1
+          TEST_EXIT=$?
+          python3 - <<'PY'
+          from pathlib import Path
+          from collections import Counter
+          import re
+          text = Path('/tmp/strict.log').read_text(errors='ignore')
+          rows = re.findall(r'^(.*?\.ts)\((\d+),(\d+)\): error (TS\d+):', text, re.M)
+          by_code = Counter(r[3] for r in rows)
+          by_file = Counter(r[0] for r in rows)
+          tests = Path('/tmp/tests.log').read_text(errors='ignore')
+          failures = [line for line in tests.splitlines() if line.startswith('not ok ')]
+          out = [f'errors={len(rows)}', f'test_failures={len(failures)}', '', 'By code:']
+          out += [f'{k}: {v}' for k,v in by_code.most_common()]
+          out += ['', 'By file:']
+          out += [f'{k}: {v}' for k,v in by_file.most_common()]
+          out += ['', 'First strict errors:', '\n'.join(text.splitlines()[:180])]
+          out += ['', 'Test failures:', '\n'.join(failures[:100])]
+          Path('typescript-current-diagnostics.txt').write_text('\n'.join(out)+'\n')
+          PY
+          echo "STRICT_EXIT=$STRICT_EXIT" >> typescript-current-diagnostics.txt
+          echo "TEST_EXIT=$TEST_EXIT" >> typescript-current-diagnostics.txt
+      - name: Commit diagnostics
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add typescript-current-diagnostics.txt
+          git commit -m "Refresh TypeScript blocker snapshot [ts-diagnostics]"
+          git push origin HEAD:chatgpt/typescript-browser-conversion
