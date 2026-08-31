@@ -35,6 +35,7 @@ export interface SystemNode {
   childWorkspaceId: string | null;
   boundaryRole?: string;
   displayName?: string;
+  [key: string]: unknown;
 }
 
 export interface SystemNodeInput {
