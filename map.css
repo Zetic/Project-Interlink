@@ -9,25 +9,26 @@
   user-select: none;
 }
 
-.ws-map-ocean {
-  fill: #07131f;
+.ws-map-background {
+  fill: #101720;
   cursor: grab;
 }
 
 .ws-map-region {
-  stroke: #5b7180;
+  stroke: #738896;
   stroke-width: 2;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
 }
 
 .ws-map-region:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.1);
 }
 
-.ws-map-region--0 { fill: #243c35; }
-.ws-map-region--1 { fill: #304034; }
-.ws-map-region--2 { fill: #3b3d31; }
+.ws-map-region--0 { fill: #243b35; }
+.ws-map-region--1 { fill: #304038; }
+.ws-map-region--2 { fill: #3b3c31; }
 .ws-map-region--3 { fill: #303a3e; }
 .ws-map-region--4 { fill: #2e3744; }
 
@@ -36,43 +37,84 @@
   stroke-width: 3;
 }
 
-.ws-map-region-label,
-.ws-map-resource-label {
+.ws-map-region-label {
   fill: #d6e4ed;
   font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-anchor: middle;
   paint-order: stroke;
-  stroke: #07131f;
+  stroke: #101720;
   stroke-width: 5px;
   stroke-linejoin: round;
   pointer-events: none;
   user-select: none;
 }
 
-.ws-map-region-label {
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.ws-map-resource {
-  fill: #d6a957;
-  stroke: #19232a;
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
+.ws-map-resource-node {
   cursor: pointer;
 }
 
-.ws-map-resource:hover {
-  fill: #f0c65b;
+.ws-map-resource-node foreignObject {
+  overflow: visible;
+  pointer-events: auto;
 }
 
-.ws-map-resource.ws-map-selected {
-  fill: #fff0a6;
-  stroke: #f0c65b;
-  stroke-width: 3;
+.ws-map-resource-shell {
+  position: relative;
+  width: 248px;
+  height: 144px;
+  overflow: visible;
+  pointer-events: auto;
 }
 
-.ws-map-resource-label {
-  text-anchor: start;
-  font-weight: 600;
+.ws-map-resource-card {
+  position: absolute;
+  left: 9px;
+  top: 0;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  background: #0a121c;
+  border-color: #52765a;
+  cursor: pointer;
+}
+
+.ws-map-resource-card .ws-node-label {
+  flex: 1 1 auto;
+  min-height: 0;
+  color: #d6e4ed;
+}
+
+.ws-map-resource-card .ws-node-label span:first-child {
+  color: #b9d8ff;
+}
+
+.ws-map-resource-card .ws-node-label span:nth-child(2) {
+  color: #d6e4ed;
+}
+
+.ws-map-resource-card .ws-node-label span:last-child {
+  color: #c6e0c2;
+}
+
+.ws-map-resource-card .ws-map-resource-port {
+  left: auto !important;
+  right: -7px;
+  top: calc(50% - 7px);
+}
+
+.ws-map-resource-node:hover .ws-map-resource-card {
+  border-color: #78a780;
+  background: #0d1721;
+}
+
+.ws-map-resource-node.ws-map-selected .ws-map-resource-card {
+  border-color: #ffcc44 !important;
+  box-shadow: 0 0 0 1px #ffcc4466;
+}
+
+.ws-map-resource-node.ws-map-selected .ws-map-resource-port {
+  border-color: #7fbd83;
+  box-shadow: 0 0 0 1px #ffcc4455;
 }
