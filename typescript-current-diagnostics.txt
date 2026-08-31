@@ -2,15 +2,15 @@ errors=2552
 test_failures=11
 
 By code:
-TS7006: 1260
+TS7006: 1258
 TS2339: 323
 TS18046: 315
-TS2322: 102
-TS2345: 91
+TS2322: 104
+TS2345: 92
 TS7005: 90
 TS18047: 83
 TS7053: 71
-TS2353: 43
+TS2353: 42
 TS7031: 37
 TS7034: 27
 TS2551: 18
@@ -31,7 +31,7 @@ TS2721: 1
 TS2769: 1
 
 By file:
-src/workspace/workspaceController.ts: 365
+src/workspace/workspaceController.ts: 367
 src/simulation/packedWorldRuntimeCompiler.ts: 204
 src/core/materials/solids/solidMaterialState.ts: 105
 src/workspace/navigation/navigationProjection.ts: 95
@@ -106,7 +106,6 @@ tests/knowledge.test.ts: 6
 src/simulation/packedExtractionCompiler.ts: 5
 src/workspace/debug/runtimeDebugStats.ts: 5
 src/workspace/sitePrototype.ts: 5
-src/workspace/siteSession.ts: 5
 src/core/systems/ports.ts: 4
 src/simulation/apparatus/registry.ts: 4
 src/simulation/boundaryTransfer.ts: 4
@@ -116,6 +115,7 @@ tests/packedSeparationCompiler.test.ts: 4
 tests/runtimeCapabilities.test.ts: 4
 src/core/materials/solids/liberationClasses.ts: 3
 src/simulation/packedThermalGasCompiler.ts: 3
+src/workspace/siteSession.ts: 3
 tests/apparatusCanonicalControls.test.ts: 3
 tests/nodePresentation.test.ts: 3
 tests/nodeRemoval.test.ts: 3
@@ -409,6 +409,7 @@ src/workspace/workspaceController.ts(667,34): error TS18047: 'event.target' is p
 src/workspace/workspaceController.ts(667,47): error TS2339: Property 'closest' does not exist on type 'EventTarget'.
 src/workspace/workspaceController.ts(675,28): error TS7006: Parameter '_occurrenceId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(675,43): error TS7006: Parameter 'siteId' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(677,27): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(683,30): error TS7006: Parameter 'occurrenceId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(683,44): error TS7006: Parameter 'siteId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(689,73): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'null | undefined'.
@@ -686,6 +687,7 @@ src/workspace/workspaceController.ts(2266,21): error TS18046: 'wsState.realtimeR
 src/workspace/workspaceController.ts(2272,52): error TS18047: 'runtime' is possibly 'null'.
 src/workspace/workspaceController.ts(2276,11): error TS18047: 'runtime' is possibly 'null'.
 src/workspace/workspaceController.ts(2276,11): error TS18046: 'runtime.recordPresentationTiming' is of type 'unknown'.
+src/workspace/workspaceController.ts(2306,71): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'null | undefined'.
 src/workspace/workspaceController.ts(2308,29): error TS2322: Type 'string[]' is not assignable to type 'never[]'.
 src/workspace/workspaceController.ts(2330,31): error TS7006: Parameter 'world' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(2330,38): error TS7006: Parameter 'knowledge' implicitly has an 'any' type.
