@@ -21,7 +21,8 @@ export function installRuntimeController(store) {
     let frameId = null;
     let lastFrameAtMs = null;
     let accumulatorSeconds = 0;
-    let automaticStepInFlight = false;
+    let automaticAdvancePromise = null;
+    let manualStepInFlight = false;
     let realtimeWindowWallSeconds = 0;
     let realtimeWindowSimulationSeconds = 0;
     let realtimeFactor = 0;
@@ -171,7 +172,6 @@ export function installRuntimeController(store) {
             } });
     }
     async function automaticAdvance(steps) {
-        automaticStepInFlight = true;
         try {
             const message = await send('advance-fixed', { steps });
             realtimeWindowSimulationSeconds += steps * SIMULATION_STEP_SECONDS;
@@ -180,9 +180,6 @@ export function installRuntimeController(store) {
         catch (error) {
             if (store.getState().runtime.status === 'ready')
                 runtimePatch({ status: 'error', running: false, error: errorMessage(error) });
-        }
-        finally {
-            automaticStepInFlight = false;
         }
     }
     function sampleFrame(timestamp) {
@@ -203,12 +200,17 @@ export function installRuntimeController(store) {
             }
         }
         lastFrameAtMs = timestamp;
-        if (runtimeState.status === 'ready' && runtimeState.running && !automaticStepInFlight) {
+        if (runtimeState.status === 'ready' && runtimeState.running && !automaticAdvancePromise && !manualStepInFlight) {
             const availableSteps = Math.floor(accumulatorSeconds / SIMULATION_STEP_SECONDS);
             if (availableSteps > 0) {
                 const steps = Math.min(availableSteps, 100);
                 accumulatorSeconds -= steps * SIMULATION_STEP_SECONDS;
-                void automaticAdvance(steps);
+                const promise = automaticAdvance(steps);
+                automaticAdvancePromise = promise;
+                void promise.finally(() => {
+                    if (automaticAdvancePromise === promise)
+                        automaticAdvancePromise = null;
+                });
             }
         }
         updateSchedulerTelemetry(timestamp);
@@ -227,14 +229,23 @@ export function installRuntimeController(store) {
     async function advanceFixedSteps(steps) {
         if (steps <= 0)
             return;
-        const wasRunning = store.getState().runtime.running;
-        if (!wasRunning)
-            await resume();
-        const message = await send('advance-fixed', { steps });
-        applyEvent(message);
-        if (!wasRunning)
-            await pause();
-        updateSchedulerTelemetry(nowMs(), true);
+        manualStepInFlight = true;
+        try {
+            const inFlight = automaticAdvancePromise;
+            if (inFlight)
+                await inFlight;
+            const wasRunning = store.getState().runtime.running;
+            if (!wasRunning)
+                await resume();
+            const message = await send('advance-fixed', { steps });
+            applyEvent(message);
+            if (!wasRunning)
+                await pause();
+            updateSchedulerTelemetry(nowMs(), true);
+        }
+        finally {
+            manualStepInFlight = false;
+        }
     }
     async function setProfiling(enabled, reset = false) {
         const message = await send('set-profiling', { enabled, reset });
