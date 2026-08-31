@@ -1,0 +1,369 @@
+name: Apply Phase 3.7 Earth-scale world
+
+on:
+  push:
+    branches: [phase-3-7-earth-scale-world]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply Earth-scale source changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected text not found in {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new))
+
+          Path('src/world/scale.ts').write_text("""export const PLANET_MAP_WIDTH = 4096;
+          export const PLANET_MAP_HEIGHT = 2048;
+
+          // The logical 2:1 map is interpreted at approximately Earth equatorial scale.
+          export const EARTH_SCALE_PHYSICAL_WIDTH_METERS = 40_075_000;
+          export const EARTH_SCALE_PHYSICAL_HEIGHT_METERS = 20_037_500;
+          export const EARTH_SCALE_METERS_PER_WORLD_UNIT = EARTH_SCALE_PHYSICAL_WIDTH_METERS / PLANET_MAP_WIDTH;
+          export const EARTH_SCALE_WORLD_UNITS_PER_METER = 1 / EARTH_SCALE_METERS_PER_WORLD_UNIT;
+
+          export function metersToWorldUnits(meters: number): number {
+            return meters * EARTH_SCALE_WORLD_UNITS_PER_METER;
+          }
+
+          export function worldUnitsToMeters(worldUnits: number): number {
+            return worldUnits * EARTH_SCALE_METERS_PER_WORLD_UNIT;
+          }
+
+          export function formatPhysicalDistance(meters: number): string {
+            const absolute = Math.abs(meters);
+            if (absolute >= 1_000_000) return `${(meters / 1000).toFixed(0)} km`;
+            if (absolute >= 100_000) return `${(meters / 1000).toFixed(1)} km`;
+            if (absolute >= 10_000) return `${(meters / 1000).toFixed(2)} km`;
+            if (absolute >= 1000) return `${(meters / 1000).toFixed(2)} km`;
+            if (absolute >= 100) return `${meters.toFixed(0)} m`;
+            if (absolute >= 10) return `${meters.toFixed(1)} m`;
+            if (absolute >= 1) return `${meters.toFixed(2)} m`;
+            if (absolute >= 0.01) return `${(meters * 100).toFixed(1)} cm`;
+            return `${(meters * 1000).toFixed(1)} mm`;
+          }
+          """.replace('          ', ''))
+
+          replace(
+              'src/world/types.ts',
+              "  width: number;\n  height: number;\n  regions: Region[];",
+              "  width: number;\n  height: number;\n  physicalWidthMeters: number;\n  physicalHeightMeters: number;\n  regions: Region[];",
+          )
+
+          replace(
+              'src/world/generateWorld.ts',
+              "import { RESOURCE_DEFINITIONS } from './resources.js';\nimport type { Planet, Point, Region, ResourceNode, WorldState } from './types.js';\n\nexport const PLANET_MAP_WIDTH = 4096;\nexport const PLANET_MAP_HEIGHT = 2048;\nexport const REGION_COUNT = 5;",
+              "import { RESOURCE_DEFINITIONS } from './resources.js';\nimport {\n  EARTH_SCALE_PHYSICAL_HEIGHT_METERS,\n  EARTH_SCALE_PHYSICAL_WIDTH_METERS,\n  PLANET_MAP_HEIGHT,\n  PLANET_MAP_WIDTH,\n} from './scale.js';\nimport type { Planet, Point, Region, ResourceNode, WorldState } from './types.js';\n\nexport { PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from './scale.js';\nexport const REGION_COUNT = 5;",
+          )
+          replace(
+              'src/world/generateWorld.ts',
+              "function roundCoordinate(value: number): number {\n  return Number(value.toFixed(2));\n}\n",
+              "function roundCoordinate(value: number): number {\n  return Number(value.toFixed(2));\n}\n\nfunction roundResourceCoordinate(value: number): number {\n  return Number(value.toFixed(6));\n}\n",
+          )
+          replace(
+              'src/world/generateWorld.ts',
+              "      return { x: roundCoordinate(candidate.x), y: roundCoordinate(candidate.y) };",
+              "      return { x: roundResourceCoordinate(candidate.x), y: roundResourceCoordinate(candidate.y) };",
+          )
+          replace(
+              'src/world/generateWorld.ts',
+              "  return { x: roundCoordinate(centroid.x), y: roundCoordinate(centroid.y) };",
+              "  return { x: roundResourceCoordinate(centroid.x), y: roundResourceCoordinate(centroid.y) };",
+          )
+          replace(
+              'src/world/generateWorld.ts',
+              "    width: PLANET_MAP_WIDTH,\n    height: PLANET_MAP_HEIGHT,\n    regions,",
+              "    width: PLANET_MAP_WIDTH,\n    height: PLANET_MAP_HEIGHT,\n    physicalWidthMeters: EARTH_SCALE_PHYSICAL_WIDTH_METERS,\n    physicalHeightMeters: EARTH_SCALE_PHYSICAL_HEIGHT_METERS,\n    regions,",
+          )
+
+          replace(
+              'src/state/appState.ts',
+              'export const RESOURCE_FOCUS_ZOOM = 36;',
+              'export const RESOURCE_FOCUS_ZOOM = 2 ** 19; // 524,288×: ~76 m of Earth-scale map width',
+          )
+
+          p = Path('src/map/mapRenderer.ts')
+          text = p.read_text()
+          text = text.replace(
+              "import { resourceDefinitionById } from '../world/resources.js';\nimport type { MapCameraState, MapSelection, Planet, ResourceNode } from '../world/types.js';",
+              "import { resourceDefinitionById } from '../world/resources.js';\nimport { formatPhysicalDistance, metersToWorldUnits, worldUnitsToMeters } from '../world/scale.js';\nimport type { MapCameraState, MapSelection, Planet, ResourceNode } from '../world/types.js';",
+          )
+          old_constants = """export const MAP_MIN_ZOOM = 1;
+          export const MAP_MAX_ZOOM = 64;
+          export const RESOURCE_NODE_FADE_START_ZOOM = 7;
+          export const RESOURCE_NODE_FULL_OPACITY_ZOOM = 11;
+          export const RESOURCE_NODE_INTERACTIVE_ZOOM = 10;
+          export const RESOURCE_NODE_WORLD_WIDTH = 24;
+          export const RESOURCE_NODE_WORLD_HEIGHT = 15;
+
+          const REGION_LABEL_FADE_START_ZOOM = 3.5;
+          const REGION_LABEL_FADE_END_ZOOM = 6.5;
+          const RESOURCE_NODE_HEADER_HEIGHT = 3.4;
+          const RESOURCE_NODE_PORT_RADIUS = 1.05;
+          """.replace('          ', '')
+          new_constants = """export const MAP_MIN_ZOOM = 1;
+          export const MAP_MAX_ZOOM = 2 ** 24; // 16,777,216×; ~2.39 m visible across a 2:1 viewport.
+          export const RESOURCE_NODE_FADE_START_ZOOM = 2 ** 16;
+          export const RESOURCE_NODE_INTERACTIVE_ZOOM = 2 ** 17;
+          export const RESOURCE_NODE_FULL_OPACITY_ZOOM = 2 ** 18;
+          export const RESOURCE_NODE_PHYSICAL_WIDTH_METERS = 20;
+          export const RESOURCE_NODE_PHYSICAL_HEIGHT_METERS = 12.5;
+          export const RESOURCE_NODE_WORLD_WIDTH = metersToWorldUnits(RESOURCE_NODE_PHYSICAL_WIDTH_METERS);
+          export const RESOURCE_NODE_WORLD_HEIGHT = metersToWorldUnits(RESOURCE_NODE_PHYSICAL_HEIGHT_METERS);
+
+          const REGION_LABEL_FADE_START_ZOOM = 3.5;
+          const REGION_LABEL_FADE_END_ZOOM = 6.5;
+          const RESOURCE_NODE_HEADER_HEIGHT = metersToWorldUnits(2.8);
+          const RESOURCE_NODE_PORT_RADIUS = metersToWorldUnits(0.9);
+          const RESOURCE_NODE_CORNER_RADIUS = metersToWorldUnits(0.45);
+          const RESOURCE_NODE_BODY_STROKE = metersToWorldUnits(0.18);
+          const RESOURCE_NODE_DIVIDER_STROKE = metersToWorldUnits(0.13);
+          const RESOURCE_NODE_PORT_STROKE = metersToWorldUnits(0.22);
+          const RESOURCE_NODE_CATEGORY_FONT_SIZE = metersToWorldUnits(0.95);
+          const RESOURCE_NODE_BODY_FONT_SIZE = metersToWorldUnits(1.05);
+          """.replace('          ', '')
+          if old_constants not in text:
+              raise SystemExit('mapRenderer constants block not found')
+          text = text.replace(old_constants, new_constants)
+
+          old_equal = """function camerasEqual(left: MapCameraState, right: MapCameraState): boolean {
+            return Math.abs(left.centerX - right.centerX) < 0.01
+              && Math.abs(left.centerY - right.centerY) < 0.01
+              && Math.abs(left.zoom - right.zoom) < 0.001;
+          }
+          """.replace('          ', '')
+          new_equal = """function camerasEqual(left: MapCameraState, right: MapCameraState): boolean {
+            const positionTolerance = 1e-9;
+            const zoomTolerance = Math.max(1e-9, Math.max(Math.abs(left.zoom), Math.abs(right.zoom)) * 1e-10);
+            return Math.abs(left.centerX - right.centerX) < positionTolerance
+              && Math.abs(left.centerY - right.centerY) < positionTolerance
+              && Math.abs(left.zoom - right.zoom) < zoomTolerance;
+          }
+
+          function formatZoomFactor(zoom: number): string {
+            if (zoom < 10) return `${Math.round(zoom * 100)}%`;
+            if (zoom < 1000) return `${Math.round(zoom)}×`;
+            if (zoom < 1_000_000) {
+              const thousands = zoom / 1000;
+              return `${thousands >= 100 ? thousands.toFixed(0) : thousands.toFixed(1)}K×`;
+            }
+            const millions = zoom / 1_000_000;
+            return `${millions >= 10 ? millions.toFixed(1) : millions.toFixed(2)}M×`;
+          }
+          """.replace('          ', '')
+          if old_equal not in text:
+              raise SystemExit('camera equality block not found')
+          text = text.replace(old_equal, new_equal)
+
+          old_append = """function appendText(group: SVGGElement, className: string, x: number, y: number, value: string): void {
+            const text = createSvgElement('text');
+            text.setAttribute('x', String(x));
+            text.setAttribute('y', String(y));
+            text.setAttribute('class', className);
+            text.textContent = value;
+            group.appendChild(text);
+          }
+          """.replace('          ', '')
+          new_append = """function appendText(
+            group: SVGGElement,
+            className: string,
+            x: number,
+            y: number,
+            value: string,
+            fontSize: number,
+          ): void {
+            const text = createSvgElement('text');
+            text.setAttribute('x', String(x));
+            text.setAttribute('y', String(y));
+            text.setAttribute('font-size', String(fontSize));
+            text.setAttribute('class', className);
+            text.textContent = value;
+            group.appendChild(text);
+          }
+          """.replace('          ', '')
+          if old_append not in text:
+              raise SystemExit('appendText block not found')
+          text = text.replace(old_append, new_append)
+
+          text = text.replace("  body.setAttribute('rx', '0.55');\n  body.setAttribute('class', 'ws-map-resource-card-body');", "  body.setAttribute('rx', String(RESOURCE_NODE_CORNER_RADIUS));\n  body.setAttribute('stroke-width', String(RESOURCE_NODE_BODY_STROKE));\n  body.setAttribute('class', 'ws-map-resource-card-body');")
+          text = text.replace("    `M ${-halfWidth + 0.55} ${-halfHeight}`,\n    `H ${halfWidth - 0.55}`,\n    `Q ${halfWidth} ${-halfHeight} ${halfWidth} ${-halfHeight + 0.55}`,", "    `M ${-halfWidth + RESOURCE_NODE_CORNER_RADIUS} ${-halfHeight}`,\n    `H ${halfWidth - RESOURCE_NODE_CORNER_RADIUS}`,\n    `Q ${halfWidth} ${-halfHeight} ${halfWidth} ${-halfHeight + RESOURCE_NODE_CORNER_RADIUS}`," )
+          text = text.replace("    `V ${-halfHeight + 0.55}`,\n    `Q ${-halfWidth} ${-halfHeight} ${-halfWidth + 0.55} ${-halfHeight}`,", "    `V ${-halfHeight + RESOURCE_NODE_CORNER_RADIUS}`,\n    `Q ${-halfWidth} ${-halfHeight} ${-halfWidth + RESOURCE_NODE_CORNER_RADIUS} ${-halfHeight}`," )
+          text = text.replace("  divider.setAttribute('class', 'ws-map-resource-card-divider');", "  divider.setAttribute('stroke-width', String(RESOURCE_NODE_DIVIDER_STROKE));\n  divider.setAttribute('class', 'ws-map-resource-card-divider');")
+          text = text.replace("  appendText(group, 'ws-map-resource-category', -halfWidth + 1.05, -halfHeight + 2.25, 'FEATURE');\n\n  const definition = resourceDefinitionById(resource.resourceId);\n  appendText(group, 'ws-map-resource-name', 0, -0.95, resource.name);\n  appendText(group, 'ws-map-resource-type', 0, 1.8, 'Mineral Deposit');\n  appendText(group, 'ws-map-resource-material', 0, 4.55, definition?.name ?? resource.resourceId);", "  appendText(\n    group,\n    'ws-map-resource-category',\n    -halfWidth + metersToWorldUnits(0.9),\n    -halfHeight + metersToWorldUnits(1.9),\n    'FEATURE',\n    RESOURCE_NODE_CATEGORY_FONT_SIZE,\n  );\n\n  const definition = resourceDefinitionById(resource.resourceId);\n  appendText(group, 'ws-map-resource-name', 0, metersToWorldUnits(-0.8), resource.name, RESOURCE_NODE_BODY_FONT_SIZE);\n  appendText(group, 'ws-map-resource-type', 0, metersToWorldUnits(1.45), 'Mineral Deposit', RESOURCE_NODE_BODY_FONT_SIZE);\n  appendText(group, 'ws-map-resource-material', 0, metersToWorldUnits(3.7), definition?.name ?? resource.resourceId, RESOURCE_NODE_BODY_FONT_SIZE);")
+          text = text.replace("  port.setAttribute('r', String(RESOURCE_NODE_PORT_RADIUS));\n  port.setAttribute('class', 'ws-map-resource-port');", "  port.setAttribute('r', String(RESOURCE_NODE_PORT_RADIUS));\n  port.setAttribute('stroke-width', String(RESOURCE_NODE_PORT_STROKE));\n  port.setAttribute('class', 'ws-map-resource-port');")
+
+          text = text.replace("    if (zoomLabel) zoomLabel.textContent = `${Math.round(displayCamera.zoom * 100)}%`;", "    if (zoomLabel) {\n      zoomLabel.textContent = formatZoomFactor(displayCamera.zoom);\n      zoomLabel.title = `Approx. visible map width: ${formatPhysicalDistance(worldUnitsToMeters(visible.width))}`;\n    }")
+          text = text.replace("    const duration = clamp(300 + Math.log2(Math.max(1, zoomRatio)) * 70, 300, 720);", "    const duration = clamp(320 + Math.log2(Math.max(1, zoomRatio)) * 65, 320, 1600);")
+          text = text.replace("    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom * 1.4 });", "    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom * 2 });")
+          text = text.replace("    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom / 1.4 });", "    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom / 2 });")
+          p.write_text(text)
+
+          p = Path('map.css')
+          text = p.read_text()
+          for line in [
+              '  stroke-width: 0.22;\n',
+              '  stroke-width: 0.16;\n',
+              '  font-size: 1.18px;\n',
+              '  font-size: 1.34px;\n',
+              '  stroke-width: 0.34;\n',
+              '  stroke-width: 0.4;\n',
+          ]:
+              text = text.replace(line, '')
+          p.write_text(text)
+
+          replace(
+              'src/ui/inspectorPanel.ts',
+              "import { resourceDefinitionById } from '../world/resources.js';\nimport type { Planet, Region, ResourceNode } from '../world/types.js';",
+              "import { resourceDefinitionById } from '../world/resources.js';\nimport { EARTH_SCALE_METERS_PER_WORLD_UNIT, formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';\nimport type { Planet, Region, ResourceNode } from '../world/types.js';",
+          )
+          replace(
+              'src/ui/inspectorPanel.ts',
+              "  addRow(container, 'Map', `${planet.width} × ${planet.height}`);\n  addRow(container, 'Regions', String(planet.regions.length));",
+              "  addRow(container, 'Map', `${planet.width} × ${planet.height}`);\n  addRow(container, 'Physical scale', `${formatPhysicalDistance(planet.physicalWidthMeters)} × ${formatPhysicalDistance(planet.physicalHeightMeters)}`);\n  addRow(container, 'World unit', `≈ ${formatPhysicalDistance(EARTH_SCALE_METERS_PER_WORLD_UNIT)}`);\n  addRow(container, 'Regions', String(planet.regions.length));",
+          )
+          replace(
+              'src/ui/inspectorPanel.ts',
+              "  addRow(container, 'Bounds', `${region.bounds.x.toFixed(0)}, ${region.bounds.y.toFixed(0)} · ${region.bounds.width.toFixed(0)} × ${region.bounds.height.toFixed(0)}`);\n  addRow(container, 'Resource nodes', String(region.resourceNodeIds.length));",
+              "  addRow(container, 'Bounds', `${region.bounds.x.toFixed(0)}, ${region.bounds.y.toFixed(0)} · ${region.bounds.width.toFixed(0)} × ${region.bounds.height.toFixed(0)}`);\n  addRow(container, 'Approx. extent', `${formatPhysicalDistance(worldUnitsToMeters(region.bounds.width))} × ${formatPhysicalDistance(worldUnitsToMeters(region.bounds.height))}`);\n  addRow(container, 'Resource nodes', String(region.resourceNodeIds.length));",
+          )
+          replace(
+              'src/ui/inspectorPanel.ts',
+              "  addRow(container, 'Coordinates', `${resource.position.x.toFixed(2)}, ${resource.position.y.toFixed(2)}`);",
+              "  addRow(container, 'Coordinates', `${resource.position.x.toFixed(6)}, ${resource.position.y.toFixed(6)}`);\n  addRow(container, 'Map position', `${formatPhysicalDistance(worldUnitsToMeters(resource.position.x))}, ${formatPhysicalDistance(worldUnitsToMeters(resource.position.y))}`);",
+          )
+
+          Path('tests/mapCameraState.test.js').write_text("""import assert from 'node:assert/strict';
+          import test from 'node:test';
+
+          import { RESOURCE_FOCUS_ZOOM, AppStore } from '../dist/state/appState.js';
+          import {
+            MAP_MAX_ZOOM,
+            RESOURCE_NODE_FADE_START_ZOOM,
+            RESOURCE_NODE_FULL_OPACITY_ZOOM,
+            RESOURCE_NODE_INTERACTIVE_ZOOM,
+            RESOURCE_NODE_PHYSICAL_WIDTH_METERS,
+            RESOURCE_NODE_WORLD_WIDTH,
+          } from '../dist/map/mapRenderer.js';
+          import { generateWorld } from '../dist/world/generateWorld.js';
+          import { worldUnitsToMeters } from '../dist/world/scale.js';
+
+          test('NAV-style region focus selects and moves the camera toward the region', () => {
+            const world = generateWorld('region-focus');
+            const store = new AppStore();
+            store.setWorld(world);
+            const region = world.planet.regions[2];
+
+            store.focusSelection({ type: 'region', regionId: region.id });
+            const state = store.getState();
+
+            assert.deepEqual(state.selection, { type: 'region', regionId: region.id });
+            assert.equal(state.camera.centerX, region.bounds.x + region.bounds.width / 2);
+            assert.equal(state.camera.centerY, region.bounds.y + region.bounds.height / 2);
+            assert.ok(state.camera.zoom >= 2);
+          });
+
+          test('NAV resource focus reaches Earth-scale engineering depth', () => {
+            const world = generateWorld('resource-focus');
+            const store = new AppStore();
+            store.setWorld(world);
+            const resource = world.planet.resourceNodes[0];
+
+            store.focusSelection({ type: 'resource', resourceNodeId: resource.id });
+            const state = store.getState();
+
+            assert.deepEqual(state.selection, { type: 'resource', resourceNodeId: resource.id });
+            assert.equal(state.camera.centerX, resource.position.x);
+            assert.equal(state.camera.centerY, resource.position.y);
+            assert.equal(state.camera.zoom, RESOURCE_FOCUS_ZOOM);
+            assert.equal(RESOURCE_FOCUS_ZOOM, 2 ** 19);
+            assert.equal(MAP_MAX_ZOOM, 2 ** 24);
+            assert.ok(RESOURCE_FOCUS_ZOOM > RESOURCE_NODE_FULL_OPACITY_ZOOM);
+            assert.ok(MAP_MAX_ZOOM > RESOURCE_FOCUS_ZOOM);
+
+            const nominalVisibleWidthMeters = world.planet.physicalWidthMeters / RESOURCE_FOCUS_ZOOM;
+            assert.ok(nominalVisibleWidthMeters > 70 && nominalVisibleWidthMeters < 80);
+          });
+
+          test('resource FEATURE cards use a meter-scale footprint on the Earth-scale map', () => {
+            const world = generateWorld('resource-scale');
+            assert.equal(RESOURCE_NODE_PHYSICAL_WIDTH_METERS, 20);
+            assert.ok(Math.abs(worldUnitsToMeters(RESOURCE_NODE_WORLD_WIDTH) - 20) < 1e-9);
+            assert.ok(RESOURCE_NODE_WORLD_WIDTH / world.planet.width < 0.000001);
+            assert.equal(RESOURCE_NODE_FADE_START_ZOOM, 2 ** 16);
+            assert.equal(RESOURCE_NODE_INTERACTIVE_ZOOM, 2 ** 17);
+            assert.equal(RESOURCE_NODE_FULL_OPACITY_ZOOM, 2 ** 18);
+          });
+
+          test('planet focus restores the full-map camera', () => {
+            const world = generateWorld('planet-focus');
+            const store = new AppStore();
+            store.setWorld(world);
+            store.setCamera({ centerX: 100, centerY: 100, zoom: 9 });
+
+            store.focusSelection({ type: 'planet' });
+            const state = store.getState();
+
+            assert.deepEqual(state.selection, { type: 'planet' });
+            assert.deepEqual(state.camera, {
+              centerX: world.planet.width / 2,
+              centerY: world.planet.height / 2,
+              zoom: 1,
+            });
+          });
+          """.replace('          ', ''))
+
+          p = Path('tests/mapWorldModel.test.js')
+          text = p.read_text()
+          text = text.replace(
+              "import { generateWorld, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH, REGION_COUNT } from '../dist/world/generateWorld.js';",
+              "import { generateWorld, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH, REGION_COUNT } from '../dist/world/generateWorld.js';\nimport {\n  EARTH_SCALE_METERS_PER_WORLD_UNIT,\n  EARTH_SCALE_PHYSICAL_HEIGHT_METERS,\n  EARTH_SCALE_PHYSICAL_WIDTH_METERS,\n  metersToWorldUnits,\n  worldUnitsToMeters,\n} from '../dist/world/scale.js';",
+          )
+          marker = "test('Phase 3.5 regions partition the full map with irregular asymmetric boundaries', () => {"
+          scale_test = """test('planet logical coordinates carry an Earth-scale physical interpretation', () => {
+            const world = generateWorld('earth-scale-world');
+            assert.equal(world.planet.physicalWidthMeters, EARTH_SCALE_PHYSICAL_WIDTH_METERS);
+            assert.equal(world.planet.physicalHeightMeters, EARTH_SCALE_PHYSICAL_HEIGHT_METERS);
+            assert.equal(worldUnitsToMeters(PLANET_MAP_WIDTH), EARTH_SCALE_PHYSICAL_WIDTH_METERS);
+            assert.equal(worldUnitsToMeters(PLANET_MAP_HEIGHT), EARTH_SCALE_PHYSICAL_HEIGHT_METERS);
+            assert.ok(Math.abs(EARTH_SCALE_METERS_PER_WORLD_UNIT - 9783.935546875) < 1e-9);
+            assert.ok(Math.abs(worldUnitsToMeters(metersToWorldUnits(20)) - 20) < 1e-9);
+          });
+
+          """.replace('          ', '')
+          if marker not in text:
+              raise SystemExit('mapWorldModel insertion marker not found')
+          text = text.replace(marker, scale_test + marker)
+          p.write_text(text)
+          PY
+
+      - name: Install dependencies
+        run: npm install
+      - name: Build TypeScript browser modules
+        run: npm run build
+      - name: Run JavaScript regression tests
+        run: npm run test:js
+      - name: Commit implementation and generated dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src dist tests map.css
+          git commit -m "Implement Earth-scale continuous map depth"
+          git push
