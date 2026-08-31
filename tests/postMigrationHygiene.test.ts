@@ -130,8 +130,8 @@ test('standalone per-apparatus WASM browser adapters stay removed', () => {
 });
 
 test('browser apparatus authoring code does not use physics-runtime terminology', () => {
-  const registry = readFileSync(path.join(repoRoot, 'src/simulation/apparatus/registry.js'), 'utf8');
-  const simulationEngine = readFileSync(path.join(repoRoot, 'src/simulation/simulationEngine.js'), 'utf8');
+  const registry = readFileSync(path.join(repoRoot, 'src/simulation/apparatus/registry.ts'), 'utf8');
+  const simulationEngine = readFileSync(path.join(repoRoot, 'src/simulation/simulationEngine.ts'), 'utf8');
   for (const stale of ['APPARATUS_RUNTIME_REGISTRY', 'apparatusRuntimeFor', 'createApparatusRuntime', 'Unknown apparatus runtime']) {
     assert.doesNotMatch(registry, new RegExp(stale));
     assert.doesNotMatch(simulationEngine, new RegExp(stale));
