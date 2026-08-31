@@ -1,4 +1,4 @@
-name: TypeScript Bootstrap
+name: TypeScript Conversion Pass
 
 on:
   push:
@@ -8,120 +8,78 @@ permissions:
   contents: write
 
 jobs:
-  bootstrap:
-    if: ${{ !contains(github.event.head_commit.message, '[typescript-bootstrap]') }}
+  pass:
+    if: ${{ !contains(github.event.head_commit.message, '[ts-pass]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: chatgpt/typescript-browser-conversion
           fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+      - run: npm ci
 
-      - name: Convert authored JavaScript paths to TypeScript
+      - name: Fix source-inspection test paths after extension conversion
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import subprocess
+          import re
 
-          for root in (Path('src'), Path('tests')):
-              for path in sorted(root.rglob('*.js')):
-                  if path.as_posix() == 'src/wasm/interlink_wasm.js':
+          existing = {p.as_posix() for p in Path('src').rglob('*.ts')}
+          pattern = re.compile(r"(?P<q>['\"])(?P<path>src/[^'\"]+\.js)(?P=q)")
+          for test in Path('tests').rglob('*.ts'):
+              lines = test.read_text().splitlines(keepends=True)
+              changed = []
+              for line in lines:
+                  stripped = line.lstrip()
+                  if stripped.startswith('import ') or ' from ' in line:
+                      changed.append(line)
                       continue
-                  subprocess.run(['git', 'mv', path.as_posix(), path.with_suffix('.ts').as_posix()], check=True)
-
-          index = Path('index.html')
-          index.write_text(index.read_text().replace('src="src/app.js"', 'src="dist/src/app.js"'))
+                  def repl(match):
+                      old = match.group('path')
+                      candidate = old[:-3] + '.ts'
+                      if candidate in existing:
+                          return f"{match.group('q')}{candidate}{match.group('q')}"
+                      return match.group(0)
+                  changed.append(pattern.sub(repl, line))
+              test.write_text(''.join(changed))
           PY
 
-      - name: Add TypeScript toolchain
-        run: |
-          npm install --save-dev typescript tsx @types/node
-          node - <<'NODE'
-          const fs = require('fs');
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          pkg.scripts = {
-            dev: 'bash scripts/build-browser.sh',
-            build: 'bash scripts/build-browser.sh',
-            typecheck: 'tsc --noEmit -p tsconfig.json',
-            test: 'npm run test:ts',
-            'test:ts': 'tsx --test tests/*.test.ts',
-            'test:rust': 'cargo test --workspace',
-            'check:wasm': 'cargo check -p interlink-wasm --target wasm32-unknown-unknown',
-            'build:wasm': 'bash scripts/build-wasm.sh',
-            'check:wasm-package': 'bash scripts/build-wasm.sh target/wasm-package',
-            'check:runtime': 'npm run typecheck && npm run test:ts && npm run test:rust && npm run check:wasm'
-          };
-          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          NODE
-
-          cat > tsconfig.json <<'EOF'
-          {
-            "compilerOptions": {
-              "target": "ES2022",
-              "module": "ESNext",
-              "moduleResolution": "Bundler",
-              "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-              "types": ["node"],
-              "strict": true,
-              "allowJs": false,
-              "checkJs": false,
-              "skipLibCheck": true,
-              "noEmit": true,
-              "verbatimModuleSyntax": true,
-              "isolatedModules": true,
-              "forceConsistentCasingInFileNames": true
-            },
-            "include": ["src/**/*.ts", "src/**/*.d.ts", "tests/**/*.ts"],
-            "exclude": ["dist", "target", "node_modules"]
-          }
-          EOF
-
-          cat > tsconfig.build.json <<'EOF'
-          {
-            "extends": "./tsconfig.json",
-            "compilerOptions": {
-              "noEmit": false,
-              "rootDir": "src",
-              "outDir": "dist/src",
-              "types": [],
-              "declaration": false,
-              "sourceMap": false
-            },
-            "include": ["src/**/*.ts", "src/**/*.d.ts"],
-            "exclude": ["dist", "target", "node_modules"]
-          }
-          EOF
-
-          cat > scripts/build-browser.sh <<'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          rm -rf dist
-          npx tsc -p tsconfig.build.json
-          mkdir -p dist/src/wasm
-          cp src/wasm/interlink_wasm.js dist/src/wasm/
-          cp src/wasm/interlink_wasm.d.ts dist/src/wasm/
-          cp src/wasm/interlink_wasm_bg.wasm dist/src/wasm/
-          cp src/wasm/interlink_wasm_bg.wasm.d.ts dist/src/wasm/
-          EOF
-          chmod +x scripts/build-browser.sh
-
-      - name: Capture strict TypeScript diagnostics
+      - name: Produce relaxed diagnostic summary
         run: |
           set +e
-          npm run typecheck > typescript-diagnostics.txt 2>&1
-          echo "TYPECHECK_EXIT=$?" >> typescript-diagnostics.txt
+          npx tsc --noEmit -p tsconfig.json --noImplicitAny false > typescript-relaxed-diagnostics.txt 2>&1
+          RELAXED_EXIT=$?
           npm test > typescript-tests.txt 2>&1
-          echo "TEST_EXIT=$?" >> typescript-tests.txt
+          TEST_EXIT=$?
+          python3 - <<'PY'
+          from pathlib import Path
+          from collections import Counter
+          import re
+
+          text = Path('typescript-relaxed-diagnostics.txt').read_text()
+          errors = re.findall(r'^(.*?\.ts)\((\d+),(\d+)\): error (TS\d+):', text, re.M)
+          by_file = Counter(e[0] for e in errors)
+          by_code = Counter(e[3] for e in errors)
+          out = [f'errors={len(errors)}', '', 'By code:']
+          out += [f'{code}: {count}' for code, count in by_code.most_common()]
+          out += ['', 'By file:']
+          out += [f'{path}: {count}' for path, count in by_file.most_common()]
+          Path('typescript-error-summary.txt').write_text('\n'.join(out) + '\n')
+          PY
+          echo "RELAXED_EXIT=$RELAXED_EXIT" >> typescript-error-summary.txt
+          echo "TEST_EXIT=$TEST_EXIT" >> typescript-error-summary.txt
           exit 0
 
-      - name: Commit conversion baseline
+      - name: Commit diagnostic pass
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- ':!.github/workflows/typescript-bootstrap.yml'
-          git commit -m "Convert browser source and tests to TypeScript [typescript-bootstrap]"
-          git push origin HEAD:chatgpt/typescript-browser-conversion
+          git add tests typescript-relaxed-diagnostics.txt typescript-tests.txt typescript-error-summary.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Measure TypeScript conversion blockers [ts-pass]"
+            git push origin HEAD:chatgpt/typescript-browser-conversion
+          fi
