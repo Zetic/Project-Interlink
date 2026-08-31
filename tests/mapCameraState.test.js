@@ -4,11 +4,19 @@ import test from 'node:test';
 import { RESOURCE_FOCUS_ZOOM, AppStore } from '../dist/state/appState.js';
 import {
   MAP_MAX_ZOOM,
+  RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS,
   RESOURCE_NODE_FADE_START_ZOOM,
   RESOURCE_NODE_FULL_OPACITY_ZOOM,
   RESOURCE_NODE_INTERACTIVE_ZOOM,
   RESOURCE_NODE_PHYSICAL_WIDTH_METERS,
   RESOURCE_NODE_WORLD_WIDTH,
+  WHEEL_ENGINEERING_BLEND_END_ZOOM,
+  WHEEL_ENGINEERING_BLEND_START_ZOOM,
+  WHEEL_ENGINEERING_SENSITIVITY,
+  WHEEL_GEOGRAPHIC_SENSITIVITY,
+  resourceDetailsVisibleAtPixelHeight,
+  wheelSensitivityForZoom,
+  wheelZoomAfterDelta,
 } from '../dist/map/mapRenderer.js';
 import { generateWorld } from '../dist/world/generateWorld.js';
 import { worldUnitsToMeters } from '../dist/world/scale.js';
@@ -57,7 +65,38 @@ test('resource FEATURE cards use a meter-scale footprint on the Earth-scale map'
   assert.ok(RESOURCE_NODE_WORLD_WIDTH / world.planet.width < 0.000001);
   assert.equal(RESOURCE_NODE_FADE_START_ZOOM, 2 ** 16);
   assert.equal(RESOURCE_NODE_INTERACTIVE_ZOOM, 2 ** 17);
-  assert.equal(RESOURCE_NODE_FULL_OPACITY_ZOOM, 2 ** 18);
+  assert.equal(RESOURCE_NODE_FULL_OPACITY_ZOOM, 2 ** 17);
+});
+
+test('wheel zoom becomes fine-grained around resources and returns to geographic speed when backing out', () => {
+  assert.equal(WHEEL_ENGINEERING_BLEND_START_ZOOM, 2 ** 14);
+  assert.equal(WHEEL_ENGINEERING_BLEND_END_ZOOM, 2 ** 18);
+  assert.ok(WHEEL_ENGINEERING_SENSITIVITY < WHEEL_GEOGRAPHIC_SENSITIVITY);
+  assert.equal(wheelSensitivityForZoom(2 ** 13), WHEEL_GEOGRAPHIC_SENSITIVITY);
+  assert.ok(Math.abs(wheelSensitivityForZoom(2 ** 19) - WHEEL_ENGINEERING_SENSITIVITY) < 1e-12);
+
+  const engineeringStart = 288_000;
+  const engineeringNext = wheelZoomAfterDelta(engineeringStart, 100);
+  const engineeringRatio = engineeringNext / engineeringStart;
+  assert.ok(engineeringRatio > 0.95 && engineeringRatio < 1, `engineering wheel ratio ${engineeringRatio}`);
+
+  const geographicStart = 8_000;
+  const geographicNext = wheelZoomAfterDelta(geographicStart, 100);
+  const geographicRatio = geographicNext / geographicStart;
+  assert.ok(geographicRatio < 0.9, `geographic wheel ratio ${geographicRatio}`);
+  assert.ok(geographicRatio < engineeringRatio);
+
+  const middleSensitivity = wheelSensitivityForZoom(2 ** 16);
+  assert.ok(middleSensitivity < WHEEL_GEOGRAPHIC_SENSITIVITY);
+  assert.ok(middleSensitivity > WHEEL_ENGINEERING_SENSITIVITY);
+});
+
+test('resource text detail is hidden before it becomes large enough to render cleanly', () => {
+  assert.equal(RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS, 5.75);
+  assert.equal(resourceDetailsVisibleAtPixelHeight(5.2), false);
+  assert.equal(resourceDetailsVisibleAtPixelHeight(5.74), false);
+  assert.equal(resourceDetailsVisibleAtPixelHeight(5.75), true);
+  assert.equal(resourceDetailsVisibleAtPixelHeight(7), true);
 });
 
 test('planet focus restores the full-map camera', () => {
