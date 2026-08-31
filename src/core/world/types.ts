@@ -14,6 +14,29 @@ export interface ResourceOccurrence {
   [key: string]: unknown;
 }
 
+export interface GeneratedFeature extends Record<string, unknown> {
+  id: string;
+  name?: string;
+  resourceOccurrences?: ResourceOccurrence[];
+}
+
+export interface GeneratedSite extends Record<string, unknown> {
+  id: string;
+  name?: string;
+  siteKind?: string;
+  features?: GeneratedFeature[];
+}
+
+export interface GeneratedRegion extends Record<string, unknown> {
+  id: string;
+  sites?: GeneratedSite[];
+}
+
+export interface GeneratedPlanet extends Record<string, unknown> {
+  id: string;
+  regions: GeneratedRegion[];
+}
+
 export interface Feature {
   id: string;
   name?: string;
