@@ -1,9 +1,9 @@
-errors=2581
+errors=2571
 test_failures=11
 
 By code:
 TS7006: 1271
-TS2339: 336
+TS2339: 325
 TS18046: 315
 TS2322: 102
 TS7005: 90
@@ -26,16 +26,17 @@ TS2554: 2
 TS7019: 2
 TS2698: 1
 TS2367: 1
+TS2365: 1
 TS2561: 1
 TS2721: 1
 TS2769: 1
 
 By file:
-src/workspace/workspaceController.ts: 371
+src/workspace/workspaceController.ts: 367
 src/simulation/packedWorldRuntimeCompiler.ts: 204
 src/core/materials/solids/solidMaterialState.ts: 105
 src/workspace/navigation/navigationProjection.ts: 95
-src/workspace/debug/debugDrawer.ts: 90
+src/workspace/debug/debugDrawer.ts: 85
 src/workspace/graph/workspaceGraph.ts: 77
 src/workspace/inspector/inspectionViewModel.ts: 76
 tests/rustWasmWorkerHost.test.ts: 75
@@ -63,7 +64,7 @@ src/core/materials/materialBatches.ts: 25
 src/generator/generateRegions.ts: 25
 tests/runtimePresentation.test.ts: 23
 tests/navigationProjection.test.ts: 22
-tests/recursiveSystems.test.ts: 22
+tests/recursiveSystems.test.ts: 21
 src/simulation/packedComminutionCompiler.ts: 20
 src/simulation/packedRoastingCompiler.ts: 20
 src/workspace/inspector/genericApparatusInspectorUI.ts: 20
@@ -510,7 +511,6 @@ src/workspace/workspaceController.ts(1146,29): error TS7006: Parameter 'item' im
 src/workspace/workspaceController.ts(1151,25): error TS7006: Parameter 'transferId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1163,34): error TS7006: Parameter 'svg' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1163,39): error TS7006: Parameter 'definition' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1167,32): error TS2339: Property 'transfers' does not exist on type 'WorldSimulationState'.
 src/workspace/workspaceController.ts(1168,5): error TS2345: Argument of type '(systemId: any, portId: any) => { nodeId: any; portId: any; }' is not assignable to parameter of type 'null | undefined'.
 src/workspace/workspaceController.ts(1168,6): error TS7006: Parameter 'systemId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1168,16): error TS7006: Parameter 'portId' implicitly has an 'any' type.
@@ -525,7 +525,6 @@ src/workspace/workspaceController.ts(1192,38): error TS7006: Parameter 'event' i
 src/workspace/workspaceController.ts(1208,29): error TS7006: Parameter 'event' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1210,7): error TS7005: Variable 'systemDragState' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1234,32): error TS7006: Parameter 'container' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1251,32): error TS2339: Property 'transfers' does not exist on type 'WorldSimulationState'.
 src/workspace/workspaceController.ts(1252,5): error TS2345: Argument of type '(systemId: any, portId: any) => { nodeId: any; portId: any; }' is not assignable to parameter of type 'null | undefined'.
 src/workspace/workspaceController.ts(1252,6): error TS7006: Parameter 'systemId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1252,16): error TS7006: Parameter 'portId' implicitly has an 'any' type.
@@ -586,10 +585,8 @@ src/workspace/workspaceController.ts(1472,18): error TS18047: 'wsState.world' is
 src/workspace/workspaceController.ts(1479,39): error TS2538: Type 'null' cannot be used as an index type.
 src/workspace/workspaceController.ts(1479,39): error TS2538: Type 'undefined' cannot be used as an index type.
 src/workspace/workspaceController.ts(1482,75): error TS7006: Parameter 'port' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1490,34): error TS2339: Property 'transfers' does not exist on type 'WorldSimulationState'.
 src/workspace/workspaceController.ts(1493,34): error TS2538: Type 'null' cannot be used as an index type.
 src/workspace/workspaceController.ts(1495,97): error TS2538: Type 'null' cannot be used as an index type.
-src/workspace/workspaceController.ts(1511,38): error TS2339: Property 'transfers' does not exist on type 'WorldSimulationState'.
 src/workspace/workspaceController.ts(1512,11): error TS2345: Argument of type '(systemId: any, portId: any) => { nodeId: any; portId: any; }' is not assignable to parameter of type 'null | undefined'.
 src/workspace/workspaceController.ts(1512,12): error TS7006: Parameter 'systemId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1512,22): error TS7006: Parameter 'portId' implicitly has an 'any' type.
@@ -789,12 +786,7 @@ src/workspace/debug/debugDrawer.ts(105,36): error TS7005: Variable 'lastFrameAtM
 src/workspace/debug/debugDrawer.ts(108,57): error TS7005: Variable 'frameSamplesMs' implicitly has an 'any[]' type.
 src/workspace/debug/debugDrawer.ts(118,7): error TS7005: Variable 'frameRafId' implicitly has an 'any' type.
 src/workspace/debug/debugDrawer.ts(118,94): error TS7005: Variable 'frameRafId' implicitly has an 'any' type.
-src/workspace/debug/debugDrawer.ts(136,44): error TS2339: Property 'nodes' does not exist on type '{}'.
-src/workspace/debug/debugDrawer.ts(137,50): error TS2339: Property 'connections' does not exist on type '{}'.
-src/workspace/debug/debugDrawer.ts(138,49): error TS2339: Property 'nodes' does not exist on type '{}'.
-src/workspace/debug/debugDrawer.ts(139,17): error TS2339: Property 'enabled' does not exist on type '{}'.
-src/workspace/debug/debugDrawer.ts(140,17): error TS2339: Property 'nodeType' does not exist on type '{}'.
-src/workspace/debug/debugDrawer.ts(142,42): error TS2339: Property 'lastSolverEvaluationCount' does not exist on type '{}'.
+src/workspace/debug/debugDrawer.ts(142,9): error TS2365: Operator '+=' cannot be applied to types 'number' and '{}'.
 src/workspace/debug/debugDrawer.ts(159,20): error TS7005: Variable 'realtimeSamples' implicitly has an 'any[]' type.
 src/workspace/debug/debugDrawer.ts(168,40): error TS7005: Variable 'realtimeSamples' implicitly has an 'any[]' type.
 src/workspace/debug/debugDrawer.ts(168,76): error TS7005: Variable 'realtimeSamples' implicitly has an 'any[]' type.
