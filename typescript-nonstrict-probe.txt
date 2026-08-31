@@ -1,9 +1,9 @@
-errors=811
+errors=810
 
 By code:
 TS2339: 599
 TS2353: 54
-TS2365: 35
+TS2365: 34
 TS2345: 22
 TS2362: 18
 TS2551: 17
@@ -79,7 +79,6 @@ tests/futureApparatusScalability.test.ts: 2
 tests/packedRuntimeCompiler.test.ts: 2
 tests/workspaceGraph.test.ts: 2
 src/app.ts: 1
-src/core/materials/species/materialSpecies.ts: 1
 src/simulation/apparatus/crusher.ts: 1
 src/simulation/apparatus/exhaustVent.ts: 1
 src/simulation/apparatus/feeder.ts: 1
@@ -141,7 +140,6 @@ src/core/materials/solids/solidMaterialState.ts(151,46): error TS2365: Operator 
 src/core/materials/solids/solidMaterialState.ts(225,35): error TS2739: Type '{ speciesId: string; sizeBinId: string; liberationClassId: string; quantity: unknown; }' is missing the following properties from type '{ liberationClassId: any; massKg: any; quantity: any; rateKgPerSecond: any; sizeBinId: any; speciesId: any; textureProfileId?: any; }': massKg, rateKgPerSecond
 src/core/materials/solids/solidMaterialState.ts(283,17): error TS2339: Property 'id' does not exist on type 'unknown'.
 src/core/materials/solids/solidMaterialState.ts(284,108): error TS2339: Property 'id' does not exist on type 'unknown'.
-src/core/materials/species/materialSpecies.ts(26,50): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalMaterial.ts(38,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalMaterial.ts(48,9): error TS2365: Operator '>' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalMaterial.ts(48,46): error TS2365: Operator '+=' cannot be applied to types 'number' and 'unknown'.
@@ -199,4 +197,5 @@ src/simulation/boundaryTransfer.ts(5,92): error TS2339: Property 'targetPortId' 
 src/simulation/extractorNode.ts(17,3): error TS2339: Property 'id' does not exist on type '{ enabled?: boolean; occurrenceId?: null; prototypeRateKgPerSecond?: number; }'.
 src/simulation/extractorNode.ts(73,52): error TS2345: Argument of type '"gas" | "liquid" | "solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
   Type '"gas"' is not assignable to type '"solid-particulate"'.
+src/simulation/extractorNode.ts(101,5): error TS2322: Type '"coarse-solid" | "run-of-mine-rock"' is not assignable to type '"coarse-solid"'.
 EXIT=1
