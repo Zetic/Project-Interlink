@@ -1,19 +1,19 @@
-errors=884
+errors=811
 
 By code:
-TS2339: 673
+TS2339: 599
 TS2353: 54
-TS2365: 34
-TS2362: 19
-TS2345: 18
+TS2365: 35
+TS2345: 22
+TS2362: 18
 TS2551: 17
-TS2322: 16
 TS2740: 16
+TS2322: 12
 TS2739: 12
 TS2349: 12
 TS2363: 5
 TS2367: 3
-TS2538: 2
+TS2538: 3
 TS2554: 2
 TS2698: 1
 
@@ -21,24 +21,21 @@ By file:
 src/simulation/packedWorldRuntimeCompiler.ts: 129
 src/workspace/workspaceController.ts: 95
 tests/rustWasmWorkerHost.test.ts: 49
-tests/invariants.test.ts: 41
 src/workspace/graph/workspaceGraph.ts: 36
 src/simulation/realtimeRuntime.ts: 31
 src/workspace/inspector/inspectionViewModel.ts: 31
 src/workspace/navigation/navigationProjection.ts: 25
 tests/rustWasmWorkerReconfigure.test.ts: 24
-tests/worldIntegrity.test.ts: 23
 tests/smoke.test.ts: 20
 src/simulation/packedRuntimeCompiler.ts: 19
-tests/navigationProjection.test.ts: 17
 src/debug/fixtures/roastingBenchmark.ts: 15
-tests/siteSession.test.ts: 15
 src/content/apparatus/definitions.ts: 14
 src/simulation/worldSimulation.ts: 14
 src/workspace/debug/debugDrawer.ts: 14
 tests/packedWorldRuntimeCompiler.test.ts: 14
 src/simulation/runtimePresentation.ts: 13
 src/simulation/simulationEngine.ts: 13
+tests/invariants.test.ts: 13
 tests/recursiveSystems.test.ts: 13
 src/simulation/packedComminutionCompiler.ts: 12
 src/workspace/graph/viewport.ts: 12
@@ -48,6 +45,7 @@ src/generator/generatePlanet.ts: 9
 src/simulation/hopperNode.ts: 9
 src/core/materials/materialBatches.ts: 8
 src/core/materials/thermal/thermalMaterial.ts: 8
+tests/navigationProjection.test.ts: 8
 src/simulation/packedThermalRuntime.ts: 7
 src/simulation/packedWorldWorkerSetup.ts: 7
 src/simulation/packedGasRuntime.ts: 6
@@ -63,6 +61,7 @@ src/simulation/boundaryTransfer.ts: 4
 src/simulation/materialStream.ts: 4
 tests/inspectionViewModel.test.ts: 4
 tests/runtimeCapabilities.test.ts: 4
+tests/siteSession.test.ts: 4
 src/core/materials/gas/gasMaterialState.ts: 3
 src/core/materials/thermal/thermalState.ts: 3
 src/generator/generateResources.ts: 3
@@ -78,7 +77,6 @@ tests/apparatusCanonicalControls.test.ts: 2
 tests/extractorResourceAccess.test.ts: 2
 tests/futureApparatusScalability.test.ts: 2
 tests/packedRuntimeCompiler.test.ts: 2
-tests/solidMaterialState.test.ts: 2
 tests/workspaceGraph.test.ts: 2
 src/app.ts: 1
 src/core/materials/species/materialSpecies.ts: 1
@@ -96,9 +94,9 @@ src/workspace/siteSession.ts: 1
 tests/apparatusControlUI.test.ts: 1
 tests/debugTools.test.ts: 1
 tests/knowledge.test.ts: 1
-tests/materialSpeciesCoverage.test.ts: 1
 tests/nodeRemoval.test.ts: 1
 tests/packedComminutionCompiler.test.ts: 1
+tests/worldIntegrity.test.ts: 1
 
 First errors:
 src/app.ts(19,34): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
