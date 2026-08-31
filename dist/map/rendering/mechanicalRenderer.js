@@ -1,12 +1,17 @@
 import { apparatusDefinitionById } from '../../apparatus/definitions.js';
 import { mechanicalNodeById, resourceNodeById } from '../../graph/graphQueries.js';
 import { metersToWorldUnits } from '../../world/scale.js';
-import { applyEngineeringNodeVisibility, ENGINEERING_NODE_FADE_START_ZOOM, ENGINEERING_NODE_FULL_OPACITY_ZOOM, ENGINEERING_NODE_INTERACTIVE_ZOOM, } from './engineeringNodeVisibility.js';
+import { applyEngineeringNodeVisibility, ENGINEERING_NODE_HIDE_ZOOM, ENGINEERING_NODE_INTERACTIVE_ZOOM, ENGINEERING_NODE_SHOW_ZOOM, } from './engineeringNodeVisibility.js';
 import { RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, resourcePortWorldPosition, } from './resourceRenderer.js';
+import { worldToRenderPoint } from './renderOrigin.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-export const MECHANICAL_NODE_FADE_START_ZOOM = ENGINEERING_NODE_FADE_START_ZOOM;
-export const MECHANICAL_NODE_FULL_OPACITY_ZOOM = ENGINEERING_NODE_FULL_OPACITY_ZOOM;
+export const MECHANICAL_NODE_HIDE_ZOOM = ENGINEERING_NODE_HIDE_ZOOM;
+export const MECHANICAL_NODE_SHOW_ZOOM = ENGINEERING_NODE_SHOW_ZOOM;
 export const MECHANICAL_NODE_INTERACTIVE_ZOOM = ENGINEERING_NODE_INTERACTIVE_ZOOM;
+/** @deprecated Kept for compatibility; engineering cards no longer alpha-fade. */
+export const MECHANICAL_NODE_FADE_START_ZOOM = MECHANICAL_NODE_HIDE_ZOOM;
+/** @deprecated Kept for compatibility; engineering cards are fully opaque whenever visible. */
+export const MECHANICAL_NODE_FULL_OPACITY_ZOOM = MECHANICAL_NODE_SHOW_ZOOM;
 export const ENGINEERING_NODE_CARD_PHYSICAL_WIDTH_METERS = RESOURCE_NODE_PHYSICAL_WIDTH_METERS;
 export const ENGINEERING_NODE_CARD_PHYSICAL_HEIGHT_METERS = RESOURCE_NODE_PHYSICAL_HEIGHT_METERS;
 const HEADER_HEIGHT = RESOURCE_NODE_WORLD_HEIGHT * 0.2;
@@ -98,16 +103,18 @@ function connectionPath(start, end) {
     const bend = Math.max(metersToWorldUnits(3), Math.abs(end.x - start.x) * 0.45);
     return `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}`;
 }
-export function renderMechanicalLayer(planet, graph, onSelect) {
+export function renderMechanicalLayer(planet, graph, renderOrigin, onSelect) {
     const layer = svgElement('g');
     layer.setAttribute('class', 'ws-map-mechanical-layer');
     const connections = svgElement('g');
     connections.setAttribute('class', 'ws-map-connection-layer');
     for (const connection of graph.connections) {
-        const start = endpointWorldPosition(planet, graph, connection.from);
-        const end = endpointWorldPosition(planet, graph, connection.to);
-        if (!start || !end)
+        const startWorld = endpointWorldPosition(planet, graph, connection.from);
+        const endWorld = endpointWorldPosition(planet, graph, connection.to);
+        if (!startWorld || !endWorld)
             continue;
+        const start = worldToRenderPoint(startWorld, renderOrigin);
+        const end = worldToRenderPoint(endWorld, renderOrigin);
         const path = svgElement('path');
         path.setAttribute('d', connectionPath(start, end));
         path.setAttribute('class', `ws-map-connection ws-map-connection--${connection.kind} ws-map-connection--${connection.medium}`);
@@ -121,8 +128,9 @@ export function renderMechanicalLayer(planet, graph, onSelect) {
     const nodes = svgElement('g');
     nodes.setAttribute('class', 'ws-map-mechanical-node-layer');
     for (const node of graph.nodes) {
+        const position = worldToRenderPoint(node.position, renderOrigin);
         const group = svgElement('g');
-        group.setAttribute('transform', `translate(${node.position.x} ${node.position.y})`);
+        group.setAttribute('transform', `translate(${position.x} ${position.y})`);
         group.setAttribute('class', `ws-map-mechanical-node ws-map-mechanical-node--${node.category}`);
         group.setAttribute('data-map-kind', 'mechanical');
         group.setAttribute('data-mechanical-id', node.id);
@@ -140,9 +148,9 @@ export function renderMechanicalLayer(planet, graph, onSelect) {
     return layer;
 }
 export function updateMechanicalVisibility(svg, zoom) {
-    applyEngineeringNodeVisibility(svg.querySelector('.ws-map-mechanical-layer'), zoom);
+    applyEngineeringNodeVisibility(svg, svg.querySelector('.ws-map-mechanical-layer'), zoom);
 }
-export function updatePlacementPreview(svg, definition, position) {
+export function updatePlacementPreview(svg, definition, position, renderOrigin) {
     const preview = svg.querySelector('#ws-map-placement-preview');
     if (!preview)
         return;
@@ -151,8 +159,9 @@ export function updatePlacementPreview(svg, definition, position) {
         preview.style.display = 'none';
         return;
     }
+    const local = worldToRenderPoint(position, renderOrigin);
     preview.style.display = 'block';
-    preview.setAttribute('transform', `translate(${position.x} ${position.y})`);
+    preview.setAttribute('transform', `translate(${local.x} ${local.y})`);
     const rect = svgElement('rect');
     rect.setAttribute('x', String(-RESOURCE_NODE_WORLD_WIDTH / 2));
     rect.setAttribute('y', String(-RESOURCE_NODE_WORLD_HEIGHT / 2));

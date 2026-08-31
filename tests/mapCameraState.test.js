@@ -4,10 +4,10 @@ import test from 'node:test';
 import { RESOURCE_FOCUS_ZOOM, AppStore } from '../dist/state/appState.js';
 import {
   MAP_MAX_ZOOM,
-  RESOURCE_NODE_FADE_START_ZOOM,
-  RESOURCE_NODE_FULL_OPACITY_ZOOM,
+  RESOURCE_NODE_HIDE_ZOOM,
   RESOURCE_NODE_INTERACTIVE_ZOOM,
   RESOURCE_NODE_PHYSICAL_WIDTH_METERS,
+  RESOURCE_NODE_SHOW_ZOOM,
   RESOURCE_NODE_WORLD_WIDTH,
   WHEEL_ENGINEERING_BLEND_END_ZOOM,
   WHEEL_ENGINEERING_BLEND_START_ZOOM,
@@ -49,21 +49,21 @@ test('NAV resource focus reaches Earth-scale engineering depth', () => {
   assert.equal(state.camera.zoom, RESOURCE_FOCUS_ZOOM);
   assert.equal(RESOURCE_FOCUS_ZOOM, 2 ** 19);
   assert.equal(MAP_MAX_ZOOM, 2 ** 24);
-  assert.ok(RESOURCE_FOCUS_ZOOM > RESOURCE_NODE_FULL_OPACITY_ZOOM);
+  assert.ok(RESOURCE_FOCUS_ZOOM > RESOURCE_NODE_SHOW_ZOOM);
   assert.ok(MAP_MAX_ZOOM > RESOURCE_FOCUS_ZOOM);
 
   const nominalVisibleWidthMeters = world.planet.physicalWidthMeters / RESOURCE_FOCUS_ZOOM;
   assert.ok(nominalVisibleWidthMeters > 70 && nominalVisibleWidthMeters < 80);
 });
 
-test('resource FEATURE cards use a meter-scale footprint on the Earth-scale map', () => {
+test('resource FEATURE cards use a meter-scale footprint and hysteretic visibility', () => {
   const world = generateWorld('resource-scale');
   assert.equal(RESOURCE_NODE_PHYSICAL_WIDTH_METERS, 20);
   assert.ok(Math.abs(worldUnitsToMeters(RESOURCE_NODE_WORLD_WIDTH) - 20) < 1e-9);
   assert.ok(RESOURCE_NODE_WORLD_WIDTH / world.planet.width < 0.000001);
-  assert.equal(RESOURCE_NODE_FADE_START_ZOOM, 2 ** 16);
+  assert.equal(RESOURCE_NODE_SHOW_ZOOM, 2 ** 16);
+  assert.equal(RESOURCE_NODE_HIDE_ZOOM, 55_000);
   assert.equal(RESOURCE_NODE_INTERACTIVE_ZOOM, 2 ** 17);
-  assert.equal(RESOURCE_NODE_FULL_OPACITY_ZOOM, 2 ** 17);
 });
 
 test('wheel zoom becomes fine-grained around resources and returns to geographic speed when backing out', () => {
@@ -88,7 +88,6 @@ test('wheel zoom becomes fine-grained around resources and returns to geographic
   assert.ok(middleSensitivity < WHEEL_GEOGRAPHIC_SENSITIVITY);
   assert.ok(middleSensitivity > WHEEL_ENGINEERING_SENSITIVITY);
 });
-
 
 test('planet focus restores the full-map camera', () => {
   const world = generateWorld('planet-focus');

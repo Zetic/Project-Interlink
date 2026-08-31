@@ -149,3 +149,20 @@
 .ws-map-placement-preview { pointer-events: none; opacity: 0.72; }
 .ws-map-placement-preview-body { fill: #6c4d2433; stroke: #ffcc44; stroke-width: 0.000025; stroke-dasharray: 0.00006 0.00004; }
 .ws-map-placement-preview-label { fill: #ffdf80; text-anchor: middle; }
+
+
+/* Deep-zoom SVG rasterization hints. */
+.ws-map-resource-node,
+.ws-map-mechanical-node,
+.ws-map-connection {
+  shape-rendering: geometricPrecision;
+}
+
+.ws-map-resource-category,
+.ws-map-resource-name,
+.ws-map-resource-type,
+.ws-map-resource-material,
+.ws-map-mechanical-category,
+.ws-map-mechanical-label {
+  text-rendering: geometricPrecision;
+}

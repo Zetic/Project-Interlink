@@ -3,10 +3,12 @@ import { connectPorts, moveMechanicalNode, placeMechanicalNode, removeMechanical
 import { mechanicalNodeById, portForEndpoint } from '../graph/graphQueries.js';
 import { polygonCentroid } from '../world/geometry.js';
 import { formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';
-import { MAP_MAX_ZOOM, MAP_MIN_ZOOM, MECHANICAL_PLACEMENT_MIN_ZOOM, approachCamera, camerasEqual, clamp, clampCamera, formatZoomFactor, normalizeWheelDelta, smoothStep, visibleWorldSize, wheelSensitivityForZoom, wheelZoomAfterDelta, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, } from './camera/mapCamera.js';
+import { cameraForAnchor, worldPointAtNormalizedScreen } from './camera/cameraAnchor.js';
+import { MAP_MAX_ZOOM, MAP_MIN_ZOOM, MECHANICAL_PLACEMENT_MIN_ZOOM, approachZoom, camerasEqual, clamp, clampCamera, formatZoomFactor, normalizeWheelDelta, smoothStep, visibleWorldSize, wheelSensitivityForZoom, wheelZoomAfterDelta, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, } from './camera/mapCamera.js';
 import { renderMechanicalLayer, updateMechanicalVisibility, updatePlacementPreview } from './rendering/mechanicalRenderer.js';
-import { renderResourceLayer, updateResourceVisibility, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, } from './rendering/resourceRenderer.js';
-export { MAP_MAX_ZOOM, MAP_MIN_ZOOM, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, wheelSensitivityForZoom, wheelZoomAfterDelta, };
+import { renderResourceLayer, updateResourceVisibility, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_HIDE_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_SHOW_ZOOM, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, } from './rendering/resourceRenderer.js';
+import { initialRenderOrigin, renderOriginForCamera, sameRenderOrigin, worldToRenderPoint, } from './rendering/renderOrigin.js';
+export { MAP_MAX_ZOOM, MAP_MIN_ZOOM, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_HIDE_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_SHOW_ZOOM, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, wheelSensitivityForZoom, wheelZoomAfterDelta, };
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const REGION_LABEL_FADE_START_ZOOM = 3.5;
 const REGION_LABEL_FADE_END_ZOOM = 6.5;
@@ -14,9 +16,11 @@ function svgElement(tagName) { return document.createElementNS(SVG_NS, tagName);
 function screenToWorld(svg, planet, camera, clientX, clientY) {
     const rect = svg.getBoundingClientRect();
     const visible = visibleWorldSize(svg, planet, camera.zoom);
-    const nx = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-    const ny = clamp((clientY - rect.top) / Math.max(1, rect.height), 0, 1);
-    return { x: camera.centerX + (nx - 0.5) * visible.width, y: camera.centerY + (ny - 0.5) * visible.height };
+    const screen = {
+        x: clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1),
+        y: clamp((clientY - rect.top) / Math.max(1, rect.height), 0, 1),
+    };
+    return worldPointAtNormalizedScreen(camera, visible, screen);
 }
 function selectionMatches(element, selection) {
     const kind = element.getAttribute('data-map-kind');
@@ -28,12 +32,12 @@ function selectionMatches(element, selection) {
         return kind === 'resource' && element.getAttribute('data-resource-id') === selection.resourceNodeId;
     return kind === 'mechanical' && element.getAttribute('data-mechanical-id') === selection.mechanicalNodeId;
 }
-function renderWorld(svg, planet, graph, store) {
+function renderWorld(svg, planet, graph, store, renderOrigin) {
     svg.replaceChildren();
     svg.setAttribute('preserveAspectRatio', 'none');
     const background = svgElement('rect');
-    background.setAttribute('x', '0');
-    background.setAttribute('y', '0');
+    background.setAttribute('x', String(-renderOrigin.origin.x));
+    background.setAttribute('y', String(-renderOrigin.origin.y));
     background.setAttribute('width', String(planet.width));
     background.setAttribute('height', String(planet.height));
     background.setAttribute('class', 'ws-map-background');
@@ -46,21 +50,24 @@ function renderWorld(svg, planet, graph, store) {
     labels.setAttribute('class', 'ws-map-region-label-layer');
     planet.regions.forEach((region, index) => {
         const polygon = svgElement('polygon');
-        polygon.setAttribute('points', region.polygon.map(point => `${point.x},${point.y}`).join(' '));
+        polygon.setAttribute('points', region.polygon.map(point => {
+            const local = worldToRenderPoint(point, renderOrigin);
+            return `${local.x},${local.y}`;
+        }).join(' '));
         polygon.setAttribute('class', `ws-map-region ws-map-region--${index % 5}`);
         polygon.setAttribute('data-map-kind', 'region');
         polygon.setAttribute('data-region-id', region.id);
         polygon.addEventListener('click', event => { event.stopPropagation(); store.setSelection({ type: 'region', regionId: region.id }); });
         regions.appendChild(polygon);
-        const centroid = polygonCentroid(region.polygon);
+        const centroid = worldToRenderPoint(polygonCentroid(region.polygon), renderOrigin);
         const label = svgElement('text');
-        label.setAttribute('x', centroid.x.toFixed(2));
-        label.setAttribute('y', centroid.y.toFixed(2));
+        label.setAttribute('x', centroid.x.toFixed(6));
+        label.setAttribute('y', centroid.y.toFixed(6));
         label.setAttribute('class', 'ws-map-region-label');
         label.textContent = region.name;
         labels.appendChild(label);
     });
-    svg.append(regions, labels, renderResourceLayer(planet, resourceId => store.setSelection({ type: 'resource', resourceNodeId: resourceId })), renderMechanicalLayer(planet, graph, nodeId => store.setSelection({ type: 'mechanical', mechanicalNodeId: nodeId })));
+    svg.append(regions, labels, renderResourceLayer(planet, renderOrigin, resourceId => store.setSelection({ type: 'resource', resourceNodeId: resourceId })), renderMechanicalLayer(planet, graph, renderOrigin, nodeId => store.setSelection({ type: 'mechanical', mechanicalNodeId: nodeId })));
 }
 function updateSelection(svg, selection) {
     for (const element of svg.querySelectorAll('[data-map-kind]'))
@@ -96,9 +103,11 @@ export function installMapRenderer(root, store) {
     let renderedPlanet = null;
     let renderedGraph = null;
     let displayCamera = { centerX: 0, centerY: 0, zoom: 1 };
+    let renderOrigin = initialRenderOrigin();
     let navigationAnimationFrame = null;
     let wheelAnimationFrame = null;
     let wheelTargetCamera = null;
+    let wheelAnchor = null;
     let wheelLastFrameAt = null;
     let internalCameraUpdate = false;
     let pointerId = null;
@@ -108,13 +117,38 @@ export function installMapRenderer(root, store) {
     let dragStartNode = null;
     let hoverWorld = null;
     let suppressClick = false;
+    const refreshPreview = (state) => {
+        const definition = state.interaction.placementDefinitionId ? apparatusDefinitionById(state.interaction.placementDefinitionId) : null;
+        updatePlacementPreview(svg, definition, hoverWorld, renderOrigin);
+    };
+    const rerenderCurrentWorld = () => {
+        const state = store.getState();
+        const planet = state.world?.planet;
+        if (!planet)
+            return;
+        renderedPlanet = planet;
+        renderedGraph = state.graph;
+        renderWorld(svg, planet, state.graph, store, renderOrigin);
+        updateSelection(svg, state.selection);
+        updatePendingPort(svg, state.interaction.pendingConnection);
+        refreshPreview(state);
+    };
+    const prepareRenderOrigin = (camera, options = {}) => {
+        const next = renderOriginForCamera(renderOrigin, camera, options);
+        if (sameRenderOrigin(renderOrigin, next))
+            return;
+        renderOrigin = next;
+        rerenderCurrentWorld();
+    };
     const applyCamera = (camera) => {
         const planet = store.getState().world?.planet;
         if (!planet)
             return;
         displayCamera = clampCamera(svg, planet, camera);
         const visible = visibleWorldSize(svg, planet, displayCamera.zoom);
-        svg.setAttribute('viewBox', `${displayCamera.centerX - visible.width / 2} ${displayCamera.centerY - visible.height / 2} ${visible.width} ${visible.height}`);
+        const localCenterX = displayCamera.centerX - renderOrigin.origin.x;
+        const localCenterY = displayCamera.centerY - renderOrigin.origin.y;
+        svg.setAttribute('viewBox', `${localCenterX - visible.width / 2} ${localCenterY - visible.height / 2} ${visible.width} ${visible.height}`);
         if (zoomLabel) {
             zoomLabel.textContent = formatZoomFactor(displayCamera.zoom);
             zoomLabel.title = `Approx. visible map width: ${formatPhysicalDistance(worldUnitsToMeters(visible.width))}`;
@@ -136,6 +170,7 @@ export function installMapRenderer(root, store) {
             cancelAnimationFrame(wheelAnimationFrame);
         wheelAnimationFrame = null;
         wheelTargetCamera = null;
+        wheelAnchor = null;
         wheelLastFrameAt = null;
         if (publishCurrent)
             publishCamera(displayCamera);
@@ -147,6 +182,7 @@ export function installMapRenderer(root, store) {
         cancelNavigationAnimation();
         cancelWheelAnimation(false);
         const next = clampCamera(svg, planet, camera);
+        prepareRenderOrigin(next, { recenter: true, allowDeactivate: true });
         applyCamera(next);
         publishCamera(next);
     };
@@ -157,53 +193,76 @@ export function installMapRenderer(root, store) {
         cancelWheelAnimation(false);
         cancelNavigationAnimation();
         const next = clampCamera(svg, planet, target);
+        prepareRenderOrigin(next, { recenter: true, allowDeactivate: false });
         if (camerasEqual(displayCamera, next)) {
             applyCamera(next);
+            prepareRenderOrigin(next, { allowDeactivate: true });
             return;
         }
         const start = { ...displayCamera };
         const started = performance.now();
         const ratio = Math.max(start.zoom, next.zoom) / Math.max(MAP_MIN_ZOOM, Math.min(start.zoom, next.zoom));
         const duration = clamp(320 + Math.log2(Math.max(1, ratio)) * 65, 320, 1600);
-        const step = (now) => { const progress = clamp((now - started) / duration, 0, 1); const eased = smoothStep(progress); const zoom = Math.exp(Math.log(start.zoom) + (Math.log(next.zoom) - Math.log(start.zoom)) * eased); applyCamera({ centerX: start.centerX + (next.centerX - start.centerX) * eased, centerY: start.centerY + (next.centerY - start.centerY) * eased, zoom }); if (progress < 1)
-            navigationAnimationFrame = requestAnimationFrame(step);
-        else
-            navigationAnimationFrame = null; };
+        const step = (now) => {
+            const progress = clamp((now - started) / duration, 0, 1);
+            const eased = smoothStep(progress);
+            const zoom = Math.exp(Math.log(start.zoom) + (Math.log(next.zoom) - Math.log(start.zoom)) * eased);
+            applyCamera({
+                centerX: start.centerX + (next.centerX - start.centerX) * eased,
+                centerY: start.centerY + (next.centerY - start.centerY) * eased,
+                zoom,
+            });
+            if (progress < 1)
+                navigationAnimationFrame = requestAnimationFrame(step);
+            else {
+                navigationAnimationFrame = null;
+                prepareRenderOrigin(next, { allowDeactivate: true });
+                applyCamera(next);
+            }
+        };
         navigationAnimationFrame = requestAnimationFrame(step);
     };
     const stepWheelCamera = (now) => {
-        if (!wheelTargetCamera) {
+        const planet = store.getState().world?.planet;
+        if (!planet || !wheelTargetCamera || !wheelAnchor) {
             wheelAnimationFrame = null;
             wheelLastFrameAt = null;
             return;
         }
         const elapsedMs = wheelLastFrameAt == null ? 16.67 : now - wheelLastFrameAt;
         wheelLastFrameAt = now;
-        const next = approachCamera(displayCamera, wheelTargetCamera, elapsedMs);
+        const nextZoom = approachZoom(displayCamera.zoom, wheelTargetCamera.zoom, elapsedMs);
+        const nextVisible = visibleWorldSize(svg, planet, nextZoom);
+        const anchored = cameraForAnchor(wheelAnchor, nextVisible, nextZoom);
+        const next = clampCamera(svg, planet, anchored);
         applyCamera(next);
         if (camerasEqual(next, wheelTargetCamera)) {
             const settled = wheelTargetCamera;
             wheelAnimationFrame = null;
             wheelTargetCamera = null;
+            wheelAnchor = null;
             wheelLastFrameAt = null;
+            prepareRenderOrigin(settled, { allowDeactivate: true });
             applyCamera(settled);
             publishCamera(settled);
             return;
         }
         wheelAnimationFrame = requestAnimationFrame(stepWheelCamera);
     };
-    const queueWheelCamera = (target) => {
+    const queueWheelCamera = (target, anchor) => {
         const planet = store.getState().world?.planet;
         if (!planet)
             return;
         cancelNavigationAnimation();
+        if (!renderOrigin.active)
+            prepareRenderOrigin(target, { recenter: false, allowDeactivate: false });
         wheelTargetCamera = clampCamera(svg, planet, target);
+        wheelAnchor = anchor;
         if (wheelAnimationFrame === null) {
             wheelLastFrameAt = performance.now();
             wheelAnimationFrame = requestAnimationFrame(stepWheelCamera);
         }
     };
-    const refreshPreview = (state) => { const definition = state.interaction.placementDefinitionId ? apparatusDefinitionById(state.interaction.placementDefinitionId) : null; updatePlacementPreview(svg, definition, hoverWorld); };
     store.subscribe(state => {
         const planet = state.world?.planet;
         if (!planet)
@@ -211,11 +270,12 @@ export function installMapRenderer(root, store) {
         if (renderedPlanet !== planet || renderedGraph !== state.graph) {
             renderedPlanet = planet;
             renderedGraph = state.graph;
-            renderWorld(svg, planet, state.graph, store);
+            renderWorld(svg, planet, state.graph, store, renderOrigin);
             applyCamera(displayCamera.zoom === 1 && displayCamera.centerX === 0 ? state.camera : displayCamera);
         }
-        else if (!internalCameraUpdate && !camerasEqual(displayCamera, state.camera))
+        else if (!internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
             animateToCamera(state.camera);
+        }
         updateSelection(svg, state.selection);
         updatePendingPort(svg, state.interaction.pendingConnection);
         refreshPreview(state);
@@ -292,15 +352,16 @@ export function installMapRenderer(root, store) {
         const rect = svg.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0)
             return;
+        const screen = {
+            x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
+            y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+        };
         const currentVisible = visibleWorldSize(svg, planet, displayCamera.zoom);
-        const nx = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-        const ny = clamp((event.clientY - rect.top) / rect.height, 0, 1);
-        const worldX = displayCamera.centerX + (nx - 0.5) * currentVisible.width;
-        const worldY = displayCamera.centerY + (ny - 0.5) * currentVisible.height;
+        const anchor = { screen, world: worldPointAtNormalizedScreen(displayCamera, currentVisible, screen) };
         const zoomBase = wheelTargetCamera?.zoom ?? displayCamera.zoom;
         const zoom = wheelZoomAfterDelta(zoomBase, normalizeWheelDelta(event, rect.height));
         const nextVisible = visibleWorldSize(svg, planet, zoom);
-        queueWheelCamera({ centerX: worldX - (nx - 0.5) * nextVisible.width, centerY: worldY - (ny - 0.5) * nextVisible.height, zoom });
+        queueWheelCamera(cameraForAnchor(anchor, nextVisible, zoom), anchor);
     }, { passive: false });
     svg.addEventListener('pointerdown', event => {
         if (event.button !== 0)
@@ -347,16 +408,35 @@ export function installMapRenderer(root, store) {
         const visible = visibleWorldSize(svg, planet, panStartCamera.zoom);
         if (draggedNodeId && dragStartNode) {
             const graph = store.getState().graph;
-            store.setGraph(moveMechanicalNode(graph, draggedNodeId, { x: dragStartNode.x + dx * (visible.width / rect.width), y: dragStartNode.y + dy * (visible.height / rect.height) }));
+            store.setGraph(moveMechanicalNode(graph, draggedNodeId, {
+                x: dragStartNode.x + dx * (visible.width / rect.width),
+                y: dragStartNode.y + dy * (visible.height / rect.height),
+            }));
             return;
         }
-        applyCamera({ centerX: panStartCamera.centerX - dx * (visible.width / rect.width), centerY: panStartCamera.centerY - dy * (visible.height / rect.height), zoom: panStartCamera.zoom });
+        applyCamera({
+            centerX: panStartCamera.centerX - dx * (visible.width / rect.width),
+            centerY: panStartCamera.centerY - dy * (visible.height / rect.height),
+            zoom: panStartCamera.zoom,
+        });
     });
-    const finishPointer = (event) => { if (pointerId !== event.pointerId)
-        return; const wasPanning = suppressClick && !draggedNodeId; if (svg.hasPointerCapture(event.pointerId))
-        svg.releasePointerCapture(event.pointerId); pointerId = null; draggedNodeId = null; dragStartNode = null; if (wasPanning)
-        publishCamera(displayCamera); if (suppressClick)
-        window.setTimeout(() => { suppressClick = false; }, 0); };
+    const finishPointer = (event) => {
+        if (pointerId !== event.pointerId)
+            return;
+        const wasPanning = suppressClick && !draggedNodeId;
+        if (svg.hasPointerCapture(event.pointerId))
+            svg.releasePointerCapture(event.pointerId);
+        pointerId = null;
+        draggedNodeId = null;
+        dragStartNode = null;
+        if (wasPanning) {
+            prepareRenderOrigin(displayCamera, { recenter: true, allowDeactivate: true });
+            applyCamera(displayCamera);
+            publishCamera(displayCamera);
+        }
+        if (suppressClick)
+            window.setTimeout(() => { suppressClick = false; }, 0);
+    };
     svg.addEventListener('pointerup', finishPointer);
     svg.addEventListener('pointercancel', finishPointer);
     svg.addEventListener('pointerleave', () => { hoverWorld = null; refreshPreview(store.getState()); });
@@ -376,10 +456,16 @@ export function installMapRenderer(root, store) {
     });
     root.querySelector('[data-viewport="in"]')?.addEventListener('click', () => commitCamera({ ...displayCamera, zoom: displayCamera.zoom * 2 }));
     root.querySelector('[data-viewport="out"]')?.addEventListener('click', () => commitCamera({ ...displayCamera, zoom: displayCamera.zoom / 2 }));
-    root.querySelector('[data-viewport="fit"]')?.addEventListener('click', () => { const planet = store.getState().world?.planet; if (planet)
-        commitCamera({ centerX: planet.width / 2, centerY: planet.height / 2, zoom: 1 }); });
-    root.querySelector('[data-viewport="center"]')?.addEventListener('click', () => { const planet = store.getState().world?.planet; if (planet)
-        commitCamera({ centerX: planet.width / 2, centerY: planet.height / 2, zoom: displayCamera.zoom }); });
+    root.querySelector('[data-viewport="fit"]')?.addEventListener('click', () => {
+        const planet = store.getState().world?.planet;
+        if (planet)
+            commitCamera({ centerX: planet.width / 2, centerY: planet.height / 2, zoom: 1 });
+    });
+    root.querySelector('[data-viewport="center"]')?.addEventListener('click', () => {
+        const planet = store.getState().world?.planet;
+        if (planet)
+            commitCamera({ centerX: planet.width / 2, centerY: planet.height / 2, zoom: displayCamera.zoom });
+    });
     const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => applyCamera(displayCamera)) : null;
     resizeObserver?.observe(svg);
     if (!resizeObserver)

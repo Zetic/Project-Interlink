@@ -5,6 +5,7 @@ export const WHEEL_GEOGRAPHIC_SENSITIVITY = 0.0015;
 export const WHEEL_ENGINEERING_SENSITIVITY = 0.00035;
 export const WHEEL_ENGINEERING_BLEND_START_ZOOM = 2 ** 14;
 export const WHEEL_ENGINEERING_BLEND_END_ZOOM = 2 ** 18;
+export const WHEEL_CAMERA_RESPONSE_PER_SECOND = 20;
 export function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
@@ -23,20 +24,15 @@ export function wheelSensitivityForZoom(zoom) {
 export function wheelZoomAfterDelta(zoom, deltaPixels) {
     return clamp(zoom * Math.exp(-deltaPixels * wheelSensitivityForZoom(zoom)), MAP_MIN_ZOOM, MAP_MAX_ZOOM);
 }
-export const WHEEL_CAMERA_RESPONSE_PER_SECOND = 20;
-/** Frame-rate-independent camera easing; zoom interpolates logarithmically. */
-export function approachCamera(current, target, elapsedMs, responsePerSecond = WHEEL_CAMERA_RESPONSE_PER_SECOND) {
+/** Frame-rate-independent logarithmic zoom easing used by manual wheel navigation. */
+export function approachZoom(currentZoom, targetZoom, elapsedMs, responsePerSecond = WHEEL_CAMERA_RESPONSE_PER_SECOND) {
     const seconds = clamp(elapsedMs, 0, 100) / 1000;
     const alpha = 1 - Math.exp(-Math.max(0, responsePerSecond) * seconds);
     if (alpha <= 0)
-        return { ...current };
+        return currentZoom;
     if (alpha >= 0.999999)
-        return { ...target };
-    return {
-        centerX: current.centerX + (target.centerX - current.centerX) * alpha,
-        centerY: current.centerY + (target.centerY - current.centerY) * alpha,
-        zoom: Math.exp(Math.log(current.zoom) + (Math.log(target.zoom) - Math.log(current.zoom)) * alpha),
-    };
+        return targetZoom;
+    return Math.exp(Math.log(currentZoom) + (Math.log(targetZoom) - Math.log(currentZoom)) * alpha);
 }
 export function normalizeWheelDelta(event, viewportHeight) {
     let deltaPixels = event.deltaY;

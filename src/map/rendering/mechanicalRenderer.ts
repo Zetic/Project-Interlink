@@ -6,9 +6,9 @@ import { metersToWorldUnits } from '../../world/scale.js';
 import type { Point, Planet } from '../../world/types.js';
 import {
   applyEngineeringNodeVisibility,
-  ENGINEERING_NODE_FADE_START_ZOOM,
-  ENGINEERING_NODE_FULL_OPACITY_ZOOM,
+  ENGINEERING_NODE_HIDE_ZOOM,
   ENGINEERING_NODE_INTERACTIVE_ZOOM,
+  ENGINEERING_NODE_SHOW_ZOOM,
 } from './engineeringNodeVisibility.js';
 import {
   RESOURCE_NODE_PHYSICAL_HEIGHT_METERS,
@@ -17,11 +17,17 @@ import {
   RESOURCE_NODE_WORLD_WIDTH,
   resourcePortWorldPosition,
 } from './resourceRenderer.js';
+import type { RenderOriginState } from './renderOrigin.js';
+import { worldToRenderPoint } from './renderOrigin.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-export const MECHANICAL_NODE_FADE_START_ZOOM = ENGINEERING_NODE_FADE_START_ZOOM;
-export const MECHANICAL_NODE_FULL_OPACITY_ZOOM = ENGINEERING_NODE_FULL_OPACITY_ZOOM;
+export const MECHANICAL_NODE_HIDE_ZOOM = ENGINEERING_NODE_HIDE_ZOOM;
+export const MECHANICAL_NODE_SHOW_ZOOM = ENGINEERING_NODE_SHOW_ZOOM;
 export const MECHANICAL_NODE_INTERACTIVE_ZOOM = ENGINEERING_NODE_INTERACTIVE_ZOOM;
+/** @deprecated Kept for compatibility; engineering cards no longer alpha-fade. */
+export const MECHANICAL_NODE_FADE_START_ZOOM = MECHANICAL_NODE_HIDE_ZOOM;
+/** @deprecated Kept for compatibility; engineering cards are fully opaque whenever visible. */
+export const MECHANICAL_NODE_FULL_OPACITY_ZOOM = MECHANICAL_NODE_SHOW_ZOOM;
 export const ENGINEERING_NODE_CARD_PHYSICAL_WIDTH_METERS = RESOURCE_NODE_PHYSICAL_WIDTH_METERS;
 export const ENGINEERING_NODE_CARD_PHYSICAL_HEIGHT_METERS = RESOURCE_NODE_PHYSICAL_HEIGHT_METERS;
 const HEADER_HEIGHT = RESOURCE_NODE_WORLD_HEIGHT * 0.2;
@@ -104,12 +110,20 @@ function connectionPath(start: Point, end: Point): string {
   return `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}`;
 }
 
-export function renderMechanicalLayer(planet: Planet, graph: GraphState, onSelect: (nodeId: string) => void): SVGGElement {
+export function renderMechanicalLayer(
+  planet: Planet,
+  graph: GraphState,
+  renderOrigin: RenderOriginState,
+  onSelect: (nodeId: string) => void,
+): SVGGElement {
   const layer = svgElement('g'); layer.setAttribute('class', 'ws-map-mechanical-layer');
   const connections = svgElement('g'); connections.setAttribute('class', 'ws-map-connection-layer');
   for (const connection of graph.connections) {
-    const start = endpointWorldPosition(planet, graph, connection.from); const end = endpointWorldPosition(planet, graph, connection.to);
-    if (!start || !end) continue;
+    const startWorld = endpointWorldPosition(planet, graph, connection.from);
+    const endWorld = endpointWorldPosition(planet, graph, connection.to);
+    if (!startWorld || !endWorld) continue;
+    const start = worldToRenderPoint(startWorld, renderOrigin);
+    const end = worldToRenderPoint(endWorld, renderOrigin);
     const path = svgElement('path'); path.setAttribute('d', connectionPath(start, end));
     path.setAttribute('class', `ws-map-connection ws-map-connection--${connection.kind} ws-map-connection--${connection.medium}`);
     path.setAttribute('data-connection-id', connection.id);
@@ -120,7 +134,8 @@ export function renderMechanicalLayer(planet: Planet, graph: GraphState, onSelec
 
   const nodes = svgElement('g'); nodes.setAttribute('class', 'ws-map-mechanical-node-layer');
   for (const node of graph.nodes) {
-    const group = svgElement('g'); group.setAttribute('transform', `translate(${node.position.x} ${node.position.y})`);
+    const position = worldToRenderPoint(node.position, renderOrigin);
+    const group = svgElement('g'); group.setAttribute('transform', `translate(${position.x} ${position.y})`);
     group.setAttribute('class', `ws-map-mechanical-node ws-map-mechanical-node--${node.category}`);
     group.setAttribute('data-map-kind', 'mechanical'); group.setAttribute('data-mechanical-id', node.id);
     group.addEventListener('click', event => { if ((event.target as Element).closest('[data-port-id]')) return; event.stopPropagation(); onSelect(node.id); });
@@ -134,15 +149,21 @@ export function renderMechanicalLayer(planet: Planet, graph: GraphState, onSelec
 }
 
 export function updateMechanicalVisibility(svg: SVGSVGElement, zoom: number): void {
-  applyEngineeringNodeVisibility(svg.querySelector<SVGGElement>('.ws-map-mechanical-layer'), zoom);
+  applyEngineeringNodeVisibility(svg, svg.querySelector<SVGGElement>('.ws-map-mechanical-layer'), zoom);
 }
 
-export function updatePlacementPreview(svg: SVGSVGElement, definition: ApparatusDefinition | null, position: Point | null): void {
+export function updatePlacementPreview(
+  svg: SVGSVGElement,
+  definition: ApparatusDefinition | null,
+  position: Point | null,
+  renderOrigin: RenderOriginState,
+): void {
   const preview = svg.querySelector<SVGGElement>('#ws-map-placement-preview');
   if (!preview) return;
   preview.replaceChildren();
   if (!definition || !position) { preview.style.display = 'none'; return; }
-  preview.style.display = 'block'; preview.setAttribute('transform', `translate(${position.x} ${position.y})`);
+  const local = worldToRenderPoint(position, renderOrigin);
+  preview.style.display = 'block'; preview.setAttribute('transform', `translate(${local.x} ${local.y})`);
   const rect = svgElement('rect');
   rect.setAttribute('x', String(-RESOURCE_NODE_WORLD_WIDTH / 2)); rect.setAttribute('y', String(-RESOURCE_NODE_WORLD_HEIGHT / 2));
   rect.setAttribute('width', String(RESOURCE_NODE_WORLD_WIDTH)); rect.setAttribute('height', String(RESOURCE_NODE_WORLD_HEIGHT));
