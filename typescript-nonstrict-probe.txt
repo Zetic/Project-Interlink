@@ -1,17 +1,17 @@
-errors=807
+errors=802
 
 By code:
 TS2339: 599
 TS2353: 54
-TS2365: 32
+TS2365: 29
 TS2345: 22
-TS2362: 17
 TS2551: 17
+TS2362: 16
 TS2740: 16
 TS2322: 12
 TS2739: 12
 TS2349: 12
-TS2363: 5
+TS2363: 4
 TS2367: 3
 TS2538: 3
 TS2554: 2
@@ -44,10 +44,10 @@ src/core/materials/solids/solidMaterialState.ts: 9
 src/generator/generatePlanet.ts: 9
 src/simulation/hopperNode.ts: 9
 src/core/materials/materialBatches.ts: 8
-src/core/materials/thermal/thermalMaterial.ts: 8
 tests/navigationProjection.test.ts: 8
 src/simulation/packedThermalRuntime.ts: 7
 src/simulation/packedWorldWorkerSetup.ts: 7
+src/core/materials/thermal/thermalMaterial.ts: 6
 src/simulation/packedGasRuntime.ts: 6
 src/simulation/packedRuntimeState.ts: 6
 src/workspace/shell/workspaceUI.ts: 6
@@ -62,7 +62,6 @@ src/simulation/materialStream.ts: 4
 tests/inspectionViewModel.test.ts: 4
 tests/runtimeCapabilities.test.ts: 4
 tests/siteSession.test.ts: 4
-src/core/materials/gas/gasMaterialState.ts: 3
 src/generator/generateResources.ts: 3
 src/simulation/extractorNode.ts: 3
 src/simulation/runtimeCapabilities.ts: 3
@@ -112,9 +111,6 @@ src/content/apparatus/definitions.ts(268,30): error TS2345: Argument of type '"s
 src/content/apparatus/definitions.ts(292,30): error TS2345: Argument of type '"metered-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
 src/content/apparatus/definitions.ts(295,9): error TS2322: Type '"metered-solid-particulate"' is not assignable to type '"solid-particulate"'.
 src/content/apparatus/definitions.ts(327,9): error TS2322: Type '"stored-solid-particulate"' is not assignable to type '"solid-particulate"'.
-src/core/materials/gas/gasMaterialState.ts(40,72): error TS2365: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
-src/core/materials/gas/gasMaterialState.ts(48,80): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-src/core/materials/gas/gasMaterialState.ts(51,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/materialBatches.ts(62,44): error TS2339: Property 'createdByProcessRunId' does not exist on type 'object'.
 src/core/materials/materialBatches.ts(68,60): error TS2339: Property 'sourceOccurrenceIds' does not exist on type 'object'.
 src/core/materials/materialBatches.ts(69,55): error TS2339: Property 'sourceBatchIds' does not exist on type 'object'.
@@ -142,8 +138,6 @@ src/core/materials/solids/solidMaterialState.ts(284,108): error TS2339: Property
 src/core/materials/thermal/thermalMaterial.ts(38,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalMaterial.ts(48,9): error TS2365: Operator '>' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalMaterial.ts(48,46): error TS2365: Operator '+=' cannot be applied to types 'number' and 'unknown'.
-src/core/materials/thermal/thermalMaterial.ts(97,18): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
-src/core/materials/thermal/thermalMaterial.ts(97,71): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
 src/core/materials/thermal/thermalMaterial.ts(101,50): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
 src/core/materials/thermal/thermalMaterial.ts(110,9): error TS2365: Operator '>' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalMaterial.ts(110,81): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
@@ -197,4 +191,9 @@ src/simulation/extractorNode.ts(101,5): error TS2322: Type '"coarse-solid" | "ru
   Type '"run-of-mine-rock"' is not assignable to type '"coarse-solid"'.
 src/simulation/hopperNode.ts(34,40): error TS2739: Type '{ speciesId: string; sizeBinId: string; liberationClassId: string; quantity: number; }' is missing the following properties from type '{ liberationClassId: any; massKg: any; quantity: any; rateKgPerSecond: any; sizeBinId: any; speciesId: any; textureProfileId?: any; }': massKg, rateKgPerSecond
 src/simulation/hopperNode.ts(49,3): error TS2339: Property 'id' does not exist on type '{ initialComponentsKg?: {}; initialMaterialBody?: null; initialParticleSizeMm?: null; }'.
+src/simulation/hopperNode.ts(50,3): error TS2339: Property 'capacityKg' does not exist on type '{ initialComponentsKg?: {}; initialMaterialBody?: null; initialParticleSizeMm?: null; }'.
+src/simulation/hopperNode.ts(109,3): error TS2339: Property 'id' does not exist on type '{ initialComponentsKg?: {}; initialMaterialBody?: null; initialParticleSizeMm?: null; }'.
+src/simulation/hopperNode.ts(110,3): error TS2339: Property 'capacityKg' does not exist on type '{ initialComponentsKg?: {}; initialMaterialBody?: null; initialParticleSizeMm?: null; }'.
+src/simulation/hopperNode.ts(111,3): error TS2339: Property 'role' does not exist on type '{ initialComponentsKg?: {}; initialMaterialBody?: null; initialParticleSizeMm?: null; }'.
+src/simulation/hopperNode.ts(120,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {}; initialMaterialBody?: any; initialParticleSizeMm?: any; }'.
 EXIT=1
