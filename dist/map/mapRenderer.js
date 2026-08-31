@@ -1,18 +1,26 @@
 import { polygonCentroid } from '../world/geometry.js';
 import { resourceDefinitionById } from '../world/resources.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 18;
-const RESOURCE_NODE_ZOOM = 2.2;
-const REGION_LABEL_HIDE_ZOOM = 4.5;
-const RESOURCE_NODE_WIDTH_PX = 230;
-const RESOURCE_NODE_HEIGHT_PX = 144;
-const RESOURCE_NODE_SHELL_WIDTH_PX = 248;
+export const MAP_MIN_ZOOM = 1;
+export const MAP_MAX_ZOOM = 64;
+export const RESOURCE_NODE_FADE_START_ZOOM = 7;
+export const RESOURCE_NODE_FULL_OPACITY_ZOOM = 11;
+export const RESOURCE_NODE_INTERACTIVE_ZOOM = 10;
+export const RESOURCE_NODE_WORLD_WIDTH = 24;
+export const RESOURCE_NODE_WORLD_HEIGHT = 15;
+const REGION_LABEL_FADE_START_ZOOM = 3.5;
+const REGION_LABEL_FADE_END_ZOOM = 6.5;
+const RESOURCE_NODE_HEADER_HEIGHT = 3.4;
+const RESOURCE_NODE_PORT_RADIUS = 1.05;
 function createSvgElement(tagName) {
     return document.createElementNS(SVG_NS, tagName);
 }
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+}
+function smoothStep(value) {
+    const clamped = clamp(value, 0, 1);
+    return clamped * clamped * (3 - 2 * clamped);
 }
 function camerasEqual(left, right) {
     return Math.abs(left.centerX - right.centerX) < 0.01
@@ -34,7 +42,7 @@ function visibleWorldSize(svg, planet, zoom) {
     return { width: fitWidth / zoom, height: fitHeight / zoom };
 }
 function clampCamera(svg, planet, camera) {
-    const zoom = clamp(camera.zoom, MIN_ZOOM, MAX_ZOOM);
+    const zoom = clamp(camera.zoom, MAP_MIN_ZOOM, MAP_MAX_ZOOM);
     const visible = visibleWorldSize(svg, planet, zoom);
     const centerX = visible.width >= planet.width
         ? planet.width / 2
@@ -52,43 +60,69 @@ function selectionMatches(element, selection) {
         return kind === 'region' && element.getAttribute('data-region-id') === selection.regionId;
     return kind === 'resource' && element.getAttribute('data-resource-id') === selection.resourceNodeId;
 }
+function appendText(group, className, x, y, value) {
+    const text = createSvgElement('text');
+    text.setAttribute('x', String(x));
+    text.setAttribute('y', String(y));
+    text.setAttribute('class', className);
+    text.textContent = value;
+    group.appendChild(text);
+}
+/**
+ * Resource nodes are deliberately authored in world units. They do not counter-scale
+ * against the camera, so a deposit is microscopic at planet scale and only becomes
+ * readable when the player reaches local/engineering scale.
+ */
 function appendResourceCard(group, resource) {
-    const scaleGroup = createSvgElement('g');
-    scaleGroup.setAttribute('class', 'ws-map-resource-node-scale');
-    const foreignObject = createSvgElement('foreignObject');
-    foreignObject.setAttribute('x', String(-RESOURCE_NODE_SHELL_WIDTH_PX / 2));
-    foreignObject.setAttribute('y', String(-RESOURCE_NODE_HEIGHT_PX / 2));
-    foreignObject.setAttribute('width', String(RESOURCE_NODE_SHELL_WIDTH_PX));
-    foreignObject.setAttribute('height', String(RESOURCE_NODE_HEIGHT_PX));
-    const shell = document.createElement('div');
-    shell.className = 'ws-map-resource-shell';
-    const card = document.createElement('div');
-    card.className = 'ws-node ws-map-resource-card';
-    card.style.width = `${RESOURCE_NODE_WIDTH_PX}px`;
-    card.style.height = `${RESOURCE_NODE_HEIGHT_PX}px`;
-    const category = document.createElement('div');
-    category.className = 'ws-node-category ws-node-category--feature';
-    category.textContent = 'FEATURE';
-    const label = document.createElement('div');
-    label.className = 'ws-node-label';
+    const halfWidth = RESOURCE_NODE_WORLD_WIDTH / 2;
+    const halfHeight = RESOURCE_NODE_WORLD_HEIGHT / 2;
+    const headerBottom = -halfHeight + RESOURCE_NODE_HEADER_HEIGHT;
+    const body = createSvgElement('rect');
+    body.setAttribute('x', String(-halfWidth));
+    body.setAttribute('y', String(-halfHeight));
+    body.setAttribute('width', String(RESOURCE_NODE_WORLD_WIDTH));
+    body.setAttribute('height', String(RESOURCE_NODE_WORLD_HEIGHT));
+    body.setAttribute('rx', '0.55');
+    body.setAttribute('class', 'ws-map-resource-card-body');
+    group.appendChild(body);
+    const header = createSvgElement('path');
+    header.setAttribute('d', [
+        `M ${-halfWidth + 0.55} ${-halfHeight}`,
+        `H ${halfWidth - 0.55}`,
+        `Q ${halfWidth} ${-halfHeight} ${halfWidth} ${-halfHeight + 0.55}`,
+        `V ${headerBottom}`,
+        `H ${-halfWidth}`,
+        `V ${-halfHeight + 0.55}`,
+        `Q ${-halfWidth} ${-halfHeight} ${-halfWidth + 0.55} ${-halfHeight}`,
+        'Z',
+    ].join(' '));
+    header.setAttribute('class', 'ws-map-resource-card-header');
+    group.appendChild(header);
+    const divider = createSvgElement('line');
+    divider.setAttribute('x1', String(-halfWidth));
+    divider.setAttribute('x2', String(halfWidth));
+    divider.setAttribute('y1', String(headerBottom));
+    divider.setAttribute('y2', String(headerBottom));
+    divider.setAttribute('class', 'ws-map-resource-card-divider');
+    group.appendChild(divider);
+    appendText(group, 'ws-map-resource-category', -halfWidth + 1.05, -halfHeight + 2.25, 'FEATURE');
     const definition = resourceDefinitionById(resource.resourceId);
-    for (const line of [resource.name, 'Mineral Deposit', definition?.name ?? resource.resourceId]) {
-        const span = document.createElement('span');
-        span.textContent = line;
-        label.appendChild(span);
-    }
-    const port = document.createElement('div');
-    port.className = 'ws-port ws-port--output ws-port--kind-resource-access ws-map-resource-port';
-    port.title = resource.ports.find(candidate => candidate.id === resource.resourceAccessPortId)?.label ?? 'resources';
-    port.dataset.nodeId = resource.id;
-    port.dataset.portId = resource.resourceAccessPortId;
-    port.dataset.portKind = 'resource-access';
-    port.dataset.portDirection = 'output';
-    card.append(category, label, port);
-    shell.appendChild(card);
-    foreignObject.appendChild(shell);
-    scaleGroup.appendChild(foreignObject);
-    group.appendChild(scaleGroup);
+    appendText(group, 'ws-map-resource-name', 0, -0.95, resource.name);
+    appendText(group, 'ws-map-resource-type', 0, 1.8, 'Mineral Deposit');
+    appendText(group, 'ws-map-resource-material', 0, 4.55, definition?.name ?? resource.resourceId);
+    const port = createSvgElement('circle');
+    port.setAttribute('cx', String(halfWidth));
+    port.setAttribute('cy', '0');
+    port.setAttribute('r', String(RESOURCE_NODE_PORT_RADIUS));
+    port.setAttribute('class', 'ws-map-resource-port');
+    port.setAttribute('data-node-id', resource.id);
+    port.setAttribute('data-port-id', resource.resourceAccessPortId);
+    port.setAttribute('data-port-kind', 'resource-access');
+    port.setAttribute('data-port-direction', 'output');
+    const title = createSvgElement('title');
+    title.textContent = resource.ports.find(candidate => candidate.id === resource.resourceAccessPortId)?.label ?? 'resources';
+    port.appendChild(title);
+    group.appendChild(port);
 }
 function renderWorld(svg, planet, store, shouldSuppressClick) {
     svg.replaceChildren();
@@ -156,16 +190,24 @@ function updateSelection(svg, selection) {
 function updateZoomVisibility(svg, zoom) {
     const resources = svg.querySelector('.ws-map-resource-node-layer');
     const regionLabels = svg.querySelector('.ws-map-region-label-layer');
-    if (resources)
-        resources.style.display = zoom < RESOURCE_NODE_ZOOM ? 'none' : '';
-    if (regionLabels)
-        regionLabels.style.display = zoom >= REGION_LABEL_HIDE_ZOOM ? 'none' : '';
+    if (resources) {
+        const revealProgress = (zoom - RESOURCE_NODE_FADE_START_ZOOM)
+            / (RESOURCE_NODE_FULL_OPACITY_ZOOM - RESOURCE_NODE_FADE_START_ZOOM);
+        const opacity = smoothStep(revealProgress);
+        resources.style.opacity = opacity.toFixed(3);
+        resources.style.visibility = zoom <= RESOURCE_NODE_FADE_START_ZOOM ? 'hidden' : 'visible';
+        resources.style.pointerEvents = zoom >= RESOURCE_NODE_INTERACTIVE_ZOOM ? 'auto' : 'none';
+    }
+    if (regionLabels) {
+        const fadeProgress = (zoom - REGION_LABEL_FADE_START_ZOOM)
+            / (REGION_LABEL_FADE_END_ZOOM - REGION_LABEL_FADE_START_ZOOM);
+        const opacity = 1 - smoothStep(fadeProgress);
+        regionLabels.style.opacity = opacity.toFixed(3);
+        regionLabels.style.visibility = zoom >= REGION_LABEL_FADE_END_ZOOM ? 'hidden' : 'visible';
+    }
     const rect = svg.getBoundingClientRect();
     const viewBox = svg.viewBox.baseVal;
     const worldUnitsPerPixel = rect.width > 0 && viewBox.width > 0 ? viewBox.width / rect.width : 1;
-    for (const scaleGroup of svg.querySelectorAll('.ws-map-resource-node-scale')) {
-        scaleGroup.setAttribute('transform', `scale(${worldUnitsPerPixel})`);
-    }
     for (const label of svg.querySelectorAll('.ws-map-region-label')) {
         label.setAttribute('font-size', String(Math.max(14, worldUnitsPerPixel * 16)));
     }
@@ -228,14 +270,16 @@ export function installMapRenderer(root, store) {
             cancelAnimationFrame(animationFrame);
         const start = { ...displayCamera };
         const startedAt = performance.now();
-        const duration = 280;
+        const zoomRatio = Math.max(start.zoom, clampedTarget.zoom) / Math.max(MAP_MIN_ZOOM, Math.min(start.zoom, clampedTarget.zoom));
+        const duration = clamp(300 + Math.log2(Math.max(1, zoomRatio)) * 70, 300, 720);
         const step = (now) => {
             const progress = clamp((now - startedAt) / duration, 0, 1);
-            const eased = 1 - (1 - progress) ** 3;
+            const eased = smoothStep(progress);
+            const zoom = Math.exp(Math.log(start.zoom) + (Math.log(clampedTarget.zoom) - Math.log(start.zoom)) * eased);
             applyCamera({
                 centerX: start.centerX + (clampedTarget.centerX - start.centerX) * eased,
                 centerY: start.centerY + (clampedTarget.centerY - start.centerY) * eased,
-                zoom: start.zoom + (clampedTarget.zoom - start.zoom) * eased,
+                zoom,
             });
             if (progress < 1)
                 animationFrame = requestAnimationFrame(step);
@@ -273,7 +317,7 @@ export function installMapRenderer(root, store) {
         const normalizedY = clamp((event.clientY - rect.top) / rect.height, 0, 1);
         const worldX = displayCamera.centerX + (normalizedX - 0.5) * currentVisible.width;
         const worldY = displayCamera.centerY + (normalizedY - 0.5) * currentVisible.height;
-        const zoom = clamp(displayCamera.zoom * Math.exp(-event.deltaY * 0.0015), MIN_ZOOM, MAX_ZOOM);
+        const zoom = clamp(displayCamera.zoom * Math.exp(-event.deltaY * 0.0015), MAP_MIN_ZOOM, MAP_MAX_ZOOM);
         const nextVisible = visibleWorldSize(svg, planet, zoom);
         commitInteractiveCamera({
             centerX: worldX - (normalizedX - 0.5) * nextVisible.width,
