@@ -1,0 +1,143 @@
+name: TypeScript Bootstrap
+
+on:
+  push:
+    branches: [chatgpt/typescript-browser-conversion]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: ${{ !contains(github.event.head_commit.message, '[typescript-bootstrap]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/typescript-browser-conversion
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Convert authored JavaScript paths to TypeScript
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          for root in (Path('src'), Path('tests')):
+              for path in sorted(root.rglob('*.js')):
+                  if path.as_posix() == 'src/wasm/interlink_wasm.js':
+                      continue
+                  target = path.with_suffix('.ts')
+                  subprocess.run(['git', 'mv', path.as_posix(), target.as_posix()], check=True)
+
+          index = Path('index.html')
+          text = index.read_text()
+          text = text.replace('src="src/app.js"', 'src="dist/src/app.js"')
+          index.write_text(text)
+          PY
+
+      - name: Add TypeScript toolchain
+        run: |
+          npm install --save-dev typescript@latest tsx@latest @types/node@22
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.scripts = {
+            dev: 'bash scripts/build-browser.sh',
+            build: 'bash scripts/build-browser.sh',
+            typecheck: 'tsc --noEmit -p tsconfig.json',
+            test: 'npm run test:ts',
+            'test:ts': 'tsx --test tests/*.test.ts',
+            'test:rust': 'cargo test --workspace',
+            'check:wasm': 'cargo check -p interlink-wasm --target wasm32-unknown-unknown',
+            'build:wasm': 'bash scripts/build-wasm.sh',
+            'check:wasm-package': 'bash scripts/build-wasm.sh target/wasm-package',
+            'check:runtime': 'npm run typecheck && npm run test:ts && npm run test:rust && npm run check:wasm'
+          };
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+
+          cat > tsconfig.json <<'EOF'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+              "types": ["node"],
+              "strict": true,
+              "allowJs": false,
+              "checkJs": false,
+              "skipLibCheck": true,
+              "noEmit": true,
+              "verbatimModuleSyntax": true,
+              "isolatedModules": true,
+              "forceConsistentCasingInFileNames": true
+            },
+            "include": ["src/**/*.ts", "src/**/*.d.ts", "tests/**/*.ts"],
+            "exclude": ["dist", "target", "node_modules"]
+          }
+          EOF
+
+          cat > tsconfig.build.json <<'EOF'
+          {
+            "extends": "./tsconfig.json",
+            "compilerOptions": {
+              "noEmit": false,
+              "rootDir": "src",
+              "outDir": "dist/src",
+              "types": [],
+              "declaration": false,
+              "sourceMap": false
+            },
+            "include": ["src/**/*.ts", "src/**/*.d.ts"],
+            "exclude": ["src/wasm/**/*.js", "dist", "target", "node_modules"]
+          }
+          EOF
+
+          cat > scripts/build-browser.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          rm -rf dist
+          npx tsc -p tsconfig.build.json
+          mkdir -p dist/src/wasm
+          cp src/wasm/interlink_wasm.js dist/src/wasm/
+          cp src/wasm/interlink_wasm.d.ts dist/src/wasm/
+          cp src/wasm/interlink_wasm_bg.wasm dist/src/wasm/
+          cp src/wasm/interlink_wasm_bg.wasm.d.ts dist/src/wasm/
+          EOF
+          chmod +x scripts/build-browser.sh
+
+      - name: Update canonical CI for TypeScript
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/test.yml')
+          s = p.read_text()
+          s = s.replace('javascript:\n    name: JavaScript simulation tests', 'typescript:\n    name: TypeScript browser and simulation tests')
+          s = s.replace("      - name: Run JavaScript tests\n        run: npm test", "      - name: Install Node dependencies\n        run: npm ci\n\n      - name: Type-check browser and tests\n        run: npm run typecheck\n\n      - name: Run TypeScript tests\n        run: npm test\n\n      - name: Build static browser output\n        run: npm run build")
+          p.write_text(s)
+          PY
+
+      - name: Capture strict TypeScript diagnostics
+        continue-on-error: true
+        run: |
+          npm run typecheck
+
+      - name: Capture converted test status
+        continue-on-error: true
+        run: |
+          npm test
+
+      - name: Remove bootstrap workflow and commit conversion baseline
+        run: |
+          git rm .github/workflows/typescript-bootstrap.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Convert browser source and tests to TypeScript [typescript-bootstrap]"
+          git push origin HEAD:chatgpt/typescript-browser-conversion
