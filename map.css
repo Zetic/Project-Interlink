@@ -152,6 +152,28 @@
 .ws-map-placement-preview-body { fill: #6c4d2433; stroke: #ffcc44; stroke-width: 2; stroke-dasharray: 6 4; }
 .ws-map-placement-preview-label { fill: #ffdf80; text-anchor: middle; }
 
+/* Compact Phase 5 apparatus authoring controls in the existing Inspector. */
+.ws-ins-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 3px 0;
+  font-size: 11px;
+}
+.ws-ins-config-row input[type='number'] {
+  width: 88px;
+  background: #101820;
+  border: 1px solid #334454;
+  color: #d6e4ed;
+  font: inherit;
+  padding: 2px 4px;
+}
+.ws-ins-config-row button {
+  font-size: 10px;
+  padding: 2px 7px;
+}
+
 /* Deep-zoom shape hint only; text remains normal-sized in local card units. */
 .ws-map-resource-node,
 .ws-map-mechanical-node,
