@@ -1,9 +1,13 @@
 import { polygonCentroid } from '../world/geometry.js';
+import { resourceDefinitionById } from '../world/resources.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 18;
-const RESOURCE_MARKER_ZOOM = 2;
-const RESOURCE_LABEL_ZOOM = 5;
+const RESOURCE_NODE_ZOOM = 2.2;
+const REGION_LABEL_HIDE_ZOOM = 4.5;
+const RESOURCE_NODE_WIDTH_PX = 230;
+const RESOURCE_NODE_HEIGHT_PX = 144;
+const RESOURCE_NODE_SHELL_WIDTH_PX = 248;
 function createSvgElement(tagName) {
     return document.createElementNS(SVG_NS, tagName);
 }
@@ -48,29 +52,65 @@ function selectionMatches(element, selection) {
         return kind === 'region' && element.getAttribute('data-region-id') === selection.regionId;
     return kind === 'resource' && element.getAttribute('data-resource-id') === selection.resourceNodeId;
 }
+function appendResourceCard(group, resource) {
+    const scaleGroup = createSvgElement('g');
+    scaleGroup.setAttribute('class', 'ws-map-resource-node-scale');
+    const foreignObject = createSvgElement('foreignObject');
+    foreignObject.setAttribute('x', String(-RESOURCE_NODE_SHELL_WIDTH_PX / 2));
+    foreignObject.setAttribute('y', String(-RESOURCE_NODE_HEIGHT_PX / 2));
+    foreignObject.setAttribute('width', String(RESOURCE_NODE_SHELL_WIDTH_PX));
+    foreignObject.setAttribute('height', String(RESOURCE_NODE_HEIGHT_PX));
+    const shell = document.createElement('div');
+    shell.className = 'ws-map-resource-shell';
+    const card = document.createElement('div');
+    card.className = 'ws-node ws-map-resource-card';
+    card.style.width = `${RESOURCE_NODE_WIDTH_PX}px`;
+    card.style.height = `${RESOURCE_NODE_HEIGHT_PX}px`;
+    const category = document.createElement('div');
+    category.className = 'ws-node-category ws-node-category--feature';
+    category.textContent = 'FEATURE';
+    const label = document.createElement('div');
+    label.className = 'ws-node-label';
+    const definition = resourceDefinitionById(resource.resourceId);
+    for (const line of [resource.name, 'Mineral Deposit', definition?.name ?? resource.resourceId]) {
+        const span = document.createElement('span');
+        span.textContent = line;
+        label.appendChild(span);
+    }
+    const port = document.createElement('div');
+    port.className = 'ws-port ws-port--output ws-port--kind-resource-access ws-map-resource-port';
+    port.title = resource.ports.find(candidate => candidate.id === resource.resourceAccessPortId)?.label ?? 'resources';
+    port.dataset.nodeId = resource.id;
+    port.dataset.portId = resource.resourceAccessPortId;
+    port.dataset.portKind = 'resource-access';
+    port.dataset.portDirection = 'output';
+    card.append(category, label, port);
+    shell.appendChild(card);
+    foreignObject.appendChild(shell);
+    scaleGroup.appendChild(foreignObject);
+    group.appendChild(scaleGroup);
+}
 function renderWorld(svg, planet, store, shouldSuppressClick) {
     svg.replaceChildren();
     svg.setAttribute('preserveAspectRatio', 'none');
-    const ocean = createSvgElement('rect');
-    ocean.setAttribute('x', String(-planet.width));
-    ocean.setAttribute('y', String(-planet.height));
-    ocean.setAttribute('width', String(planet.width * 3));
-    ocean.setAttribute('height', String(planet.height * 3));
-    ocean.setAttribute('class', 'ws-map-ocean');
-    ocean.setAttribute('data-map-kind', 'planet');
-    ocean.addEventListener('click', () => {
+    const background = createSvgElement('rect');
+    background.setAttribute('x', '0');
+    background.setAttribute('y', '0');
+    background.setAttribute('width', String(planet.width));
+    background.setAttribute('height', String(planet.height));
+    background.setAttribute('class', 'ws-map-background');
+    background.setAttribute('data-map-kind', 'planet');
+    background.addEventListener('click', () => {
         if (!shouldSuppressClick())
             store.setSelection({ type: 'planet' });
     });
-    svg.appendChild(ocean);
+    svg.appendChild(background);
     const regionLayer = createSvgElement('g');
     regionLayer.setAttribute('class', 'ws-map-region-layer');
     const labelLayer = createSvgElement('g');
     labelLayer.setAttribute('class', 'ws-map-region-label-layer');
     const resourceLayer = createSvgElement('g');
-    resourceLayer.setAttribute('class', 'ws-map-resource-layer');
-    const resourceLabelLayer = createSvgElement('g');
-    resourceLabelLayer.setAttribute('class', 'ws-map-resource-label-layer');
+    resourceLayer.setAttribute('class', 'ws-map-resource-node-layer');
     planet.regions.forEach((region, index) => {
         const polygon = createSvgElement('polygon');
         polygon.setAttribute('points', region.polygon.map(point => `${point.x},${point.y}`).join(' '));
@@ -92,28 +132,21 @@ function renderWorld(svg, planet, store, shouldSuppressClick) {
         labelLayer.appendChild(label);
     });
     for (const resource of planet.resourceNodes) {
-        const marker = createSvgElement('circle');
-        marker.setAttribute('cx', String(resource.position.x));
-        marker.setAttribute('cy', String(resource.position.y));
-        marker.setAttribute('r', '10');
-        marker.setAttribute('class', 'ws-map-resource');
-        marker.setAttribute('data-map-kind', 'resource');
-        marker.setAttribute('data-resource-id', resource.id);
-        marker.setAttribute('data-region-id', resource.regionId);
-        marker.addEventListener('click', event => {
+        const node = createSvgElement('g');
+        node.setAttribute('transform', `translate(${resource.position.x} ${resource.position.y})`);
+        node.setAttribute('class', 'ws-map-resource-node');
+        node.setAttribute('data-map-kind', 'resource');
+        node.setAttribute('data-resource-id', resource.id);
+        node.setAttribute('data-region-id', resource.regionId);
+        node.addEventListener('click', event => {
             event.stopPropagation();
             if (!shouldSuppressClick())
                 store.setSelection({ type: 'resource', resourceNodeId: resource.id });
         });
-        resourceLayer.appendChild(marker);
-        const label = createSvgElement('text');
-        label.setAttribute('x', String(resource.position.x + 18));
-        label.setAttribute('y', String(resource.position.y + 4));
-        label.setAttribute('class', 'ws-map-resource-label');
-        label.textContent = resource.name;
-        resourceLabelLayer.appendChild(label);
+        appendResourceCard(node, resource);
+        resourceLayer.appendChild(node);
     }
-    svg.append(regionLayer, labelLayer, resourceLayer, resourceLabelLayer);
+    svg.append(regionLayer, labelLayer, resourceLayer);
 }
 function updateSelection(svg, selection) {
     for (const element of svg.querySelectorAll('[data-map-kind], [data-region-id], [data-resource-id]')) {
@@ -121,20 +154,20 @@ function updateSelection(svg, selection) {
     }
 }
 function updateZoomVisibility(svg, zoom) {
-    const resources = svg.querySelector('.ws-map-resource-layer');
-    const resourceLabels = svg.querySelector('.ws-map-resource-label-layer');
+    const resources = svg.querySelector('.ws-map-resource-node-layer');
+    const regionLabels = svg.querySelector('.ws-map-region-label-layer');
     if (resources)
-        resources.style.display = zoom < RESOURCE_MARKER_ZOOM ? 'none' : '';
-    if (resourceLabels)
-        resourceLabels.style.display = zoom < RESOURCE_LABEL_ZOOM ? 'none' : '';
-    for (const marker of svg.querySelectorAll('.ws-map-resource')) {
-        marker.setAttribute('r', String(18 / zoom));
+        resources.style.display = zoom < RESOURCE_NODE_ZOOM ? 'none' : '';
+    if (regionLabels)
+        regionLabels.style.display = zoom >= REGION_LABEL_HIDE_ZOOM ? 'none' : '';
+    const rect = svg.getBoundingClientRect();
+    const viewBox = svg.viewBox.baseVal;
+    const worldUnitsPerPixel = rect.width > 0 && viewBox.width > 0 ? viewBox.width / rect.width : 1;
+    for (const scaleGroup of svg.querySelectorAll('.ws-map-resource-node-scale')) {
+        scaleGroup.setAttribute('transform', `scale(${worldUnitsPerPixel})`);
     }
     for (const label of svg.querySelectorAll('.ws-map-region-label')) {
-        label.setAttribute('font-size', String(44 / zoom));
-    }
-    for (const label of svg.querySelectorAll('.ws-map-resource-label')) {
-        label.setAttribute('font-size', String(30 / zoom));
+        label.setAttribute('font-size', String(Math.max(14, worldUnitsPerPixel * 16)));
     }
 }
 export function installMapRenderer(root, store) {

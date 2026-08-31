@@ -4,6 +4,16 @@ import test from 'node:test';
 import { pointInPolygon } from '../dist/world/geometry.js';
 import { generateWorld, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH, REGION_COUNT } from '../dist/world/generateWorld.js';
 
+function polygonArea(points) {
+  let twiceArea = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    twiceArea += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(twiceArea) / 2;
+}
+
 function assertResourcePlacement(world) {
   const regionIds = new Set(world.planet.regions.map(region => region.id));
 
@@ -24,7 +34,7 @@ test('new TypeScript world model generates exactly five geographic regions', () 
   assertResourcePlacement(world);
 });
 
-test('Phase 3 regions use irregular polygons surrounded by map-space ocean', () => {
+test('Phase 3.5 regions partition the full map with irregular asymmetric boundaries', () => {
   const world = generateWorld('irregular-geography');
 
   for (const region of world.planet.regions) {
@@ -35,11 +45,33 @@ test('Phase 3 regions use irregular polygons surrounded by map-space ocean', () 
     }
   }
 
+  const totalRegionArea = world.planet.regions.reduce((sum, region) => sum + polygonArea(region.polygon), 0);
+  assert.ok(Math.abs(totalRegionArea - PLANET_MAP_WIDTH * PLANET_MAP_HEIGHT) < 0.01, 'regions cover the complete map without ocean, gaps, or overlap');
+
   const allPoints = world.planet.regions.flatMap(region => region.polygon);
-  assert.ok(Math.min(...allPoints.map(point => point.x)) > 0, 'ocean remains west of the landmass');
-  assert.ok(Math.max(...allPoints.map(point => point.x)) < PLANET_MAP_WIDTH, 'ocean remains east of the landmass');
-  assert.ok(Math.min(...allPoints.map(point => point.y)) > 0, 'ocean remains north of the landmass');
-  assert.ok(Math.max(...allPoints.map(point => point.y)) < PLANET_MAP_HEIGHT, 'ocean remains south of the landmass');
+  assert.equal(Math.min(...allPoints.map(point => point.x)), 0, 'region coverage reaches the west map edge');
+  assert.equal(Math.max(...allPoints.map(point => point.x)), PLANET_MAP_WIDTH, 'region coverage reaches the east map edge');
+  assert.equal(Math.min(...allPoints.map(point => point.y)), 0, 'region coverage reaches the north map edge');
+  assert.equal(Math.max(...allPoints.map(point => point.y)), PLANET_MAP_HEIGHT, 'region coverage reaches the south map edge');
+
+  assert.ok(world.planet.regions.some(region => region.bounds.y > 0), 'at least one region begins away from the north edge');
+  assert.ok(world.planet.regions.some(region => region.bounds.y + region.bounds.height < PLANET_MAP_HEIGHT), 'at least one region ends before the south edge');
+});
+
+test('resource deposits retain Feature-node resource-access contracts', () => {
+  const world = generateWorld('resource-node-contract');
+
+  for (const node of world.planet.resourceNodes) {
+    assert.equal(node.nodeType, 'feature');
+    assert.equal(node.featureType, 'mineral-deposit');
+    assert.equal(node.resourceAccessPortId, 'resource-access');
+    assert.deepEqual(node.ports, [{
+      id: 'resource-access',
+      direction: 'output',
+      kind: 'resource-access',
+      label: 'resources',
+    }]);
+  }
 });
 
 test('world generation is deterministic and namespaced by seed', () => {

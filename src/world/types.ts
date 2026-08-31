@@ -18,12 +18,26 @@ export interface ResourceDefinition {
   category: ResourceCategory;
 }
 
+export type NodePortDirection = 'input' | 'output';
+export type NodePortKind = 'resource-access';
+
+export interface NodePort {
+  id: string;
+  direction: NodePortDirection;
+  kind: NodePortKind;
+  label: string;
+}
+
 export interface ResourceNode {
   id: string;
   name: string;
   resourceId: string;
   regionId: string;
   position: Point;
+  nodeType: 'feature';
+  featureType: 'mineral-deposit';
+  resourceAccessPortId: 'resource-access';
+  ports: NodePort[];
 }
 
 export interface Region {

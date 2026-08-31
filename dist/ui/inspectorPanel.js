@@ -34,13 +34,17 @@ function renderResource(container, planet, resource) {
     const region = planet.regions.find(candidate => candidate.id === resource.regionId);
     const type = document.createElement('div');
     type.className = 'ws-ins-type';
-    type.textContent = 'RESOURCE';
+    type.textContent = 'FEATURE';
     container.appendChild(type);
     addRow(container, 'Name', resource.name);
+    addRow(container, 'Feature type', 'Mineral Deposit');
     addRow(container, 'Resource', definition?.name ?? resource.resourceId);
     addRow(container, 'Category', definition?.category ?? 'unknown');
     addRow(container, 'Region', region?.name ?? resource.regionId);
     addRow(container, 'Coordinates', `${resource.position.x.toFixed(2)}, ${resource.position.y.toFixed(2)}`);
+    const port = resource.ports.find(candidate => candidate.id === resource.resourceAccessPortId);
+    if (port)
+        addRow(container, 'Output', `${port.label} · ${port.kind}`);
 }
 export function installInspectorPanel(root, store) {
     const container = root.querySelector('#ws-map-inspector-body');
