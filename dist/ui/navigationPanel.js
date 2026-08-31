@@ -1,3 +1,8 @@
+const CATEGORY_LABELS = {
+    planet: 'Planet',
+    region: 'Region',
+    feature: 'Feature',
+};
 function selectionKey(selection) {
     if (selection.type === 'planet')
         return 'planet';
@@ -13,30 +18,20 @@ function resourceNodesForRegion(planet, region) {
 }
 function buildRows(planet) {
     const rows = [{
-            key: 'planet',
-            label: planet.name,
-            depth: 0,
-            expandable: true,
-            parentKey: null,
-            selection: { type: 'planet' },
+            key: 'planet', label: planet.name, depth: 0, category: 'planet', expandable: true,
+            parentKey: null, selection: { type: 'planet' },
         }];
     for (const region of planet.regions) {
         const regionKey = `region:${region.id}`;
         rows.push({
-            key: regionKey,
-            label: region.name,
-            depth: 1,
-            expandable: region.resourceNodeIds.length > 0,
-            parentKey: 'planet',
+            key: regionKey, label: region.name, depth: 1, category: 'region',
+            expandable: region.resourceNodeIds.length > 0, parentKey: 'planet',
             selection: { type: 'region', regionId: region.id },
         });
         for (const resource of resourceNodesForRegion(planet, region)) {
             rows.push({
-                key: `resource:${resource.id}`,
-                label: resource.name,
-                depth: 2,
-                expandable: false,
-                parentKey: regionKey,
+                key: `resource:${resource.id}`, label: resource.name, depth: 2, category: 'feature',
+                expandable: false, parentKey: regionKey,
                 selection: { type: 'resource', resourceNodeId: resource.id },
             });
         }
@@ -52,11 +47,17 @@ function rowIsVisible(row, expandedKeys) {
         return true;
     return expandedKeys.has('planet');
 }
-function createNavigationRow(row, selectedKey, expandedKeys, onExpand, onSelect) {
+function createNavigationRow(row, selectedKey, expandedKeys, matchKeys, contextKeys, onExpand, onSelect) {
     const wrapper = document.createElement('div');
     wrapper.className = 'ws-navigation-row-wrap';
     const element = document.createElement('div');
-    element.className = `ws-navigation-row${row.key === selectedKey ? ' ws-navigation-row--selected' : ''}`;
+    element.className = 'ws-navigation-row';
+    if (row.key === selectedKey)
+        element.classList.add('ws-navigation-row--active');
+    if (matchKeys.has(row.key))
+        element.classList.add('ws-navigation-row--match');
+    else if (contextKeys.has(row.key))
+        element.classList.add('ws-navigation-row--context');
     element.style.setProperty('--ws-navigation-depth', String(row.depth));
     if (row.expandable) {
         const expand = document.createElement('button');
@@ -64,10 +65,7 @@ function createNavigationRow(row, selectedKey, expandedKeys, onExpand, onSelect)
         expand.type = 'button';
         expand.textContent = expandedKeys.has(row.key) ? '▾' : '▸';
         expand.setAttribute('aria-label', `${expandedKeys.has(row.key) ? 'Collapse' : 'Expand'} ${row.label}`);
-        expand.addEventListener('click', event => {
-            event.stopPropagation();
-            onExpand(row.key);
-        });
+        expand.addEventListener('click', event => { event.stopPropagation(); onExpand(row.key); });
         element.appendChild(expand);
     }
     else {
@@ -75,12 +73,23 @@ function createNavigationRow(row, selectedKey, expandedKeys, onExpand, onSelect)
         spacer.className = 'ws-navigation-expand-spacer';
         element.appendChild(spacer);
     }
-    const label = document.createElement('button');
+    const entry = document.createElement('button');
+    entry.className = 'ws-navigation-entry';
+    entry.type = 'button';
+    const category = document.createElement('span');
+    category.className = `ws-navigation-category ws-navigation-category--${row.category}`;
+    const label = document.createElement('span');
     label.className = 'ws-navigation-label';
-    label.type = 'button';
     label.textContent = row.label;
-    label.addEventListener('click', () => onSelect(row.selection));
-    element.appendChild(label);
+    entry.append(category, label);
+    if (matchKeys.has(row.key) || contextKeys.has(row.key)) {
+        const state = document.createElement('span');
+        state.className = 'ws-navigation-state';
+        state.textContent = matchKeys.has(row.key) ? 'MATCH' : 'CONTEXT';
+        entry.appendChild(state);
+    }
+    entry.addEventListener('click', () => onSelect(row.selection));
+    element.appendChild(entry);
     wrapper.appendChild(element);
     return wrapper;
 }
@@ -88,11 +97,29 @@ export function installNavigationPanel(root, store) {
     const tree = root.querySelector('#ws-navigation-tree');
     const search = root.querySelector('#ws-navigation-search');
     const count = root.querySelector('#ws-navigation-match-count');
+    const filters = root.querySelector('#ws-navigation-filters .ws-navigation-filters');
     const expandAll = root.querySelector('#ws-navigation-expand-all');
     const collapseAll = root.querySelector('#ws-navigation-collapse-all');
-    if (!tree || !search || !count || !expandAll || !collapseAll)
+    if (!tree || !search || !count || !filters || !expandAll || !collapseAll)
         return;
     const expandedKeys = new Set(['planet']);
+    const visibleCategories = new Set(['planet', 'region', 'feature']);
+    for (const category of ['planet', 'region', 'feature']) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = true;
+        input.value = category;
+        input.addEventListener('change', () => {
+            if (input.checked)
+                visibleCategories.add(category);
+            else
+                visibleCategories.delete(category);
+            render();
+        });
+        label.append(input, document.createTextNode(` ${CATEGORY_LABELS[category]}`));
+        filters.appendChild(label);
+    }
     const render = () => {
         const state = store.getState();
         if (!state.world) {
@@ -103,24 +130,33 @@ export function installNavigationPanel(root, store) {
         const planet = state.world.planet;
         const query = search.value.trim().toLowerCase();
         const rows = buildRows(planet);
-        const matches = query ? rows.filter(row => row.label.toLowerCase().includes(query)) : rows;
-        const included = query
-            ? new Set(matches.flatMap(row => [row.key, ...(row.parentKey ? [row.parentKey] : []), 'planet']))
-            : null;
+        const directMatches = query
+            ? rows.filter(row => visibleCategories.has(row.category) && row.label.toLowerCase().includes(query))
+            : [];
+        const matchKeys = new Set(directMatches.map(row => row.key));
+        const contextKeys = new Set();
+        if (query) {
+            for (const match of directMatches) {
+                if (match.parentKey)
+                    contextKeys.add(match.parentKey);
+                if (match.depth >= 2)
+                    contextKeys.add('planet');
+            }
+        }
         const selectedKey = selectionKey(state.selection);
+        const effectiveExpanded = query
+            ? new Set(['planet', ...planet.regions.map(region => `region:${region.id}`)])
+            : expandedKeys;
         const visibleRows = rows.filter(row => {
-            if (included)
-                return included.has(row.key);
-            return rowIsVisible(row, expandedKeys);
+            if (query)
+                return matchKeys.has(row.key) || contextKeys.has(row.key);
+            return visibleCategories.has(row.category) && rowIsVisible(row, effectiveExpanded);
         });
-        tree.replaceChildren(...visibleRows.map(row => createNavigationRow(row, selectedKey, query ? new Set(['planet', ...planet.regions.map(region => `region:${region.id}`)]) : expandedKeys, key => {
-            if (expandedKeys.has(key))
-                expandedKeys.delete(key);
-            else
-                expandedKeys.add(key);
-            render();
-        }, selection => store.focusSelection(selection))));
-        count.textContent = query ? `${matches.length} match${matches.length === 1 ? '' : 'es'}` : `${rows.length} map objects`;
+        tree.replaceChildren(...visibleRows.map(row => createNavigationRow(row, selectedKey, effectiveExpanded, matchKeys, contextKeys, key => { if (expandedKeys.has(key))
+            expandedKeys.delete(key);
+        else
+            expandedKeys.add(key); render(); }, selection => store.focusSelection(selection))));
+        count.textContent = query ? `${directMatches.length} match${directMatches.length === 1 ? '' : 'es'}` : '';
     };
     search.addEventListener('input', render);
     expandAll.addEventListener('click', () => {
@@ -132,9 +168,6 @@ export function installNavigationPanel(root, store) {
             expandedKeys.add(`region:${region.id}`);
         render();
     });
-    collapseAll.addEventListener('click', () => {
-        expandedKeys.clear();
-        render();
-    });
+    collapseAll.addEventListener('click', () => { expandedKeys.clear(); render(); });
     store.subscribe(render);
 }

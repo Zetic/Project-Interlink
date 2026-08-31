@@ -474,14 +474,14 @@
   }
 }
 
-/* Phase 4 typed NODE catalog and observer-only DEBUG presentation. */
-.ws-node-catalog-category { margin: 8px 7px 4px; color: #78aa9d; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; }
-.ws-node-catalog-item { display: flex; flex-direction: column; gap: 3px; width: calc(100% - 10px); margin: 2px 5px; padding: 7px 8px; text-align: left; background: #111d29; border: 1px solid #29465b; color: #d6e4ed; }
-.ws-node-catalog-item:hover, .ws-node-catalog-item:focus-visible { background: #193042; border-color: #4a9b88; }
-.ws-node-catalog-item strong { color: #b8d9ca; font-size: 11px; }
-.ws-node-catalog-item span { color: #8497a8; font-size: 9px; line-height: 1.35; }
-.ws-node-catalog-status { flex: 0 0 auto; min-height: 34px; padding: 7px 10px; border-top: 1px solid #1e3e39; color: #9fc8bc; font-size: 10px; line-height: 1.35; }
-.ws-debug-metric > span:last-child { max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+/* Original navigation/category visual grammar reused by the flat TypeScript map. */
+.ws-navigation-category--planet { background: #4d456f; }
+.ws-navigation-category--region { background: #294d73; }
+.ws-navigation-category--feature { background: #315a34; }
+.ws-navigation-category--apparatus { background: #6c4d24; }
+.ws-navigation-category--container { background: #324a66; }
+
+/* Flat-map Inspector additions only; NAV/NODE/DEBUG presentation above remains the original contract. */
 .ws-ins-connection-row { display: flex; align-items: center; gap: 5px; margin: 4px 0; font-size: 9px; }
 .ws-ins-connection-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ws-ins-connection-row button, .ws-ins-actions button { padding: 2px 5px; font-size: 9px; }
