@@ -6,11 +6,79 @@ import {
   blueprintPresentationRevision,
   blueprintLayoutRevision,
 } from '../../simulation/simulationEngine.js';
+import type { BoundaryTransfer } from '../../core/world/types.js';
+import type { SystemPort } from '../../core/systems/types.js';
+import type { Blueprint, BlueprintConnection, BlueprintLayout, BlueprintNode } from '../../simulation/types.js';
+import type { GraphAdapterId, GraphEndpoint, Point } from '../types.js';
 import { nodeCategory } from './nodePresentation.js';
 
-const blueprintProjectionCache = new WeakMap();
+export interface GraphPort {
+  id: string;
+  direction: 'input' | 'output';
+  kind: string;
+  label: string;
+}
 
-function graphPorts(node, ports = getNodePortDefinitions(node)) {
+export interface GraphSourceNode extends BlueprintNode {
+  visiblePorts?: SystemPort[];
+  materialBody?: {
+    solidState?: {
+      fractions?: Record<string, number>;
+    };
+  };
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: string;
+  category: ReturnType<typeof nodeCategory>;
+  position: Point;
+  ports: GraphPort[];
+  source: GraphSourceNode;
+  selected: boolean;
+  composite: boolean;
+}
+
+export interface GraphConnection {
+  id: string;
+  source: GraphEndpoint;
+  target: GraphEndpoint;
+  kind: string;
+  adapter: GraphAdapterId;
+  sourceConnection: BlueprintConnection | BoundaryTransfer;
+  transfer?: BoundaryTransfer;
+  visibleSource?: GraphEndpoint;
+  visibleTarget?: GraphEndpoint;
+}
+
+export interface GraphProjection {
+  nodes: GraphNode[];
+  connections: GraphConnection[];
+  renderRevision?: string;
+}
+
+export interface BoundaryGraphDefinition {
+  id?: string;
+  nodes?: GraphSourceNode[];
+  layout?: BlueprintLayout;
+  level?: string;
+  planetScopeId?: string | null;
+  scopeId?: string | null;
+}
+
+interface BlueprintProjectionCacheEntry {
+  layout: BlueprintLayout;
+  topologyRevision: number;
+  presentationRevision: number;
+  layoutRevision: number;
+  selectedNodeId: string | null;
+  graph: GraphProjection;
+}
+
+const blueprintProjectionCache = new WeakMap<Blueprint, BlueprintProjectionCacheEntry>();
+
+function graphPorts(node: GraphSourceNode, ports: readonly SystemPort[] = getNodePortDefinitions(node)): GraphPort[] {
   return ports.map(port => ({
     id: port.id,
     direction: port.direction,
@@ -19,11 +87,16 @@ function graphPorts(node, ports = getNodePortDefinitions(node)) {
   }));
 }
 
-function graphNode(node, position = { x: 0, y: 0 }, ports, selected = false) {
+function graphNode(
+  node: GraphSourceNode,
+  position: Point = { x: 0, y: 0 },
+  ports?: readonly SystemPort[],
+  selected = false,
+): GraphNode {
   return {
     id: node.id,
     label: node.displayName ?? node.systemType ?? node.nodeType ?? node.id,
-    type: node.nodeType ?? node.systemType,
+    type: node.nodeType ?? node.systemType ?? node.id,
     category: nodeCategory(node),
     position: { x: position.x, y: position.y },
     ports: graphPorts(node, ports),
@@ -33,21 +106,31 @@ function graphNode(node, position = { x: 0, y: 0 }, ports, selected = false) {
   };
 }
 
-function visibleBoundaryPorts(node) {
+function visibleBoundaryPorts(node: GraphSourceNode): SystemPort[] {
   const ports = node.visiblePorts ?? node.ports ?? getNodePortDefinitions(node);
   if (node.boundaryRole === 'import') return ports.filter(port => port.direction === 'output');
   if (node.boundaryRole === 'export') return ports.filter(port => port.direction === 'input');
-  return ports;
+  return [...ports];
 }
 
-function graphConnection(connection, adapter) {
+function graphConnection(
+  connection: BlueprintConnection | {
+    id: string;
+    sourceNodeId: string;
+    sourcePortId: string;
+    targetNodeId: string;
+    targetPortId: string;
+    kind: string;
+  },
+  adapter: GraphAdapterId,
+): GraphConnection {
   return {
     id: connection.id,
     source: { nodeId: connection.sourceNodeId, portId: connection.sourcePortId },
     target: { nodeId: connection.targetNodeId, portId: connection.targetPortId },
     kind: connection.kind ?? 'material',
     adapter,
-    sourceConnection: connection,
+    sourceConnection: connection as BlueprintConnection,
   };
 }
 
@@ -58,7 +141,11 @@ function graphConnection(connection, adapter) {
  * returned directly instead of allocating a new node/edge graph every display
  * frame.
  */
-export function projectBlueprintGraph(blueprint, layout = { nodePositions: {} }, options = {}) {
+export function projectBlueprintGraph(
+  blueprint: Blueprint | null,
+  layout: BlueprintLayout = { nodePositions: {} },
+  options: { selectedNodeId?: string | null } = {},
+): GraphProjection {
   if (!blueprint) return { nodes: [], connections: [], renderRevision: 'empty' };
 
   const topologyRevision = blueprintTopologyRevision(blueprint);
@@ -78,7 +165,7 @@ export function projectBlueprintGraph(blueprint, layout = { nodePositions: {} },
     return cache.graph;
   }
 
-  const graph = {
+  const graph: GraphProjection = {
     nodes: Object.values(blueprint.nodes ?? {}).map(node => graphNode(
       node,
       layout.nodePositions?.[node.id] ?? { x: 0, y: 0 },
@@ -106,10 +193,15 @@ export function projectBlueprintGraph(blueprint, layout = { nodePositions: {} },
  * material streams. Endpoint resolution is deliberately supplied by the
  * workspace renderer because visible composite endpoints vary by hierarchy.
  */
-export function projectBoundaryGraph(definition, transfers = {}, endpointResolver = null, options = {}) {
+export function projectBoundaryGraph(
+  definition: BoundaryGraphDefinition | null,
+  transfers: Record<string, BoundaryTransfer> = {},
+  endpointResolver: ((nodeId: string, portId: string) => GraphEndpoint) | null = null,
+  options: { selectedNodeId?: string | null } = {},
+): GraphProjection {
   const nodes = (definition?.nodes ?? []).map(node => graphNode(
     node,
-    definition.layout?.nodePositions?.[node.id] ?? { x: 0, y: 0 },
+    definition?.layout?.nodePositions?.[node.id] ?? { x: 0, y: 0 },
     visibleBoundaryPorts(node),
     options.selectedNodeId === node.id,
   ));
@@ -133,6 +225,7 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
     }, 'boundary-transfer');
     return {
       ...connection,
+      sourceConnection: transfer,
       transfer,
       visibleSource: endpointResolver?.(transfer.sourceCompositeId, transfer.sourcePortId) ?? connection.source,
       visibleTarget: endpointResolver?.(transfer.targetCompositeId, transfer.targetPortId) ?? connection.target,
@@ -147,9 +240,9 @@ export function projectBoundaryGraph(definition, transfers = {}, endpointResolve
  * rate. A cheap signature prevents identical node-card DOM from being rewritten
  * between physical-state changes.
  */
-function nodeContentSignature(node) {
-  const source = node?.source ?? {};
-  const primitives = [];
+function nodeContentSignature(node: GraphNode): string {
+  const source = node?.source ?? {} as GraphSourceNode;
+  const primitives: string[] = [];
   for (const [key, value] of Object.entries(source)) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) {
       primitives.push(`${key}=${String(value)}`);
@@ -160,7 +253,25 @@ function nodeContentSignature(node) {
     if (Number.isFinite(quantity) && quantity > 0) storedMass += quantity;
   }
   const runtimeRevision = source.runtimePresentation?.revision ?? '';
-  return `${node.label}|${primitives.join('|')}|mass=${storedMass}|runtime=${runtimeRevision}`;
+  return `${node.label}|${primitives.join('|')}|mass=${storedMass}|runtime=${String(runtimeRevision)}`;
+}
+
+export interface RenderGraphNodesOptions {
+  canvas?: HTMLElement | null;
+  graph?: GraphProjection | null;
+  elements?: Map<string, HTMLElement>;
+  width?: number;
+  height?: number;
+  portRadius?: number;
+  className?: string;
+  nodeClass?: (node: GraphNode) => string;
+  label?: (node: GraphNode) => string;
+  nodeContent?: (element: HTMLElement, node: GraphNode, isNew: boolean) => void;
+  portClass?: (node: GraphNode, port: GraphPort, direction: 'input' | 'output') => string;
+  onNodePointerDown?: (node: GraphNode, event: MouseEvent) => void;
+  onNodeSelect?: (nodeId: string) => void;
+  onPortStart?: (node: GraphNode, portId: string, event: MouseEvent) => void;
+  onPortFinish?: (node: GraphNode, portId: string, event: MouseEvent) => void;
 }
 
 /**
@@ -183,7 +294,7 @@ export function renderGraphNodes({
   onNodeSelect,
   onPortStart,
   onPortFinish,
-} = {}) {
+}: RenderGraphNodesOptions = {}): void {
   if (!canvas) return;
   const renderRevision = graph?.renderRevision ?? null;
   if (
@@ -194,7 +305,7 @@ export function renderGraphNodes({
     return;
   }
 
-  const activeIds = new Set();
+  const activeIds = new Set<string>();
   for (const node of graph?.nodes ?? []) {
     activeIds.add(node.id);
     let element = elements.get(node.id);
@@ -202,19 +313,22 @@ export function renderGraphNodes({
     if (isNew) {
       element = document.createElement('div');
       element.addEventListener('mousedown', event => {
-        const port = event.target.closest('.ws-port');
+        const target = event.target instanceof Element ? event.target : null;
+        const port = target?.closest<HTMLElement>('.ws-port') ?? null;
         if (port) {
-          onPortStart?.(node, port.dataset.portId, event);
+          onPortStart?.(node, port.dataset.portId ?? '', event);
           return;
         }
         onNodePointerDown?.(node, event);
       });
       element.addEventListener('mouseup', event => {
-        const port = event.target.closest('.ws-port');
-        if (port) onPortFinish?.(node, port.dataset.portId, event);
+        const target = event.target instanceof Element ? event.target : null;
+        const port = target?.closest<HTMLElement>('.ws-port') ?? null;
+        if (port) onPortFinish?.(node, port.dataset.portId ?? '', event);
       });
       element.addEventListener('click', event => {
-        if (!event.target.closest('.ws-port,.ws-enter')) onNodeSelect?.(node.id);
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target?.closest('.ws-port,.ws-enter')) onNodeSelect?.(node.id);
       });
       canvas.appendChild(element);
       elements.set(node.id, element);
@@ -232,7 +346,7 @@ export function renderGraphNodes({
     if (element.style.width !== widthPx) element.style.width = widthPx;
     if (element.style.height !== heightPx) element.style.height = heightPx;
 
-    let categoryBar = element.querySelector('.ws-node-category');
+    let categoryBar = element.querySelector<HTMLElement>('.ws-node-category');
     if (!categoryBar) {
       categoryBar = document.createElement('div');
       element.appendChild(categoryBar);
@@ -249,7 +363,7 @@ export function renderGraphNodes({
     if (isNew || element.dataset.nodeContentSignature !== contentSignature) {
       nodeContent?.(element, node, isNew);
       if (!nodeContent) {
-        const nodeLabel = element.querySelector('.ws-node-label') ?? document.createElement('div');
+        const nodeLabel = element.querySelector<HTMLElement>('.ws-node-label') ?? document.createElement('div');
         nodeLabel.className = 'ws-node-label';
         nodeLabel.innerHTML = String(label(node)).split('\n')
           .map(line => `<span>${line}</span>`).join('');
@@ -259,9 +373,9 @@ export function renderGraphNodes({
     }
 
     if (isNew) {
-      const portsByDirection = { input: [], output: [] };
-      for (const port of node.ports) portsByDirection[port.direction]?.push(port);
-      for (const direction of ['input', 'output']) {
+      const portsByDirection: Record<'input' | 'output', GraphPort[]> = { input: [], output: [] };
+      for (const port of node.ports) portsByDirection[port.direction].push(port);
+      for (const direction of ['input', 'output'] as const) {
         portsByDirection[direction].forEach((port, index) => {
           const step = height / (portsByDirection[direction].length + 1);
           const dot = document.createElement('div');
@@ -292,6 +406,15 @@ export function renderGraphNodes({
   if (renderRevision) canvas.dataset.graphNodeRenderRevision = renderRevision;
 }
 
+export interface RenderGraphConnectionPreviewOptions {
+  svg?: SVGSVGElement | null;
+  active?: boolean;
+  preview?: SVGLineElement | null;
+  source?: GraphEndpoint | null;
+  target?: Point | null;
+  endpointPosition?: (endpoint: GraphEndpoint) => Point;
+}
+
 /** Render the common cursor-following edge preview for any workspace adapter. */
 export function renderGraphConnectionPreview({
   svg,
@@ -300,7 +423,7 @@ export function renderGraphConnectionPreview({
   source,
   target,
   endpointPosition,
-} = {}) {
+}: RenderGraphConnectionPreviewOptions = {}): SVGLineElement | null {
   if (!svg) return null;
   if (!active || !source || !target || typeof endpointPosition !== 'function') {
     preview?.remove();
@@ -316,26 +439,30 @@ export function renderGraphConnectionPreview({
     svg.appendChild(line);
   }
   const start = endpointPosition(source);
-  line.setAttribute('x1', start.x);
-  line.setAttribute('y1', start.y);
-  line.setAttribute('x2', target.x);
-  line.setAttribute('y2', target.y);
+  line.setAttribute('x1', String(start.x));
+  line.setAttribute('y1', String(start.y));
+  line.setAttribute('x2', String(target.x));
+  line.setAttribute('y2', String(target.y));
   return line;
 }
 
-export function graphConnectionEndpoint(connection, side = 'source') {
+export function graphConnectionEndpoint(connection: GraphConnection, side: 'source' | 'target' = 'source'): GraphEndpoint {
   return side === 'source'
     ? (connection.visibleSource ?? connection.source)
     : (connection.visibleTarget ?? connection.target);
 }
 
 /** Resolve the simulation object represented by a graph edge. */
-export function resolveGraphConnection(graph, connectionId) {
+export function resolveGraphConnection(graph: GraphProjection | null | undefined, connectionId: string): GraphConnection | null {
   return graph?.connections?.find(connection => connection.id === connectionId) ?? null;
 }
 
 /** Apply the common disconnect action through the adapter-owned callback. */
-export function disconnectGraphConnection(graph, connectionId, adapters = {}) {
+export function disconnectGraphConnection(
+  graph: GraphProjection | null | undefined,
+  connectionId: string,
+  adapters: Partial<Record<GraphAdapterId, (connection: GraphConnection) => void>> = {},
+): boolean {
   const connection = resolveGraphConnection(graph, connectionId);
   if (!connection) return false;
   const disconnect = adapters[connection.adapter];
@@ -344,6 +471,18 @@ export function disconnectGraphConnection(graph, connectionId, adapters = {}) {
   }
   disconnect(connection);
   return true;
+}
+
+export interface RenderGraphConnectionsOptions {
+  svg?: SVGSVGElement | null;
+  graph?: GraphProjection | null;
+  elements?: Map<string, SVGPathElement>;
+  endpointPosition?: (endpoint: GraphEndpoint) => Point;
+  flow?: (connection: GraphConnection) => number;
+  selectedId?: string | null;
+  onSelect?: (connectionId: string) => void;
+  className?: string;
+  createPath?: (() => SVGPathElement) | null;
 }
 
 /** Render any projected graph edge set with stable SVG element identity. */
@@ -357,7 +496,7 @@ export function renderGraphConnections({
   onSelect,
   className = '',
   createPath = null,
-} = {}) {
+}: RenderGraphConnectionsOptions = {}): void {
   if (!svg) return;
   const renderRevision = graph?.renderRevision ?? null;
   const connectionRevision = renderRevision ? `${renderRevision}:${selectedId ?? ''}` : null;
@@ -373,8 +512,9 @@ export function renderGraphConnections({
     if (typeof document === 'undefined') throw new Error('Graph edge rendering requires a document');
     return document.createElementNS('http://www.w3.org/2000/svg', 'path');
   });
-  const activeIds = new Set();
+  const activeIds = new Set<string>();
   for (const connection of graph?.connections ?? []) {
+    if (!endpointPosition) throw new Error('Graph edge rendering requires endpointPosition');
     activeIds.add(connection.id);
     let path = elements.get(connection.id);
     if (!path || !svg.contains(path)) {
@@ -408,7 +548,7 @@ export function renderGraphConnections({
       const midX = (source.x + target.x) / 2;
       path.setAttribute('d', `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${target.y}, ${target.x} ${target.y}`);
       // Keep low-flow edges visible while scaling active material flow within a readable range.
-      path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1.5 + connectionFlow * 0.5)));
+      path.setAttribute('stroke-width', String(Math.max(1.5, Math.min(6, 1.5 + connectionFlow * 0.5))));
       path.classList.toggle('ws-connection--selected', selectedId === connection.id);
       path.dataset.renderSignature = signature;
     }
