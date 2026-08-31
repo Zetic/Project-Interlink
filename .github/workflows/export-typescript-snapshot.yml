@@ -12,15 +12,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: chatgpt/typescript-infer-sandbox
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
       - uses: actions/upload-artifact@v4
         with:
-          name: typescript-snapshot
+          name: typescript-toolchain-snapshot
           path: |
             .github
             src
             tests
             scripts
             rust
+            node_modules
             Cargo.toml
             Cargo.lock
             package.json
