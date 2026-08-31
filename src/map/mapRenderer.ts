@@ -2,10 +2,10 @@ import { apparatusDefinitionById } from '../apparatus/definitions.js';
 import { connectPorts, moveMechanicalNode, placeMechanicalNode, removeMechanicalNode } from '../graph/graphCommands.js';
 import { mechanicalNodeById, portForEndpoint } from '../graph/graphQueries.js';
 import type { GraphState, PortEndpoint } from '../graph/types.js';
-import type { AppState, AppStore } from '../state/appState.js';
+import type { AppState, AppStore, GraphInteractionState } from '../state/appState.js';
 import { polygonCentroid } from '../world/geometry.js';
 import { formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';
-import type { MapCameraState, MapSelection, Planet, Point } from '../world/types.js';
+import type { MapCameraState, MapSelection, Planet, Point, WorldState } from '../world/types.js';
 import { cameraForAnchor, worldPointAtNormalizedScreen, type CameraAnchor } from './camera/cameraAnchor.js';
 import {
   MAP_MAX_ZOOM, MAP_MIN_ZOOM, MECHANICAL_PLACEMENT_MIN_ZOOM, approachZoom, camerasEqual, clamp, clampCamera, formatZoomFactor,
@@ -30,9 +30,13 @@ export {
   WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, wheelSensitivityForZoom, wheelZoomAfterDelta,
 };
 
+export const REGION_INTERACTION_MAX_ZOOM = 10;
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const REGION_LABEL_FADE_START_ZOOM = 3.5;
 const REGION_LABEL_FADE_END_ZOOM = 6.5;
+
+type PointerMode = 'pan' | 'node-drag' | null;
 
 function svgElement<K extends keyof SVGElementTagNameMap>(tagName: K): SVGElementTagNameMap[K] { return document.createElementNS(SVG_NS, tagName); }
 
@@ -102,6 +106,8 @@ function updatePendingPort(svg: SVGSVGElement, endpoint: PortEndpoint | null): v
 
 function updateZoomVisibility(svg: SVGSVGElement, zoom: number): void {
   updateResourceVisibility(svg, zoom); updateMechanicalVisibility(svg, zoom);
+  const regions = svg.querySelector<SVGGElement>('.ws-map-region-layer');
+  if (regions) regions.style.pointerEvents = zoom >= REGION_INTERACTION_MAX_ZOOM ? 'none' : 'auto';
   const labels = svg.querySelector<SVGGElement>('.ws-map-region-label-layer');
   if (labels) {
     const progress = (zoom - REGION_LABEL_FADE_START_ZOOM) / (REGION_LABEL_FADE_END_ZOOM - REGION_LABEL_FADE_START_ZOOM);
@@ -131,12 +137,19 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   let wheelLastFrameAt: number | null = null;
   let internalCameraUpdate = false;
   let pointerId: number | null = null;
+  let pointerMode: PointerMode = null;
   let panStartClient = { x: 0, y: 0 };
   let panStartCamera = displayCamera;
   let draggedNodeId: string | null = null;
   let dragStartNode: Point | null = null;
   let hoverWorld: Point | null = null;
   let suppressClick = false;
+
+  let observedWorld: WorldState | null = store.getState().world;
+  let observedGraph: GraphState = store.getState().graph;
+  let observedSelection: MapSelection = store.getState().selection;
+  let observedCamera: MapCameraState = store.getState().camera;
+  let observedInteraction: GraphInteractionState = store.getState().interaction;
 
   const refreshPreview = (state: Readonly<AppState>): void => {
     const definition = state.interaction.placementDefinitionId ? apparatusDefinitionById(state.interaction.placementDefinitionId) : null;
@@ -271,16 +284,35 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   };
 
   store.subscribe(state => {
+    const worldChanged = state.world !== observedWorld;
+    const graphChanged = state.graph !== observedGraph;
+    const selectionChanged = state.selection !== observedSelection;
+    const cameraChanged = state.camera !== observedCamera;
+    const interactionChanged = state.interaction !== observedInteraction;
+
+    observedWorld = state.world;
+    observedGraph = state.graph;
+    observedSelection = state.selection;
+    observedCamera = state.camera;
+    observedInteraction = state.interaction;
+
+    if (!worldChanged && !graphChanged && !selectionChanged && !cameraChanged && !interactionChanged) return;
+
     const planet = state.world?.planet;
     if (!planet) return;
-    if (renderedPlanet !== planet || renderedGraph !== state.graph) {
+    const worldNeedsRender = renderedPlanet !== planet || renderedGraph !== state.graph;
+    if (worldNeedsRender) {
       renderedPlanet = planet; renderedGraph = state.graph;
       renderWorld(svg, planet, state.graph, store, renderOrigin);
       applyCamera(displayCamera.zoom === 1 && displayCamera.centerX === 0 ? state.camera : displayCamera);
-    } else if (!internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
+    } else if (cameraChanged && !internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
       animateToCamera(state.camera);
     }
-    updateSelection(svg, state.selection); updatePendingPort(svg, state.interaction.pendingConnection); refreshPreview(state);
+    if (worldNeedsRender || selectionChanged) updateSelection(svg, state.selection);
+    if (worldNeedsRender || interactionChanged) {
+      updatePendingPort(svg, state.interaction.pendingConnection);
+      refreshPreview(state);
+    }
   });
 
   svg.addEventListener('click', event => {
@@ -331,28 +363,49 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   }, { passive: false });
 
   svg.addEventListener('pointerdown', event => {
-    if (event.button !== 0) return;
-    cancelWheelAnimation(true); cancelNavigationAnimation();
-    const state = store.getState(); const target = event.target as Element; if (target.closest('[data-port-id]')) return;
-    pointerId = event.pointerId; panStartClient = { x: event.clientX, y: event.clientY }; panStartCamera = { ...displayCamera }; suppressClick = false; draggedNodeId = null; dragStartNode = null;
-    const mechanical = target.closest<SVGGElement>('[data-mechanical-id]');
-    if (mechanical && !state.interaction.placementDefinitionId) {
-      const id = mechanical.getAttribute('data-mechanical-id'); const node = id ? mechanicalNodeById(state.graph, id) : null;
-      if (id && node) { draggedNodeId = id; dragStartNode = { ...node.position }; store.setSelection({ type: 'mechanical', mechanicalNodeId: id }); }
+    const state = store.getState();
+    const target = event.target as Element;
+
+    if (event.button === 1) {
+      event.preventDefault();
+      cancelWheelAnimation(true); cancelNavigationAnimation();
+      pointerId = event.pointerId; pointerMode = 'pan';
+      panStartClient = { x: event.clientX, y: event.clientY }; panStartCamera = { ...displayCamera };
+      suppressClick = false; draggedNodeId = null; dragStartNode = null;
+      svg.classList.add('ws-map-panning');
+      svg.setPointerCapture(event.pointerId);
+      return;
     }
+
+    if (event.button !== 0 || target.closest('[data-port-id]')) return;
+    const mechanical = target.closest<SVGGElement>('[data-mechanical-id]');
+    if (!mechanical || state.interaction.placementDefinitionId) return;
+    const id = mechanical.getAttribute('data-mechanical-id');
+    const node = id ? mechanicalNodeById(state.graph, id) : null;
+    if (!id || !node) return;
+
+    cancelWheelAnimation(true); cancelNavigationAnimation();
+    pointerId = event.pointerId; pointerMode = 'node-drag';
+    panStartClient = { x: event.clientX, y: event.clientY }; panStartCamera = { ...displayCamera };
+    suppressClick = false; draggedNodeId = id; dragStartNode = { ...node.position };
+    store.setSelection({ type: 'mechanical', mechanicalNodeId: id });
     svg.setPointerCapture(event.pointerId);
+  });
+
+  svg.addEventListener('auxclick', event => {
+    if (event.button === 1) event.preventDefault();
   });
 
   svg.addEventListener('pointermove', event => {
     const planet = store.getState().world?.planet;
     if (!planet) return;
     hoverWorld = screenToWorld(svg, planet, displayCamera, event.clientX, event.clientY); refreshPreview(store.getState());
-    if (pointerId !== event.pointerId) return;
+    if (pointerId !== event.pointerId || !pointerMode) return;
     const rect = svg.getBoundingClientRect(); if (rect.width <= 0 || rect.height <= 0) return;
     const dx = event.clientX - panStartClient.x; const dy = event.clientY - panStartClient.y;
     if (Math.hypot(dx, dy) > 4) suppressClick = true;
     const visible = visibleWorldSize(svg, planet, panStartCamera.zoom);
-    if (draggedNodeId && dragStartNode) {
+    if (pointerMode === 'node-drag' && draggedNodeId && dragStartNode) {
       const graph = store.getState().graph;
       store.setGraph(moveMechanicalNode(graph, draggedNodeId, {
         x: dragStartNode.x + dx * (visible.width / rect.width),
@@ -360,18 +413,21 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
       }));
       return;
     }
-    applyCamera({
-      centerX: panStartCamera.centerX - dx * (visible.width / rect.width),
-      centerY: panStartCamera.centerY - dy * (visible.height / rect.height),
-      zoom: panStartCamera.zoom,
-    });
+    if (pointerMode === 'pan') {
+      applyCamera({
+        centerX: panStartCamera.centerX - dx * (visible.width / rect.width),
+        centerY: panStartCamera.centerY - dy * (visible.height / rect.height),
+        zoom: panStartCamera.zoom,
+      });
+    }
   });
 
   const finishPointer = (event: PointerEvent): void => {
     if (pointerId !== event.pointerId) return;
-    const wasPanning = suppressClick && !draggedNodeId;
+    const wasPanning = pointerMode === 'pan';
     if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
-    pointerId = null; draggedNodeId = null; dragStartNode = null;
+    pointerId = null; pointerMode = null; draggedNodeId = null; dragStartNode = null;
+    svg.classList.remove('ws-map-panning');
     if (wasPanning) {
       prepareRenderOrigin(displayCamera, { recenter: true, allowDeactivate: true });
       applyCamera(displayCamera); publishCamera(displayCamera);
