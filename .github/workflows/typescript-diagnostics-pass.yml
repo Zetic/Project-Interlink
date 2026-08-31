@@ -18,6 +18,311 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Apply workspace controller contract pass
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('src/workspace/workspaceController.ts')
+          text = path.read_text()
+
+          def replace(old, new, count=1):
+              global text
+              if old in text:
+                  text = text.replace(old, new, count)
+                  return
+              if new in text:
+                  return
+              raise SystemExit(f'migration replacement not found: {old[:100]!r}')
+
+          import_anchor = "import { renderWorkspaceShell, workspaceShellMarkup } from './shell/workspaceUI.js';\n"
+          import_block = import_anchor + "import type { SystemNode } from '../core/systems/types.js';\nimport type { BlueprintLayout, BlueprintNode } from '../simulation/types.js';\nimport type { NodeDefinition, NodePlacementContext } from './catalog/nodeCatalog.js';\nimport type { BoundaryGraphDefinition, GraphPort, GraphSourceNode } from './graph/workspaceGraph.js';\nimport type { NavigationIndex, Point, Size, ViewportState, WorkspaceLevel } from './types.js';\n"
+          replace(import_anchor, import_block)
+
+          constants_anchor = "const MACHINE_NODE_TYPES = new Set([\n  'extractor',\n  'crusher',\n  'jawCrusher',\n  'coneCrusher',\n  'ballMill',\n  'screen',\n  'splitter',\n  'merger',\n  'feeder',\n  'magSep',\n  'roastingFurnace',\n]);\n\nlet dragState = null;\nlet systemDragState = null;\n"
+          constants_block = "const MACHINE_NODE_TYPES = new Set([\n  'extractor',\n  'crusher',\n  'jawCrusher',\n  'coneCrusher',\n  'ballMill',\n  'screen',\n  'splitter',\n  'merger',\n  'feeder',\n  'magSep',\n  'roastingFurnace',\n]);\n\ninterface NodeDragState {\n  nodeId: string;\n  startMouseX: number;\n  startMouseY: number;\n  startX: number;\n  startY: number;\n  lastX: number;\n  lastY: number;\n}\n\ninterface SystemDragState {\n  definitionId: string;\n  nodeId: string;\n  startMouseX: number;\n  startMouseY: number;\n  startX: number;\n  startY: number;\n}\n\ninterface NavigateOptions {\n  regionId?: string;\n  siteId?: string;\n  occurrenceId?: string;\n  focusNodeId?: string;\n  selectSystemId?: string;\n}\n\ninterface SystemWorkspaceDefinition extends BoundaryGraphDefinition {\n  id: string;\n  title: string;\n  nodes: GraphSourceNode[];\n  scopeId: string | null;\n  level: 'planet' | 'region';\n  planetScopeId: string | null;\n}\n\ninterface PanStart extends Point {\n  panX: number;\n  panY: number;\n}\n\nlet dragState: NodeDragState | null = null;\nlet systemDragState: SystemDragState | null = null;\n"
+          replace(constants_anchor, constants_block)
+
+          replace("function el(id) { return document.getElementById(id); }\nfunction installWindowDragTracking(moveHandler, upHandler) {\n", "function el<T extends HTMLElement | SVGSVGElement = HTMLElement>(id: string): T | null {\n  return document.getElementById(id) as T | null;\n}\nfunction installWindowDragTracking(\n  moveHandler: (event: MouseEvent) => void,\n  upHandler: (event: MouseEvent) => void,\n): void {\n")
+          replace("  const onMove = event => {\n", "  const onMove = (event: MouseEvent) => {\n")
+          replace("  const onUp = event => {\n", "  const onUp = (event: MouseEvent) => {\n")
+          replace("function projectRuntimeSnapshot(snapshot) {", "function projectRuntimeSnapshot(snapshot: Record<string, unknown> | null | undefined): void {")
+          replace("function selectedRuntimeDetailKey(target = selectedRuntimeDetailTarget()) {", "function selectedRuntimeDetailKey(target = selectedRuntimeDetailTarget()): string | null {")
+          replace("function updateSelectedInspectorAfterDetail(key) {", "function updateSelectedInspectorAfterDetail(key: string | null): void {")
+          replace("function refreshSelectedRuntimeDetail({ force = false } = {}) {", "function refreshSelectedRuntimeDetail({ force = false }: { force?: boolean } = {}): void {")
+          replace("function handleRuntimeFailure(error, epoch = wsState.runtimeEpoch) {", "function handleRuntimeFailure(error: unknown, epoch: number = wsState.runtimeEpoch): void {")
+          replace("function queueRuntimeReconfigure({ resetNodeIds = [] } = {}) {", "function queueRuntimeReconfigure({ resetNodeIds = [] }: { resetNodeIds?: string[] } = {}) {")
+          replace("function requestPlayerWorldGeneration(seed) {\n  const input = el('seed-input');\n", "function requestPlayerWorldGeneration(seed: string): void {\n  const input = el<HTMLInputElement>('seed-input');\n")
+          replace("  container.querySelectorAll('.ws-breadcrumb[data-level]').forEach(button => {\n    button.addEventListener('click', () => navigateTo(button.dataset.level));\n  });", "  container.querySelectorAll<HTMLElement>('.ws-breadcrumb[data-level]').forEach(button => {\n    button.addEventListener('click', () => {\n      const level = button.dataset.level;\n      if (level === 'planet' || level === 'region' || level === 'site') navigateTo(level);\n    });\n  });")
+          replace("function navigationIndex() {", "function navigationIndex(): NavigationIndex {")
+          replace("function activeNavigationKey(index) {", "function activeNavigationKey(index: NavigationIndex): string | null {")
+          replace("function selectedNavigationKey(index) {", "function selectedNavigationKey(index: NavigationIndex): string | null {")
+          replace("function navigationCategoryLabel(index, category) {", "function navigationCategoryLabel(index: NavigationIndex, category: string): string {")
+          replace("function setNavigationOpen(open) {", "function setNavigationOpen(open: boolean): void {")
+          replace("function setNodeCatalogOpen(open) {", "function setNodeCatalogOpen(open: boolean): void {")
+          replace("function navigateNavigationEntry(key) {", "function navigateNavigationEntry(key: string): void {")
+
+          nav_pattern = re.compile(r"function installNavigationEvents\(\) \{.*?\n\}\n\nfunction createSiteSession", re.S)
+          nav_replacement = r'''function installNavigationEvents(): void {
+  if (wsState.navigationEventsInstalled) return;
+  const navigationEventRoot = el('ws-main') ?? el('player-view');
+  if (!navigationEventRoot) return;
+  const controller = new AbortController();
+  wsState.navigationEventController = controller;
+  const eventOptions = { signal: controller.signal };
+  navigationEventRoot.addEventListener('pointerdown', event => {
+    const target = event.target instanceof Element ? event.target : null;
+    const definitionEntry = target?.closest<HTMLElement>('[data-node-definition]') ?? null;
+    if (!definitionEntry) return;
+    const definition = nodeDefinitionById(definitionEntry.dataset.nodeDefinition);
+    if (definition) beginCatalogPointer(definition, event);
+  }, eventOptions);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointermove', updateCatalogPointer, eventOptions);
+    window.addEventListener('pointerup', finishCatalogPointer, eventOptions);
+    window.addEventListener('pointercancel', event => {
+      const gesture = wsState.catalogPointer;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      clearCatalogPointerGesture({ suppressClick: true });
+      renderNodeCatalogDrawer();
+      renderPlacementPreview();
+    }, eventOptions);
+  }
+  navigationEventRoot.addEventListener('click', event => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest('#ws-navigation-toggle')) {
+      setNavigationOpen(!wsState.navigationOpen);
+      return;
+    }
+    if (target.closest('#ws-node-catalog-toggle')) {
+      setNodeCatalogOpen(!wsState.nodeCatalogOpen);
+      renderNodeCatalogDrawer();
+      return;
+    }
+    if (target.closest('#ws-navigation-close')) {
+      setNavigationOpen(false);
+      return;
+    }
+    if (target.closest('#ws-node-catalog-close')) {
+      setNodeCatalogOpen(false);
+      renderNodeCatalogDrawer();
+      return;
+    }
+    const definition = target.closest<HTMLElement>('[data-node-definition]');
+    if (definition) {
+      const selected = nodeDefinitionById(definition.dataset.nodeDefinition);
+      if (selected && wsState.currentLevel === 'site') {
+        if (wsState.suppressCatalogClick) {
+          wsState.suppressCatalogClick = false;
+          return;
+        }
+        quickPlaceDefinition(selected);
+      }
+      return;
+    }
+    const expandNodeCategory = target.closest<HTMLElement>('[data-node-catalog-expand]');
+    if (expandNodeCategory) {
+      const category = expandNodeCategory.dataset.nodeCatalogExpand;
+      if (!category) return;
+      if (wsState.nodeCatalogCollapsedCategories.has(category)) wsState.nodeCatalogCollapsedCategories.delete(category);
+      else wsState.nodeCatalogCollapsedCategories.add(category);
+      renderNodeCatalogDrawer();
+      return;
+    }
+    if (target.closest('[data-node-placement-cancel]')) {
+      cancelPlacement(wsState.placement);
+      renderNodeCatalogDrawer();
+      renderPlacementPreview();
+      return;
+    }
+    if (target.closest('#ws-navigation-collapse-all')) {
+      wsState.navigationManualExpandedKeys = new Set();
+      renderNavigationDrawer();
+      return;
+    }
+    if (target.closest('#ws-navigation-expand-all')) {
+      wsState.navigationManualExpandedKeys = navigationExpandableKeys(navigationIndex());
+      renderNavigationDrawer();
+      return;
+    }
+    const expandEntry = target.closest<HTMLElement>('[data-navigation-expand]');
+    if (expandEntry) {
+      const key = expandEntry.dataset.navigationExpand;
+      if (!key) return;
+      if (wsState.navigationManualExpandedKeys.has(key)) wsState.navigationManualExpandedKeys.delete(key);
+      else wsState.navigationManualExpandedKeys.add(key);
+      renderNavigationDrawer();
+      return;
+    }
+    const entry = target.closest<HTMLElement>('[data-navigation-entry]');
+    if (entry?.dataset.navigationEntry) {
+      navigateNavigationEntry(entry.dataset.navigationEntry);
+    }
+  }, eventOptions);
+  navigationEventRoot.addEventListener('input', event => {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    if (!input?.matches('#ws-navigation-search')) return;
+    wsState.navigationQuery = input.value;
+    renderNavigationDrawer();
+  }, eventOptions);
+  navigationEventRoot.addEventListener('change', event => {
+    const target = event.target instanceof Element ? event.target : null;
+    const input = target?.closest<HTMLInputElement>('[data-navigation-filter]') ?? null;
+    if (!input || !target?.closest('#ws-navigation-drawer')) return;
+    const category = input.dataset.navigationFilter;
+    if (!category) return;
+    if (input.checked) wsState.navigationHiddenCategories.delete(category);
+    else wsState.navigationHiddenCategories.add(category);
+    renderNavigationDrawer();
+  }, eventOptions);
+  navigationEventRoot.addEventListener('input', event => {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    if (!input?.matches('#ws-node-catalog-search')) return;
+    wsState.nodeCatalogQuery = input.value;
+    renderNodeCatalogDrawer();
+  }, eventOptions);
+  navigationEventRoot.addEventListener('change', event => {
+    const target = event.target instanceof Element ? event.target : null;
+    const input = target?.closest<HTMLInputElement>('[data-node-catalog-filter]') ?? null;
+    if (!input || !target?.closest('#ws-node-catalog-drawer')) return;
+    const category = input.dataset.nodeCatalogFilter;
+    if (!category) return;
+    if (input.checked) wsState.nodeCatalogHiddenCategories.delete(category);
+    else wsState.nodeCatalogHiddenCategories.add(category);
+    renderNodeCatalogDrawer();
+  }, eventOptions);
+  navigationEventRoot.addEventListener('keydown', event => {
+    if (event.key === 'Delete') {
+      if (isEditableWorkspaceTarget(event.target)) return;
+      const selectedNodeId = inspector.selectedNodeId;
+      const selectedNode = selectedNodeId ? wsState.blueprint?.nodes?.[selectedNodeId] : null;
+      if (
+        wsState.currentLevel === 'site'
+        && selectedNodeId
+        && selectedNode
+        && nodeRemovalEligibility(wsState.blueprint, selectedNode).removable
+      ) {
+        event.preventDefault();
+        attemptNodeRemoval(selectedNodeId);
+      }
+      return;
+    }
+    if (event.key !== 'Escape') return;
+    if (wsState.catalogPointer || placementIsActive(wsState.placement)) {
+      clearCatalogPointerGesture({ suppressClick: true });
+      renderNodeCatalogDrawer();
+      renderPlacementPreview();
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : null;
+    if (wsState.navigationOpen) {
+      const shouldRestoreFocus = target?.closest('#ws-navigation-drawer, #ws-navigation-toggle');
+      setNavigationOpen(false);
+      if (shouldRestoreFocus) el('ws-navigation-toggle')?.focus();
+    } else if (wsState.nodeCatalogOpen) {
+      const shouldRestoreFocus = target?.closest('#ws-node-catalog-drawer, #ws-node-catalog-toggle');
+      setNodeCatalogOpen(false);
+      if (shouldRestoreFocus) el('ws-node-catalog-toggle')?.focus();
+    }
+  }, eventOptions);
+  wsState.navigationEventsInstalled = true;
+}
+
+function createSiteSession'''
+          text, count = nav_pattern.subn(nav_replacement, text, count=1)
+          if count != 1 and nav_replacement not in text:
+              raise SystemExit('navigation event replacement failed')
+
+          replace("function createSiteSession(_occurrenceId, siteId) {\n  const siteWorkspace = getSimulationWorkspace(wsState.world, `${siteId}-workspace`);\n  return buildSiteSession(wsState.world, siteId, {", "function createSiteSession(_occurrenceId: string | null, siteId: string) {\n  const world = wsState.world;\n  if (!world) throw new Error('Cannot create a Site session without a world');\n  const siteWorkspace = getSimulationWorkspace(world, `${siteId}-workspace`);\n  return buildSiteSession(world, siteId, {")
+          replace("function activateSiteSession(occurrenceId, siteId) {\n  if (!siteId) return;", "function activateSiteSession(occurrenceId: string | null, siteId: string): void {\n  if (!siteId || !wsState.world) return;")
+          replace("export function navigateTo(level, opts = {}) {", "export function navigateTo(level: WorkspaceLevel, opts: NavigateOptions = {}): void {")
+          replace("    const siteId = opts.siteId ?? wsState.selectedSiteId;\n    const site = wsState.world?.sites?.[siteId];", "    const siteId = opts.siteId ?? wsState.selectedSiteId;\n    if (!siteId) return;\n    const site = wsState.world?.sites?.[siteId];")
+
+          system_pattern = re.compile(r"function systemWorkspaceDefinition\(\) \{.*?\n\}\n\nfunction systemNodeTitle", re.S)
+          system_replacement = r'''function systemWorkspaceDefinition(): SystemWorkspaceDefinition {
+  const world = wsState.world;
+  const planet = currentPlanet();
+  if (!world) {
+    return {
+      id: 'workspace:empty',
+      title: 'Workspace',
+      nodes: [],
+      scopeId: null,
+      level: 'planet',
+      planetScopeId: null,
+    };
+  }
+  if (wsState.currentLevel === 'planet') {
+    return {
+      id: `planet:${planet?.id ?? 'unknown'}`,
+      title: String(planet?.name ?? 'Planet'),
+      nodes: (planet?.regions ?? []).map(id => world.systemNodes[id]).filter((node): node is SystemNode => Boolean(node)),
+      scopeId: planet?.id ?? null,
+      level: 'planet',
+      planetScopeId: planet?.id ?? null,
+    };
+  }
+
+  const region = wsState.selectedRegionId ? world.regions?.[wsState.selectedRegionId] : null;
+  const runtime = region ? getSimulationWorkspace(world, `${region.id}-workspace`) : null;
+  const nodes: GraphSourceNode[] = Object.values(runtime?.nodes ?? {}).filter(node => Boolean(node.boundaryRole));
+
+  for (const siteId of region?.siteIds ?? []) {
+    const node = world.systemNodes?.[siteId];
+    if (node) nodes.push(node);
+  }
+
+  return {
+    id: `region:${region?.id ?? 'unknown'}`,
+    title: String(region?.name ?? 'Region'),
+    nodes,
+    scopeId: region?.id ?? null,
+    level: 'region',
+    planetScopeId: planet?.id ?? null,
+  };
+}
+
+function systemNodeTitle'''
+          text, count = system_pattern.subn(system_replacement, text, count=1)
+          if count != 1 and system_replacement not in text:
+              raise SystemExit('system workspace replacement failed')
+
+          replace("function systemNodeTitle(node) {", "function systemNodeTitle(node: GraphSourceNode): string {")
+          replace("function systemNodeDescription(node) {", "function systemNodeDescription(node: GraphSourceNode): string {")
+          replace("function systemPortEndpoint(node, port) {", "function systemPortEndpoint(node: GraphSourceNode, port: GraphPort): { systemId: string; portId: string } {")
+          replace("function ensureSystemLayout(definition) {", "function ensureSystemLayout(definition: SystemWorkspaceDefinition): BlueprintLayout {")
+          replace("function workspaceViewport(key) {", "function workspaceViewport(key: string): ViewportState {")
+          replace("function eventGraphPoint(event, surface, key) {", "function eventGraphPoint(event: MouseEvent | PointerEvent, surface: HTMLElement | null, key: string): Point {")
+          replace("function placementContext() {", "function placementContext(): NodePlacementContext {")
+          replace("function siteViewportSurface() {", "function siteViewportSurface(): HTMLElement | null {")
+          replace("function siteViewportSize(surface) {", "function siteViewportSize(surface: HTMLElement | null): Size {")
+          replace("function localPointForEvent(event, surface = siteViewportSurface()) {", "function localPointForEvent(event: MouseEvent | PointerEvent, surface: HTMLElement | null = siteViewportSurface()): Point {")
+          replace("function pointIsInsideSurface(event, surface = siteViewportSurface()) {", "function pointIsInsideSurface(event: MouseEvent | PointerEvent, surface: HTMLElement | null = siteViewportSurface()): boolean {")
+          replace("function clearCatalogPointerGesture({ suppressClick = false } = {}) {", "function clearCatalogPointerGesture({ suppressClick = false }: { suppressClick?: boolean } = {}): void {")
+          replace("function commitCatalogDefinition(definition, graphPosition) {", "function commitCatalogDefinition(definition: NodeDefinition, graphPosition: Point): boolean {")
+          replace("    inspector.message = error.message;", "    inspector.message = error instanceof Error ? error.message : String(error);", 1)
+          replace("function quickPlaceDefinition(definition) {", "function quickPlaceDefinition(definition: NodeDefinition): boolean {")
+          replace("function beginCatalogPointer(definition, event) {", "function beginCatalogPointer(definition: NodeDefinition, event: PointerEvent): void {")
+          replace("function updateCatalogPointer(event) {", "function updateCatalogPointer(event: PointerEvent): void {")
+          replace("function finishCatalogPointer(event) {", "function finishCatalogPointer(event: PointerEvent): void {")
+          replace("function applyViewportTransform(key) {", "function applyViewportTransform(key: string): void {")
+          replace("    ? el('ws-site-svg')\n    : el('ws-system-svg');", "    ? el<SVGSVGElement>('ws-site-svg')\n    : el<SVGSVGElement>('ws-system-svg');")
+          replace("function focusGraphPosition(key, position) {", "function focusGraphPosition(key: string, position: Point): void {")
+          replace("function focusSiteNode(nodeId) {", "function focusSiteNode(nodeId: string): void {")
+          replace("function focusSystemNode(nodeId) {", "function focusSystemNode(nodeId: string): void {")
+          replace("function portOffsetsForSize(port, index, count, width, height) {", "function portOffsetsForSize(port: GraphPort, index: number, count: number, width: number, height: number): { dx: number; dy: number } {")
+          replace("function portOffsets(port, index, count) { return portOffsetsForSize(port, index, count, NODE_WIDTH, NODE_HEIGHT); }", "function portOffsets(port: GraphPort, index: number, count: number): { dx: number; dy: number } { return portOffsetsForSize(port, index, count, NODE_WIDTH, NODE_HEIGHT); }")
+          replace("function visibleEndpointForTransfer(systemId, portId) {", "function visibleEndpointForTransfer(systemId: string, portId: string): { nodeId: string; portId: string } {")
+          replace("function systemEndpointPosition(definition, systemId, portId) {", "function systemEndpointPosition(definition: SystemWorkspaceDefinition, systemId: string, portId: string): Point {")
+          replace("function selectTransfer(transferId) {", "function selectTransfer(transferId: string): void {")
+          replace("function renderSystemConnections(svg, definition) {", "function renderSystemConnections(svg: SVGSVGElement | null, definition: SystemWorkspaceDefinition): void {")
+          replace("function startSystemNodeDrag(nodeId, event) {", "function startSystemNodeDrag(nodeId: string, event: MouseEvent): void {")
+          replace("function onSystemCanvasMove(event) {", "function onSystemCanvasMove(event: MouseEvent): void {")
+
+          path.write_text(text)
+          PY
       - name: Measure strict compiler and tests
         run: |
           set +e
@@ -55,10 +360,10 @@ jobs:
           PY
           echo "STRICT_EXIT=$STRICT_EXIT" >> typescript-current-diagnostics.txt
           echo "TEST_EXIT=$TEST_EXIT" >> typescript-current-diagnostics.txt
-      - name: Commit diagnostics
+      - name: Commit migration pass and diagnostics
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add typescript-current-diagnostics.txt
-          git commit -m "Refresh TypeScript blocker snapshot [ts-diagnostics]"
+          git add src/workspace/workspaceController.ts typescript-current-diagnostics.txt
+          git commit -m "Type workspace controller contracts [ts-diagnostics]"
           git push origin HEAD:chatgpt/typescript-browser-conversion
