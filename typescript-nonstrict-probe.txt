@@ -1,14 +1,14 @@
-errors=923
+errors=909
 
 By code:
-TS2339: 710
-TS2353: 69
+TS2339: 708
+TS2353: 53
 TS2365: 35
 TS2322: 20
 TS2362: 19
+TS2345: 18
 TS2551: 17
 TS2740: 16
-TS2345: 14
 TS2739: 12
 TS2363: 5
 TS2538: 2
@@ -28,28 +28,27 @@ src/workspace/inspector/inspectionViewModel.ts: 31
 src/workspace/navigation/navigationProjection.ts: 25
 tests/rustWasmWorkerReconfigure.test.ts: 24
 tests/worldIntegrity.test.ts: 23
-src/simulation/worldSimulation.ts: 20
 tests/smoke.test.ts: 20
 src/simulation/packedRuntimeCompiler.ts: 19
 tests/navigationProjection.test.ts: 17
 src/debug/fixtures/roastingBenchmark.ts: 15
 tests/siteSession.test.ts: 15
 src/content/apparatus/definitions.ts: 14
+src/simulation/worldSimulation.ts: 14
 tests/packedWorldRuntimeCompiler.test.ts: 14
 src/simulation/runtimePresentation.ts: 13
 src/simulation/simulationEngine.ts: 13
+tests/recursiveSystems.test.ts: 13
 src/core/world/validation/hierarchyValidation.ts: 12
 src/simulation/packedComminutionCompiler.ts: 12
 src/workspace/graph/viewport.ts: 12
 tests/realtimeRuntime.test.ts: 10
-tests/recursiveSystems.test.ts: 10
 src/core/materials/solids/solidMaterialState.ts: 9
 src/generator/generatePlanet.ts: 9
 src/simulation/hopperNode.ts: 9
 src/core/materials/materialBatches.ts: 8
 src/core/materials/thermal/thermalMaterial.ts: 8
 src/workspace/debug/debugDrawer.ts: 8
-tests/workspaceGraph.test.ts: 8
 src/simulation/packedThermalRuntime.ts: 7
 src/simulation/packedWorldWorkerSetup.ts: 7
 src/core/world/validation/occurrenceValidation.ts: 6
@@ -61,7 +60,6 @@ tests/runtimeProtocol.test.ts: 6
 src/core/materials/occurrenceMaterialization.ts: 5
 src/simulation/packedStorageRuntime.ts: 5
 tests/packedRoastingCompiler.test.ts: 5
-src/core/systems/systemNode.ts: 4
 src/simulation/apparatus/comminution.ts: 4
 src/simulation/boundaryTransfer.ts: 4
 src/simulation/materialStream.ts: 4
@@ -83,9 +81,9 @@ tests/extractorResourceAccess.test.ts: 2
 tests/futureApparatusScalability.test.ts: 2
 tests/packedRuntimeCompiler.test.ts: 2
 tests/solidMaterialState.test.ts: 2
+tests/workspaceGraph.test.ts: 2
 src/app.ts: 1
 src/core/materials/species/materialSpecies.ts: 1
-src/core/world/model/worldAssembly.ts: 1
 src/simulation/apparatus/crusher.ts: 1
 src/simulation/apparatus/exhaustVent.ts: 1
 src/simulation/apparatus/feeder.ts: 1
@@ -159,11 +157,6 @@ src/core/materials/thermal/thermalMaterial.ts(110,81): error TS2362: The left-ha
 src/core/materials/thermal/thermalState.ts(37,37): error TS2365: Operator '<' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalState.ts(38,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalState.ts(44,17): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-src/core/systems/systemNode.ts(15,3): error TS2339: Property 'id' does not exist on type '{ accepts?: undefined[]; childNodeId?: null; childPortId?: null; kind?: string; label?: any; provides?: undefined[]; }'.
-src/core/systems/systemNode.ts(16,3): error TS2339: Property 'direction' does not exist on type '{ accepts?: undefined[]; childNodeId?: null; childPortId?: null; kind?: string; label?: any; provides?: undefined[]; }'.
-src/core/systems/systemNode.ts(42,3): error TS2339: Property 'id' does not exist on type '{ childWorkspaceId?: null; inspectableState?: {}; kind?: string; ports?: undefined[]; systemType?: any; }'.
-src/core/systems/systemNode.ts(43,3): error TS2339: Property 'nodeType' does not exist on type '{ childWorkspaceId?: null; inspectableState?: {}; kind?: string; ports?: undefined[]; systemType?: any; }'.
-src/core/world/model/worldAssembly.ts(8,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ accepts?: any[]; childNodeId?: any; childPortId?: any; kind?: string; label?: any; provides?: any[]; }'.
 src/core/world/validation/hierarchyValidation.ts(22,23): error TS2322: Type 'unknown' is not assignable to type 'object'.
 src/core/world/validation/hierarchyValidation.ts(23,44): error TS2322: Type 'unknown' is not assignable to type 'object'.
 src/core/world/validation/hierarchyValidation.ts(26,37): error TS2339: Property 'siteIds' does not exist on type 'unknown'.
@@ -205,4 +198,9 @@ src/core/world/validation/processHistoryValidation.ts(88,33): error TS2339: Prop
 src/core/world/validation/processHistoryValidation.ts(90,77): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
 src/core/world/validation/processHistoryValidation.ts(91,31): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
 src/core/world/validation/processHistoryValidation.ts(91,86): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(92,65): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(102,55): error TS2339: Property 'processId' does not exist on type 'object'.
+src/core/world/validation/processHistoryValidation.ts(102,96): error TS2339: Property 'processId' does not exist on type 'object'.
+src/core/world/validation/processHistoryValidation.ts(103,34): error TS2339: Property 'processId' does not exist on type 'object'.
+src/core/world/validation/processHistoryValidation.ts(104,110): error TS2339: Property 'processId' does not exist on type 'object'.
 EXIT=1
