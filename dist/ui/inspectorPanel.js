@@ -27,7 +27,14 @@ function sectionTitle(container, value) { const title = document.createElement('
 function speciesLabel(speciesId) { return speciesId.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|[- ])\w/g, value => value.toUpperCase()).replaceAll('-', ' '); }
 function formatMass(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg`; }
 function formatRate(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg/s`; }
-function runtimeStatus(state) { return state.runtime.status === 'ready' ? (state.runtime.running ? 'Connected · running' : 'Connected · paused') : state.runtime.status === 'error' ? `Error · ${state.runtime.error ?? 'unknown'}` : state.runtime.status; }
+function runtimeStatus(state) {
+    const runtime = state.runtime;
+    if (runtime.status === 'ready') {
+        const connection = runtime.running ? 'Connected · running' : 'Connected · paused';
+        return runtime.error ? `${connection} · warning: ${runtime.error}` : connection;
+    }
+    return runtime.status === 'error' ? `Error · ${runtime.error ?? 'unknown'}` : runtime.status;
+}
 function renderPlanet(container, planet) {
     typeLabel(container, 'PLANET');
     addRow(container, 'Name', planet.name);
