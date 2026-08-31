@@ -1,4 +1,5 @@
 import type { GraphState } from '../graph/types.js';
+import { materializeSolidParticulateUnit } from '../material/particulate.js';
 import type { Planet } from '../world/types.js';
 import type {
   FlatRuntimePlan,
@@ -27,8 +28,9 @@ export function compileFlatRuntimePlan(planet: Planet, graph: GraphState): FlatR
       resourceId: resource.resourceId,
       physicalForm: resource.source.physicalForm,
       composition: resource.source.composition.map(component => ({ ...component })),
-      initialReserveMassKg: resource.source.initialReserveMassKg,
       fragmentationProfileId: resource.source.fragmentationProfileId,
+      particulatePopulations: materializeSolidParticulateUnit(resource.source),
+      initialReserveMassKg: resource.source.initialReserveMassKg,
     };
   });
 
