@@ -67,12 +67,6 @@ export function validateMineralTextureProfile(profile) {
     }
     return profile;
 }
-/**
- * Materialize one kg of a source into statistical particulate populations.
- * This ports the mature JS run-of-mine/coarse source semantics without creating
- * individual particles. Rust receives these sparse descriptor populations and
- * owns all subsequent mutation.
- */
 export function materializeSolidParticulateUnit(source) {
     if (source.physicalForm !== 'solid-particulate')
         throw new Error(`Unsupported source physical form '${source.physicalForm}'.`);
