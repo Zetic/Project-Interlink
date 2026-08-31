@@ -1,12 +1,12 @@
 import { apparatusDefinitionById } from '../../apparatus/definitions.js';
 import { mechanicalNodeById, resourceNodeById } from '../../graph/graphQueries.js';
 import { metersToWorldUnits } from '../../world/scale.js';
-import { MECHANICAL_PLACEMENT_MIN_ZOOM, smoothStep } from '../camera/mapCamera.js';
+import { applyEngineeringNodeVisibility, ENGINEERING_NODE_FADE_START_ZOOM, ENGINEERING_NODE_FULL_OPACITY_ZOOM, ENGINEERING_NODE_INTERACTIVE_ZOOM, } from './engineeringNodeVisibility.js';
 import { RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, resourcePortWorldPosition, } from './resourceRenderer.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-export const MECHANICAL_NODE_FADE_START_ZOOM = MECHANICAL_PLACEMENT_MIN_ZOOM;
-export const MECHANICAL_NODE_FULL_OPACITY_ZOOM = 2 ** 18;
-export const MECHANICAL_NODE_DETAIL_MIN_TEXT_PIXELS = 5.75;
+export const MECHANICAL_NODE_FADE_START_ZOOM = ENGINEERING_NODE_FADE_START_ZOOM;
+export const MECHANICAL_NODE_FULL_OPACITY_ZOOM = ENGINEERING_NODE_FULL_OPACITY_ZOOM;
+export const MECHANICAL_NODE_INTERACTIVE_ZOOM = ENGINEERING_NODE_INTERACTIVE_ZOOM;
 export const ENGINEERING_NODE_CARD_PHYSICAL_WIDTH_METERS = RESOURCE_NODE_PHYSICAL_WIDTH_METERS;
 export const ENGINEERING_NODE_CARD_PHYSICAL_HEIGHT_METERS = RESOURCE_NODE_PHYSICAL_HEIGHT_METERS;
 const HEADER_HEIGHT = RESOURCE_NODE_WORLD_HEIGHT * 0.2;
@@ -140,21 +140,7 @@ export function renderMechanicalLayer(planet, graph, onSelect) {
     return layer;
 }
 export function updateMechanicalVisibility(svg, zoom) {
-    const layer = svg.querySelector('.ws-map-mechanical-layer');
-    if (layer) {
-        const progress = (zoom - MECHANICAL_NODE_FADE_START_ZOOM) / (MECHANICAL_NODE_FULL_OPACITY_ZOOM - MECHANICAL_NODE_FADE_START_ZOOM);
-        layer.style.opacity = smoothStep(progress).toFixed(3);
-        layer.style.visibility = zoom <= MECHANICAL_NODE_FADE_START_ZOOM ? 'hidden' : 'visible';
-        layer.style.pointerEvents = zoom >= MECHANICAL_PLACEMENT_MIN_ZOOM ? 'auto' : 'none';
-    }
-    const rect = svg.getBoundingClientRect();
-    const viewBox = svg.viewBox.baseVal;
-    const unitsPerPixel = rect.width > 0 && viewBox.width > 0 ? viewBox.width / rect.width : 1;
-    const detailVisible = unitsPerPixel > 0 && metersToWorldUnits(FONT_SIZE_METERS) / unitsPerPixel >= MECHANICAL_NODE_DETAIL_MIN_TEXT_PIXELS;
-    for (const details of svg.querySelectorAll('.ws-map-mechanical-details')) {
-        details.style.visibility = detailVisible ? 'visible' : 'hidden';
-        details.style.opacity = detailVisible ? '1' : '0';
-    }
+    applyEngineeringNodeVisibility(svg.querySelector('.ws-map-mechanical-layer'), zoom);
 }
 export function updatePlacementPreview(svg, definition, position) {
     const preview = svg.querySelector('#ws-map-placement-preview');

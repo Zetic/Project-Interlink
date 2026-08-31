@@ -7,22 +7,22 @@ import { polygonCentroid } from '../world/geometry.js';
 import { formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';
 import type { MapCameraState, MapSelection, Planet, Point } from '../world/types.js';
 import {
-  MAP_MAX_ZOOM, MAP_MIN_ZOOM, MECHANICAL_PLACEMENT_MIN_ZOOM, camerasEqual, clamp, clampCamera, formatZoomFactor,
+  MAP_MAX_ZOOM, MAP_MIN_ZOOM, MECHANICAL_PLACEMENT_MIN_ZOOM, approachCamera, camerasEqual, clamp, clampCamera, formatZoomFactor,
   normalizeWheelDelta, smoothStep, visibleWorldSize, wheelSensitivityForZoom, wheelZoomAfterDelta,
   WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY,
 } from './camera/mapCamera.js';
 import { renderMechanicalLayer, updateMechanicalVisibility, updatePlacementPreview } from './rendering/mechanicalRenderer.js';
 import {
-  renderResourceLayer, resourceDetailsVisibleAtPixelHeight, updateResourceVisibility,
-  RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM,
+  renderResourceLayer, updateResourceVisibility,
+  RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM,
   RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH,
 } from './rendering/resourceRenderer.js';
 
 export {
-  MAP_MAX_ZOOM, MAP_MIN_ZOOM, RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM,
+  MAP_MAX_ZOOM, MAP_MIN_ZOOM, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM,
   RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_WORLD_HEIGHT,
   RESOURCE_NODE_WORLD_WIDTH, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY,
-  WHEEL_GEOGRAPHIC_SENSITIVITY, resourceDetailsVisibleAtPixelHeight, wheelSensitivityForZoom, wheelZoomAfterDelta,
+  WHEEL_GEOGRAPHIC_SENSITIVITY, wheelSensitivityForZoom, wheelZoomAfterDelta,
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -78,7 +78,14 @@ function updateZoomVisibility(svg: SVGSVGElement, zoom: number): void {
 
 export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   const svg = root.querySelector<SVGSVGElement>('#ws-map-svg'); const canvas = root.querySelector<HTMLElement>('#ws-map-canvas'); const zoomLabel = root.querySelector<HTMLElement>('[data-zoom-label]'); if (!svg) return; canvas?.replaceChildren();
-  let renderedPlanet: Planet | null = null; let renderedGraph: GraphState | null = null; let displayCamera: MapCameraState = { centerX: 0, centerY: 0, zoom: 1 }; let animationFrame: number | null = null; let internalCameraUpdate = false;
+  let renderedPlanet: Planet | null = null;
+  let renderedGraph: GraphState | null = null;
+  let displayCamera: MapCameraState = { centerX: 0, centerY: 0, zoom: 1 };
+  let navigationAnimationFrame: number | null = null;
+  let wheelAnimationFrame: number | null = null;
+  let wheelTargetCamera: MapCameraState | null = null;
+  let wheelLastFrameAt: number | null = null;
+  let internalCameraUpdate = false;
   let pointerId: number | null = null; let panStartClient = { x: 0, y: 0 }; let panStartCamera = displayCamera; let draggedNodeId: string | null = null; let dragStartNode: Point | null = null; let hoverWorld: Point | null = null; let suppressClick = false;
 
   const applyCamera = (camera: MapCameraState): void => {
@@ -87,11 +94,57 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
     if (zoomLabel) { zoomLabel.textContent = formatZoomFactor(displayCamera.zoom); zoomLabel.title = `Approx. visible map width: ${formatPhysicalDistance(worldUnitsToMeters(visible.width))}`; }
     updateZoomVisibility(svg, displayCamera.zoom);
   };
-  const commitCamera = (camera: MapCameraState): void => { const planet = store.getState().world?.planet; if (!planet) return; const next = clampCamera(svg, planet, camera); if (animationFrame !== null) cancelAnimationFrame(animationFrame); animationFrame = null; applyCamera(next); internalCameraUpdate = true; store.setCamera(next); internalCameraUpdate = false; };
+  const publishCamera = (camera: MapCameraState): void => {
+    internalCameraUpdate = true;
+    store.setCamera(camera);
+    internalCameraUpdate = false;
+  };
+  const cancelNavigationAnimation = (): void => {
+    if (navigationAnimationFrame !== null) cancelAnimationFrame(navigationAnimationFrame);
+    navigationAnimationFrame = null;
+  };
+  const cancelWheelAnimation = (publishCurrent = false): void => {
+    if (wheelAnimationFrame !== null) cancelAnimationFrame(wheelAnimationFrame);
+    wheelAnimationFrame = null;
+    wheelTargetCamera = null;
+    wheelLastFrameAt = null;
+    if (publishCurrent) publishCamera(displayCamera);
+  };
+  const commitCamera = (camera: MapCameraState): void => {
+    const planet = store.getState().world?.planet; if (!planet) return;
+    cancelNavigationAnimation(); cancelWheelAnimation(false);
+    const next = clampCamera(svg, planet, camera); applyCamera(next); publishCamera(next);
+  };
   const animateToCamera = (target: MapCameraState): void => {
-    const planet = store.getState().world?.planet; if (!planet) return; const next = clampCamera(svg, planet, target); if (camerasEqual(displayCamera, next)) { applyCamera(next); return; }
-    if (animationFrame !== null) cancelAnimationFrame(animationFrame); const start = { ...displayCamera }; const started = performance.now(); const ratio = Math.max(start.zoom, next.zoom) / Math.max(MAP_MIN_ZOOM, Math.min(start.zoom, next.zoom)); const duration = clamp(320 + Math.log2(Math.max(1, ratio)) * 65, 320, 1600);
-    const step = (now: number): void => { const progress = clamp((now - started) / duration, 0, 1); const eased = smoothStep(progress); const zoom = Math.exp(Math.log(start.zoom) + (Math.log(next.zoom) - Math.log(start.zoom)) * eased); applyCamera({ centerX: start.centerX + (next.centerX - start.centerX) * eased, centerY: start.centerY + (next.centerY - start.centerY) * eased, zoom }); if (progress < 1) animationFrame = requestAnimationFrame(step); else animationFrame = null; }; animationFrame = requestAnimationFrame(step);
+    const planet = store.getState().world?.planet; if (!planet) return;
+    cancelWheelAnimation(false); cancelNavigationAnimation();
+    const next = clampCamera(svg, planet, target); if (camerasEqual(displayCamera, next)) { applyCamera(next); return; }
+    const start = { ...displayCamera }; const started = performance.now(); const ratio = Math.max(start.zoom, next.zoom) / Math.max(MAP_MIN_ZOOM, Math.min(start.zoom, next.zoom)); const duration = clamp(320 + Math.log2(Math.max(1, ratio)) * 65, 320, 1600);
+    const step = (now: number): void => { const progress = clamp((now - started) / duration, 0, 1); const eased = smoothStep(progress); const zoom = Math.exp(Math.log(start.zoom) + (Math.log(next.zoom) - Math.log(start.zoom)) * eased); applyCamera({ centerX: start.centerX + (next.centerX - start.centerX) * eased, centerY: start.centerY + (next.centerY - start.centerY) * eased, zoom }); if (progress < 1) navigationAnimationFrame = requestAnimationFrame(step); else navigationAnimationFrame = null; };
+    navigationAnimationFrame = requestAnimationFrame(step);
+  };
+  const stepWheelCamera = (now: number): void => {
+    if (!wheelTargetCamera) { wheelAnimationFrame = null; wheelLastFrameAt = null; return; }
+    const elapsedMs = wheelLastFrameAt == null ? 16.67 : now - wheelLastFrameAt;
+    wheelLastFrameAt = now;
+    const next = approachCamera(displayCamera, wheelTargetCamera, elapsedMs);
+    applyCamera(next);
+    if (camerasEqual(next, wheelTargetCamera)) {
+      const settled = wheelTargetCamera;
+      wheelAnimationFrame = null; wheelTargetCamera = null; wheelLastFrameAt = null;
+      applyCamera(settled); publishCamera(settled);
+      return;
+    }
+    wheelAnimationFrame = requestAnimationFrame(stepWheelCamera);
+  };
+  const queueWheelCamera = (target: MapCameraState): void => {
+    const planet = store.getState().world?.planet; if (!planet) return;
+    cancelNavigationAnimation();
+    wheelTargetCamera = clampCamera(svg, planet, target);
+    if (wheelAnimationFrame === null) {
+      wheelLastFrameAt = performance.now();
+      wheelAnimationFrame = requestAnimationFrame(stepWheelCamera);
+    }
   };
   const refreshPreview = (state: Readonly<AppState>): void => { const definition = state.interaction.placementDefinitionId ? apparatusDefinitionById(state.interaction.placementDefinitionId) : null; updatePlacementPreview(svg, definition, hoverWorld); };
 
@@ -129,11 +182,13 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   svg.addEventListener('wheel', event => {
     const planet = store.getState().world?.planet; if (!planet) return; event.preventDefault(); const rect = svg.getBoundingClientRect(); if (rect.width <= 0 || rect.height <= 0) return;
     const currentVisible = visibleWorldSize(svg, planet, displayCamera.zoom); const nx = clamp((event.clientX - rect.left) / rect.width, 0, 1); const ny = clamp((event.clientY - rect.top) / rect.height, 0, 1); const worldX = displayCamera.centerX + (nx - 0.5) * currentVisible.width; const worldY = displayCamera.centerY + (ny - 0.5) * currentVisible.height;
-    const zoom = wheelZoomAfterDelta(displayCamera.zoom, normalizeWheelDelta(event, rect.height)); const nextVisible = visibleWorldSize(svg, planet, zoom); commitCamera({ centerX: worldX - (nx - 0.5) * nextVisible.width, centerY: worldY - (ny - 0.5) * nextVisible.height, zoom });
+    const zoomBase = wheelTargetCamera?.zoom ?? displayCamera.zoom;
+    const zoom = wheelZoomAfterDelta(zoomBase, normalizeWheelDelta(event, rect.height)); const nextVisible = visibleWorldSize(svg, planet, zoom);
+    queueWheelCamera({ centerX: worldX - (nx - 0.5) * nextVisible.width, centerY: worldY - (ny - 0.5) * nextVisible.height, zoom });
   }, { passive: false });
 
   svg.addEventListener('pointerdown', event => {
-    if (event.button !== 0) return; const state = store.getState(); const target = event.target as Element; if (target.closest('[data-port-id]')) return;
+    if (event.button !== 0) return; cancelWheelAnimation(true); cancelNavigationAnimation(); const state = store.getState(); const target = event.target as Element; if (target.closest('[data-port-id]')) return;
     pointerId = event.pointerId; panStartClient = { x: event.clientX, y: event.clientY }; panStartCamera = { ...displayCamera }; suppressClick = false; draggedNodeId = null; dragStartNode = null;
     const mechanical = target.closest<SVGGElement>('[data-mechanical-id]');
     if (mechanical && !state.interaction.placementDefinitionId) { const id = mechanical.getAttribute('data-mechanical-id'); const node = id ? mechanicalNodeById(state.graph, id) : null; if (id && node) { draggedNodeId = id; dragStartNode = { ...node.position }; store.setSelection({ type: 'mechanical', mechanicalNodeId: id }); } }
@@ -144,9 +199,9 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
     if (pointerId !== event.pointerId) return; const rect = svg.getBoundingClientRect(); if (rect.width <= 0 || rect.height <= 0) return; const dx = event.clientX - panStartClient.x; const dy = event.clientY - panStartClient.y; if (Math.hypot(dx, dy) > 4) suppressClick = true;
     const visible = visibleWorldSize(svg, planet, panStartCamera.zoom);
     if (draggedNodeId && dragStartNode) { const graph = store.getState().graph; store.setGraph(moveMechanicalNode(graph, draggedNodeId, { x: dragStartNode.x + dx * (visible.width / rect.width), y: dragStartNode.y + dy * (visible.height / rect.height) })); return; }
-    commitCamera({ centerX: panStartCamera.centerX - dx * (visible.width / rect.width), centerY: panStartCamera.centerY - dy * (visible.height / rect.height), zoom: panStartCamera.zoom });
+    applyCamera({ centerX: panStartCamera.centerX - dx * (visible.width / rect.width), centerY: panStartCamera.centerY - dy * (visible.height / rect.height), zoom: panStartCamera.zoom });
   });
-  const finishPointer = (event: PointerEvent): void => { if (pointerId !== event.pointerId) return; if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId); pointerId = null; draggedNodeId = null; dragStartNode = null; if (suppressClick) window.setTimeout(() => { suppressClick = false; }, 0); };
+  const finishPointer = (event: PointerEvent): void => { if (pointerId !== event.pointerId) return; const wasPanning = suppressClick && !draggedNodeId; if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId); pointerId = null; draggedNodeId = null; dragStartNode = null; if (wasPanning) publishCamera(displayCamera); if (suppressClick) window.setTimeout(() => { suppressClick = false; }, 0); };
   svg.addEventListener('pointerup', finishPointer); svg.addEventListener('pointercancel', finishPointer); svg.addEventListener('pointerleave', () => { hoverWorld = null; refreshPreview(store.getState()); });
 
   window.addEventListener('keydown', event => {

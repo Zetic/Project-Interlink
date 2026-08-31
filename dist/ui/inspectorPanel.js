@@ -91,7 +91,20 @@ export function installInspectorPanel(root, store) {
     const container = root.querySelector('#ws-map-inspector-body');
     if (!container)
         return;
+    let lastWorld = store.getState().world;
+    let lastGraph = store.getState().graph;
+    let lastSelectionKey = '';
     store.subscribe(state => {
+        const selectionKey = state.selection.type === 'planet'
+            ? 'planet'
+            : state.selection.type === 'region' ? `region:${state.selection.regionId}`
+                : state.selection.type === 'resource' ? `resource:${state.selection.resourceNodeId}`
+                    : `mechanical:${state.selection.mechanicalNodeId}`;
+        if (state.world === lastWorld && state.graph === lastGraph && selectionKey === lastSelectionKey)
+            return;
+        lastWorld = state.world;
+        lastGraph = state.graph;
+        lastSelectionKey = selectionKey;
         container.replaceChildren();
         const planet = state.world?.planet;
         if (!planet) {

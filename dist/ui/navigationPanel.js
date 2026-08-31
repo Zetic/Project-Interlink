@@ -169,5 +169,15 @@ export function installNavigationPanel(root, store) {
         render();
     });
     collapseAll.addEventListener('click', () => { expandedKeys.clear(); render(); });
-    store.subscribe(render);
+    let lastWorld = store.getState().world;
+    let lastSelection = selectionKey(store.getState().selection);
+    store.subscribe(state => {
+        const nextSelection = selectionKey(state.selection);
+        if (state.world === lastWorld && nextSelection === lastSelection)
+            return;
+        lastWorld = state.world;
+        lastSelection = nextSelection;
+        render();
+    });
+    render();
 }

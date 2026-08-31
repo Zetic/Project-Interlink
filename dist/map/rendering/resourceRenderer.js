@@ -1,11 +1,10 @@
 import { resourceDefinitionById } from '../../world/resources.js';
 import { metersToWorldUnits } from '../../world/scale.js';
-import { smoothStep } from '../camera/mapCamera.js';
+import { applyEngineeringNodeVisibility, ENGINEERING_NODE_FADE_START_ZOOM, ENGINEERING_NODE_FULL_OPACITY_ZOOM, ENGINEERING_NODE_INTERACTIVE_ZOOM, } from './engineeringNodeVisibility.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-export const RESOURCE_NODE_FADE_START_ZOOM = 2 ** 16;
-export const RESOURCE_NODE_INTERACTIVE_ZOOM = 2 ** 17;
-export const RESOURCE_NODE_FULL_OPACITY_ZOOM = 2 ** 17;
-export const RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS = 5.75;
+export const RESOURCE_NODE_FADE_START_ZOOM = ENGINEERING_NODE_FADE_START_ZOOM;
+export const RESOURCE_NODE_INTERACTIVE_ZOOM = ENGINEERING_NODE_INTERACTIVE_ZOOM;
+export const RESOURCE_NODE_FULL_OPACITY_ZOOM = ENGINEERING_NODE_FULL_OPACITY_ZOOM;
 export const RESOURCE_NODE_PHYSICAL_WIDTH_METERS = 20;
 export const RESOURCE_NODE_PHYSICAL_HEIGHT_METERS = 12.5;
 export const RESOURCE_NODE_WORLD_WIDTH = metersToWorldUnits(RESOURCE_NODE_PHYSICAL_WIDTH_METERS);
@@ -29,9 +28,6 @@ function appendText(group, className, x, y, value, fontSize) {
     text.setAttribute('class', className);
     text.textContent = value;
     group.appendChild(text);
-}
-export function resourceDetailsVisibleAtPixelHeight(pixelHeight) {
-    return pixelHeight >= RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS;
 }
 export function resourcePortWorldPosition(resource) {
     return { x: resource.position.x + RESOURCE_NODE_WORLD_WIDTH / 2, y: resource.position.y };
@@ -107,20 +103,5 @@ export function renderResourceLayer(planet, onSelect) {
     return layer;
 }
 export function updateResourceVisibility(svg, zoom) {
-    const resources = svg.querySelector('.ws-map-resource-node-layer');
-    if (resources) {
-        const revealProgress = (zoom - RESOURCE_NODE_FADE_START_ZOOM) / (RESOURCE_NODE_FULL_OPACITY_ZOOM - RESOURCE_NODE_FADE_START_ZOOM);
-        resources.style.opacity = smoothStep(revealProgress).toFixed(3);
-        resources.style.visibility = zoom <= RESOURCE_NODE_FADE_START_ZOOM ? 'hidden' : 'visible';
-        resources.style.pointerEvents = zoom >= RESOURCE_NODE_INTERACTIVE_ZOOM ? 'auto' : 'none';
-    }
-    const rect = svg.getBoundingClientRect();
-    const viewBox = svg.viewBox.baseVal;
-    const worldUnitsPerPixel = rect.width > 0 && viewBox.width > 0 ? viewBox.width / rect.width : 1;
-    const detailVisible = resourceDetailsVisibleAtPixelHeight(worldUnitsPerPixel > 0 ? BODY_FONT_SIZE / worldUnitsPerPixel : 0);
-    for (const details of svg.querySelectorAll('.ws-map-resource-details')) {
-        details.style.opacity = detailVisible ? '1' : '0';
-        details.style.visibility = detailVisible ? 'visible' : 'hidden';
-        details.style.pointerEvents = detailVisible ? 'auto' : 'none';
-    }
+    applyEngineeringNodeVisibility(svg.querySelector('.ws-map-resource-node-layer'), zoom);
 }
