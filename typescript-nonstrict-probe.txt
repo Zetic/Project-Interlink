@@ -1,28 +1,28 @@
-errors=909
+errors=884
 
 By code:
-TS2339: 708
-TS2353: 53
-TS2365: 35
-TS2322: 20
+TS2339: 673
+TS2353: 54
+TS2365: 34
 TS2362: 19
 TS2345: 18
 TS2551: 17
+TS2322: 16
 TS2740: 16
 TS2739: 12
+TS2349: 12
 TS2363: 5
+TS2367: 3
 TS2538: 2
 TS2554: 2
 TS2698: 1
-TS2367: 1
 
 By file:
 src/simulation/packedWorldRuntimeCompiler.ts: 129
-src/workspace/workspaceController.ts: 76
+src/workspace/workspaceController.ts: 95
 tests/rustWasmWorkerHost.test.ts: 49
 tests/invariants.test.ts: 41
 src/workspace/graph/workspaceGraph.ts: 36
-src/core/world/validation/processHistoryValidation.ts: 32
 src/simulation/realtimeRuntime.ts: 31
 src/workspace/inspector/inspectionViewModel.ts: 31
 src/workspace/navigation/navigationProjection.ts: 25
@@ -35,11 +35,11 @@ src/debug/fixtures/roastingBenchmark.ts: 15
 tests/siteSession.test.ts: 15
 src/content/apparatus/definitions.ts: 14
 src/simulation/worldSimulation.ts: 14
+src/workspace/debug/debugDrawer.ts: 14
 tests/packedWorldRuntimeCompiler.test.ts: 14
 src/simulation/runtimePresentation.ts: 13
 src/simulation/simulationEngine.ts: 13
 tests/recursiveSystems.test.ts: 13
-src/core/world/validation/hierarchyValidation.ts: 12
 src/simulation/packedComminutionCompiler.ts: 12
 src/workspace/graph/viewport.ts: 12
 tests/realtimeRuntime.test.ts: 10
@@ -48,10 +48,8 @@ src/generator/generatePlanet.ts: 9
 src/simulation/hopperNode.ts: 9
 src/core/materials/materialBatches.ts: 8
 src/core/materials/thermal/thermalMaterial.ts: 8
-src/workspace/debug/debugDrawer.ts: 8
 src/simulation/packedThermalRuntime.ts: 7
 src/simulation/packedWorldWorkerSetup.ts: 7
-src/core/world/validation/occurrenceValidation.ts: 6
 src/simulation/packedGasRuntime.ts: 6
 src/simulation/packedRuntimeState.ts: 6
 src/workspace/shell/workspaceUI.ts: 6
@@ -157,50 +155,50 @@ src/core/materials/thermal/thermalMaterial.ts(110,81): error TS2362: The left-ha
 src/core/materials/thermal/thermalState.ts(37,37): error TS2365: Operator '<' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalState.ts(38,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
 src/core/materials/thermal/thermalState.ts(44,17): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-src/core/world/validation/hierarchyValidation.ts(22,23): error TS2322: Type 'unknown' is not assignable to type 'object'.
-src/core/world/validation/hierarchyValidation.ts(23,44): error TS2322: Type 'unknown' is not assignable to type 'object'.
-src/core/world/validation/hierarchyValidation.ts(26,37): error TS2339: Property 'siteIds' does not exist on type 'unknown'.
-src/core/world/validation/hierarchyValidation.ts(27,33): error TS2339: Property 'siteIds' does not exist on type 'unknown'.
-src/core/world/validation/hierarchyValidation.ts(36,32): error TS2339: Property 'name' does not exist on type 'unknown'.
-src/core/world/validation/hierarchyValidation.ts(37,36): error TS2322: Type 'unknown' is not assignable to type 'object'.
-src/core/world/validation/hierarchyValidation.ts(40,35): error TS2339: Property 'featureIds' does not exist on type 'unknown'.
-src/core/world/validation/hierarchyValidation.ts(41,34): error TS2339: Property 'featureIds' does not exist on type 'unknown'.
-src/core/world/validation/hierarchyValidation.ts(50,37): error TS2339: Property 'regionId' does not exist on type 'unknown'.
-src/core/world/validation/hierarchyValidation.ts(51,111): error TS2339: Property 'regionId' does not exist on type 'unknown'.
-src/core/world/validation/hierarchyValidation.ts(61,25): error TS2322: Type 'unknown' is not assignable to type 'object'.
-src/core/world/validation/hierarchyValidation.ts(61,56): error TS2322: Type 'unknown' is not assignable to type 'object'.
-src/core/world/validation/occurrenceValidation.ts(47,32): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
-src/core/world/validation/occurrenceValidation.ts(47,64): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
-src/core/world/validation/occurrenceValidation.ts(52,15): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
-src/core/world/validation/occurrenceValidation.ts(57,40): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
-src/core/world/validation/occurrenceValidation.ts(77,20): error TS2339: Property 'sourceType' does not exist on type 'unknown'.
-src/core/world/validation/occurrenceValidation.ts(78,90): error TS2339: Property 'sourceType' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(24,15): error TS2339: Property 'sourceOccurrenceId' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(24,64): error TS2339: Property 'sourceOccurrenceId' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(25,90): error TS2339: Property 'sourceOccurrenceId' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(28,16): error TS2339: Property 'provenance' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(28,43): error TS2339: Property 'provenance' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(28,90): error TS2339: Property 'provenance' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(32,15): error TS2339: Property 'provenance' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(38,15): error TS2339: Property 'provenance' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(44,43): error TS2339: Property 'provenance' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(55,39): error TS2339: Property 'materialBody' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(61,16): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(61,45): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(61,94): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(66,51): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(79,69): error TS2339: Property 'materialBody' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(80,53): error TS2339: Property 'materialBody' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(81,30): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(86,20): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(87,29): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(88,33): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(90,77): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(91,31): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(91,86): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(92,65): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
-src/core/world/validation/processHistoryValidation.ts(102,55): error TS2339: Property 'processId' does not exist on type 'object'.
-src/core/world/validation/processHistoryValidation.ts(102,96): error TS2339: Property 'processId' does not exist on type 'object'.
-src/core/world/validation/processHistoryValidation.ts(103,34): error TS2339: Property 'processId' does not exist on type 'object'.
-src/core/world/validation/processHistoryValidation.ts(104,110): error TS2339: Property 'processId' does not exist on type 'object'.
+src/debug/fixtures/roastingBenchmark.ts(33,3): error TS2339: Property 'prefix' does not exist on type '{ feederRateKgPerSecond?: number; }'.
+src/debug/fixtures/roastingBenchmark.ts(34,3): error TS2339: Property 'sourceNode' does not exist on type '{ feederRateKgPerSecond?: number; }'.
+src/debug/fixtures/roastingBenchmark.ts(35,3): error TS2339: Property 'occurrenceId' does not exist on type '{ feederRateKgPerSecond?: number; }'.
+src/debug/fixtures/roastingBenchmark.ts(165,5): error TS2353: Object literal may only specify known properties, and 'featureId' does not exist in type '{ displayName?: any; id?: any; resourceOccurrenceIds?: any[]; }'.
+src/debug/fixtures/roastingBenchmark.ts(175,7): error TS2353: Object literal may only specify known properties, and 'prefix' does not exist in type '{ feederRateKgPerSecond?: number; }'.
+src/debug/fixtures/roastingBenchmark.ts(187,80): error TS2339: Property 'nodeType' does not exist on type 'unknown'.
+src/debug/fixtures/roastingBenchmark.ts(189,52): error TS2339: Property 'id' does not exist on type 'unknown'.
+src/debug/fixtures/roastingBenchmark.ts(193,43): error TS2339: Property 'resourceOccurrenceIds' does not exist on type 'unknown'.
+src/debug/fixtures/roastingBenchmark.ts(205,82): error TS2339: Property 'x' does not exist on type 'unknown'.
+src/debug/fixtures/roastingBenchmark.ts(206,82): error TS2339: Property 'y' does not exist on type 'unknown'.
+src/debug/fixtures/roastingBenchmark.ts(232,3): error TS2339: Property 'blueprint' does not exist on type '{ count?: number; feederRateKgPerSecond?: number; preferredFeatureNodeId?: null; }'.
+src/debug/fixtures/roastingBenchmark.ts(233,3): error TS2339: Property 'blueprintLayout' does not exist on type '{ count?: number; feederRateKgPerSecond?: number; preferredFeatureNodeId?: null; }'.
+src/debug/fixtures/roastingBenchmark.ts(234,3): error TS2339: Property 'world' does not exist on type '{ count?: number; feederRateKgPerSecond?: number; preferredFeatureNodeId?: null; }'.
+src/debug/fixtures/roastingBenchmark.ts(258,7): error TS2353: Object literal may only specify known properties, and 'prefix' does not exist in type '{ feederRateKgPerSecond?: number; }'.
+src/debug/fixtures/roastingBenchmark.ts(274,37): error TS2339: Property 'id' does not exist on type 'unknown'.
+src/generator/generatePlanet.ts(27,53): error TS2365: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
+src/generator/generatePlanet.ts(28,7): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/generator/generatePlanet.ts(33,51): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/generator/generatePlanet.ts(361,10): error TS2339: Property 'planetType' does not exist on type '{ id: string; seed: string; name: any; orbitalDistanceAU: number; orbitalEccentricity: number; massEarth: number; radiusEarth: number; meanDensity: number; gravityG: number; escapeVelocityKmS: number; ... 15 more ...; regions: any[]; }'.
+src/generator/generatePlanet.ts(424,74): error TS2365: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
+src/generator/generatePlanet.ts(425,16): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/generator/generatePlanet.ts(429,62): error TS2365: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
+src/generator/generatePlanet.ts(430,66): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/generator/generatePlanet.ts(433,58): error TS2365: Operator '>' cannot be applied to types 'unknown' and 'number'.
+src/generator/generateResources.ts(207,53): error TS2365: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
+src/generator/generateResources.ts(210,32): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/generator/generateResources.ts(210,40): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/simulation/apparatus/comminution.ts(19,25): error TS2339: Property 'id' does not exist on type '{}'.
+src/simulation/apparatus/comminution.ts(21,44): error TS2339: Property 'throughputKgPerSecond' does not exist on type '{}'.
+src/simulation/apparatus/comminution.ts(22,35): error TS2339: Property 'ratedPowerKw' does not exist on type '{}'.
+src/simulation/apparatus/comminution.ts(23,30): error TS2339: Property 'enabled' does not exist on type '{}'.
+src/simulation/apparatus/crusher.ts(4,33): error TS2339: Property 'id' does not exist on type '{ enabled?: boolean; targetParticleSizeMm?: number; throughputKgPerSecond?: number; }'.
+src/simulation/apparatus/exhaustVent.ts(5,37): error TS2339: Property 'id' does not exist on type '{}'.
+src/simulation/apparatus/feeder.ts(4,32): error TS2339: Property 'id' does not exist on type '{ enabled?: boolean; flowRateKgPerSecond?: number; throughputKgPerSecond?: number; }'.
+src/simulation/apparatus/magneticSeparator.ts(4,43): error TS2339: Property 'id' does not exist on type '{ enabled?: boolean; fieldStrength?: number; throughputKgPerSecond?: number; }'.
+src/simulation/apparatus/merger.ts(4,40): error TS2339: Property 'id' does not exist on type '{ enabled?: boolean; throughputKgPerSecond?: number; }'.
+src/simulation/apparatus/roastingFurnace.ts(34,3): error TS2339: Property 'id' does not exist on type '{ effectiveChamberHoldUpKg?: number; enabled?: boolean; heatLossCoefficientWPerK?: number; internalZoneCount?: number; maximumOperatingTemperatureK?: number; maximumSolidThroughputKgPerSecond?: number; ratedHeaterPowerKw?: number; temperatureSetpointK?: number; }'.
+src/simulation/apparatus/screen.ts(4,32): error TS2339: Property 'id' does not exist on type '{ apertureSizeMm?: number; enabled?: boolean; throughputKgPerSecond?: number; }'.
+src/simulation/apparatus/splitter.ts(4,34): error TS2339: Property 'id' does not exist on type '{ enabled?: boolean; splitFractionToA?: number; throughputKgPerSecond?: number; }'.
+src/simulation/boundaryTransfer.ts(5,44): error TS2339: Property 'sourceComposite' does not exist on type '{}'.
+src/simulation/boundaryTransfer.ts(5,61): error TS2339: Property 'sourcePortId' does not exist on type '{}'.
+src/simulation/boundaryTransfer.ts(5,75): error TS2339: Property 'targetComposite' does not exist on type '{}'.
+src/simulation/boundaryTransfer.ts(5,92): error TS2339: Property 'targetPortId' does not exist on type '{}'.
+src/simulation/extractorNode.ts(17,3): error TS2339: Property 'id' does not exist on type '{ enabled?: boolean; occurrenceId?: null; prototypeRateKgPerSecond?: number; }'.
+src/simulation/extractorNode.ts(73,52): error TS2345: Argument of type '"gas" | "liquid" | "solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+  Type '"gas"' is not assignable to type '"solid-particulate"'.
 EXIT=1
