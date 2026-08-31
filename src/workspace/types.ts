@@ -1,6 +1,27 @@
 import type { World } from '../core/world/types.js';
 import type { Blueprint, BlueprintLayout } from '../simulation/types.js';
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface Size {
+  width: number;
+  height: number;
+}
+
+export interface ViewportState {
+  panX: number;
+  panY: number;
+  zoom: number;
+}
+
+export interface PlacementState {
+  definitionId: string | null;
+  graphPosition: Point | null;
+}
+
 export interface RuntimeDetailRequestState {
   key: string;
   elapsedSeconds: number;
@@ -10,10 +31,6 @@ export interface RealtimeRuntimeLike {
   backend: string;
   snapshot?: { elapsedSeconds?: number; [key: string]: unknown } | null;
   queryDetail?: (entityType: string, id: string) => Promise<Record<string, unknown>> | Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-export interface WorkspaceViewportState {
   [key: string]: unknown;
 }
 
@@ -53,7 +70,7 @@ export interface WorkspaceState {
   nodeElements: Map<string, HTMLElement>;
   connectionElements: Map<string, Element>;
   connectionPreview: Element | null;
-  viewports: Record<string, WorkspaceViewportState>;
+  viewports: Record<string, ViewportState>;
   dragTrackingCleanup: (() => void) | null;
   navigationOpen: boolean;
   navigationQuery: string;
@@ -66,8 +83,8 @@ export interface WorkspaceState {
   nodeCatalogQuery: string;
   nodeCatalogHiddenCategories: Set<string>;
   nodeCatalogCollapsedCategories: Set<string>;
-  placement: Record<string, unknown>;
-  catalogPointer: { x: number; y: number } | null;
+  placement: PlacementState;
+  catalogPointer: Point | null;
   suppressCatalogClick: boolean;
 }
 
