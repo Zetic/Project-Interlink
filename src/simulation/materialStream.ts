@@ -24,7 +24,7 @@ import {
 
 export const STREAM_FLOW_TOLERANCE = 1e-12;
 
-export function validateComponentMassFlowRates(rates) {
+export function validateComponentMassFlowRates(rates: Record<string, number>): void {
   if (!rates || typeof rates !== 'object' || Array.isArray(rates)) {
     throw new Error('componentMassFlowKgPerSecond must be an object');
   }
@@ -38,7 +38,7 @@ export function validateComponentMassFlowRates(rates) {
   }
 }
 
-function legacySolidFlow(componentMassFlowKgPerSecond, particleSizeMm, liberationClassId = 'partial') {
+function legacySolidFlow(componentMassFlowKgPerSecond: Record<string, number>, particleSizeMm: number, liberationClassId = 'partial'): import('../core/materials/types.js').SolidMaterialState {
   const solidState = createSolidMaterialState();
   const sizeBinId = particleSizeBinIdForMm(particleSizeMm);
   for (const [speciesId, rateKgPerSecond] of Object.entries(componentMassFlowKgPerSecond)) {
@@ -65,7 +65,7 @@ export function totalMassFlowKgPerSecond(solidStateOrRates, particleSizeMm = nul
   return totalSolidQuantity(solidState);
 }
 
-function refreshCachedTotalFlow(stream) {
+function refreshCachedTotalFlow(stream: import('./types.js').MaterialStream): void {
   stream._cachedTotalMassFlowKgPerSecond = stream.physicalForm === MATERIAL_FORMS.GAS
     ? totalGasMassKg(stream.gasState)
     : totalSolidQuantity(stream.solidState);
@@ -202,14 +202,14 @@ export function createZeroStream({
   });
 }
 
-export function clearMaterialStream(stream) {
+export function clearMaterialStream(stream: import('./types.js').MaterialStream) {
   if (stream.physicalForm === MATERIAL_FORMS.GAS) {
     return setGasMaterialStreamState(stream, createGasMaterialState());
   }
   return setMaterialStreamState(stream, createSolidMaterialState());
 }
 
-export function totalMaterialStreamMassFlowKgPerSecond(stream) {
+export function totalMaterialStreamMassFlowKgPerSecond(stream: import('./types.js').MaterialStream): number {
   const projected = stream?._runtimePresentationMassFlowKgPerSecond;
   if (Number.isFinite(projected) && projected >= 0) return projected;
   if (!Number.isFinite(stream?._cachedTotalMassFlowKgPerSecond)) refreshCachedTotalFlow(stream);

@@ -11,12 +11,12 @@ import { createKnowledge } from './core/world/knowledgeState.js';
 import { installApparatusControlUI } from './workspace/inspector/apparatusControlUI.js';
 import { initWorkspace } from './workspace/workspaceController.js';
 
-function el(id) {
-  return document.getElementById(id);
+function el<T extends HTMLElement = HTMLElement>(id: string): T | null {
+  return document.getElementById(id) as T | null;
 }
 
 function createPlayerWorld() {
-  const seed = el('seed-input')?.value.trim() || String(Math.floor(Math.random() * 1e9));
+  const seed = el<HTMLInputElement>('seed-input')?.value.trim() || String(Math.floor(Math.random() * 1e9));
   const world = generateWorld(seed);
   const knowledge = createKnowledge(world);
   el('landing-screen')?.remove();

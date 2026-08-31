@@ -29,9 +29,9 @@ export const DEFAULT_MAG_SEP_FIELD_STRENGTH = defaultProcessParameters(MAGNETIC_
 // fixed-step runtime compiles that graph into a transient execution projection
 // and reuses it until a canonical topology mutation invalidates the cache.
 // Nothing in these WeakMaps is serialized or changes physical state semantics.
-const blueprintTopologyRevisionCache = new WeakMap();
-const blueprintPresentationRevisionCache = new WeakMap();
-const layoutPresentationRevisionCache = new WeakMap();
+const blueprintTopologyRevisionCache = new WeakMap<object, number>();
+const blueprintPresentationRevisionCache = new WeakMap<object, number>();
+const layoutPresentationRevisionCache = new WeakMap<object, number>();
 
 function revisionFor(cache, object) {
   return object && typeof object === 'object' ? (cache.get(object) ?? 0) : 0;
@@ -84,8 +84,8 @@ export function invalidateBlueprintExecutionPlan(blueprint) {
   invalidateBlueprintPresentation(blueprint);
 }
 
-export function createBlueprint() {
-  const blueprint = {
+export function createBlueprint(): import('./types.js').Blueprint {
+  const blueprint: import('./types.js').Blueprint = {
     nodes: {},
     connections: {},
     streams: {},
@@ -145,7 +145,7 @@ export function blueprintAddExtractor(
   });
 }
 
-export function blueprintAddHopper(blueprint, capacityKg = DEFAULT_HOPPER_CAPACITY_KG) {
+export function blueprintAddHopper(blueprint: import('./types.js').Blueprint, capacityKg = DEFAULT_HOPPER_CAPACITY_KG) {
   return blueprintAddApparatus(blueprint, 'hopper', { capacityKg });
 }
 
@@ -173,7 +173,7 @@ export function blueprintAddMagSep(blueprint, {
   });
 }
 
-export function blueprintAddApparatus(blueprint, nodeType, parameters = {}) {
+export function blueprintAddApparatus(blueprint: import('./types.js').Blueprint, nodeType: string, parameters: Record<string, unknown> = {}) {
   const definition = getApparatusDefinition(nodeType);
   if (!definition) throw new Error(`Unknown apparatus '${nodeType}'`);
 
@@ -196,7 +196,7 @@ export function blueprintAddApparatus(blueprint, nodeType, parameters = {}) {
 }
 
 /** Ports exposed to the current child workspace. */
-export function getNodePortDefinitions(node) {
+export function getNodePortDefinitions(node: import('./types.js').BlueprintNode | null | undefined): import('../core/systems/types.js').SystemPort[] {
   if (!node) return [];
 
   if (node.nodeType === 'feature') {
@@ -302,7 +302,7 @@ function resolveResourceAccessOccurrence(sourceNode, targetNode, requestedOccurr
   };
 }
 
-export function checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId, options = {}) {
+export function checkBlueprintConnection(blueprint: import('./types.js').Blueprint, sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId: string, options: { occurrenceId?: string | null } = {}): import('./types.js').ConnectionCheckResult {
   const sourceNode = blueprint?.nodes?.[sourceNodeId];
   const targetNode = blueprint?.nodes?.[targetNodeId];
   if (!sourceNode) return { ok: false, reason: `Unknown source node '${sourceNodeId}'` };
@@ -342,7 +342,7 @@ export function checkBlueprintConnection(blueprint, sourceNodeId, sourcePortId, 
   return { ok: true, reason: '' };
 }
 
-export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNodeId, targetPortId, options = {}) {
+export function blueprintConnect(blueprint: import('./types.js').Blueprint, sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId: string, options: { occurrenceId?: string | null } = {}) {
   const compatibility = checkBlueprintConnection(
     blueprint,
     sourceNodeId,
@@ -394,7 +394,7 @@ export function blueprintConnect(blueprint, sourceNodeId, sourcePortId, targetNo
   return connection;
 }
 
-export function blueprintDisconnect(blueprint, connectionId) {
+export function blueprintDisconnect(blueprint: import('./types.js').Blueprint, connectionId: string): void {
   const connection = blueprint.connections?.[connectionId];
   if (connection?.kind === 'resource-access') {
     const targetNode = blueprint.nodes?.[connection.targetNodeId];
@@ -409,11 +409,11 @@ export function blueprintDisconnect(blueprint, connectionId) {
   invalidateBlueprintExecutionPlan(blueprint);
 }
 
-export function getStreamForConnection(blueprint, connectionId) {
+export function getStreamForConnection(blueprint: import('./types.js').Blueprint, connectionId: string): import('./types.js').MaterialStream | null {
   return Object.values(blueprint?.streams ?? {}).find(stream => stream.connectionId === connectionId) ?? null;
 }
 
-export function setNodeEnabled(blueprint, nodeId, enabled) {
+export function setNodeEnabled(blueprint: import('./types.js').Blueprint, nodeId: string, enabled: boolean) {
   const node = blueprint?.nodes?.[nodeId];
   if (!node) throw new Error(`Unknown node '${nodeId}'`);
   if (typeof node.enabled !== 'boolean') throw new Error(`Node '${nodeId}' is not active machinery`);
@@ -425,7 +425,7 @@ export function setNodeEnabled(blueprint, nodeId, enabled) {
   return node;
 }
 
-export function setApparatusParameter(blueprint, nodeId, parameterId, value) {
+export function setApparatusParameter(blueprint: import('./types.js').Blueprint, nodeId: string, parameterId: string, value: unknown) {
   const node = blueprint?.nodes?.[nodeId];
   if (!node) throw new Error(`Unknown node '${nodeId}'`);
   const normalized = validateApparatusParameters(node, { [parameterId]: value });
@@ -437,7 +437,7 @@ export function setApparatusParameter(blueprint, nodeId, parameterId, value) {
   return node;
 }
 
-export function getNodeOperatingState(node) {
+export function getNodeOperatingState(node: import('./types.js').BlueprintNode | null | undefined): string | null {
   if (!node) return null;
   const projected = node.runtimePresentation?.operatingState;
   if (typeof projected === 'string') return projected;
@@ -445,13 +445,13 @@ export function getNodeOperatingState(node) {
   return null;
 }
 
-export function createBlueprintLayout() {
-  const layout = { nodePositions: {} };
+export function createBlueprintLayout(): import('./types.js').BlueprintLayout {
+  const layout: import('./types.js').BlueprintLayout = { nodePositions: {} };
   layoutPresentationRevisionCache.set(layout, 0);
   return layout;
 }
 
-export function layoutMoveNode(layout, nodeId, x, y) {
+export function layoutMoveNode(layout: import('./types.js').BlueprintLayout, nodeId: string, x: number, y: number) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Layout coordinates must be finite numbers');
   layout.nodePositions[nodeId] = { x, y };
   invalidateBlueprintLayout(layout);

@@ -39,8 +39,8 @@ const resourceSourcePort = Object.freeze({
   runtimePortField: 'sourceInputPortId',
 });
 const solidInputPort = (
-  id,
-  accepts = PORT_CAPABILITIES.SOLID_PARTICULATE,
+  id: string,
+  accepts: string | readonly string[] = PORT_CAPABILITIES.SOLID_PARTICULATE,
   runtimePortField = 'inputPortId',
   label = id,
 ) => Object.freeze({
@@ -52,8 +52,8 @@ const solidInputPort = (
   runtimePortField,
 });
 const solidOutputPort = (
-  id,
-  provides = [PORT_CAPABILITIES.SOLID_PARTICULATE],
+  id: string,
+  provides: string | readonly string[] = [PORT_CAPABILITIES.SOLID_PARTICULATE],
   runtimePortField = 'outputPortId',
   label = id,
 ) => Object.freeze({
@@ -65,7 +65,7 @@ const solidOutputPort = (
   runtimePortField,
 });
 const gasInputPort = (
-  id,
+  id: string,
   runtimePortField = 'gasInputPortId',
   label = id,
 ) => Object.freeze({
@@ -77,7 +77,7 @@ const gasInputPort = (
   runtimePortField,
 });
 const gasOutputPort = (
-  id,
+  id: string,
   runtimePortField = 'gasOutputPortId',
   label = id,
 ) => Object.freeze({

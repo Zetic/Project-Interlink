@@ -5,10 +5,10 @@ import {
 } from './helpers.js';
 
 /** Validate Planet → Region → Site → Feature hierarchy ownership. */
-export function validateHierarchy(world) {
+export function validateHierarchy(world: import('../types.js').World) {
   if (!world || typeof world !== 'object' || Array.isArray(world)) return [];
   const { planets, regions, sites, features } = worldCollections(world);
-  const errors = [];
+  const errors: string[] = [];
 
   if (!planets[world.planetId]) errors.push(`planetId '${world.planetId}' not in planets map`);
 
@@ -17,7 +17,7 @@ export function validateHierarchy(world) {
     validateReferenceIdArray(planet.regions, `Planet '${planet.id}' regions`, regions, errors);
   }
 
-  const siteFeatureOwners = new Map();
+  const siteFeatureOwners = new Map<string, string[]>();
   for (const [regionId, region] of Object.entries(regions)) {
     if ('features' in region) errors.push(`Region '${regionId}' must not own a features collection; use siteIds`);
     if ('backgroundResourceOccurrences' in region) {

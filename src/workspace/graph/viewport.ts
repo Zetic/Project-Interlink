@@ -1,25 +1,25 @@
 export const MIN_ZOOM = 0.5;
 export const MAX_ZOOM = 2;
 
-export function clampZoom(zoom) {
+export function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 }
 
-export function screenToGraph(point, viewport) {
+export function screenToGraph(point: import('../types.js').Point, viewport: import('../types.js').ViewportState): import('../types.js').Point {
   return {
     x: (point.x - viewport.panX) / viewport.zoom,
     y: (point.y - viewport.panY) / viewport.zoom,
   };
 }
 
-export function translateGraphPosition(startPosition, startPointer, currentPointer) {
+export function translateGraphPosition(startPosition: import('../types.js').Point, startPointer: import('../types.js').Point, currentPointer: import('../types.js').Point): import('../types.js').Point {
   return {
     x: startPosition.x + currentPointer.x - startPointer.x,
     y: startPosition.y + currentPointer.y - startPointer.y,
   };
 }
 
-export function boundsForNodePositions(nodePositions, nodeWidth = 0, nodeHeight = 0) {
+export function boundsForNodePositions(nodePositions: Record<string, import('../types.js').Point>, nodeWidth = 0, nodeHeight = 0) {
   const positions = Object.values(nodePositions ?? {});
   if (!positions.length) {
     return { minX: 0, minY: 0, maxX: nodeWidth, maxY: nodeHeight };
@@ -38,7 +38,7 @@ export function boundsForNodePositions(nodePositions, nodeWidth = 0, nodeHeight 
   });
 }
 
-export function zoomAroundPoint(viewport, zoom, point) {
+export function zoomAroundPoint(viewport: import('../types.js').ViewportState, zoom: number, point: import('../types.js').Point): import('../types.js').ViewportState {
   const nextZoom = clampZoom(zoom);
   const graphPoint = screenToGraph(point, viewport);
   return {
@@ -49,7 +49,7 @@ export function zoomAroundPoint(viewport, zoom, point) {
   };
 }
 
-export function fitViewport(viewport, bounds, size, padding = 40) {
+export function fitViewport(viewport: import('../types.js').ViewportState, bounds: { minX: number; minY: number; maxX: number; maxY: number }, size: import('../types.js').Size, padding = 40): import('../types.js').ViewportState {
   const width = Math.max(1, bounds.maxX - bounds.minX);
   const height = Math.max(1, bounds.maxY - bounds.minY);
   const zoom = clampZoom(Math.min(
@@ -64,7 +64,7 @@ export function fitViewport(viewport, bounds, size, padding = 40) {
   };
 }
 
-export function centerViewport(viewport, bounds, size) {
+export function centerViewport(viewport: import('../types.js').ViewportState, bounds: { minX: number; minY: number; maxX: number; maxY: number }, size: import('../types.js').Size): import('../types.js').ViewportState {
   const width = bounds.maxX - bounds.minX;
   const height = bounds.maxY - bounds.minY;
   return {

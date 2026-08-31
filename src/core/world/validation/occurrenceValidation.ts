@@ -6,7 +6,7 @@ import { getResourceDefinition } from '../../../content/resources/resourceDefini
 import { validateMineralTextureProfile } from '../../materials/solids/mineralTextures.js';
 import { validateComminutionProperties } from '../../materials/solids/comminutionProperties.js';
 
-function validateOccurrenceTexture(occurrenceId, occurrence, errors) {
+function validateOccurrenceTexture(occurrenceId: string, occurrence: import('../types.js').ResourceOccurrence, errors: string[]) {
   const resource = getResourceDefinition(occurrence?.resourceId);
   const requiresOreProperties = resource?.occurrenceFamily === 'ore-body';
   if (!occurrence?.mineralTexture) {
@@ -37,11 +37,11 @@ function validateOccurrenceTexture(occurrenceId, occurrence, errors) {
 }
 
 /** Validate Feature-owned ResourceOccurrence references and ownership. */
-export function validateOccurrences(world) {
+export function validateOccurrences(world: import('../types.js').World) {
   if (!world || typeof world !== 'object' || Array.isArray(world)) return [];
   const { features, resourceOccurrences } = worldCollections(world);
-  const errors = [];
-  const featureOccurrenceOwners = new Map();
+  const errors: string[] = [];
+  const featureOccurrenceOwners = new Map<string, string[]>();
 
   for (const [featureId, feature] of Object.entries(features)) {
     if (!Array.isArray(feature.resourceOccurrences) || feature.resourceOccurrences.length === 0) {

@@ -7,28 +7,28 @@ import { screenToGraph } from './viewport.js';
 
 export const CATALOG_POINTER_MOVE_THRESHOLD_PX = 5;
 
-export function createPlacementState() {
+export function createPlacementState(): import('../types.js').PlacementState {
   return {
     definitionId: null,
     graphPosition: null,
   };
 }
 
-export function placementIsActive(state) {
+export function placementIsActive(state: import('../types.js').PlacementState): boolean {
   return Boolean(state?.definitionId);
 }
 
-export function armPlacement(state, definitionId) {
+export function armPlacement(state: import('../types.js').PlacementState, definitionId: string) {
   state.definitionId = definitionId;
   return state;
 }
 
-export function updatePlacementPosition(state, point, viewport) {
+export function updatePlacementPosition(state: import('../types.js').PlacementState, point: import('../types.js').Point, viewport: import('../types.js').ViewportState) {
   state.graphPosition = screenToGraph(point, viewport);
   return state.graphPosition;
 }
 
-export function graphPositionForCenteredPoint(point, viewport, nodeWidth = 0, nodeHeight = 0) {
+export function graphPositionForCenteredPoint(point: import('../types.js').Point, viewport: import('../types.js').ViewportState, nodeWidth = 0, nodeHeight = 0): import('../types.js').Point {
   const graphPoint = screenToGraph(point, viewport);
   return {
     x: graphPoint.x - nodeWidth / 2,
@@ -36,7 +36,7 @@ export function graphPositionForCenteredPoint(point, viewport, nodeWidth = 0, no
   };
 }
 
-export function graphPositionForViewportCenter(viewport, size, nodeWidth = 0, nodeHeight = 0) {
+export function graphPositionForViewportCenter(viewport: import('../types.js').ViewportState, size: import('../types.js').Size, nodeWidth = 0, nodeHeight = 0): import('../types.js').Point {
   return graphPositionForCenteredPoint(
     { x: size.width / 2, y: size.height / 2 },
     viewport,
@@ -45,11 +45,11 @@ export function graphPositionForViewportCenter(viewport, size, nodeWidth = 0, no
   );
 }
 
-export function pointerMovementExceedsThreshold(start, current, threshold = CATALOG_POINTER_MOVE_THRESHOLD_PX) {
+export function pointerMovementExceedsThreshold(start: import('../types.js').Point, current: import('../types.js').Point, threshold = CATALOG_POINTER_MOVE_THRESHOLD_PX) {
   return Math.hypot(current.x - start.x, current.y - start.y) >= threshold;
 }
 
-export function cancelPlacement(state) {
+export function cancelPlacement(state: import('../types.js').PlacementState) {
   state.definitionId = null;
   state.graphPosition = null;
   return state;

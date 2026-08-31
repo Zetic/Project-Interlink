@@ -11,14 +11,14 @@ import {
 } from '../../materials/solids/solidMaterialState.js';
 
 /** Validate discrete MaterialBatch provenance and process-result history. */
-export function validateProcessHistory(world) {
+export function validateProcessHistory(world: import('../types.js').World) {
   if (!world || typeof world !== 'object' || Array.isArray(world)) return [];
   const {
     resourceOccurrences,
     materialBatches,
     processResults,
   } = worldCollections(world);
-  const errors = [];
+  const errors: string[] = [];
 
   for (const [bid, batch] of Object.entries(materialBatches)) {
     if (batch.sourceOccurrenceId && !resourceOccurrences[batch.sourceOccurrenceId]) {
@@ -54,7 +54,8 @@ export function validateProcessHistory(world) {
     try {
       validateSolidMaterialBody(batch.materialBody);
     } catch (error) {
-      errors.push(`Material batch '${bid}' has invalid materialBody: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Material batch '${bid}' has invalid materialBody: ${message}`);
       continue;
     }
 
