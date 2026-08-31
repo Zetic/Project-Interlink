@@ -1,3 +1,5 @@
+import type { MaterialSpecies, MaterialSpeciesInput } from '../types.js';
+
 function defineSpecies({
   id,
   name,
@@ -7,7 +9,7 @@ function defineSpecies({
   densityKgPerM3 = null,
   thermal = null,
   chemistry = null,
-}) {
+}: MaterialSpeciesInput): MaterialSpecies {
   if (!id || typeof id !== 'string') throw new Error('Material species id must be a non-empty string');
   if (!Number.isFinite(magneticResponse) || magneticResponse < 0 || magneticResponse > 1) {
     throw new Error(`Material species '${id}' magnetic response must be within [0, 1]`);
@@ -34,10 +36,7 @@ function defineSpecies({
     formula,
     kind,
     physicalProperties: Object.freeze({
-      // Nominal intrinsic solid density, not loose bulk density or porosity-adjusted density.
       ...(densityKgPerM3 == null ? {} : { densityKgPerM3 }),
-      // Gameplay-normalized magnetic-separation response. These coefficients are
-      // deliberately not literal SI magnetic susceptibility values.
       magneticResponse: Object.freeze({ normalizedSeparationCoefficient: magneticResponse }),
       ...(thermal ? { thermal: Object.freeze({ ...thermal }) } : {}),
     }),
@@ -50,9 +49,7 @@ function defineSpecies({
   });
 }
 
-const SPECIES = [
-  // Rounded constant-Cp prototype values near roasting temperatures. These are
-  // intentionally coarse engineering assumptions, not polynomial fits.
+const SPECIES: MaterialSpecies[] = [
   defineSpecies({ id: 'hematite', name: 'Hematite', formula: 'Fe2O3', magneticResponse: 0.55, densityKgPerM3: 5260, thermal: { specificHeatCapacityJPerKgK: 650 }, chemistry: { molarMassKgPerMol: 0.159687, elementalComposition: { Fe: 2, O: 3 } } }),
   defineSpecies({ id: 'magnetite', name: 'Magnetite', formula: 'Fe3O4', magneticResponse: 1, densityKgPerM3: 5170, thermal: { specificHeatCapacityJPerKgK: 670 }, chemistry: { molarMassKgPerMol: 0.231531, elementalComposition: { Fe: 3, O: 4 } } }),
   defineSpecies({ id: 'goethite', name: 'Goethite', formula: 'FeO(OH)', magneticResponse: 0.35, densityKgPerM3: 4000, thermal: { specificHeatCapacityJPerKgK: 650 }, chemistry: { molarMassKgPerMol: 0.088851, elementalComposition: { Fe: 1, O: 2, H: 1 } } }),
@@ -95,19 +92,18 @@ const SPECIES = [
   defineSpecies({ id: 'silicaGlass', name: 'Silica-rich Volcanic Glass', formula: 'SiO2', kind: 'amorphous-solid', magneticResponse: 0, densityKgPerM3: 2200 }),
 ];
 
-export const MATERIAL_SPECIES = Object.freeze(Object.fromEntries(SPECIES.map(species => [species.id, species])));
+export const MATERIAL_SPECIES: Readonly<Record<string, MaterialSpecies>> = Object.freeze(
+  Object.fromEntries(SPECIES.map(species => [species.id, species])),
+);
 
-// Compatibility aliases are not MaterialSpecies and are never emitted by the
-// generator. Occurrence materialization resolves them to the concrete species
-// returned here before creating physical material state.
-const LEGACY_CONSTITUENT_ALIASES = Object.freeze({
+const LEGACY_CONSTITUENT_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   quartzAndGangue: 'quartz',
   'gangue-mixture': 'quartz',
   gangue: 'quartz',
   ironOxides: 'hematite',
 });
 
-export function canonicalMaterialSpeciesId(speciesId) {
+export function canonicalMaterialSpeciesId(speciesId: string): string {
   if (typeof speciesId !== 'string' || !speciesId) {
     throw new Error('Material constituent id must be a non-empty string');
   }
@@ -117,26 +113,26 @@ export function canonicalMaterialSpeciesId(speciesId) {
   return LEGACY_CONSTITUENT_ALIASES[speciesId] ?? speciesId;
 }
 
-export function requireMaterialConstituentId(speciesId) {
+export function requireMaterialConstituentId(speciesId: string): string {
   return canonicalMaterialSpeciesId(speciesId);
 }
 
-export function listMaterialSpecies() {
+export function listMaterialSpecies(): MaterialSpecies[] {
   return Object.values(MATERIAL_SPECIES);
 }
 
-export function getMaterialSpecies(speciesId) {
+export function getMaterialSpecies(speciesId: string): MaterialSpecies | null {
   const canonicalId = canonicalMaterialSpeciesId(speciesId);
   return MATERIAL_SPECIES[canonicalId] ?? null;
 }
 
-export function requireMaterialSpecies(speciesId) {
+export function requireMaterialSpecies(speciesId: string): MaterialSpecies {
   const canonicalId = canonicalMaterialSpeciesId(speciesId);
   const species = MATERIAL_SPECIES[canonicalId];
   if (!species) throw new Error(`Unsupported material species '${speciesId}'`);
   return species;
 }
 
-export function materialSpeciesDensityKgPerM3(speciesId) {
+export function materialSpeciesDensityKgPerM3(speciesId: string): number | undefined {
   return requireMaterialSpecies(speciesId).physicalProperties.densityKgPerM3;
 }
