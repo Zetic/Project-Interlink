@@ -37,9 +37,33 @@ function createCoastline(seed: string): Point[] {
   });
 }
 
+function createBoundaryPath(seed: string, index: number, center: Point, coastPoint: Point): Point[] {
+  const rng = createRng(seed, `geography:boundary:${index}`);
+  const dx = coastPoint.x - center.x;
+  const dy = coastPoint.y - center.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const perpendicularX = -dy / length;
+  const perpendicularY = dx / length;
+
+  const path: Point[] = [center];
+  for (const fraction of [0.25, 0.5, 0.75]) {
+    const bend = rng.range(-1, 1) * 95 * Math.sin(Math.PI * fraction);
+    path.push({
+      x: roundCoordinate(center.x + dx * fraction + perpendicularX * bend),
+      y: roundCoordinate(center.y + dy * fraction + perpendicularY * bend),
+    });
+  }
+  path.push(coastPoint);
+  return path;
+}
+
 function createRegions(seed: string): Region[] {
   const coastline = createCoastline(seed);
   const center = { x: PLANET_MAP_WIDTH / 2, y: PLANET_MAP_HEIGHT / 2 };
+  const boundaries = Array.from({ length: REGION_COUNT }, (_, index) => {
+    const coastPoint = coastline[(index * COAST_POINTS_PER_REGION) % COAST_POINT_COUNT]!;
+    return createBoundaryPath(seed, index, center, coastPoint);
+  });
   const usedNames = new Set<string>();
 
   return Array.from({ length: REGION_COUNT }, (_, index) => {
@@ -50,14 +74,17 @@ function createRegions(seed: string): Region[] {
     }
     usedNames.add(name);
 
-    const arc: Point[] = [];
     const start = index * COAST_POINTS_PER_REGION;
     const end = (index + 1) * COAST_POINTS_PER_REGION;
-    for (let coastIndex = start; coastIndex <= end; coastIndex += 1) {
-      arc.push(coastline[coastIndex % COAST_POINT_COUNT]!);
+    const startBoundary = boundaries[index]!;
+    const endBoundary = boundaries[(index + 1) % REGION_COUNT]!;
+    const coastArc: Point[] = [];
+    for (let coastIndex = start + 1; coastIndex < end; coastIndex += 1) {
+      coastArc.push(coastline[coastIndex % COAST_POINT_COUNT]!);
     }
+    const returnBoundary = endBoundary.slice(1).reverse();
+    const polygon = [...startBoundary, ...coastArc, ...returnBoundary];
 
-    const polygon = [center, ...arc];
     return {
       id: `region-${index}`,
       name,
