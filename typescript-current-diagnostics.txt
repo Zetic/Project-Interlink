@@ -881,6 +881,155 @@ src/simulation/packedRuntimeCompiler.ts(78,52): error TS7006: Parameter 'canonic
 src/simulation/packedRuntimeCompiler.ts(91,41): error TS7006: Parameter 'canonicalHopper' implicitly has an 'any' type.
 src/simulation/packedRuntimeCompiler.ts(109,54): error TS7006: Parameter 'idTables' implicitly has an 'any' type.
 
+Focused errors: src/workspace/navigation/navigationProjection.ts
+src/workspace/navigation/navigationProjection.ts(13,18): error TS7006: Parameter 'value' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(17,26): error TS7006: Parameter 'values' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(24,26): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(28,20): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(37,29): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(37,36): error TS7006: Parameter 'feature' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(61,31): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(61,38): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(103,3): error TS7031: Binding element 'key' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(104,3): error TS7031: Binding element 'targetId' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(107,3): error TS7031: Binding element 'category' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(108,3): error TS7031: Binding element 'label' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(109,3): error TS7031: Binding element 'workspaceLevel' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(110,3): error TS7031: Binding element 'workspaceId' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(130,25): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(130,32): error TS7006: Parameter 'workspaceId' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(133,30): error TS18046: 'node' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(134,9): error TS18046: 'node' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(134,36): error TS18046: 'node' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(135,23): error TS18046: 'node' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(135,42): error TS18046: 'node' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(135,59): error TS18046: 'node' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(135,76): error TS18046: 'node' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(139,9): error TS18046: 'planet' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(139,38): error TS18046: 'planet' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(140,37): error TS18046: 'planet' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(140,63): error TS18046: 'planet' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(144,9): error TS18046: 'region' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(144,38): error TS18046: 'region' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(145,37): error TS18046: 'region' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(145,63): error TS18046: 'region' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(149,9): error TS18046: 'site' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(149,36): error TS18046: 'site' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(150,35): error TS18046: 'site' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(150,57): error TS18046: 'site' is of type 'unknown'.
+src/workspace/navigation/navigationProjection.ts(156,20): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(156,27): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(196,19): error TS7006: Parameter 'entries' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(196,28): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(202,27): error TS7006: Parameter 'entries' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(202,36): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(209,95): error TS2339: Property 'searchTerms' does not exist on type '{}'.
+src/workspace/navigation/navigationProjection.ts(210,34): error TS2339: Property 'nodeId' does not exist on type '{}'.
+src/workspace/navigation/navigationProjection.ts(210,67): error TS2339: Property 'nodeId' does not exist on type '{}'.
+src/workspace/navigation/navigationProjection.ts(214,32): error TS7006: Parameter 'entries' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(214,41): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(226,19): error TS2322: Type 'any' is not assignable to type 'never'.
+src/workspace/navigation/navigationProjection.ts(236,7): error TS2322: Type 'string' is not assignable to type 'null | undefined'.
+src/workspace/navigation/navigationProjection.ts(242,21): error TS2322: Type 'any' is not assignable to type 'never'.
+src/workspace/navigation/navigationProjection.ts(242,32): error TS2322: Type 'any' is not assignable to type 'never'.
+src/workspace/navigation/navigationProjection.ts(252,9): error TS2322: Type 'string' is not assignable to type 'null | undefined'.
+src/workspace/navigation/navigationProjection.ts(258,23): error TS2322: Type 'any' is not assignable to type 'never'.
+src/workspace/navigation/navigationProjection.ts(258,32): error TS2322: Type 'any' is not assignable to type 'never'.
+src/workspace/navigation/navigationProjection.ts(268,11): error TS2322: Type 'string' is not assignable to type 'null | undefined'.
+src/workspace/navigation/navigationProjection.ts(269,11): error TS2322: Type 'string' is not assignable to type 'null | undefined'.
+src/workspace/navigation/navigationProjection.ts(274,11): error TS2322: Type 'string[]' is not assignable to type 'never[]'.
+src/workspace/navigation/navigationProjection.ts(282,23): error TS7006: Parameter 'entries' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(282,32): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(282,39): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(282,45): error TS7006: Parameter 'workspaceId' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(322,5): error TS2322: Type 'string | null' is not assignable to type 'null | undefined'.
+src/workspace/navigation/navigationProjection.ts(328,5): error TS2322: Type 'string[]' is not assignable to type 'never[]'.
+src/workspace/navigation/navigationProjection.ts(333,28): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(340,49): error TS2339: Property 'nodes' does not exist on type '{}'.
+src/workspace/navigation/navigationProjection.ts(346,49): error TS2339: Property 'nodes' does not exist on type '{}'.
+src/workspace/navigation/navigationProjection.ts(352,47): error TS2339: Property 'blueprint' does not exist on type '{}'.
+src/workspace/navigation/navigationProjection.ts(359,32): error TS7006: Parameter 'categories' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(359,44): error TS7006: Parameter 'fallback' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(369,40): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(369,47): error TS7006: Parameter 'key' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(381,42): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(387,38): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(387,45): error TS7006: Parameter 'key' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(389,78): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/workspace/navigation/navigationProjection.ts(393,45): error TS7006: Parameter 'categories' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(395,69): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/workspace/navigation/navigationProjection.ts(398,19): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(398,26): error TS7006: Parameter 'key' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(402,39): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(402,46): error TS7006: Parameter 'query' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(408,49): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(414,13): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(414,45): error TS7006: Parameter 'term' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(415,10): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(433,35): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(457,9): error TS7034: Variable 'rows' implicitly has type 'any[]' in some locations where its type cannot be determined.
+src/workspace/navigation/navigationProjection.ts(459,18): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(459,25): error TS7006: Parameter 'depth' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(487,5): error TS7005: Variable 'rows' implicitly has an 'any[]' type.
+src/workspace/navigation/navigationProjection.ts(497,42): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(497,49): error TS7006: Parameter 'targetId' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(499,31): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(506,38): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/workspace/navigation/navigationProjection.ts(518,5): error TS2532: Object is possibly 'undefined'.
+src/workspace/navigation/navigationProjection.ts(518,45): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+
+Focused errors: src/simulation/worldSimulation.ts
+src/simulation/worldSimulation.ts(16,26): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(29,32): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(43,23): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(43,29): error TS7006: Parameter 'ports' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(48,26): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(48,32): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(49,33): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(56,39): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(56,46): error TS7006: Parameter 'regionId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(56,56): error TS7006: Parameter 'regionNode' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(56,68): error TS7006: Parameter 'importHopperId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(56,84): error TS7006: Parameter 'exportHopperId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(102,38): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(129,5): error TS18046: 'site' is of type 'unknown'.
+src/simulation/worldSimulation.ts(160,5): error TS18046: 'region' is of type 'unknown'.
+src/simulation/worldSimulation.ts(165,37): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(165,44): error TS7006: Parameter 'siteId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(179,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
+src/simulation/worldSimulation.ts(184,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
+src/simulation/worldSimulation.ts(191,3): error TS18047: 'input' is possibly 'null'.
+src/simulation/worldSimulation.ts(192,3): error TS18047: 'input' is possibly 'null'.
+src/simulation/worldSimulation.ts(193,3): error TS18047: 'output' is possibly 'null'.
+src/simulation/worldSimulation.ts(194,3): error TS18047: 'output' is possibly 'null'.
+src/simulation/worldSimulation.ts(199,39): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(199,46): error TS7006: Parameter 'regionId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(213,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
+src/simulation/worldSimulation.ts(218,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
+src/simulation/worldSimulation.ts(233,33): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(233,40): error TS7006: Parameter 'simulation' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(233,52): error TS7006: Parameter 'cache' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(243,39): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(251,45): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(251,52): error TS7006: Parameter 'workspaceId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(251,65): error TS7006: Parameter 'workspace' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(259,43): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(259,50): error TS7006: Parameter 'sessionId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(259,61): error TS7006: Parameter 'blueprint' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(268,40): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(268,47): error TS7006: Parameter 'workspaceId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(272,42): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(274,3): error TS2339: Property 'sourceCompositeId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
+src/simulation/worldSimulation.ts(275,3): error TS2339: Property 'sourcePortId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
+src/simulation/worldSimulation.ts(276,3): error TS2339: Property 'targetCompositeId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
+src/simulation/worldSimulation.ts(277,3): error TS2339: Property 'targetPortId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
+src/simulation/worldSimulation.ts(291,9): error TS18046: 'existing' is of type 'unknown'.
+src/simulation/worldSimulation.ts(291,61): error TS18046: 'existing' is of type 'unknown'.
+src/simulation/worldSimulation.ts(294,9): error TS18046: 'existing' is of type 'unknown'.
+src/simulation/worldSimulation.ts(294,61): error TS18046: 'existing' is of type 'unknown'.
+src/simulation/worldSimulation.ts(316,40): error TS7006: Parameter 'world' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(316,47): error TS7006: Parameter 'transferId' implicitly has an 'any' type.
+
 Test failures:
 not ok 5 - application installs the apparatus control upgrader and loads matching control styles
 not ok 3 - tests/apparatusWorkspaceRegression.test.ts
