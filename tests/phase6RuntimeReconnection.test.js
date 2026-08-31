@@ -116,6 +116,10 @@ test('Phase 6 runtime boundary does not restore the recursive browser simulation
   assert.match(worker, /upsert_extractor_live/);
   assert.match(controller, /new Worker\(new URL\('\.\/flatRuntimeWorker\.js'/);
   assert.match(controller, /compileFlatRuntimePlan/);
+  assert.match(controller, /automaticAdvancePromise/);
+  assert.match(controller, /manualStepInFlight/);
+  assert.match(controller, /if \(inFlight\) await inFlight/);
+  assert.match(controller, /!automaticAdvancePromise && !manualStepInFlight/);
   assert.match(setup, /scheduler partition inside Rust/);
 
   for (const source of [worker, controller, setup]) {
