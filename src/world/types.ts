@@ -54,6 +54,8 @@ export interface Planet {
   name: string;
   width: number;
   height: number;
+  physicalWidthMeters: number;
+  physicalHeightMeters: number;
   regions: Region[];
   resourceNodes: ResourceNode[];
 }

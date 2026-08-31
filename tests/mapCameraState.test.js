@@ -7,9 +7,11 @@ import {
   RESOURCE_NODE_FADE_START_ZOOM,
   RESOURCE_NODE_FULL_OPACITY_ZOOM,
   RESOURCE_NODE_INTERACTIVE_ZOOM,
+  RESOURCE_NODE_PHYSICAL_WIDTH_METERS,
   RESOURCE_NODE_WORLD_WIDTH,
 } from '../dist/map/mapRenderer.js';
 import { generateWorld } from '../dist/world/generateWorld.js';
+import { worldUnitsToMeters } from '../dist/world/scale.js';
 
 test('NAV-style region focus selects and moves the camera toward the region', () => {
   const world = generateWorld('region-focus');
@@ -26,7 +28,7 @@ test('NAV-style region focus selects and moves the camera toward the region', ()
   assert.ok(state.camera.zoom >= 2);
 });
 
-test('NAV-style resource focus targets the resource at engineering-scale zoom', () => {
+test('NAV resource focus reaches Earth-scale engineering depth', () => {
   const world = generateWorld('resource-focus');
   const store = new AppStore();
   store.setWorld(world);
@@ -39,16 +41,23 @@ test('NAV-style resource focus targets the resource at engineering-scale zoom', 
   assert.equal(state.camera.centerX, resource.position.x);
   assert.equal(state.camera.centerY, resource.position.y);
   assert.equal(state.camera.zoom, RESOURCE_FOCUS_ZOOM);
+  assert.equal(RESOURCE_FOCUS_ZOOM, 2 ** 19);
+  assert.equal(MAP_MAX_ZOOM, 2 ** 24);
   assert.ok(RESOURCE_FOCUS_ZOOM > RESOURCE_NODE_FULL_OPACITY_ZOOM);
   assert.ok(MAP_MAX_ZOOM > RESOURCE_FOCUS_ZOOM);
+
+  const nominalVisibleWidthMeters = world.planet.physicalWidthMeters / RESOURCE_FOCUS_ZOOM;
+  assert.ok(nominalVisibleWidthMeters > 70 && nominalVisibleWidthMeters < 80);
 });
 
-test('resource nodes occupy a deliberately tiny fraction of planet width', () => {
+test('resource FEATURE cards use a meter-scale footprint on the Earth-scale map', () => {
   const world = generateWorld('resource-scale');
-  assert.ok(RESOURCE_NODE_WORLD_WIDTH / world.planet.width < 0.01);
-  assert.ok(RESOURCE_NODE_FADE_START_ZOOM >= 6);
-  assert.ok(RESOURCE_NODE_INTERACTIVE_ZOOM > RESOURCE_NODE_FADE_START_ZOOM);
-  assert.ok(RESOURCE_NODE_FULL_OPACITY_ZOOM >= RESOURCE_NODE_INTERACTIVE_ZOOM);
+  assert.equal(RESOURCE_NODE_PHYSICAL_WIDTH_METERS, 20);
+  assert.ok(Math.abs(worldUnitsToMeters(RESOURCE_NODE_WORLD_WIDTH) - 20) < 1e-9);
+  assert.ok(RESOURCE_NODE_WORLD_WIDTH / world.planet.width < 0.000001);
+  assert.equal(RESOURCE_NODE_FADE_START_ZOOM, 2 ** 16);
+  assert.equal(RESOURCE_NODE_INTERACTIVE_ZOOM, 2 ** 17);
+  assert.equal(RESOURCE_NODE_FULL_OPACITY_ZOOM, 2 ** 18);
 });
 
 test('planet focus restores the full-map camera', () => {

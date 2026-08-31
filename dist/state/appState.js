@@ -1,4 +1,4 @@
-export const RESOURCE_FOCUS_ZOOM = 36;
+export const RESOURCE_FOCUS_ZOOM = 2 ** 19; // 524,288×: ~76 m of Earth-scale map width
 function regionFocusZoom(world, region) {
     const widthZoom = world.planet.width / Math.max(1, region.bounds.width * 1.35);
     const heightZoom = world.planet.height / Math.max(1, region.bounds.height * 1.35);

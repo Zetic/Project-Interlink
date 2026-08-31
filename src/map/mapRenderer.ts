@@ -1,22 +1,31 @@
 import type { AppStore } from '../state/appState.js';
 import { polygonCentroid } from '../world/geometry.js';
 import { resourceDefinitionById } from '../world/resources.js';
+import { formatPhysicalDistance, metersToWorldUnits, worldUnitsToMeters } from '../world/scale.js';
 import type { MapCameraState, MapSelection, Planet, ResourceNode } from '../world/types.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export const MAP_MIN_ZOOM = 1;
-export const MAP_MAX_ZOOM = 64;
-export const RESOURCE_NODE_FADE_START_ZOOM = 7;
-export const RESOURCE_NODE_FULL_OPACITY_ZOOM = 11;
-export const RESOURCE_NODE_INTERACTIVE_ZOOM = 10;
-export const RESOURCE_NODE_WORLD_WIDTH = 24;
-export const RESOURCE_NODE_WORLD_HEIGHT = 15;
+export const MAP_MAX_ZOOM = 2 ** 24; // 16,777,216×; ~2.39 m visible across a 2:1 viewport.
+export const RESOURCE_NODE_FADE_START_ZOOM = 2 ** 16;
+export const RESOURCE_NODE_INTERACTIVE_ZOOM = 2 ** 17;
+export const RESOURCE_NODE_FULL_OPACITY_ZOOM = 2 ** 18;
+export const RESOURCE_NODE_PHYSICAL_WIDTH_METERS = 20;
+export const RESOURCE_NODE_PHYSICAL_HEIGHT_METERS = 12.5;
+export const RESOURCE_NODE_WORLD_WIDTH = metersToWorldUnits(RESOURCE_NODE_PHYSICAL_WIDTH_METERS);
+export const RESOURCE_NODE_WORLD_HEIGHT = metersToWorldUnits(RESOURCE_NODE_PHYSICAL_HEIGHT_METERS);
 
 const REGION_LABEL_FADE_START_ZOOM = 3.5;
 const REGION_LABEL_FADE_END_ZOOM = 6.5;
-const RESOURCE_NODE_HEADER_HEIGHT = 3.4;
-const RESOURCE_NODE_PORT_RADIUS = 1.05;
+const RESOURCE_NODE_HEADER_HEIGHT = metersToWorldUnits(2.8);
+const RESOURCE_NODE_PORT_RADIUS = metersToWorldUnits(0.9);
+const RESOURCE_NODE_CORNER_RADIUS = metersToWorldUnits(0.45);
+const RESOURCE_NODE_BODY_STROKE = metersToWorldUnits(0.18);
+const RESOURCE_NODE_DIVIDER_STROKE = metersToWorldUnits(0.13);
+const RESOURCE_NODE_PORT_STROKE = metersToWorldUnits(0.22);
+const RESOURCE_NODE_CATEGORY_FONT_SIZE = metersToWorldUnits(0.95);
+const RESOURCE_NODE_BODY_FONT_SIZE = metersToWorldUnits(1.05);
 
 interface VisibleWorldSize {
   width: number;
@@ -37,9 +46,22 @@ function smoothStep(value: number): number {
 }
 
 function camerasEqual(left: MapCameraState, right: MapCameraState): boolean {
-  return Math.abs(left.centerX - right.centerX) < 0.01
-    && Math.abs(left.centerY - right.centerY) < 0.01
-    && Math.abs(left.zoom - right.zoom) < 0.001;
+  const positionTolerance = 1e-9;
+  const zoomTolerance = Math.max(1e-9, Math.max(Math.abs(left.zoom), Math.abs(right.zoom)) * 1e-10);
+  return Math.abs(left.centerX - right.centerX) < positionTolerance
+    && Math.abs(left.centerY - right.centerY) < positionTolerance
+    && Math.abs(left.zoom - right.zoom) < zoomTolerance;
+}
+
+function formatZoomFactor(zoom: number): string {
+  if (zoom < 10) return `${Math.round(zoom * 100)}%`;
+  if (zoom < 1000) return `${Math.round(zoom)}×`;
+  if (zoom < 1_000_000) {
+    const thousands = zoom / 1000;
+    return `${thousands >= 100 ? thousands.toFixed(0) : thousands.toFixed(1)}K×`;
+  }
+  const millions = zoom / 1_000_000;
+  return `${millions >= 10 ? millions.toFixed(1) : millions.toFixed(2)}M×`;
 }
 
 function visibleWorldSize(svg: SVGSVGElement, planet: Planet, zoom: number): VisibleWorldSize {
@@ -78,10 +100,18 @@ function selectionMatches(element: Element, selection: MapSelection): boolean {
   return kind === 'resource' && element.getAttribute('data-resource-id') === selection.resourceNodeId;
 }
 
-function appendText(group: SVGGElement, className: string, x: number, y: number, value: string): void {
+function appendText(
+  group: SVGGElement,
+  className: string,
+  x: number,
+  y: number,
+  value: string,
+  fontSize: number,
+): void {
   const text = createSvgElement('text');
   text.setAttribute('x', String(x));
   text.setAttribute('y', String(y));
+  text.setAttribute('font-size', String(fontSize));
   text.setAttribute('class', className);
   text.textContent = value;
   group.appendChild(text);
@@ -102,19 +132,20 @@ function appendResourceCard(group: SVGGElement, resource: ResourceNode): void {
   body.setAttribute('y', String(-halfHeight));
   body.setAttribute('width', String(RESOURCE_NODE_WORLD_WIDTH));
   body.setAttribute('height', String(RESOURCE_NODE_WORLD_HEIGHT));
-  body.setAttribute('rx', '0.55');
+  body.setAttribute('rx', String(RESOURCE_NODE_CORNER_RADIUS));
+  body.setAttribute('stroke-width', String(RESOURCE_NODE_BODY_STROKE));
   body.setAttribute('class', 'ws-map-resource-card-body');
   group.appendChild(body);
 
   const header = createSvgElement('path');
   header.setAttribute('d', [
-    `M ${-halfWidth + 0.55} ${-halfHeight}`,
-    `H ${halfWidth - 0.55}`,
-    `Q ${halfWidth} ${-halfHeight} ${halfWidth} ${-halfHeight + 0.55}`,
+    `M ${-halfWidth + RESOURCE_NODE_CORNER_RADIUS} ${-halfHeight}`,
+    `H ${halfWidth - RESOURCE_NODE_CORNER_RADIUS}`,
+    `Q ${halfWidth} ${-halfHeight} ${halfWidth} ${-halfHeight + RESOURCE_NODE_CORNER_RADIUS}`,
     `V ${headerBottom}`,
     `H ${-halfWidth}`,
-    `V ${-halfHeight + 0.55}`,
-    `Q ${-halfWidth} ${-halfHeight} ${-halfWidth + 0.55} ${-halfHeight}`,
+    `V ${-halfHeight + RESOURCE_NODE_CORNER_RADIUS}`,
+    `Q ${-halfWidth} ${-halfHeight} ${-halfWidth + RESOURCE_NODE_CORNER_RADIUS} ${-halfHeight}`,
     'Z',
   ].join(' '));
   header.setAttribute('class', 'ws-map-resource-card-header');
@@ -125,20 +156,29 @@ function appendResourceCard(group: SVGGElement, resource: ResourceNode): void {
   divider.setAttribute('x2', String(halfWidth));
   divider.setAttribute('y1', String(headerBottom));
   divider.setAttribute('y2', String(headerBottom));
+  divider.setAttribute('stroke-width', String(RESOURCE_NODE_DIVIDER_STROKE));
   divider.setAttribute('class', 'ws-map-resource-card-divider');
   group.appendChild(divider);
 
-  appendText(group, 'ws-map-resource-category', -halfWidth + 1.05, -halfHeight + 2.25, 'FEATURE');
+  appendText(
+    group,
+    'ws-map-resource-category',
+    -halfWidth + metersToWorldUnits(0.9),
+    -halfHeight + metersToWorldUnits(1.9),
+    'FEATURE',
+    RESOURCE_NODE_CATEGORY_FONT_SIZE,
+  );
 
   const definition = resourceDefinitionById(resource.resourceId);
-  appendText(group, 'ws-map-resource-name', 0, -0.95, resource.name);
-  appendText(group, 'ws-map-resource-type', 0, 1.8, 'Mineral Deposit');
-  appendText(group, 'ws-map-resource-material', 0, 4.55, definition?.name ?? resource.resourceId);
+  appendText(group, 'ws-map-resource-name', 0, metersToWorldUnits(-0.8), resource.name, RESOURCE_NODE_BODY_FONT_SIZE);
+  appendText(group, 'ws-map-resource-type', 0, metersToWorldUnits(1.45), 'Mineral Deposit', RESOURCE_NODE_BODY_FONT_SIZE);
+  appendText(group, 'ws-map-resource-material', 0, metersToWorldUnits(3.7), definition?.name ?? resource.resourceId, RESOURCE_NODE_BODY_FONT_SIZE);
 
   const port = createSvgElement('circle');
   port.setAttribute('cx', String(halfWidth));
   port.setAttribute('cy', '0');
   port.setAttribute('r', String(RESOURCE_NODE_PORT_RADIUS));
+  port.setAttribute('stroke-width', String(RESOURCE_NODE_PORT_STROKE));
   port.setAttribute('class', 'ws-map-resource-port');
   port.setAttribute('data-node-id', resource.id);
   port.setAttribute('data-port-id', resource.resourceAccessPortId);
@@ -274,7 +314,10 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
       visible.width,
       visible.height,
     ].join(' '));
-    if (zoomLabel) zoomLabel.textContent = `${Math.round(displayCamera.zoom * 100)}%`;
+    if (zoomLabel) {
+      zoomLabel.textContent = formatZoomFactor(displayCamera.zoom);
+      zoomLabel.title = `Approx. visible map width: ${formatPhysicalDistance(worldUnitsToMeters(visible.width))}`;
+    }
     updateZoomVisibility(svg, displayCamera.zoom);
   };
 
@@ -303,7 +346,7 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
     const start = { ...displayCamera };
     const startedAt = performance.now();
     const zoomRatio = Math.max(start.zoom, clampedTarget.zoom) / Math.max(MAP_MIN_ZOOM, Math.min(start.zoom, clampedTarget.zoom));
-    const duration = clamp(300 + Math.log2(Math.max(1, zoomRatio)) * 70, 300, 720);
+    const duration = clamp(320 + Math.log2(Math.max(1, zoomRatio)) * 65, 320, 1600);
 
     const step = (now: number): void => {
       const progress = clamp((now - startedAt) / duration, 0, 1);
@@ -397,10 +440,10 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   svg.addEventListener('pointercancel', finishDrag);
 
   root.querySelector<HTMLButtonElement>('[data-viewport="in"]')?.addEventListener('click', () => {
-    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom * 1.4 });
+    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom * 2 });
   });
   root.querySelector<HTMLButtonElement>('[data-viewport="out"]')?.addEventListener('click', () => {
-    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom / 1.4 });
+    commitInteractiveCamera({ ...displayCamera, zoom: displayCamera.zoom / 2 });
   });
   root.querySelector<HTMLButtonElement>('[data-viewport="fit"]')?.addEventListener('click', () => {
     const planet = store.getState().world?.planet;

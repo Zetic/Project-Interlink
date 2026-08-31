@@ -64,7 +64,6 @@
 .ws-map-resource-card-body {
   fill: #0a121c;
   stroke: #52765a;
-  stroke-width: 0.22;
 }
 
 .ws-map-resource-card-header {
@@ -73,7 +72,6 @@
 
 .ws-map-resource-card-divider {
   stroke: #ffffff22;
-  stroke-width: 0.16;
 }
 
 .ws-map-resource-category,
@@ -87,7 +85,6 @@
 
 .ws-map-resource-category {
   fill: #e7edf3;
-  font-size: 1.18px;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-anchor: start;
@@ -96,7 +93,6 @@
 .ws-map-resource-name,
 .ws-map-resource-type,
 .ws-map-resource-material {
-  font-size: 1.34px;
   text-anchor: middle;
 }
 
@@ -107,7 +103,6 @@
 .ws-map-resource-port {
   fill: #1f3823;
   stroke: #7aa879;
-  stroke-width: 0.34;
   cursor: crosshair;
 }
 
@@ -122,10 +117,8 @@
 
 .ws-map-resource-node.ws-map-selected .ws-map-resource-card-body {
   stroke: #ffcc44;
-  stroke-width: 0.34;
 }
 
 .ws-map-resource-node.ws-map-selected .ws-map-resource-port {
   stroke: #ffcc44;
-  stroke-width: 0.4;
 }
