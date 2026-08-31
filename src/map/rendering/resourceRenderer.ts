@@ -3,15 +3,21 @@ import { metersToWorldUnits } from '../../world/scale.js';
 import type { Point, Planet, ResourceNode } from '../../world/types.js';
 import {
   applyEngineeringNodeVisibility,
-  ENGINEERING_NODE_FADE_START_ZOOM,
-  ENGINEERING_NODE_FULL_OPACITY_ZOOM,
+  ENGINEERING_NODE_HIDE_ZOOM,
   ENGINEERING_NODE_INTERACTIVE_ZOOM,
+  ENGINEERING_NODE_SHOW_ZOOM,
 } from './engineeringNodeVisibility.js';
+import type { RenderOriginState } from './renderOrigin.js';
+import { worldToRenderPoint } from './renderOrigin.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-export const RESOURCE_NODE_FADE_START_ZOOM = ENGINEERING_NODE_FADE_START_ZOOM;
+export const RESOURCE_NODE_HIDE_ZOOM = ENGINEERING_NODE_HIDE_ZOOM;
+export const RESOURCE_NODE_SHOW_ZOOM = ENGINEERING_NODE_SHOW_ZOOM;
 export const RESOURCE_NODE_INTERACTIVE_ZOOM = ENGINEERING_NODE_INTERACTIVE_ZOOM;
-export const RESOURCE_NODE_FULL_OPACITY_ZOOM = ENGINEERING_NODE_FULL_OPACITY_ZOOM;
+/** @deprecated Kept for compatibility; engineering cards no longer alpha-fade. */
+export const RESOURCE_NODE_FADE_START_ZOOM = RESOURCE_NODE_HIDE_ZOOM;
+/** @deprecated Kept for compatibility; engineering cards are fully opaque whenever visible. */
+export const RESOURCE_NODE_FULL_OPACITY_ZOOM = RESOURCE_NODE_SHOW_ZOOM;
 export const RESOURCE_NODE_PHYSICAL_WIDTH_METERS = 20;
 export const RESOURCE_NODE_PHYSICAL_HEIGHT_METERS = 12.5;
 export const RESOURCE_NODE_WORLD_WIDTH = metersToWorldUnits(RESOURCE_NODE_PHYSICAL_WIDTH_METERS);
@@ -38,7 +44,6 @@ function appendText(group: SVGGElement, className: string, x: number, y: number,
   text.textContent = value;
   group.appendChild(text);
 }
-
 
 export function resourcePortWorldPosition(resource: ResourceNode): Point {
   return { x: resource.position.x + RESOURCE_NODE_WORLD_WIDTH / 2, y: resource.position.y };
@@ -72,11 +77,12 @@ function appendResourceCard(group: SVGGElement, resource: ResourceNode): void {
   const title = svgElement('title'); title.textContent = 'resources'; port.appendChild(title); details.appendChild(port);
 }
 
-export function renderResourceLayer(planet: Planet, onSelect: (resourceId: string) => void): SVGGElement {
+export function renderResourceLayer(planet: Planet, renderOrigin: RenderOriginState, onSelect: (resourceId: string) => void): SVGGElement {
   const layer = svgElement('g'); layer.setAttribute('class', 'ws-map-resource-node-layer');
   for (const resource of planet.resourceNodes) {
+    const position = worldToRenderPoint(resource.position, renderOrigin);
     const node = svgElement('g');
-    node.setAttribute('transform', `translate(${resource.position.x} ${resource.position.y})`);
+    node.setAttribute('transform', `translate(${position.x} ${position.y})`);
     node.setAttribute('class', 'ws-map-resource-node'); node.setAttribute('data-map-kind', 'resource'); node.setAttribute('data-resource-id', resource.id); node.setAttribute('data-region-id', resource.regionId);
     node.addEventListener('click', event => {
       if ((event.target as Element).closest('[data-port-id]')) return;
@@ -88,5 +94,5 @@ export function renderResourceLayer(planet: Planet, onSelect: (resourceId: strin
 }
 
 export function updateResourceVisibility(svg: SVGSVGElement, zoom: number): void {
-  applyEngineeringNodeVisibility(svg.querySelector<SVGGElement>('.ws-map-resource-node-layer'), zoom);
+  applyEngineeringNodeVisibility(svg, svg.querySelector<SVGGElement>('.ws-map-resource-node-layer'), zoom);
 }
