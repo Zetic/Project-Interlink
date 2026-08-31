@@ -2,7 +2,7 @@ import type { AppState, MapCameraState, MapSelection, Region, WorldState } from 
 
 export type AppStateListener = (state: Readonly<AppState>) => void;
 
-export const RESOURCE_FOCUS_ZOOM = 36;
+export const RESOURCE_FOCUS_ZOOM = 2 ** 19; // 524,288×: ~76 m of Earth-scale map width
 
 function regionFocusZoom(world: WorldState, region: Region): number {
   const widthZoom = world.planet.width / Math.max(1, region.bounds.width * 1.35);

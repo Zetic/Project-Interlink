@@ -1,8 +1,8 @@
 import { polygonBounds, polygonCentroid, pointInPolygon } from './geometry.js';
 import { createRng } from './random.js';
 import { RESOURCE_DEFINITIONS } from './resources.js';
-export const PLANET_MAP_WIDTH = 4096;
-export const PLANET_MAP_HEIGHT = 2048;
+import { EARTH_SCALE_PHYSICAL_HEIGHT_METERS, EARTH_SCALE_PHYSICAL_WIDTH_METERS, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH, } from './scale.js';
+export { PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from './scale.js';
 export const REGION_COUNT = 5;
 const BOUNDARY_Y_FRACTIONS = [0, 0.12, 0.25, 0.38, 0.5, 0.62, 0.75, 0.88, 1];
 const MIDDLE_SPLIT_LEFT_INDEX = 5;
@@ -13,6 +13,9 @@ const REGION_PREFIXES = ['Veyra', 'Talus', 'Solen', 'Kharon', 'Mareth', 'Calyx',
 const REGION_SUFFIXES = ['Highlands', 'Basin', 'Reach', 'Expanse', 'Plateau', 'Flats', 'Rift', 'Plain'];
 function roundCoordinate(value) {
     return Number(value.toFixed(2));
+}
+function roundResourceCoordinate(value) {
+    return Number(value.toFixed(6));
 }
 function createVerticalBoundary(seed, namespace, baseFraction, jitterFraction) {
     const rng = createRng(seed, namespace);
@@ -120,11 +123,11 @@ function randomPointInRegion(seed, region, index) {
             y: rng.range(region.bounds.y, region.bounds.y + region.bounds.height),
         };
         if (pointInPolygon(candidate, region.polygon)) {
-            return { x: roundCoordinate(candidate.x), y: roundCoordinate(candidate.y) };
+            return { x: roundResourceCoordinate(candidate.x), y: roundResourceCoordinate(candidate.y) };
         }
     }
     const centroid = polygonCentroid(region.polygon);
-    return { x: roundCoordinate(centroid.x), y: roundCoordinate(centroid.y) };
+    return { x: roundResourceCoordinate(centroid.x), y: roundResourceCoordinate(centroid.y) };
 }
 function createResources(seed, regions) {
     const nodes = [];
@@ -166,6 +169,8 @@ export function generateWorld(seedInput) {
         name: planetRng.pick(PLANET_NAMES),
         width: PLANET_MAP_WIDTH,
         height: PLANET_MAP_HEIGHT,
+        physicalWidthMeters: EARTH_SCALE_PHYSICAL_WIDTH_METERS,
+        physicalHeightMeters: EARTH_SCALE_PHYSICAL_HEIGHT_METERS,
         regions,
         resourceNodes,
     };

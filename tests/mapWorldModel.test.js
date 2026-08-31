@@ -3,6 +3,13 @@ import test from 'node:test';
 
 import { pointInPolygon } from '../dist/world/geometry.js';
 import { generateWorld, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH, REGION_COUNT } from '../dist/world/generateWorld.js';
+import {
+  EARTH_SCALE_METERS_PER_WORLD_UNIT,
+  EARTH_SCALE_PHYSICAL_HEIGHT_METERS,
+  EARTH_SCALE_PHYSICAL_WIDTH_METERS,
+  metersToWorldUnits,
+  worldUnitsToMeters,
+} from '../dist/world/scale.js';
 
 function polygonArea(points) {
   let twiceArea = 0;
@@ -32,6 +39,16 @@ test('new TypeScript world model generates exactly five geographic regions', () 
   assert.equal(REGION_COUNT, 5);
   assert.ok(world.planet.resourceNodes.length >= 15);
   assertResourcePlacement(world);
+});
+
+test('planet logical coordinates carry an Earth-scale physical interpretation', () => {
+  const world = generateWorld('earth-scale-world');
+  assert.equal(world.planet.physicalWidthMeters, EARTH_SCALE_PHYSICAL_WIDTH_METERS);
+  assert.equal(world.planet.physicalHeightMeters, EARTH_SCALE_PHYSICAL_HEIGHT_METERS);
+  assert.equal(worldUnitsToMeters(PLANET_MAP_WIDTH), EARTH_SCALE_PHYSICAL_WIDTH_METERS);
+  assert.equal(worldUnitsToMeters(PLANET_MAP_HEIGHT), EARTH_SCALE_PHYSICAL_HEIGHT_METERS);
+  assert.ok(Math.abs(EARTH_SCALE_METERS_PER_WORLD_UNIT - 9783.935546875) < 1e-9);
+  assert.ok(Math.abs(worldUnitsToMeters(metersToWorldUnits(20)) - 20) < 1e-9);
 });
 
 test('Phase 3.5 regions partition the full map with irregular asymmetric boundaries', () => {
