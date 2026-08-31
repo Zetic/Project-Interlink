@@ -67,7 +67,7 @@ test('simulation modules do not use Math.random directly', async () => {
   let callCount = 0;
   Math.random = () => { callCount++; return original(); };
 
-  const { createWorld } = await import('../src/core/world/worldState.js');
+  const { createWorld } = await import('../src/generator/generateWorld.js');
   createWorld('math-random-check');
 
   Math.random = original;

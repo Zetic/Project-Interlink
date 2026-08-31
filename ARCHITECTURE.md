@@ -1,42 +1,54 @@
-# Project Interlink — Architecture and File Organization
+# Project Interlink — Current Architecture
 
-This document records the **current implementation architecture** of Project Interlink: where responsibilities live, which dependency directions are intentional, how new systems should be added, and which files are compatibility surfaces rather than canonical implementation homes.
+This document is the source of truth for **current code ownership, dependency direction, runtime authority, and extension paths**. `DESIGN.md` describes the long-term game design. `README.md` summarizes implemented behavior. `ARCHITECTURE_PERFORMANCE.md` describes runtime/performance constraints. `.github/copilot-instructions.md` contains coding-agent guardrails.
 
-`DESIGN.md` describes what the game is intended to become. `README.md` summarizes current implementation state. `.github/copilot-instructions.md` contains coding-agent guardrails. This file is the source of truth for **code organization and responsibility boundaries**.
-
----
-
-## 1. Architectural Goals
-
-The project is organized to grow from the current material-processing prototype into a much larger simulation containing many apparatus types, physical properties, process models, material forms, controls, recursive systems, and world-generation domains without returning to central switchboards or duplicate registries.
-
-The important responsibility chain is:
-
-```text
-content definitions
-        ↓
-core physical/system contracts
-        ↓
-process definitions + pure physics
-        ↓
-simulation runtimes
-        ↓
-workspace projection / interaction
-```
-
-Generation is a separate producer of world truth:
-
-```text
-content + deterministic RNG + core world assembly
-                    ↓
-               generated world
-```
+Historical migration details belong in `PATCH_NOTES.md` and Git history, not in active architecture documentation.
 
 ---
 
-## 2. Dependency Direction
+## 1. Production Runtime Authority
 
-Preferred dependency direction:
+Project Interlink has one production physical-simulation authority:
+
+```text
+Browser main thread
+  UI / graph authoring / canonical world state
+             ↓ coarse setup, commands, queries
+Dedicated simulation Worker
+             ↓
+WasmPackedWorldRuntime
+             ↓
+Rust interlink-runtime scheduler
+             ↓
+Rust domain crates
+```
+
+Rust/WASM owns:
+
+- fixed-step physical time advancement;
+- retained runtime material and thermal state;
+- apparatus execution;
+- routing and backpressure;
+- conservation-sensitive physical transformations;
+- Site/world scheduling;
+- runtime profiling of physical work.
+
+JavaScript does **not** provide a fallback physics engine and does not advance production physical time. JavaScript owns:
+
+- deterministic world/content authoring;
+- readable canonical graph/node state;
+- compilation of canonical state into packed Worker setup data;
+- Worker lifecycle, protocol, commands, and queries;
+- authoritative-state presentation projection;
+- workspace/navigation/Inspector DOM behavior.
+
+The browser-to-WASM production surface is the coarse world-runtime interface. Standalone per-apparatus WASM browser runtimes are intentionally absent.
+
+---
+
+## 2. Repository Layers and Dependency Direction
+
+Preferred JavaScript dependency direction:
 
 ```text
 app → generator + core + workspace
@@ -47,62 +59,75 @@ content → core
 core → core
 ```
 
-### Rules
+Rust dependencies are defined by the Cargo workspace and flow from the world runtime into reusable physical-domain crates.
 
-- `core` contains reusable physical, process, world-model, validation, and neutral-system abstractions. It must not depend on workspace/UI or simulation-runtime code.
-- `content` defines what resources, Features, apparatus, and similar catalog entries exist. It should not contain running simulation loops or DOM behavior.
-- `generator` decides what deterministic world content appears from physical conditions and seeded RNG. It consumes content definitions rather than owning those definitions.
-- `simulation` owns continuous runtime behavior, streams, storage, apparatus execution, world-time advancement, and boundary transfer.
-- `workspace` owns player-facing graph projection, layout, navigation, catalog interaction, Inspector presentation, and DOM orchestration. It does not own physical truth.
-- `src/app.js` is the browser composition root.
-
-### Legacy compatibility exception
-
-`src/core/world/worldState.js` still exposes the historical `createWorld()` compatibility API and therefore delegates to `generator/generateWorld.js`. New code should not extend this dependency direction.
-
-Use `src/generator/generateWorld.js` for new generation callers, `src/core/world/model/*` for world-model responsibilities, and `src/core/world/validation/*` for validation.
-
----
-
-## 3. Repository Organization
-
-The project intentionally remains lightweight: vanilla HTML/CSS/ES modules, Node-based tests, and no application framework or backend.
+Repository layout:
 
 ```text
 Project-Interlink/
 ├── .github/
 │   ├── copilot-instructions.md
 │   └── workflows/test.yml
-├── ARCHITECTURE.md
-├── DESIGN.md
-├── PATCH_NOTES.md
-├── README.md
-├── index.html
-├── styles.css
-├── workspace-overrides.css
-├── apparatus-controls.css
-├── feature-inspector.css
-├── package.json
+├── rust/
+├── scripts/
 ├── src/
 │   ├── app.js
 │   ├── content/
 │   ├── core/
-│   ├── data/
 │   ├── generator/
 │   ├── simulation/
+│   ├── wasm/                  generated wasm-bindgen browser package
 │   └── workspace/
-└── tests/
+├── tests/
+├── ARCHITECTURE.md
+├── ARCHITECTURE_PERFORMANCE.md
+├── DESIGN.md
+├── PATCH_NOTES.md
+└── README.md
 ```
+
+Do not recreate removed compatibility namespaces or one-line forwarding modules merely to shorten imports. Internal callers should use canonical module paths directly.
+
+---
+
+## 3. State Domains
+
+Keep three state domains separate:
+
+```text
+World / canonical authored state
+        objective generated topology and readable player-authored graph
+
+Rust runtime state
+        transient authoritative physical execution state
+
+Knowledge / application state
+        player knowledge plus selection/layout/presentation state
+```
+
+Canonical JavaScript state is used to author, serialize, inspect, and reconfigure the world. After setup, retained physical inventories and time-evolving machine state are authoritative in Rust. Worker snapshots/details project that state back into the browser without creating a second simulation authority.
+
+UI state such as selection, pan, zoom, panel state, and temporary gestures is not physical truth.
 
 ---
 
 ## 4. `src/content/` — Declarative Game Content
 
-`content` answers **what can exist?** It owns declarative definitions and compatibility/catalog metadata, not process runtime loops or UI behavior.
+`src/content/` answers **what can exist?**
 
-`content/apparatus/definitions.js` is the canonical definition source for placeable engineering nodes. It owns node identity, NODE catalog metadata, process association, canonical ports/capabilities, fixed capabilities, defaults, and player-configurable process parameters.
+Important areas:
 
-Current placeable definitions are:
+```text
+src/content/
+├── apparatus/definitions.js
+├── features/
+├── reactions/reactionDefinitions.js
+└── resources/
+```
+
+`content/apparatus/definitions.js` is the canonical browser definition source for engineering node identity, catalog metadata, ports/capabilities, defaults, fixed capabilities, process association, and player-configurable parameters.
+
+Current player-facing engineering definitions include:
 
 ```text
 Extractor
@@ -119,468 +144,334 @@ Exhaust Vent
 Hopper
 ```
 
-The old generic `Crusher` definition is compatibility-only and `placeable: false`.
+The generic `Crusher` remains an intentional compatibility apparatus and is not player-placeable.
 
-The NODE catalog is projected from these definitions. Do not create a second independent machine catalog.
-
-Resource composition templates, descriptions, occurrence-family vocabulary, Feature types, Feature naming, hard compatibility, and generation weighting data belong under `content/`. Generator code consumes them and applies deterministic physical conditions/RNG.
+Do not create a second machine catalog, second port registry, or machine-pair whitelist.
 
 ---
 
-## 5. `src/core/` — Reusable Physical Truth and Contracts
+## 5. `src/core/` — Canonical Reusable Contracts
 
-```text
-src/core/
-├── materials/
-├── processes/
-├── systems/
-└── world/
-```
+### Materials
 
-### 5.1 Materials
+Canonical material state remains readable/string-keyed JavaScript state used by generation, authoring, validation, setup compilation, and presentation.
 
-Relevant solid-material implementation:
+Relevant structure:
 
 ```text
 src/core/materials/
+├── gas/
+├── properties/
+├── solids/
+├── species/
+├── thermal/
 ├── materialBatches.js
 ├── materialBody.js
 ├── materialForms.js
-├── occurrenceMaterialization.js
-├── sampleAcquisition.js
-├── properties/
-│   ├── magneticProperties.js
-│   └── thermalProperties.js
-├── thermal/
-│   ├── thermalMaterial.js
-│   └── thermalState.js
-├── gas/
-│   └── gasMaterialState.js
-├── solids/
-│   ├── comminutionProperties.js
-│   ├── liberationClasses.js
-│   ├── mineralTextures.js
-│   ├── particleSizeBins.js
-│   └── solidMaterialState.js
-└── species/
-    ├── materialSpecies.js
-    └── speciesRegistry.js
+└── occurrenceMaterialization.js
 ```
 
-The implemented particulate state is sparse and aggregate-based. Textured ore populations use:
+Textured particulate identity is:
 
 ```text
 speciesId × sizeBinId × liberationClassId × textureProfileId → quantity
 ```
 
-Legacy/untextured populations remain valid as the historical three-axis form:
+Legacy/untextured material may omit the texture axis. A fraction represents an aggregate statistical population, not one particle.
 
-```text
-speciesId × sizeBinId × liberationClassId → quantity
-```
+`MaterialBody.thermalState.sensibleEnthalpyJ` is the body thermal inventory. Temperature is derived rather than added to the sparse particulate key.
 
-A fraction represents a statistical population, not one simulated particle.
+The former broad `<32 µm` particle-size ID remains readable as a compatibility alias. New staged comminution uses the resolved `<4`, `4–8`, `8–16`, and `16–32 µm` bins.
 
-`solidMaterialState.textureProfiles` is a small profile registry referenced by textured fraction IDs. It exists so blending two physically different ore textures does not collapse them into one otherwise-identical population and permanently lose information needed by later comminution.
+### Process contracts
 
-A mineral texture profile currently contains:
+`src/core/processes/definitions/` contains browser-readable process definitions and parameter contracts. Production continuous process physics and conservation enforcement are **not** implemented in a parallel JavaScript process layer; the authoritative algorithms used each fixed step live in Rust domain/runtime crates.
 
-```text
-id
-speciesTextures[speciesId]
-  grainSizeUm
-    d10
-    d50
-    d90
-  occurrenceModes
-    free
-    boundary
-    intergrown
-    included
+### Systems
 
-optional carried engineering lineage
-  comminutionProperties
-    bondCrushingWorkIndexKWhPerT
-    bondBallMillWorkIndexKWhPerT
-    bondAbrasionIndex
-```
+`src/core/systems/` owns neutral node/port/connection concepts used by the graph model. Connection eligibility derives from edge kind and interface/physical capabilities rather than explicit machine-pair tables.
 
-Texture is **occurrence/geological structural state**, not a `MaterialSpecies` property. Hematite can therefore have different grain-size distributions and association modes in different deposits.
+Important capabilities include `resource-source`, `solid-particulate`, `stored-solid-particulate`, and `gas`.
 
-The source texture profile remains immutable lineage while particle size and liberation state evolve. This fourth particulate identity axis is justified because merging it away would change future physical outcomes.
+### World model and validation
 
-Do **not** generalize this into appending every future property to the fraction key. Temperature, pressure, moisture, phase state, and similar body-scale/phase-scale variables should remain outside the sparse particulate identity unless loss of that axis would genuinely merge populations with different future particulate behavior.
-
-`MaterialBody.thermalState.sensibleEnthalpyJ` is the authoritative thermal inventory. Temperature is derived from body composition heat capacity and the named `298.15 K` reference, never added to the particulate fraction key. Withdrawal scales energy with well-mixed mass; additions conserve joules and derive an equilibrium temperature. `gas/gasMaterialState.js` provides the matching minimal composition-and-energy state for gaseous process products.
-
-`properties/` remains the intended home for domain-specific intrinsic/reference property resolution. Process physics should use property APIs when a resolver exists rather than reaching directly into species registry internals.
-
-The canonical particle-size vocabulary now resolves fine grinding through the following lower bins:
-
-```text
-<4 µm
-4–8 µm
-8–16 µm
-16–32 µm
-32–63 µm
-63–125 µm
-...
-```
-
-The former broad `<32 µm` class remains readable only as a compatibility alias. New staged comminution does not emit it.
-
-### 5.2 Processes
-
-Current staged comminution adds dedicated process definitions/kernels for Jaw crushing, Cone crushing, and milling while retaining generic crushing only for compatibility.
-
-The conceptual responsibility split remains:
-
-```text
-Process definition
-    inputs / outputs / parameters / applicability / conservation policy
-
-Pure physics
-    material transformation or routing
-
-Executor
-    discrete MaterialBatch adapter
-
-Continuous runtime
-    placed-machine flow / backpressure adapter
-
-Conservation policy
-    validates the quantities conserved by the process family
-```
-
-Current mechanical process behavior:
-
-- **Jaw Crushing** — primary size reduction with a coarse PSD and intentionally very low direct liberation.
-- **Cone Crushing** — secondary/tertiary size reduction with nominal PSD/oversize behavior and limited texture-dependent direct liberation.
-- **Milling** — fine grinding; liberation depends on resulting particle size relative to the source texture's species-specific D10/D50/D90 grain distribution and association modes.
-- **Screening** — routes existing fractions to `undersize`/`oversize` by ideal aperture cut without changing descriptors.
-- **Material Splitting** — divides every existing population proportionally across explicit outputs.
-- **Material Merging** — combines sparse populations while retaining distinct texture lineages.
-- **Controlled Feeding** — preserves material state while runtime meters requested mass flow.
-- **Magnetic Separation** — routes fractions according to magnetic response plus size, liberation, field strength, and entrainment/carryover.
-- **Thermochemical Roasting** — applies declarative reaction definitions to heated body state, with elemental rather than species conservation.
-
-Mechanical transformations preserve species mass. Thermochemical transformations conserve total mass and explicitly declared elemental masses. Routing/classification also preserves texture lineage.
-
-### 5.3 Texture-aware liberation rule
-
-Generated ore no longer receives a universal liberation gain based only on how many size bins a machine crosses.
-
-The physical dependency is:
-
-```text
-resulting particle size
-        ↓
-size relative to species D10/D50/D90 grain distribution
-        +
-free / boundary / intergrown / included association state
-        +
-equipment breakage regime
-        ↓
-liberation advancement
-```
-
-`mineralTextures.js` derives an aggregate liberation-equilibrium distribution from the generated species texture. The current class thresholds are intentionally ordered so partial and mostly-liberated states can appear while composite particles are still comparable to mineral-grain dimensions, while the fully-liberated class requires particles to be materially smaller than the effective grain scale.
-
-Jaw/Cone equipment strongly limits how far one breakage event approaches this equilibrium even when size reduction is large. Ball Mill grinding can approach it much more strongly. Comminution is monotonic: already-liberated matter is not re-locked by further size reduction.
-
-Two ores with the same bulk composition and the same Ball Mill PSD may therefore leave the mill with different liberation distributions.
-
-### 5.4 Neutral system primitives
-
-`src/core/systems/` describes reusable node/port/connection concepts shared by natural hierarchy nodes and engineered systems.
-
-Connection eligibility derives from edge kind plus interface/physical capabilities, not explicit machine-pair whitelists.
-
-Important current concepts include `resource-access`, `material`, `resource-source`, `solid-particulate`, `gas`, and `stored-solid-particulate`.
-
-`stored-solid-particulate` means the receiving process requires a buffered/withdrawable particulate owner. It is an interface requirement, not material provenance or a distinct physical form.
-
-### 5.5 World model and validation
-
-Canonical natural ownership remains:
+Canonical natural ownership is:
 
 ```text
 Planet → Region → Site → Feature → ResourceOccurrence
 ```
 
-Schema `9` requires generated ore-body ResourceOccurrences to carry valid `mineralTexture` data. Generator `7` deterministically creates those texture profiles. Same-seed physical world truth remains deterministic within that generator version.
+Current serialized versions are defined only by `src/core/world/versions.js`.
 
-Occurrence validation checks texture profile structure and species coverage for ore-body composition.
+At this revision:
+
+```text
+SCHEMA_VERSION = 10
+GENERATOR_VERSION = 7
+```
+
+`src/core/world/model/worldAssembly.js` assembles generated entities into the canonical world object. Validation lives in the concrete modules under `src/core/world/validation/`; there is no compatibility `worldState.js` facade or forwarding validation barrel.
 
 ---
 
 ## 6. `src/generator/` — Deterministic World Generation
 
-`generator` answers **what physical world is produced from this seed and these conditions?** It owns deterministic algorithms and RNG use, not authoritative content catalogs.
-
-`generateResources.js` generates ore-body texture profiles after composition is generated. Current prototype texture generation intentionally spans broad geological ranges while keeping constituent minerals correlated within one occurrence:
-
-- each ore resource has a resource-specific D50 generation envelope;
-- one occurrence-scale D50 is drawn log-uniformly from that envelope;
-- each constituent species varies around the shared occurrence scale rather than being rolled independently across the full resource range;
-- species D10 and D90 are generated around species D50 to provide a grain-size distribution rather than one characteristic-size scalar;
-- one occurrence complexity value influences normalized `free`, `boundary`, `intergrown`, and `included` association shares;
-- Bond Crushing Work Index, Bond Ball Mill Work Index, and Bond Abrasion Index are generated separately from resource-specific engineering ranges.
-
-These values are physical world truth. Exact values should not automatically become player knowledge merely because they exist in the world model; the current prototype Inspector exposes them directly for testing and development while the eventual analysis/knowledge gameplay layer remains a separate concern.
-
-Generation changes that alter same-seed world truth must follow generator-version rules.
-
----
-
-## 7. `src/simulation/` — Running Physical Systems
-
-`simulation` owns continuous time evolution and placed-system behavior.
-
-Runtime behavior remains registry-driven. Current active apparatus include Extractor, Jaw Crusher, Cone Crusher, Ball Mill, Screen, Splitter, Material Merger, Feeder, Dry Drum Magnetic Separator, and Electric Roasting Furnace. Hopper is solid storage; Exhaust Vent is the explicit environmental gas boundary.
-
-### Routing/material-state preservation
-
-Texture lineage must survive any operation that does not physically replace the geological lineage contract:
-
-- Hopper receive/withdraw;
-- MaterialStream cloning/scaling;
-- Splitter;
-- Material Merger;
-- Feeder;
-- Screen;
-- Jaw/Cone/Ball Mill outputs;
-- Dry Drum Magnetic Separator concentrate/tailings;
-- compatibility Crusher paths.
-
-Material Merger may combine two texture registries into one state, but same-ID conflicting profile definitions are rejected. Fractions with different texture IDs remain separate even when species, size, and liberation class are otherwise identical.
-
-Screen and Splitter remain explicit multi-output apparatus with transactional commits. Material Merger remains explicit fan-in. Feeder remains an identity transformation over material state with flow-control semantics.
-
-`simulationEngine.js` remains a graph/simulation orchestrator. Machine-specific transformations belong in process kernels and runtime modules rather than central type switches.
-
-`MaterialStream` represents transfer rates, not inventory. Solid/gas streams preserve physical-form-appropriate composition plus specific sensible enthalpy; Hoppers, furnace charge, and Exhaust Vent inventories own matter.
-
-### Comminution energy and throughput
-
-Staged comminution consumes occurrence-scoped engineering lineage rather than treating power as cosmetic metadata.
+`src/generator/` owns deterministic seeded generation algorithms. Canonical generator entry point:
 
 ```text
-feed P80
-+ product P80
-+ appropriate Bond Work Index
-→ specific energy kWh/t
-
-rated drive power
-÷ specific energy
-→ power-limited throughput
+src/generator/generateWorld.js
 ```
 
-The continuous runtime uses the lower of mechanical throughput capacity and power-limited throughput. Bond Abrasion Index is retained through lineage and accumulated as `tonne × Ai` exposure, without inventing a component-life coefficient before a wear model exists.
+Generation functions live directly under `src/generator/` rather than mirrored forwarding subfolders.
+
+Generation consumes declarative content and core world/material contracts. Same seed + same generator version must produce the same physical world truth. A change that intentionally changes same-seed generated truth requires the generator-version rule to be considered.
+
+Generated ore occurrences carry deterministic composition, mineral-texture lineage, and comminution engineering properties required by downstream physical processing.
 
 ---
 
-## 8. `src/workspace/` — Player-Facing Graph Application
+## 7. `src/simulation/` — Browser Runtime Boundary and Authoring Support
 
-`workspace` owns graph projection, catalog, placement, navigation, Inspector presentation, and DOM orchestration. It does not own physical truth.
+Despite the historical directory name, `src/simulation/` is **not a second production physics engine**.
 
-Generic Hopper and stream inspection summarizes composition, particle-size distribution, and liberation without exposing internal texture-profile IDs. Feature/resource inspection currently exposes occurrence engineering and mineralogical values as structured presentation data for development/testing:
+Its current responsibilities include:
+
+- browser-side Blueprint/node construction;
+- canonical Site/session topology;
+- packed numeric-ID setup compilation;
+- live reconfiguration compilation;
+- Worker host/protocol/pacing;
+- Worker snapshot/detail presentation projection;
+- browser-side capability/topology validation.
+
+Key files:
 
 ```text
-resource identity + concise geological descriptor
-engineering properties
-  CWi / BWi / Ai / mixture density
-mineral texture
-  species D10 / D50 / D90
-  free / boundary / intergrown / included shares
-access / connected extraction apparatus
+simulationEngine.js
+    browser Blueprint authoring model; never advances physical time
+
+worldSimulation.js
+    browser-side world/session topology compiled into Rust/WASM
+
+packedRuntimeCompiler.js
+packedComminutionCompiler.js
+packedExtractionCompiler.js
+packedSeparationCompiler.js
+packedRoastingCompiler.js
+packedThermalGasCompiler.js
+packedWorldRuntimeCompiler.js
+packedWorldWorkerSetup.js
+    canonical/string-keyed → packed numeric Rust setup pipeline
+
+packedRuntimeState.js
+packedStorageRuntime.js
+packedGasRuntime.js
+packedThermalRuntime.js
+    transient setup representations used while compiling Worker state
+
+rustWasmWorkerHost.js
+runtimeProtocol.js
+realtimeRuntime.js
+    Worker lifecycle, protocol, pacing, command/query coordination
+
+rustWasmWorker.js
+    Worker entry point
+
+runtimePresentation.js
+    projection of authoritative Worker snapshots/details into browser presentation
 ```
 
-`inspectionViewModel.js` projects authoritative occurrence data into structured fields. `featureInspectorUI.js` owns Feature-resource markup and `feature-inspector.css` owns narrow-panel presentation. Do not flatten these values back into one descriptor string or expose internal `textureProfileId` values in ordinary UI.
+The `packed*Runtime*` JavaScript classes are setup/compiler representations. They are intentionally retained because they build coarse Rust setup payloads; they are not time-advancing runtime authorities.
 
-The eventual player analysis/measurement system should control which exact occurrence properties are known; that Knowledge-layer work is separate from the current development Inspector presentation.
+### Apparatus JavaScript modules
 
-New machinery should continue to flow through definition-driven catalog, parameter, port, removability, and generic inspection paths instead of acquiring node-type branches.
+`src/simulation/apparatus/` and `extractorNode.js` / `hopperNode.js` construct readable canonical engineering nodes and their initial state. `apparatus/registry.js` is a **node factory registry**, not a physics runtime registry.
 
----
-
-## 9. `src/data/` — Compatibility Namespace
-
-`src/data/*` contains compatibility forwarding modules. Canonical resource content lives under `src/content/resources/`.
-
-Do not add new authoritative content to `src/data/`.
+Machine-specific fixed-step physical behavior belongs in Rust.
 
 ---
 
-## 10. Canonical Extension Path — Adding an Apparatus
+## 8. Worker / WASM Contract
 
-Typical path:
+The browser Worker owns one `WasmPackedWorldRuntime` instance.
+
+Setup path:
 
 ```text
-1. content/apparatus/definitions.js
-   identity, catalog metadata, ports/capabilities, process association,
-   fixed capabilities, defaults, configurable parameters
-
-2. core/processes/definitions/<process>.js
-   process contract
-
-3. core/processes/physics/<process>.js
-   pure physical transformation/routing behavior
-
-4. core/processes/executors/<process>.js
-   when discrete MaterialBatch execution is supported/needed
-
-5. simulation/apparatus/<apparatus>.js
-   continuous placed-machine behavior, backpressure, transaction boundaries
-
-6. simulation/apparatus/registry.js
-   runtime registration/phase
-
-7. tests/
-   physics, conservation, connectivity, backpressure, runtime, generic UI integration
+canonical world + authored Blueprints
+        ↓
+packedWorldRuntimeCompiler.js
+        ↓
+packedWorldWorkerSetup.js
+        ↓ structured-clone-safe coarse setup
+Worker
+        ↓
+WasmPackedWorldRuntime
 ```
 
-The following should **not** normally be required merely to add a machine:
+Runtime commands and queries cross the Worker boundary through `runtimeProtocol.js`. Full-world structured cloning every fixed step is prohibited. Detailed Inspector state is queried/snapshotted only when needed.
 
+Live topology/parameter changes compile into explicit reconfiguration rather than rebuilding a JavaScript simulation authority.
+
+The authoritative fixed step is `0.1 s` unless intentionally changed as a system-level runtime decision.
+
+---
+
+## 9. Rust Workspace
+
+Current Rust crates are organized by physical responsibility:
+
+```text
+rust/interlink-core
+rust/interlink-processes
+rust/interlink-extraction
+rust/interlink-comminution
+rust/interlink-separation
+rust/interlink-routing
+rust/interlink-thermal
+rust/interlink-thermochemistry
+rust/interlink-roasting
+rust/interlink-runtime
+rust/interlink-wasm
+```
+
+`interlink-runtime` owns the packed world scheduler and retained execution state. Domain crates implement reusable physical operations. `interlink-wasm` exposes the coarse browser boundary centered on `WasmPackedWorldRuntime`.
+
+Do not reintroduce per-apparatus browser bridge classes when the same operation can be configured/executed through the world runtime.
+
+See `rust/README.md` and `rust/interlink-runtime/README.md` for Rust-specific details.
+
+---
+
+## 10. `src/workspace/` — Player-Facing Application
+
+`workspace` owns graph projection, layout, navigation, placement/removal gestures, catalog UI, Inspector presentation, debug presentation, and DOM orchestration.
+
+Canonical domains:
+
+```text
+src/workspace/
+├── catalog/
+├── debug/
+├── graph/
+├── inspector/
+├── navigation/
+├── shell/
+├── sitePrototype.js
+├── siteSession.js
+├── workspaceController.js
+└── workspaceState.js
+```
+
+Top-level forwarding aliases have been removed. New workspace code should import the canonical submodule directly.
+
+`workspaceController.js` remains the large application/DOM orchestrator. Its later decomposition should separate Worker/runtime coordination, detail-query handling, rendering/input orchestration, and other concerns **without moving physical truth back into the main thread**.
+
+---
+
+## 11. Compatibility Policy
+
+Migration compatibility should be represented as an explicit data/behavior decision, not as duplicate module trees.
+
+Intentionally retained compatibility includes:
+
+- legacy generic `Crusher` behavior required by older authored/session state;
+- legacy particle-size IDs that must remain readable while canonical generation/processing emits newer resolved IDs.
+
+Intentionally removed compatibility includes:
+
+- `src/data/` forwarding namespace;
+- root material/process forwarding files;
+- mirrored generator forwarding folders;
+- top-level workspace forwarding files;
+- compatibility `core/world/worldState.js` factory;
+- standalone per-apparatus WASM browser adapters.
+
+The hygiene regression suite prevents these migration surfaces from silently returning.
+
+---
+
+## 12. Adding or Changing an Apparatus
+
+A new physical apparatus normally requires work in this order:
+
+```text
+1. src/content/apparatus/definitions.js
+   identity, catalog metadata, ports, defaults, configurable parameters
+
+2. src/core/processes/definitions/
+   browser-readable process/parameter contract when a new process family is needed
+
+3. canonical browser node construction
+   src/simulation/apparatus/* or the appropriate node-construction module
+
+4. Rust domain implementation
+   physical transformation/routing behavior
+
+5. rust/interlink-runtime
+   scheduler integration, state ownership, execution phase/order
+
+6. rust/interlink-wasm + JS packed setup compiler as needed
+   coarse setup/reconfiguration fields only
+
+7. workspace generic presentation/control support
+   preferably definition-driven rather than machine-specific controller branches
+
+8. JS + Rust + Worker/WASM integration regressions
+```
+
+Do not solve a new machine by adding:
+
+- a JavaScript fallback simulation path;
+- a second apparatus catalog;
 - a machine-pair connection whitelist;
-- a second NODE catalog registration list;
-- a node-type list for removability;
-- a node-type list for generic Inspector eligibility;
-- a new central simulation `if/switch` dispatch branch.
+- standalone per-machine WASM runtime objects;
+- full-world per-step serialization;
+- duplicate physics in JavaScript and Rust.
 
 ---
 
-## 11. Canonical Extension Path — Adding a Material Property or Structural Descriptor
+## 13. Performance and Validation Invariants
 
-A property/state descriptor should enter the simulation when at least one process needs it to determine a physical outcome.
+Production runtime invariants:
 
-First determine its physical owner:
+- one Worker-owned Rust/WASM physical authority;
+- deterministic fixed-step semantics;
+- no full-world structured clone every step;
+- no per-fraction or per-machine JS↔WASM loop in the hot path;
+- runtime-local numeric IDs are transient execution details, not serialized identity;
+- authoritative retained matter/energy state does not live in DOM objects;
+- deep profiling is opt-in and should not add timing overhead when disabled.
+
+Before merging runtime/architecture work run:
 
 ```text
-intrinsic species property      → MaterialSpecies / property resolver
-occurrence geological structure → ResourceOccurrence + carried lineage
-body/mixture state              → MaterialBody / phase state
-process operating condition     → apparatus/process state
+npm run check:runtime
 ```
 
-Texture is the current example of an occurrence-owned structural descriptor that must also travel with particulate populations because downstream liberation depends on it after blending.
+The repository PR workflow additionally rebuilds the wasm-bindgen package and verifies generated Worker assets match the committed browser package.
 
-Guidelines:
+Relevant regression guards include:
 
-- do not add speculative values just to fill a universal table;
-- distinguish intrinsic species properties from occurrence/body/mixture/structural state;
-- do not make every property another particulate fraction-key axis;
-- use a new population identity axis only when collapsing it would erase physically relevant future behavior;
-- add state/property resolution when an implemented process consumes it;
-- keep process physics independent from UI/runtime representation.
-
----
-
-## 12. Matter, Process, and Connection Invariants
-
-### Matter ownership
-
-Every modeled unit of matter has one physical owner/location at a time. A `MaterialStream` describes transfer rate and does not duplicate inventory.
-
-### Mechanical conservation
-
-Jaw Crusher, Cone Crusher, Ball Mill, compatibility Crusher, Screen, Splitter, Material Merger, Feeder, and Dry Drum Magnetic Separator preserve species mass.
-
-Comminution may change particle size and liberation. It does not change species or texture lineage. Screen/routing/magnetic separation preserve texture lineage while routing populations.
-
-### Transactional inputs and outputs
-
-A process must establish feasible output capacity before committing feed consumption. Multi-output machinery stages all required destinations. Multi-input routing stages all source withdrawals and the destination. A transaction commits only after planned movement is valid.
-
-### Typed connections
-
-Compatibility derives from port edge kind and capabilities. Do not reintroduce pair tables such as `hopper → screen` or `screen → hopper`.
-
-### Material fan-out/fan-in
-
-An ordinary material output remains single-connection. Explicit branching occurs through Splitter output ports. An ordinary input remains single-source. Explicit recombination occurs through Material Merger input ports.
-
-### Resource access
-
-`Feature → Extractor` resource access is not matter flow and creates no `MaterialStream`.
+- Rust-only runtime authority;
+- Worker cutover/protocol behavior;
+- runtime presentation stability;
+- live reconfiguration;
+- post-migration hygiene and module-resolution checks;
+- Rust scheduler/domain tests;
+- generated WASM package verification.
 
 ---
 
-## 13. Compatibility Entry Points
+## 14. Architecture Rules for Future Cleanup
 
-Thin compatibility modules remain in several areas, including root material re-exports, `processDefinitions.js` / `processPhysics.js`, `core/world/worldState.js`, simulation compatibility exports, workspace forwarding files, and `src/data/*`.
+Cleanup is complete only when deleted compatibility surfaces have no remaining import, documentation, test, or generated-interface dependency.
 
-A compatibility module is not a second implementation home. Do not add new authoritative physics, machine behavior, registries, or content there merely because the import is shorter.
+Prefer:
 
-The legacy generic Crusher likewise remains a compatibility apparatus, not the player-facing comminution model.
+- canonical direct imports;
+- one ownership location per responsibility;
+- small explicit boundary modules;
+- tests that guard architecture rather than migration comments that can become stale.
 
-The former broad `<32 µm` staged-comminution fraction ID also remains readable as a compatibility alias. New Ball Mill products use the resolved `<4`, `4–8`, `8–16`, and `16–32 µm` bins instead.
-
----
-
-## 14. Tests as Architecture Contracts
-
-The suite covers both simulation behavior and architectural extension points. In addition to existing architecture, routing, screening, and conservation groups, `stagedComminution.test.js` now proves:
-
-- `<4 µm` through run-of-mine particle-size vocabulary;
-- mostly locked run-of-mine extraction;
-- Jaw primary-crushing size reduction with little liberation;
-- Cone feed envelope and nominal PSD;
-- Ball Mill feed envelope and fine PSD;
-- the 32 µm Ball Mill product resolves across 32–63, 16–32, 8–16, 4–8, and <4 µm rather than collapsing into one terminal bin;
-- screen-to-mill eligibility;
-- exact species conservation through staged comminution;
-- persistent texture lineage from extraction;
-- identical Ball Mill settings producing different liberation for different ore textures;
-- blended ores retaining separate texture populations rather than collapsing;
-- Bond Work Index power limiting for harder ore.
-
-`liberationEquilibrium.test.js` proves the texture-equilibrium class distribution, stronger liberation with finer grinding, the stricter fully-liberated classification, and the no-relocking invariant.
-
-`featureInspectorUI.test.js` and `inspectionViewModel.test.js` protect the structured occurrence-property presentation and escaping boundary.
-
-`worldIntegrity.test.js` proves ore-body texture generation, species coverage, schema/generator versioning, and determinism.
-
-When adding another apparatus or physical property, tests should prove both its physical behavior and that it uses intended generic extension paths.
-
----
-
-## 15. Growth Direction
-
-The current ore-processing foundation now represents a realistic high-level distinction:
-
-```text
-run-of-mine ore
-      ↓
-Jaw Crusher       coarse size reduction / little liberation
-      ↓
-Cone Crusher      secondary/tertiary reduction / limited liberation
-      ↕
-Screen / recycle
-      ↓
-Ball Mill         fine grinding / texture-dependent liberation
-      ↓
-beneficiation selected from actual material properties
-```
-
-The Dry Drum Magnetic Separator can serve as coarse dry preconcentration for suitable strongly magnetic material; it is not being treated as universal final beneficiation.
-
-The next major capability should be chosen from the physical state now available rather than added to compensate for missing liberation physics. Density + Gravity Separation is a strong candidate. Slurry/fluid handling then opens wet classification, flotation, and wet magnetic separation. Additional comminution routes such as HPGR should enter when their breakage, energy, and wear differences are modeled as real process choices rather than nominal machine variants.
-
-Longer-term systems should extend these boundaries rather than being packed into universal material objects or central machine engines.
-
----
-
-## 16. Documentation Rule
-
-When code organization changes, update this file in the same PR when practical.
-
-Use:
-
-- `DESIGN.md` for long-term design contracts;
-- `ARCHITECTURE.md` for current code ownership and extension paths;
-- `README.md` for current implementation state and roadmap;
-- `.github/copilot-instructions.md` for implementation guardrails;
-- `PATCH_NOTES.md` for historical context.
-
-If documentation and implementation disagree, resolve the discrepancy rather than allowing multiple architectural stories to coexist.
+Avoid preserving dead files merely because they once represented an intermediate migration stage. Preserve compatibility only when an actual serialized/gameplay contract still requires it.

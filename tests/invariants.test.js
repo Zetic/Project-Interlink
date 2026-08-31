@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorld } from '../src/core/world/worldState.js';
+import { generateWorld as createWorld } from '../src/generator/generateWorld.js';
 import { resources } from '../src/generator/generateResources.js';
 import { FEATURE_ALLOWED_FAMILIES, OCCURRENCE_FAMILY_VALUES } from '../src/generator/generateFeatures.js';
 

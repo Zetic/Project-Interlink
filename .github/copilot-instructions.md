@@ -1,64 +1,101 @@
-# Project Interlink — Copilot Coding Instructions
+# Project Interlink — Coding Agent Guardrails
 
-This file contains implementation guardrails for coding agents.
+Use this file for implementation constraints. Read the active issue/PR request plus `ARCHITECTURE.md` before editing runtime or workspace code.
 
 Document roles:
 
-- `DESIGN.md` — long-term game/simulation design
-- `ARCHITECTURE.md` — current code organization, dependency direction, extension paths, and compatibility surfaces
-- `README.md` — current implementation state and near-term direction
-- `.github/copilot-instructions.md` — coding-agent rules
-- the active GitHub issue / PR request — immediate task scope and acceptance criteria
+- `DESIGN.md` — long-term game/simulation design;
+- `ARCHITECTURE.md` — current code ownership, dependency direction, and extension paths;
+- `ARCHITECTURE_PERFORMANCE.md` — runtime/performance contract;
+- `README.md` — current implemented gameplay/state summary;
+- `PATCH_NOTES.md` — historical development record;
+- this file — coding-agent guardrails.
 
-The active task defines what to implement. Do not expand scope merely because design documents mention future systems.
+Historical migration architecture is not a valid implementation target.
 
 ---
 
 ## Working Rules
 
-- Read the full task, `ARCHITECTURE.md`, and relevant code/tests before editing.
-- Prefer the smallest coherent change that satisfies the requested behavior.
-- Preserve established physical and architectural contracts unless the task explicitly changes them.
-- Do not rewrite unrelated systems merely for cleanup.
-- Do not claim browser/manual behavior was verified unless it was actually tested.
-- Run the complete regression suite before declaring work complete.
-- Add focused regression tests for new invariants, extension points, and bug fixes.
-- Keep deterministic behavior deterministic; use existing namespaced RNG patterns for generation.
-- If generated world truth changes for the same seed, follow the `GENERATOR_VERSION` rule.
-- Bump `SCHEMA_VERSION` only when the serialized world-state contract changes.
-- Update documentation when a task materially changes current behavior or code-ownership boundaries.
+- Prefer the smallest coherent change that satisfies the active task.
+- Preserve established physical ownership, conservation, deterministic-generation, graph, and runtime-authority contracts unless the task explicitly changes them.
+- Add focused regressions for new invariants and bug fixes.
+- Run the complete relevant regression suite before declaring work complete.
+- Do not claim browser/manual behavior was verified unless it actually was.
+- Update active documentation when code ownership or current behavior materially changes.
+- Do not keep dead compatibility files merely because old imports once existed.
+
+---
+
+## Production Runtime Authority
+
+Production physical simulation has one authority:
+
+```text
+main-thread UI / canonical authoring
+        ↓ coarse setup, commands, queries
+simulation Worker
+        ↓
+WasmPackedWorldRuntime
+        ↓
+Rust interlink-runtime + domain crates
+```
+
+Rust/WASM owns:
+
+- fixed-step physical time advancement;
+- retained runtime material/thermal state;
+- apparatus execution;
+- routing/backpressure;
+- conservation-sensitive transformations;
+- Site/world scheduling.
+
+JavaScript owns:
+
+- generated/canonical world and content authoring;
+- readable Blueprint/node state;
+- canonical → packed runtime setup compilation;
+- Worker lifecycle/protocol/pacing;
+- authoritative snapshot/detail presentation;
+- workspace and DOM interaction.
+
+Do **not**:
+
+- create a JavaScript fallback physics engine;
+- advance production physical time on the main thread;
+- recreate standalone per-apparatus WASM browser runtimes;
+- send full-world state across the Worker boundary every fixed step;
+- add per-fraction/per-machine JS↔WASM hot-path loops.
+
+`src/simulation/packed*` JavaScript types are setup/compiler representations. Do not delete them simply because they contain `Runtime` in the name; delete only code proven unused by the current world-runtime setup path.
 
 ---
 
 ## Platform Guardrails
 
-Preserve the current lightweight architecture unless an issue explicitly requires otherwise:
+Preserve the current lightweight browser architecture unless an active task requires otherwise:
 
-- HTML/CSS and vanilla JavaScript/ES modules while sufficient
-- relative imports compatible with GitHub Pages project paths
-- DOM-independent simulation/process physics
-- Node-based deterministic regression tests
+- vanilla HTML/CSS/ES modules;
+- relative imports compatible with GitHub Pages project paths;
+- dedicated Worker + Rust/WASM physical runtime;
+- Node-based JavaScript regression tests;
+- Cargo workspace Rust tests.
 
-Do not introduce a framework, backend, database, ECS, dependency-injection framework, WebAssembly, or another large infrastructure layer without a concrete requirement.
-
-Do not recreate removed architecture such as separate Debug/Player modes, a special Engineering workspace, structural Feature discovery gating, hierarchy-specific graph renderers, finite positive-only graph coordinates, machine-pair connection whitelists, or duplicate machine catalogs.
+Do not introduce a frontend framework, backend, database, ECS, dependency-injection framework, or other large infrastructure layer without a concrete requirement.
 
 ---
 
-## Current Architecture
-
-Canonical domains are:
+## JavaScript Domain Ownership
 
 ```text
-src/content/     declarative resources, Features, apparatus definitions
-src/core/        materials, properties, process definitions/physics/conservation,
-                 neutral system primitives, world model/validation
-src/generator/   deterministic world-generation algorithms
-src/simulation/  running apparatus, streams, storage, fixed-step simulation,
-                 boundary transfers
-src/workspace/   graph, placement, catalog, navigation, Inspector,
-                 layout/UI state and DOM orchestration
+src/content/     declarative resources, Features, apparatus, reactions
+src/core/        canonical materials, process contracts, system primitives,
+                 world assembly/validation/versions
+src/generator/   deterministic world generation
+src/simulation/  browser authoring/setup compiler + Worker boundary/presentation
+src/workspace/   graph/navigation/catalog/Inspector/debug/shell DOM application
 src/app.js       browser composition root
+src/wasm/        generated wasm-bindgen browser package
 ```
 
 Preferred dependency direction:
@@ -72,27 +109,28 @@ content → core
 core → core
 ```
 
-`src/core/world/worldState.js` retains a historical `createWorld()` compatibility API that delegates to generator code. Do not add more `core → generator` dependencies. New generation callers should use `src/generator/generateWorld.js` directly.
-
-See `ARCHITECTURE.md` for the full current file tree.
+Internal code should import canonical paths directly. Do not recreate `src/data/`, mirrored generator folders, top-level workspace forwarding files, root material forwarding files, or a `core/world/worldState.js` compatibility facade.
 
 ---
 
 ## State Separation
 
-Keep these concerns separate:
+Keep these concerns distinct:
 
 ```text
-World / Simulation State → objective physical truth
-Knowledge State          → measurements, analysis, estimates, confidence
-UI / Application State   → selection, layout, viewport, panels, temporary interaction state
+Canonical world/authored state  → readable generated topology and Blueprint definitions
+Rust runtime state              → authoritative time-evolving physical state
+Knowledge state                 → player measurements/knowledge
+Application/UI state            → selection/layout/viewport/panels/gestures
 ```
 
-Physical truth must not exist only in DOM/UI objects. Graph layout, pan, zoom, selection, and temporary gestures are UI state and must not mutate world matter.
+Worker snapshots/details are projections of Rust authority, not a second simulation state.
+
+Physical truth must never exist only in DOM elements.
 
 ---
 
-## Natural Resource Ownership
+## Natural World Ownership
 
 Preserve:
 
@@ -100,18 +138,19 @@ Preserve:
 Planet → Region → Site → Feature → ResourceOccurrence
 ```
 
-- Region groups Sites and does not own natural resource inventory or Features directly.
-- Site references Features through `featureIds`; do not create a second occurrence-ownership list.
-- Every natural `ResourceOccurrence` is Feature-owned with `sourceType: 'feature'` and the owning Feature ID.
-- Generated localized Features currently expose one ResourceOccurrence; independently exploitable sources normally become separate Features.
-- Multiple constituents of one physical source belong in one occurrence composition.
-- Widespread resources still require physical access through Sites/Features rather than Region inventory.
+- Regions group Sites; they do not directly own natural resource inventory.
+- Sites reference Features.
+- Natural `ResourceOccurrence`s are Feature-owned.
+- Independently exploitable natural sources should normally be distinct Features.
+- Broadly distributed resources still require physical access through Sites/Features rather than Region inventory.
 
-Do not reintroduce `region.features`, `region.resources`, `region.backgroundResourceOccurrences`, or other dual ownership.
+Do not reintroduce parallel ownership fields such as `region.resources`, `region.features`, or `region.backgroundResourceOccurrences`.
+
+Current schema/generator constants live only in `src/core/world/versions.js`. Do not duplicate version numbers in code.
 
 ---
 
-## Content vs Generation
+## Content and Generation
 
 Canonical content locations:
 
@@ -119,292 +158,196 @@ Canonical content locations:
 src/content/resources/
 src/content/features/
 src/content/apparatus/
+src/content/reactions/
 ```
 
-Deterministic algorithms live under `src/generator/`.
+Canonical generator entry point:
 
-- Resource composition templates/descriptors belong in content.
-- Occurrence-family vocabulary belongs in content.
-- Feature type/name/compatibility/weighting definitions belong in content.
-- Generator code consumes content and applies conditions + deterministic RNG.
-- `src/data/` is compatibility-only; do not add new authoritative resource content there.
+```text
+src/generator/generateWorld.js
+```
 
----
+Deterministic generation algorithms live directly under `src/generator/`; forwarding subfolders were intentionally removed.
 
-## Occurrence-Family Compatibility
-
-- ResourceDefinitions declare `occurrenceFamily`.
-- Feature types declare accepted occurrence families.
-- Occurrence family is the hard physical compatibility gate.
-- Tags/environmental affinity may only weight candidates after hard compatibility.
-- Do not replace the family model with per-Feature resource-ID whitelists.
-- Keep the taxonomy small and add a family only when existing families are physically inappropriate.
+If a change alters same-seed generated world truth, consider the generator-version rule. Bump schema version only when the serialized world-state contract changes.
 
 ---
 
 ## Material Model
 
-Implemented particulate solid state is aggregate/statistical:
+Canonical solid particulate state is aggregate/statistical. Textured ore populations use:
 
 ```text
-speciesId × sizeBinId × liberationClassId → quantity
+speciesId × sizeBinId × liberationClassId × textureProfileId → quantity
 ```
 
-A fraction represents a population, not one simulated particle.
+Legacy/untextured populations may omit the texture profile.
 
-Do not conflate composition, liberation, separation, and routing. A fully liberated material can still be a mixed collection of separate mineral grains. Liberation is not purity. Splitter/Merger/Feeder routing must not silently change material descriptors.
+A fraction is a population, not an individually simulated particle.
 
-Current solid generation emits registered concrete species. Do not reintroduce generic pseudo-species such as `gangue`, `gangue-mixture`, or `ironOxides` as new authoritative generated output. Legacy aliases may remain only where compatibility requires them.
+Keep composition, particle size, liberation, texture lineage, separation, and routing conceptually distinct.
+
+`MaterialBody.thermalState.sensibleEnthalpyJ` owns body thermal energy. Do not add temperature to the particulate identity key.
+
+Do not reintroduce placeholder generated pseudo-species such as generic gangue/iron-oxide mixtures when concrete registered species are available.
+
+Compatibility note: older particle-size IDs may remain readable; new processing should emit current canonical bins.
 
 ---
 
-## Property Architecture
+## Process and Apparatus Architecture
 
-A material property should enter the simulation when an implemented process needs it to determine a physical result.
-
-Canonical resolver location:
+Browser process contracts live in:
 
 ```text
-src/core/materials/properties/
+src/core/processes/definitions/
 ```
 
-Current example: `magneticProperties.js`.
+Production fixed-step process physics and conservation enforcement belong in Rust domain/runtime crates. Do not create parallel JavaScript transformation or conservation kernels as a production fallback.
 
-Rules:
+Canonical apparatus metadata lives in:
 
-- use property-domain APIs from physics when a resolver exists;
-- do not build one unstructured universal property object;
-- do not add speculative values merely to fill a table;
-- distinguish intrinsic species properties from body/mixture/structural state and process conditions;
-- do not add every new property as another particulate fraction-key dimension;
-- add density, mechanical, thermal, electrical, surface, chemical, fluid, etc. domains when a real process consumes them.
+```text
+src/content/apparatus/definitions.js
+```
+
+Browser node constructors live in `src/simulation/apparatus/` plus specialized node-construction modules such as `extractorNode.js` and `hopperNode.js`. `src/simulation/apparatus/registry.js` is a node-factory registry, not a physics runtime registry.
+
+The generic `Crusher` remains compatibility-only and is not player-placeable. Do not remove compatibility behavior without an explicit migration/save-state decision.
+
+### Adding an apparatus
+
+Normally update:
+
+1. apparatus definition metadata/ports/defaults;
+2. browser-readable process contract if a new process family is needed;
+3. canonical browser node construction/registry;
+4. appropriate Rust physical-domain implementation;
+5. `interlink-runtime` scheduler/state integration;
+6. coarse WASM/world setup fields and JS compiler only as needed;
+7. generic workspace controls/Inspector presentation;
+8. JS, Rust, Worker, and WASM regressions.
+
+Avoid machine-pair whitelists, duplicate catalogs, standalone WASM machine objects, and central JavaScript physics switches.
 
 ---
 
-## Process Architecture
+## Typed Ports and Routing
 
-Canonical process organization:
+Connection eligibility derives from edge kind plus interface/physical capabilities, not explicit machine pairs.
 
-```text
-src/core/processes/
-├── definitions/
-├── physics/
-├── executors/
-├── conservation/
-└── processExecution.js
-```
-
-Keep responsibilities distinct:
-
-```text
-Definition          → inputs, outputs, parameters, applicability, metadata, conservation policy
-Pure physics        → material transformation/routing only
-Executor            → discrete MaterialBatch adaptation
-Continuous runtime  → placed-machine flow/backpressure adaptation
-Conservation        → validates conserved quantities appropriate to the process family
-```
-
-Pure physics must not depend on DOM/UI or placed graph nodes. Do not duplicate transformation algorithms between batch and continuous execution when both can call one physical kernel.
-
-Current mechanical processes conserve species mass. Future chemical/thermal work must introduce appropriate conservation models rather than bypassing validation.
-
----
-
-## Apparatus Architecture
-
-Canonical apparatus metadata lives in `src/content/apparatus/definitions.js`. Runtime behavior lives under `src/simulation/apparatus/`, and runtime dispatch lives in `src/simulation/apparatus/registry.js`.
-
-Current registry-backed node types include Extractor, Hopper, Crusher, Screen, Splitter, Material Merger, Feeder, and Magnetic Separator.
-
-### Adding a new apparatus
-
-A future process apparatus such as Mill should normally require:
-
-1. apparatus definition metadata/ports/capabilities;
-2. process definition if it performs a new process;
-3. pure process physics;
-4. batch executor only if discrete execution is needed;
-5. continuous runtime module;
-6. runtime registry entry;
-7. focused tests.
-
-It should **not** normally require a machine-pair whitelist, independently authored NODE catalog entry, hardcoded removable-node list, generic-Inspector eligibility list, or central simulation `if/switch` dispatch branch.
-
-Machine-specific Inspector presentation is allowed only as an enhancement; a newly registered active apparatus must remain functional/configurable through generic paths.
-
----
-
-## Typed Ports and Connections
-
-Connection eligibility derives from edge kind plus interface/physical capabilities.
-
-Current important capabilities include:
+Important capabilities include:
 
 ```text
 resource-source
 solid-particulate
 stored-solid-particulate
+gas
 ```
-
-`stored-solid-particulate` means the receiving process requires a buffered/withdrawable particulate owner. It is not provenance and not a distinct material form.
 
 Rules:
 
-- do not reintroduce topology tables such as `hopper → crusher` or `hopper → screen`;
-- keep material and non-material relationships distinct;
-- an ordinary material output remains single-connection; explicit branching uses distinct Splitter output ports;
-- an ordinary material input remains single-source; explicit recombination uses distinct Material Merger input ports;
-- do not make the Material Merger a hidden physical Mixer — it only combines conserved particulate state;
-- do not apply material fan-out rules to `resource-access`.
+- `resource-access` authorizes/selects a source; it carries no matter/kg/s;
+- ordinary material outputs are single-consumer; use Splitter for explicit fan-out;
+- ordinary material inputs are single-source; use Material Merger for explicit fan-in;
+- required outputs must not silently delete matter;
+- multi-output and multi-input process commits remain transactional;
+- recursive boundary movement must be explicit and conserved.
 
 ---
 
-## Resource Access vs Material Flow
+## Worker and Packed Runtime Setup
 
-Preserve:
+Canonical setup path:
 
 ```text
-Feature
-  ↓ resource-access
-Extractor
-  ↓ material output
-MaterialStream
+canonical world / Blueprints
+  → packedWorldRuntimeCompiler.js
+  → packedWorldWorkerSetup.js
+  → Worker structured-clone-safe setup
+  → WasmPackedWorldRuntime
 ```
 
-`resource-access` carries no matter/kg/s and creates no `MaterialStream`. It selects/authorizes a Feature-owned natural source.
+Runtime-local numeric IDs are transient execution details. Do not serialize them as canonical world identity.
 
-Extraction preserves occurrence composition and materializes only the amount actually extracted; do not copy an entire geological source into a Hopper.
+`runtimeProtocol.js`, `rustWasmWorkerHost.js`, and `realtimeRuntime.js` coordinate the Worker boundary. `runtimePresentation.js` projects authoritative snapshots/details for the browser.
 
----
+Live topology/parameter changes should use explicit reconfiguration rather than silently rebuilding a second runtime on the main thread.
 
-## Matter, Streams, and Conservation
-
-- Every modeled unit of matter has one physical owner/location at a time.
-- `MaterialBatch` is for meaningful discrete lots/samples, not continuous tick flow.
-- `MaterialStream` represents transfer-rate state, not stored inventory.
-- Storage integrates inflow/outflow over `dt`.
-- Missing/full required outputs block or throttle; never silently delete matter.
-- Multi-output and multi-input routing commits atomically.
-- Preserve per-species conservation for current mechanical processes.
+The current fixed step is `0.1 s`.
 
 ---
 
-## Current Mechanical Apparatus Contracts
+## Rust Workspace Rules
 
-### Crusher
+Current physical/runtime crates include:
 
-Canonical nominal product settings are `1, 5, 15, 25, 60, 120 mm`. Legacy noncanonical values may remain accepted only for old compatibility; do not expose them as new player choices.
+```text
+interlink-core
+interlink-processes
+interlink-extraction
+interlink-comminution
+interlink-separation
+interlink-routing
+interlink-thermal
+interlink-thermochemistry
+interlink-roasting
+interlink-runtime
+interlink-wasm
+```
 
-A canonical Crusher setting produces a nominal distribution rather than a perfect maximum cutoff. Coarse feed currently produces 10% one bin coarser, 55% in the nominal bin, 25% one bin finer, and 10% two bins finer. Already-sized fractions pass unchanged.
+`interlink-runtime` owns packed world scheduling and retained execution state. `interlink-wasm` exposes the coarse world browser interface.
 
-### Screen
+Preserve deterministic ordering and conservation semantics when extending scheduler phases.
 
-Screen has one stored particulate feed and two explicit outputs. Canonical aperture choices are `1, 5, 15, 25, 60, 120 mm`.
-
-Current physics is an ideal sharp split: size-bin upper bound at/below aperture → undersize; coarser → oversize. Screening is routing only and must not change species, size-bin ID, liberation class, or quantity.
-
-Both outputs are required. Continuous Screen execution must stage both outputs and feed transactionally.
-
-### Splitter
-
-Splitter has one stored particulate feed and two explicit outputs. `splitFractionToA` is a player-configurable fraction in `[0,1]`. Apply the same split ratio to every existing fraction; do not alter species, size, liberation, or total mass.
-
-Both outputs are currently required even when one configured share is zero. Downstream capacity must throttle the whole split transaction rather than allow partial branch loss.
-
-### Material Merger
-
-Material Merger has two distinct stored-particulate inputs and one product output. It combines sparse material populations without changing fraction identity.
-
-Both input ports and the product port are connected interfaces; a connected input may be temporarily empty while the other continues. When combined availability exceeds the rating, current runtime draws both inputs proportionally to stored mass. Output backpressure scales both withdrawals together.
-
-Do not add homogeneity, residence-time, mixing intensity, viscosity, or other Mixer physics to this apparatus unless the active task explicitly evolves it into a different physical process.
-
-### Feeder
-
-Feeder meters particulate flow without transforming material. Current rated throughput is `10 kg/s`; player `flowRateKgPerSecond` ranges from `0` to `10` and defaults to `4`.
-
-A zero setpoint idles without consuming feed. Composition, particle-size distribution, and liberation pass unchanged. Downstream capacity applies normal backpressure.
-
-### Magnetic Separator
-
-Current Magnetic Separator requires all feed particle-size classes at or below 25 mm. Oversized mixed feed blocks the whole process; it is not an implicit Screen.
-
-Magnetic recovery uses the material-property resolver plus liberation, particle-size suitability, field strength, and entrainment/carryover.
+Deep profiling must remain optional and should not add timing calls to the disabled path.
 
 ---
 
-## Simulation Contracts
+## Workspace Rules
 
-- fixed time steps independent of render FPS;
-- navigation does not stop active Site simulation;
-- world pause/resume is separate from machine enabled/disabled state;
-- machine command state is separate from derived `off / idle / running / blocked` state;
-- new active apparatus defaults disabled unless a task explicitly specifies otherwise;
-- simulation logic remains independent from browser rendering;
-- apparatus execution is registry-driven with explicit phase/order where needed.
-
----
-
-## Recursive Boundaries
-
-Composite matter exchange uses explicit boundary storage/ports.
-
-- Parent-facing and child-visible boundary interfaces represent the same physical ownership state.
-- A boundary existing does not imply movement.
-- Cross-boundary movement must be explicit and conserved.
-- Do not create invisible cross-workspace logistics.
-
----
-
-## Shared Graph and Workspace
-
-Planet, Region, Site, and future recursive systems use the same graph language: nodes, ports, edges, selection, inspection, drag/rearrange, connect/disconnect, and drill-down for composites.
-
-- persistent relationships in the current workspace must have visible edges;
-- edge meaning is typed;
-- logical graph space is effectively unbounded and supports signed coordinates;
-- node category is semantic identity, not operating state;
-- physical truth does not belong in workspace DOM state.
-
-Canonical workspace domains live under:
+Canonical workspace domains:
 
 ```text
 src/workspace/catalog/
+src/workspace/debug/
 src/workspace/graph/
 src/workspace/inspector/
 src/workspace/navigation/
 src/workspace/shell/
 ```
 
-`workspaceController.js` is the current DOM/application orchestrator. Prefer generic definition-driven apparatus UI behavior before adding machine-specific controller branches.
+`workspaceController.js` is currently the large DOM/application orchestrator. Refactoring it should split responsibilities without moving physical execution/state ownership out of the Worker.
+
+Prefer definition-driven generic controls/Inspector rendering over machine-specific controller branches.
+
+Do not recreate removed top-level forwarding aliases.
 
 ---
 
-## Compatibility Entry Points
+## Compatibility and Hygiene
 
-The restructure retained thin forwarding/compatibility modules in portions of `src/core/materials/`, `src/core/processes/`, `src/core/world/worldState.js`, `src/simulation/`, `src/workspace/`, and `src/data/`.
+Migration-era forwarding modules and per-apparatus WASM browser adapters are intentionally removed.
 
-A compatibility file must not become a second implementation home. Do not add authoritative content, machine behavior, or duplicate physics there when a canonical location exists.
+Compatibility should remain only where an actual serialized/gameplay contract requires it, such as the generic legacy Crusher or readable legacy particle-size IDs.
 
----
+`tests/postMigrationHygiene.test.js` guards removed compatibility paths, relative-module integrity, absence of forwarding-only source modules, absence of old standalone WASM adapters, and current runtime-authority documentation.
 
-## Scope Control
-
-Unless the active task explicitly requires them, do not add full chemistry/speciation, giant resource/mineral databases, power/energy networks, logistics systems, sensors/controllers, multiplayer/backend infrastructure, star/system expansion, reserve/depletion systems, speculative material properties with no active process consumer, or unrelated gameplay features.
-
-The next major fine-processing work should be treated as a coherent capability package where practical: Mill/Grinder behavior, finer particle-size classes, fine classification, and a downstream separation method that actually benefits from fine liberation should be considered together rather than introducing an isolated Mill with no useful consumer.
+If a compatibility surface is no longer consumed, remove the file, callers, tests, docs, and empty directory together.
 
 ---
 
 ## Completion Checklist
 
-Before finishing a task/PR:
+Before finishing a PR:
 
-1. Confirm the behavior uses canonical architecture paths where practical.
-2. Confirm ownership, conservation, compatibility, graph, state-separation, and deterministic-generation contracts did not regress.
-3. Confirm new apparatus did not require avoidable central type lists or pair whitelists.
-4. Add/update focused tests for the requested invariant and extension path.
-5. Run the complete test suite.
-6. Perform browser smoke testing for layout/interaction/rendering changes, or clearly state when manual browser verification remains.
-7. Update schema/generator versions only when their rules require it.
-8. Update README/ARCHITECTURE/design/guardrails when a documented contract or current implementation state changed.
+1. confirm one Rust/WASM production physical authority is preserved;
+2. confirm no missing/duplicate matter ownership or conservation regression;
+3. confirm deterministic generation semantics/version rules;
+4. confirm canonical module paths and no new forwarding compatibility shim;
+5. confirm Worker setup/protocol does not introduce per-step full-world or per-fraction bridge traffic;
+6. add/update focused regressions;
+7. run `npm run check:runtime`;
+8. allow the PR workflow to rebuild and verify the wasm-bindgen browser package;
+9. perform browser smoke testing for interaction/layout changes, or state clearly when not manually verified;
+10. update active docs when current architecture or behavior changes.

@@ -1,5 +1,5 @@
 
-import { createExtractor } from './extractor.js';
+import { createExtractor } from '../extractorNode.js';
 import { createFeeder } from './feeder.js';
 import { createMaterialMerger } from './merger.js';
 import { createCrusher } from './crusher.js';
