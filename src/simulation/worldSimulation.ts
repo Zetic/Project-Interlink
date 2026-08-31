@@ -3,17 +3,48 @@ import { createBoundaryBuffer } from './hopperNode.js';
 import { validateBoundaryTransfer } from './boundaryTransfer.js';
 import { createCompositeNode, createSystemPort, getSystemNodePort } from '../core/systems/systemNode.js';
 import { PORT_CAPABILITIES } from '../core/systems/ports.js';
+import type { SystemNode, SystemPort } from '../core/systems/types.js';
+import type {
+  BoundaryTransfer,
+  SimulationWorkspace,
+  World,
+  WorldSimulationState,
+} from '../core/world/types.js';
+import type { Blueprint, BlueprintNode } from './types.js';
 
 export const DEFAULT_BOUNDARY_TRANSFER_RATE_KG_PER_SECOND = 10;
 export const DEFAULT_REGIONAL_BUFFER_CAPACITY_KG = 1000;
+
+type NormalizedSimulationState = WorldSimulationState & {
+  workspaces: Record<string, SimulationWorkspace>;
+  transfers: Record<string, BoundaryTransfer>;
+  nextTransferOrdinal: number;
+};
+
+interface WorldRuntimeCache {
+  initialized: boolean;
+  sessions: Blueprint[] | null;
+  orderedTransfers: BoundaryTransfer[] | null;
+}
+
+interface BoundaryTransferRegistration {
+  id?: string | null;
+  sourceCompositeId?: string;
+  sourcePortId?: string;
+  targetCompositeId?: string;
+  targetPortId?: string;
+  capacityKgPerSecond?: number;
+  priority?: number;
+  scopeId?: string | null;
+}
 
 // Runtime-only execution data must not become serialized world truth. Generated
 // world topology is stable during play, so expensive recursive normalization,
 // session enumeration, and transfer ordering can be reused until an explicit
 // simulation mutation invalidates the affected projection.
-const worldRuntimeCache = new WeakMap();
+const worldRuntimeCache = new WeakMap<World, WorldRuntimeCache>();
 
-function runtimeCacheFor(world) {
+function runtimeCacheFor(world: World): WorldRuntimeCache {
   let cache = worldRuntimeCache.get(world);
   if (!cache) {
     cache = {
@@ -26,26 +57,25 @@ function runtimeCacheFor(world) {
   return cache;
 }
 
-function ensureSimulationShape(world) {
-  world.simulation ??= {};
+function ensureSimulationShape(world: World): NormalizedSimulationState {
   const simulation = world.simulation;
   if (typeof simulation.running !== 'boolean') simulation.running = true;
   if (!Number.isFinite(simulation.elapsedSeconds)) simulation.elapsedSeconds = 0;
   simulation.sessions ??= {};
   simulation.workspaces ??= {};
   simulation.transfers ??= {};
-  if (!Number.isInteger(simulation.nextTransferOrdinal) || simulation.nextTransferOrdinal < 1) {
+  if (!Number.isInteger(simulation.nextTransferOrdinal) || (simulation.nextTransferOrdinal ?? 0) < 1) {
     simulation.nextTransferOrdinal = 1;
   }
-  return simulation;
+  return simulation as NormalizedSimulationState;
 }
 
-function replacePorts(node, ports) {
+function replacePorts(node: SystemNode, ports: SystemPort[]): void {
   if (!Array.isArray(node.ports)) node.ports = [];
   node.ports.splice(0, node.ports.length, ...ports);
 }
 
-function existingMapping(node, id) {
+function existingMapping(node: SystemNode, id: string): { childNodeId: string | null; childPortId: string | null } {
   const port = node.ports?.find(item => item.id === id);
   return {
     childNodeId: port?.childNodeId ?? null,
@@ -53,7 +83,13 @@ function existingMapping(node, id) {
   };
 }
 
-function ensureRegionBoundaryAdapters(world, regionId, regionNode, importHopperId, exportHopperId) {
+function ensureRegionBoundaryAdapters(
+  world: World,
+  regionId: string,
+  regionNode: SystemNode,
+  importHopperId: string,
+  exportHopperId: string,
+): void {
   const importTerminalId = `${regionId}-import-terminal`;
   const exportTerminalId = `${regionId}-export-terminal`;
 
@@ -99,7 +135,7 @@ function ensureRegionBoundaryAdapters(world, regionId, regionNode, importHopperI
   }
 }
 
-function normalizeRecursiveContracts(world) {
+function normalizeRecursiveContracts(world: World): void {
   for (const [siteId, site] of Object.entries(world.sites ?? {})) {
     const node = world.systemNodes?.[siteId];
     if (!node) continue;
@@ -162,7 +198,7 @@ function normalizeRecursiveContracts(world) {
   }
 }
 
-function ensureSiteRuntimeWorkspace(world, siteId) {
+function ensureSiteRuntimeWorkspace(world: World, siteId: string): SimulationWorkspace | null {
   const simulation = ensureSimulationShape(world);
   const siteNode = world.systemNodes?.[siteId];
   if (!siteNode?.childWorkspaceId) return null;
@@ -179,24 +215,24 @@ function ensureSiteRuntimeWorkspace(world, siteId) {
     id: importId,
     capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG,
     role: 'import',
-  });
+  }) as BlueprintNode;
   workspace.nodes[exportId] ??= createBoundaryBuffer({
     id: exportId,
     capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG,
     role: 'export',
-  });
+  }) as BlueprintNode;
 
   const input = getSystemNodePort(siteNode, 'material-input');
   const output = getSystemNodePort(siteNode, 'material-output');
-  input.childNodeId = importId;
-  input.childPortId = 'input';
-  output.childNodeId = exportId;
-  output.childPortId = 'output';
-  world.sites[siteId].boundaryPorts = siteNode.ports;
+  input!.childNodeId = importId;
+  input!.childPortId = 'input';
+  output!.childNodeId = exportId;
+  output!.childPortId = 'output';
+  world.sites[siteId]!.boundaryPorts = siteNode.ports;
   return workspace;
 }
 
-function ensureRegionRuntimeWorkspace(world, regionId) {
+function ensureRegionRuntimeWorkspace(world: World, regionId: string): SimulationWorkspace | null {
   const simulation = ensureSimulationShape(world);
   const regionNode = world.systemNodes?.[regionId];
   if (!regionNode?.childWorkspaceId) return null;
@@ -213,12 +249,12 @@ function ensureRegionRuntimeWorkspace(world, regionId) {
     id: exportHopperId,
     capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG,
     role: 'export',
-  });
+  }) as BlueprintNode;
   workspace.nodes[importHopperId] ??= createBoundaryBuffer({
     id: importHopperId,
     capacityKg: DEFAULT_REGIONAL_BUFFER_CAPACITY_KG,
     role: 'import',
-  });
+  }) as BlueprintNode;
 
   for (const siteId of world.regions?.[regionId]?.siteIds ?? []) {
     if (world.systemNodes?.[siteId]) workspace.nodes[siteId] = world.systemNodes[siteId];
@@ -230,7 +266,11 @@ function ensureRegionRuntimeWorkspace(world, regionId) {
   return workspace;
 }
 
-function initializeWorldRuntime(world, simulation, cache) {
+function initializeWorldRuntime(
+  world: World,
+  simulation: NormalizedSimulationState,
+  cache: WorldRuntimeCache,
+): NormalizedSimulationState {
   for (const siteId of Object.keys(world.sites ?? {})) ensureSiteRuntimeWorkspace(world, siteId);
   normalizeRecursiveContracts(world);
   for (const regionId of Object.keys(world.regions ?? {})) ensureRegionRuntimeWorkspace(world, regionId);
@@ -240,7 +280,7 @@ function initializeWorldRuntime(world, simulation, cache) {
   return simulation;
 }
 
-export function createWorldSimulation(world) {
+export function createWorldSimulation(world: World): NormalizedSimulationState {
   if (!world || typeof world !== 'object') throw new Error('World simulation requires a world object');
   const simulation = ensureSimulationShape(world);
   const cache = runtimeCacheFor(world);
@@ -248,7 +288,11 @@ export function createWorldSimulation(world) {
   return simulation;
 }
 
-export function registerSimulationWorkspace(world, workspaceId, workspace) {
+export function registerSimulationWorkspace(
+  world: World,
+  workspaceId: string,
+  workspace: SimulationWorkspace,
+): SimulationWorkspace {
   if (typeof workspaceId !== 'string' || !workspaceId) throw new Error('workspaceId must be a non-empty string');
   if (!workspace?.nodes) throw new Error('Simulation workspace must expose a nodes map');
   const simulation = createWorldSimulation(world);
@@ -256,7 +300,12 @@ export function registerSimulationWorkspace(world, workspaceId, workspace) {
   return workspace;
 }
 
-export function registerSimulationSession(world, sessionId, blueprint, workspaceId = null) {
+export function registerSimulationSession(
+  world: World,
+  sessionId: string,
+  blueprint: Blueprint,
+  workspaceId: string | null = null,
+): Blueprint {
   if (typeof sessionId !== 'string' || !sessionId) throw new Error('Simulation sessionId must be a non-empty string');
   const simulation = createWorldSimulation(world);
   simulation.sessions[sessionId] = blueprint;
@@ -265,23 +314,26 @@ export function registerSimulationSession(world, sessionId, blueprint, workspace
   return blueprint;
 }
 
-export function getSimulationWorkspace(world, workspaceId) {
+export function getSimulationWorkspace(world: World, workspaceId: string): SimulationWorkspace | null {
   return createWorldSimulation(world).workspaces[workspaceId] ?? null;
 }
 
-export function registerBoundaryTransfer(world, {
-  id = null,
-  sourceCompositeId,
-  sourcePortId,
-  targetCompositeId,
-  targetPortId,
-  capacityKgPerSecond = DEFAULT_BOUNDARY_TRANSFER_RATE_KG_PER_SECOND,
-  priority = 0,
-  scopeId = null,
-} = {}) {
+export function registerBoundaryTransfer(
+  world: World,
+  {
+    id = null,
+    sourceCompositeId,
+    sourcePortId,
+    targetCompositeId,
+    targetPortId,
+    capacityKgPerSecond = DEFAULT_BOUNDARY_TRANSFER_RATE_KG_PER_SECOND,
+    priority = 0,
+    scopeId = null,
+  }: BoundaryTransferRegistration = {},
+): BoundaryTransfer {
   const simulation = createWorldSimulation(world);
-  const sourceComposite = world.systemNodes?.[sourceCompositeId];
-  const targetComposite = world.systemNodes?.[targetCompositeId];
+  const sourceComposite = sourceCompositeId ? world.systemNodes?.[sourceCompositeId] : undefined;
+  const targetComposite = targetCompositeId ? world.systemNodes?.[targetCompositeId] : undefined;
   validateBoundaryTransfer({ sourceComposite, sourcePortId, targetComposite, targetPortId });
   if (sourceCompositeId === targetCompositeId) throw new Error('Boundary transfer cannot connect a system to itself');
   if (typeof capacityKgPerSecond !== 'number' || !Number.isFinite(capacityKgPerSecond) || capacityKgPerSecond <= 0) {
@@ -299,10 +351,10 @@ export function registerBoundaryTransfer(world, {
   if (simulation.transfers[transferId]) throw new Error(`Boundary transfer '${transferId}' already exists`);
   simulation.transfers[transferId] = {
     id: transferId,
-    sourceCompositeId,
-    sourcePortId,
-    targetCompositeId,
-    targetPortId,
+    sourceCompositeId: sourceCompositeId!,
+    sourcePortId: sourcePortId!,
+    targetCompositeId: targetCompositeId!,
+    targetPortId: targetPortId!,
     capacityKgPerSecond,
     priority,
     scopeId,
@@ -313,7 +365,7 @@ export function registerBoundaryTransfer(world, {
   return simulation.transfers[transferId];
 }
 
-export function removeBoundaryTransfer(world, transferId) {
+export function removeBoundaryTransfer(world: World, transferId: string): boolean {
   const simulation = createWorldSimulation(world);
   const existed = Boolean(simulation.transfers[transferId]);
   delete simulation.transfers[transferId];
