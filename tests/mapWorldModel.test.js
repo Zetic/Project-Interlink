@@ -86,6 +86,7 @@ test('resource deposits retain Feature-node resource-access contracts', () => {
       id: 'resource-access',
       direction: 'output',
       kind: 'resource-access',
+      medium: 'resource',
       label: 'resources',
     }]);
   }

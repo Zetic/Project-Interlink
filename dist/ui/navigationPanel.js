@@ -3,7 +3,9 @@ function selectionKey(selection) {
         return 'planet';
     if (selection.type === 'region')
         return `region:${selection.regionId}`;
-    return `resource:${selection.resourceNodeId}`;
+    if (selection.type === 'resource')
+        return `resource:${selection.resourceNodeId}`;
+    return `mechanical:${selection.mechanicalNodeId}`;
 }
 function resourceNodesForRegion(planet, region) {
     const ids = new Set(region.resourceNodeIds);
