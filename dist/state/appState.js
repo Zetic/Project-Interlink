@@ -1,4 +1,5 @@
 import { createEmptyGraphState } from '../graph/graphCommands.js';
+import { createDisconnectedRuntimeState } from '../runtime/presentation.js';
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
 function regionFocusZoom(world, region) {
@@ -15,6 +16,7 @@ export class AppStore {
         selection: { type: 'planet' },
         camera: { centerX: 0, centerY: 0, zoom: 1 },
         interaction: emptyInteraction(),
+        runtime: createDisconnectedRuntimeState(),
     };
     getState() {
         return this.state;
@@ -26,6 +28,7 @@ export class AppStore {
             selection: { type: 'planet' },
             camera: { centerX: world.planet.width / 2, centerY: world.planet.height / 2, zoom: 1 },
             interaction: emptyInteraction(),
+            runtime: createDisconnectedRuntimeState(),
         };
         this.emit();
     }
@@ -39,6 +42,20 @@ export class AppStore {
     }
     setGraph(graph) {
         this.state = { ...this.state, graph };
+        this.emit();
+    }
+    updateRuntime(patch) {
+        this.state = {
+            ...this.state,
+            runtime: {
+                ...this.state.runtime,
+                ...patch,
+                telemetry: patch.telemetry
+                    ? { ...this.state.runtime.telemetry, ...patch.telemetry }
+                    : this.state.runtime.telemetry,
+                details: patch.details ?? this.state.runtime.details,
+            },
+        };
         this.emit();
     }
     setPlacement(placementDefinitionId) {
