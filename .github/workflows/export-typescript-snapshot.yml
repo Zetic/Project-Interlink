@@ -17,24 +17,17 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Install temporary TypeScript 5 language service
+        run: npm install --no-save --package-lock=false typescript@5.9.3
       - uses: actions/upload-artifact@v4
         with:
-          name: typescript-toolchain-snapshot
+          name: typescript-language-service-snapshot
           path: |
-            .github
             src
             tests
-            scripts
-            rust
             node_modules
-            Cargo.toml
-            Cargo.lock
             package.json
             package-lock.json
             tsconfig.json
-            index.html
-            *.md
-            *.css
-            rust-toolchain.toml
           include-hidden-files: true
           retention-days: 1
