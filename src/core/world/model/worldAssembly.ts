@@ -2,8 +2,17 @@ import { SCHEMA_VERSION, GENERATOR_VERSION } from '../versions.js';
 import { createCompositeNode, createSystemPort } from '../../systems/systemNode.js';
 import { PORT_CAPABILITIES } from '../../systems/ports.js';
 import { validateWorld } from '../validation/worldValidation.js';
+import type { SystemPort } from '../../systems/types.js';
+import type {
+  Feature,
+  GeneratedPlanet,
+  Planet,
+  Region,
+  Site,
+  World,
+} from '../types.js';
 
-function materialBoundaryPort(direction, id, label) {
+function materialBoundaryPort(direction: 'input' | 'output', id: string, label: string): SystemPort {
   return createSystemPort({
     id,
     direction,
@@ -25,9 +34,9 @@ function materialBoundaryPort(direction, id, label) {
  * Generation algorithms provide the planet; this module owns the world model
  * and its canonical hierarchy.
  */
-export function assembleWorld(planet, seed) {
+export function assembleWorld(planet: GeneratedPlanet, seed: unknown): World {
   const seedStr = String(seed ?? 'default-seed');
-  const world = {
+  const world: World = {
     schemaVersion: SCHEMA_VERSION,
     generatorVersion: GENERATOR_VERSION,
     seed: seedStr,
@@ -49,24 +58,26 @@ export function assembleWorld(planet, seed) {
     systemNodes: {},
   };
 
-  const regionIds = [];
+  const regionIds: string[] = [];
   for (const generatedRegion of planet.regions) {
-    const siteIds = [];
+    const siteIds: string[] = [];
     for (const generatedSite of generatedRegion.sites ?? []) {
-      const featureIds = [];
+      const featureIds: string[] = [];
       for (const generatedFeature of generatedSite.features ?? []) {
-        const occurrenceIds = [];
+        const occurrenceIds: string[] = [];
         for (const occurrence of generatedFeature.resourceOccurrences ?? []) {
           world.resourceOccurrences[occurrence.id] = occurrence;
           occurrenceIds.push(occurrence.id);
         }
 
-        world.features[generatedFeature.id] = {
+        const feature: Feature = {
           ...generatedFeature,
+          id: generatedFeature.id,
           siteId: generatedSite.id,
           regionId: generatedRegion.id,
           resourceOccurrences: occurrenceIds,
         };
+        world.features[generatedFeature.id] = feature;
         featureIds.push(generatedFeature.id);
       }
 
@@ -82,7 +93,7 @@ export function assembleWorld(planet, seed) {
         inspectableState: { regionId: generatedRegion.id, featureIds },
       });
 
-      world.sites[generatedSite.id] = {
+      const site: Site = {
         id: generatedSite.id,
         name: generatedSite.name ?? world.features[featureIds[0]]?.name ?? generatedSite.id,
         siteKind: generatedSite.siteKind ?? 'localized',
@@ -93,6 +104,7 @@ export function assembleWorld(planet, seed) {
         childWorkspaceId: siteNode.childWorkspaceId,
         boundaryPorts: siteNode.ports,
       };
+      world.sites[generatedSite.id] = site;
       world.systemNodes[generatedSite.id] = siteNode;
       siteIds.push(generatedSite.id);
     }
@@ -111,18 +123,22 @@ export function assembleWorld(planet, seed) {
     world.systemNodes[generatedRegion.id] = regionNode;
 
     const { sites: _generatedSites, ...regionState } = generatedRegion;
-    world.regions[generatedRegion.id] = {
+    const region: Region = {
       ...regionState,
+      id: generatedRegion.id,
       siteIds,
       boundaryPorts: regionNode.ports,
     };
+    world.regions[generatedRegion.id] = region;
     regionIds.push(generatedRegion.id);
   }
 
-  world.planets[planet.id] = {
+  const planetState: Planet = {
     ...planet,
+    id: planet.id,
     regions: regionIds,
   };
+  world.planets[planet.id] = planetState;
   world.systemNodes[planet.id] = createCompositeNode({
     id: planet.id,
     nodeType: 'planet',
