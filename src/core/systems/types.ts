@@ -33,6 +33,8 @@ export interface SystemNode {
   ports: SystemPort[];
   inspectableState: Record<string, unknown>;
   childWorkspaceId: string | null;
+  boundaryRole?: string;
+  displayName?: string;
 }
 
 export interface SystemNodeInput {
@@ -47,6 +49,16 @@ export interface SystemNodeInput {
 
 export interface SystemWorkspace {
   nodes: Record<string, SystemNode>;
+}
+
+/** Minimal structural contract needed when a composite boundary maps into an editable blueprint. */
+export interface BoundaryChildNode {
+  id: string;
+  ports?: readonly SystemPort[];
+}
+
+export interface BoundaryChildWorkspace {
+  nodes: Record<string, BoundaryChildNode>;
 }
 
 export interface BoundaryResolution {
