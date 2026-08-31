@@ -1,0 +1,208 @@
+errors=923
+
+By code:
+TS2339: 710
+TS2353: 69
+TS2365: 35
+TS2322: 20
+TS2362: 19
+TS2551: 17
+TS2740: 16
+TS2345: 14
+TS2739: 12
+TS2363: 5
+TS2538: 2
+TS2554: 2
+TS2698: 1
+TS2367: 1
+
+By file:
+src/simulation/packedWorldRuntimeCompiler.ts: 129
+src/workspace/workspaceController.ts: 76
+tests/rustWasmWorkerHost.test.ts: 49
+tests/invariants.test.ts: 41
+src/workspace/graph/workspaceGraph.ts: 36
+src/core/world/validation/processHistoryValidation.ts: 32
+src/simulation/realtimeRuntime.ts: 31
+src/workspace/inspector/inspectionViewModel.ts: 31
+src/workspace/navigation/navigationProjection.ts: 25
+tests/rustWasmWorkerReconfigure.test.ts: 24
+tests/worldIntegrity.test.ts: 23
+src/simulation/worldSimulation.ts: 20
+tests/smoke.test.ts: 20
+src/simulation/packedRuntimeCompiler.ts: 19
+tests/navigationProjection.test.ts: 17
+src/debug/fixtures/roastingBenchmark.ts: 15
+tests/siteSession.test.ts: 15
+src/content/apparatus/definitions.ts: 14
+tests/packedWorldRuntimeCompiler.test.ts: 14
+src/simulation/runtimePresentation.ts: 13
+src/simulation/simulationEngine.ts: 13
+src/core/world/validation/hierarchyValidation.ts: 12
+src/simulation/packedComminutionCompiler.ts: 12
+src/workspace/graph/viewport.ts: 12
+tests/realtimeRuntime.test.ts: 10
+tests/recursiveSystems.test.ts: 10
+src/core/materials/solids/solidMaterialState.ts: 9
+src/generator/generatePlanet.ts: 9
+src/simulation/hopperNode.ts: 9
+src/core/materials/materialBatches.ts: 8
+src/core/materials/thermal/thermalMaterial.ts: 8
+src/workspace/debug/debugDrawer.ts: 8
+tests/workspaceGraph.test.ts: 8
+src/simulation/packedThermalRuntime.ts: 7
+src/simulation/packedWorldWorkerSetup.ts: 7
+src/core/world/validation/occurrenceValidation.ts: 6
+src/simulation/packedGasRuntime.ts: 6
+src/simulation/packedRuntimeState.ts: 6
+src/workspace/shell/workspaceUI.ts: 6
+tests/runtimePresentation.test.ts: 6
+tests/runtimeProtocol.test.ts: 6
+src/core/materials/occurrenceMaterialization.ts: 5
+src/simulation/packedStorageRuntime.ts: 5
+tests/packedRoastingCompiler.test.ts: 5
+src/core/systems/systemNode.ts: 4
+src/simulation/apparatus/comminution.ts: 4
+src/simulation/boundaryTransfer.ts: 4
+src/simulation/materialStream.ts: 4
+tests/inspectionViewModel.test.ts: 4
+tests/runtimeCapabilities.test.ts: 4
+src/core/materials/gas/gasMaterialState.ts: 3
+src/core/materials/thermal/thermalState.ts: 3
+src/generator/generateResources.ts: 3
+src/simulation/extractorNode.ts: 3
+src/simulation/runtimeCapabilities.ts: 3
+src/simulation/rustWasmWorkerHost.ts: 3
+src/workspace/graph/nodeRemoval.ts: 3
+src/workspace/inspector/genericApparatusInspectorUI.ts: 3
+tests/packedWorldWorkerSetup.test.ts: 3
+tests/workspaceShell.test.ts: 3
+src/core/materials/solids/mineralTextures.ts: 2
+tests/apparatusCanonicalControls.test.ts: 2
+tests/extractorResourceAccess.test.ts: 2
+tests/futureApparatusScalability.test.ts: 2
+tests/packedRuntimeCompiler.test.ts: 2
+tests/solidMaterialState.test.ts: 2
+src/app.ts: 1
+src/core/materials/species/materialSpecies.ts: 1
+src/core/world/model/worldAssembly.ts: 1
+src/simulation/apparatus/crusher.ts: 1
+src/simulation/apparatus/exhaustVent.ts: 1
+src/simulation/apparatus/feeder.ts: 1
+src/simulation/apparatus/magneticSeparator.ts: 1
+src/simulation/apparatus/merger.ts: 1
+src/simulation/apparatus/roastingFurnace.ts: 1
+src/simulation/apparatus/screen.ts: 1
+src/simulation/apparatus/splitter.ts: 1
+src/simulation/packedRoastingCompiler.ts: 1
+src/workspace/navigation/navigationState.ts: 1
+src/workspace/siteSession.ts: 1
+tests/apparatusControlUI.test.ts: 1
+tests/debugTools.test.ts: 1
+tests/knowledge.test.ts: 1
+tests/materialSpeciesCoverage.test.ts: 1
+tests/nodeRemoval.test.ts: 1
+tests/packedComminutionCompiler.test.ts: 1
+
+First errors:
+src/app.ts(19,34): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+src/content/apparatus/definitions.ts(125,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(144,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(161,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(178,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(194,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(212,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(230,33): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(231,33): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(248,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(251,9): error TS2322: Type '"metered-solid-particulate"' is not assignable to type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(268,30): error TS2345: Argument of type '"stored-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(292,30): error TS2345: Argument of type '"metered-solid-particulate"' is not assignable to parameter of type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(295,9): error TS2322: Type '"metered-solid-particulate"' is not assignable to type '"solid-particulate"'.
+src/content/apparatus/definitions.ts(327,9): error TS2322: Type '"stored-solid-particulate"' is not assignable to type '"solid-particulate"'.
+src/core/materials/gas/gasMaterialState.ts(40,72): error TS2365: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
+src/core/materials/gas/gasMaterialState.ts(48,80): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/materials/gas/gasMaterialState.ts(51,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/materialBatches.ts(62,44): error TS2339: Property 'createdByProcessRunId' does not exist on type 'object'.
+src/core/materials/materialBatches.ts(68,60): error TS2339: Property 'sourceOccurrenceIds' does not exist on type 'object'.
+src/core/materials/materialBatches.ts(69,55): error TS2339: Property 'sourceBatchIds' does not exist on type 'object'.
+src/core/materials/materialBatches.ts(79,61): error TS2365: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
+src/core/materials/materialBatches.ts(103,40): error TS2739: Type '{ speciesId: string; sizeBinId: string; liberationClassId: string; quantity: number; }' is missing the following properties from type '{ liberationClassId: any; massKg: any; quantity: any; rateKgPerSecond: any; sizeBinId: any; speciesId: any; textureProfileId?: any; }': massKg, rateKgPerSecond
+src/core/materials/materialBatches.ts(175,7): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/materialBatches.ts(181,41): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/materials/materialBatches.ts(181,50): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/materials/occurrenceMaterialization.ts(49,52): error TS2365: Operator '+' cannot be applied to types 'number' and 'unknown'.
+src/core/materials/occurrenceMaterialization.ts(53,44): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/materials/occurrenceMaterialization.ts(65,37): error TS2339: Property 'grainSizeUm' does not exist on type 'unknown'.
+src/core/materials/occurrenceMaterialization.ts(66,41): error TS2339: Property 'occurrenceModes' does not exist on type 'unknown'.
+src/core/materials/occurrenceMaterialization.ts(95,44): error TS2739: Type '{ speciesId: string; sizeBinId: "120-250mm" | "120mm-plus" | "250-500mm" | "500-1000mm" | "60-120mm"; liberationClassId: string; textureProfileId: any; quantity: number; }' is missing the following properties from type '{ liberationClassId: any; massKg: any; quantity: any; rateKgPerSecond: any; sizeBinId: any; speciesId: any; textureProfileId?: any; }': massKg, rateKgPerSecond
+src/core/materials/solids/mineralTextures.ts(108,43): error TS2339: Property 'grainSizeUm' does not exist on type 'object'.
+src/core/materials/solids/mineralTextures.ts(109,37): error TS2339: Property 'occurrenceModes' does not exist on type 'object'.
+src/core/materials/solids/solidMaterialState.ts(89,17): error TS2339: Property 'id' does not exist on type 'unknown'.
+src/core/materials/solids/solidMaterialState.ts(90,108): error TS2339: Property 'id' does not exist on type 'unknown'.
+src/core/materials/solids/solidMaterialState.ts(136,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/solids/solidMaterialState.ts(143,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/solids/solidMaterialState.ts(151,9): error TS2365: Operator '>' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/solids/solidMaterialState.ts(151,46): error TS2365: Operator '+=' cannot be applied to types 'number' and 'unknown'.
+src/core/materials/solids/solidMaterialState.ts(225,35): error TS2739: Type '{ speciesId: string; sizeBinId: string; liberationClassId: string; quantity: unknown; }' is missing the following properties from type '{ liberationClassId: any; massKg: any; quantity: any; rateKgPerSecond: any; sizeBinId: any; speciesId: any; textureProfileId?: any; }': massKg, rateKgPerSecond
+src/core/materials/solids/solidMaterialState.ts(283,17): error TS2339: Property 'id' does not exist on type 'unknown'.
+src/core/materials/solids/solidMaterialState.ts(284,108): error TS2339: Property 'id' does not exist on type 'unknown'.
+src/core/materials/species/materialSpecies.ts(26,50): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/thermal/thermalMaterial.ts(38,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/thermal/thermalMaterial.ts(48,9): error TS2365: Operator '>' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/thermal/thermalMaterial.ts(48,46): error TS2365: Operator '+=' cannot be applied to types 'number' and 'unknown'.
+src/core/materials/thermal/thermalMaterial.ts(97,18): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/thermal/thermalMaterial.ts(97,71): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/materials/thermal/thermalMaterial.ts(101,50): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/materials/thermal/thermalMaterial.ts(110,9): error TS2365: Operator '>' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/thermal/thermalMaterial.ts(110,81): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/materials/thermal/thermalState.ts(37,37): error TS2365: Operator '<' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/thermal/thermalState.ts(38,9): error TS2365: Operator '<=' cannot be applied to types 'unknown' and 'number'.
+src/core/materials/thermal/thermalState.ts(44,17): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/core/systems/systemNode.ts(15,3): error TS2339: Property 'id' does not exist on type '{ accepts?: undefined[]; childNodeId?: null; childPortId?: null; kind?: string; label?: any; provides?: undefined[]; }'.
+src/core/systems/systemNode.ts(16,3): error TS2339: Property 'direction' does not exist on type '{ accepts?: undefined[]; childNodeId?: null; childPortId?: null; kind?: string; label?: any; provides?: undefined[]; }'.
+src/core/systems/systemNode.ts(42,3): error TS2339: Property 'id' does not exist on type '{ childWorkspaceId?: null; inspectableState?: {}; kind?: string; ports?: undefined[]; systemType?: any; }'.
+src/core/systems/systemNode.ts(43,3): error TS2339: Property 'nodeType' does not exist on type '{ childWorkspaceId?: null; inspectableState?: {}; kind?: string; ports?: undefined[]; systemType?: any; }'.
+src/core/world/model/worldAssembly.ts(8,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ accepts?: any[]; childNodeId?: any; childPortId?: any; kind?: string; label?: any; provides?: any[]; }'.
+src/core/world/validation/hierarchyValidation.ts(22,23): error TS2322: Type 'unknown' is not assignable to type 'object'.
+src/core/world/validation/hierarchyValidation.ts(23,44): error TS2322: Type 'unknown' is not assignable to type 'object'.
+src/core/world/validation/hierarchyValidation.ts(26,37): error TS2339: Property 'siteIds' does not exist on type 'unknown'.
+src/core/world/validation/hierarchyValidation.ts(27,33): error TS2339: Property 'siteIds' does not exist on type 'unknown'.
+src/core/world/validation/hierarchyValidation.ts(36,32): error TS2339: Property 'name' does not exist on type 'unknown'.
+src/core/world/validation/hierarchyValidation.ts(37,36): error TS2322: Type 'unknown' is not assignable to type 'object'.
+src/core/world/validation/hierarchyValidation.ts(40,35): error TS2339: Property 'featureIds' does not exist on type 'unknown'.
+src/core/world/validation/hierarchyValidation.ts(41,34): error TS2339: Property 'featureIds' does not exist on type 'unknown'.
+src/core/world/validation/hierarchyValidation.ts(50,37): error TS2339: Property 'regionId' does not exist on type 'unknown'.
+src/core/world/validation/hierarchyValidation.ts(51,111): error TS2339: Property 'regionId' does not exist on type 'unknown'.
+src/core/world/validation/hierarchyValidation.ts(61,25): error TS2322: Type 'unknown' is not assignable to type 'object'.
+src/core/world/validation/hierarchyValidation.ts(61,56): error TS2322: Type 'unknown' is not assignable to type 'object'.
+src/core/world/validation/occurrenceValidation.ts(47,32): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
+src/core/world/validation/occurrenceValidation.ts(47,64): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
+src/core/world/validation/occurrenceValidation.ts(52,15): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
+src/core/world/validation/occurrenceValidation.ts(57,40): error TS2339: Property 'resourceOccurrences' does not exist on type 'unknown'.
+src/core/world/validation/occurrenceValidation.ts(77,20): error TS2339: Property 'sourceType' does not exist on type 'unknown'.
+src/core/world/validation/occurrenceValidation.ts(78,90): error TS2339: Property 'sourceType' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(24,15): error TS2339: Property 'sourceOccurrenceId' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(24,64): error TS2339: Property 'sourceOccurrenceId' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(25,90): error TS2339: Property 'sourceOccurrenceId' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(28,16): error TS2339: Property 'provenance' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(28,43): error TS2339: Property 'provenance' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(28,90): error TS2339: Property 'provenance' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(32,15): error TS2339: Property 'provenance' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(38,15): error TS2339: Property 'provenance' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(44,43): error TS2339: Property 'provenance' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(55,39): error TS2339: Property 'materialBody' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(61,16): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(61,45): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(61,94): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(66,51): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(79,69): error TS2339: Property 'materialBody' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(80,53): error TS2339: Property 'materialBody' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(81,30): error TS2339: Property 'componentsKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(86,20): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(87,29): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(88,33): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(90,77): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(91,31): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+src/core/world/validation/processHistoryValidation.ts(91,86): error TS2339: Property 'totalMassKg' does not exist on type 'unknown'.
+EXIT=1
