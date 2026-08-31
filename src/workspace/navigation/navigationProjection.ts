@@ -5,37 +5,125 @@
  * deliberately does not create sessions, nodes, or any other simulation state.
  */
 
+import type { SystemNode } from '../../core/systems/types.js';
+import type { Feature, World } from '../../core/world/types.js';
+import type { BlueprintNode } from '../../simulation/types.js';
+import type {
+  NavigationEntry,
+  NavigationIndex,
+  NavigationProjection,
+  NavigationRow,
+  SiteSessionLike,
+  WorkspaceLevel,
+} from '../types.js';
 import { NODE_CATEGORIES, nodeCategory } from '../graph/nodePresentation.js';
 
-const COMPOSITE_TYPES = new Set(['planet', 'region', 'site']);
-const CATEGORY_ORDER = Object.values(NODE_CATEGORIES).map(category => category.key);
+const COMPOSITE_TYPES = new Set<WorkspaceLevel>(['planet', 'region', 'site']);
+const CATEGORY_DEFINITIONS = Object.values(NODE_CATEGORIES);
+const CATEGORY_ORDER = CATEGORY_DEFINITIONS.map(category => category.key);
 
-function asArray(value) {
+interface NavigationGraphNode {
+  id: string;
+  nodeType: string;
+  systemType?: string;
+  kind?: string;
+  displayName?: string;
+  name?: string;
+  processId?: string;
+  boundaryRole?: string;
+  resourceId?: string;
+  occurrenceId?: string | null;
+  resourceOccurrenceIds?: string[];
+  featureId?: string;
+  siteId?: string;
+  regionId?: string;
+  planetId?: string;
+  parentId?: string;
+  ownerId?: string;
+  compositeId?: string;
+  workspaceId?: string;
+  childWorkspaceId?: string | null;
+  inspectableState?: Record<string, unknown>;
+  materialBody?: {
+    solidState?: {
+      fractions?: Record<string, number>;
+    };
+  };
+  solidState?: {
+    fractions?: Record<string, number>;
+  };
+}
+
+interface WorkspaceOwner {
+  level: WorkspaceLevel;
+  id: string;
+  key: string;
+}
+
+interface GraphNodeSource {
+  node: NavigationGraphNode;
+  workspaceId: string | null;
+}
+
+interface HierarchyEntryInput {
+  key: string;
+  targetId: string;
+  nodeId?: string | null;
+  parentKey?: string | null;
+  category: string;
+  label: string;
+  workspaceLevel: WorkspaceLevel | null;
+  workspaceId: string | null;
+  isComposite?: boolean;
+  searchTerms?: readonly unknown[];
+  source?: unknown;
+}
+
+interface NavigationSearchResult {
+  query: string;
+  matchKeys: Set<string>;
+  includedKeys: Set<string>;
+  contextKeys: Set<string>;
+}
+
+interface NavigationRowsOptions {
+  query?: string;
+  visibleCategories?: ReadonlySet<string> | readonly string[] | null;
+  manualExpandedKeys?: Iterable<string>;
+  activeKey?: string | null;
+  selectedKey?: string | null;
+}
+
+function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function nonEmptyStrings(values) {
+function nonEmptyStrings(values: readonly unknown[]): string[] {
   return [...new Set(asArray(values).flatMap(value => {
     if (typeof value === 'string') return [value];
     return value == null ? [] : [String(value)];
   }).map(value => value.trim()).filter(Boolean))];
 }
 
-function categoryForNode(node) {
+function workspaceLevel(value: unknown): WorkspaceLevel | null {
+  return value === 'planet' || value === 'region' || value === 'site' ? value : null;
+}
+
+function categoryForNode(node: NavigationGraphNode): string {
   return nodeCategory(node).key;
 }
 
-function nodeLabel(node) {
-  return node?.displayName
-    ?? node?.name
-    ?? node?.systemType
-    ?? node?.nodeType
-    ?? node?.id
+function nodeLabel(node: NavigationGraphNode): string {
+  return node.displayName
+    ?? node.name
+    ?? node.systemType
+    ?? node.nodeType
+    ?? node.id
     ?? 'Unnamed node';
 }
 
-function featureSearchTerms(world, feature) {
-  const terms = [
+function featureSearchTerms(world: World | null | undefined, feature: Feature | null | undefined): string[] {
+  const terms: unknown[] = [
     feature?.name,
     feature?.type,
     feature?.id,
@@ -58,26 +146,26 @@ function featureSearchTerms(world, feature) {
   return nonEmptyStrings(terms);
 }
 
-function graphNodeSearchTerms(world, node) {
-  const terms = [
+function graphNodeSearchTerms(world: World | null | undefined, node: NavigationGraphNode): string[] {
+  const terms: unknown[] = [
     nodeLabel(node),
-    node?.id,
-    node?.nodeType,
-    node?.systemType,
-    node?.processId,
-    node?.kind,
-    node?.boundaryRole,
-    node?.resourceId,
-    node?.occurrenceId,
-    ...asArray(node?.resourceOccurrenceIds),
-    ...Object.keys(node?.materialBody?.solidState?.fractions ?? {}).map(key => key.split('|')[0]),
-    ...Object.keys(node?.solidState?.fractions ?? {}).map(key => key.split('|')[0]),
+    node.id,
+    node.nodeType,
+    node.systemType,
+    node.processId,
+    node.kind,
+    node.boundaryRole,
+    node.resourceId,
+    node.occurrenceId,
+    ...(node.resourceOccurrenceIds ?? []),
+    ...Object.keys(node.materialBody?.solidState?.fractions ?? {}).map(key => key.split('|')[0]),
+    ...Object.keys(node.solidState?.fractions ?? {}).map(key => key.split('|')[0]),
   ];
 
-  if (node?.featureId) {
+  if (node.featureId) {
     terms.push(...featureSearchTerms(world, world?.features?.[node.featureId]));
   }
-  for (const occurrenceId of node?.resourceOccurrenceIds ?? []) {
+  for (const occurrenceId of node.resourceOccurrenceIds ?? []) {
     const occurrence = world?.resourceOccurrences?.[occurrenceId];
     terms.push(
       occurrence?.name,
@@ -86,7 +174,7 @@ function graphNodeSearchTerms(world, node) {
       ...Object.keys(occurrence?.composition ?? {}),
     );
   }
-  if (node?.occurrenceId) {
+  if (node.occurrenceId) {
     const occurrence = world?.resourceOccurrences?.[node.occurrenceId];
     terms.push(
       occurrence?.name,
@@ -106,12 +194,12 @@ function hierarchyEntry({
   parentKey = null,
   category,
   label,
-  workspaceLevel,
+  workspaceLevel: entryWorkspaceLevel,
   workspaceId,
   isComposite = false,
   searchTerms = [],
   source = null,
-}) {
+}: HierarchyEntryInput): NavigationEntry {
   return {
     key,
     targetId,
@@ -119,7 +207,7 @@ function hierarchyEntry({
     parentKey,
     category,
     label,
-    workspaceLevel,
+    workspaceLevel: entryWorkspaceLevel,
     workspaceId,
     isComposite,
     searchTerms: nonEmptyStrings([label, ...searchTerms]),
@@ -127,12 +215,13 @@ function hierarchyEntry({
   };
 }
 
-function workspaceOwner(world, workspaceId) {
+function workspaceOwner(world: World | null | undefined, workspaceId: string | null | undefined): WorkspaceOwner | null {
   if (!workspaceId) return null;
   for (const node of Object.values(world?.systemNodes ?? {})) {
-    if (!COMPOSITE_TYPES.has(node.nodeType)) continue;
+    const level = workspaceLevel(node.nodeType);
+    if (!level) continue;
     if (node.id === workspaceId || node.childWorkspaceId === workspaceId) {
-      return { level: node.nodeType, id: node.id, key: `${node.nodeType}:${node.id}` };
+      return { level, id: node.id, key: `${level}:${node.id}` };
     }
   }
   for (const planet of Object.values(world?.planets ?? {})) {
@@ -153,67 +242,92 @@ function workspaceOwner(world, workspaceId) {
   return null;
 }
 
-function nodeOwner(world, node, workspaceId = null) {
+function stateString(state: Record<string, unknown>, key: string): string | null {
+  const value = state[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function worldContains(world: World | null | undefined, level: WorkspaceLevel, id: string): boolean {
+  if (level === 'planet') return Boolean(world?.planets?.[id]);
+  if (level === 'region') return Boolean(world?.regions?.[id]);
+  return Boolean(world?.sites?.[id]);
+}
+
+function nodeOwner(
+  world: World | null | undefined,
+  node: NavigationGraphNode | null | undefined,
+  workspaceId: string | null = null,
+): WorkspaceOwner | null {
   if (!node) return null;
   if (node.nodeType === 'feature' && node.featureId) {
     const feature = world?.features?.[node.featureId];
     return feature ? { level: 'site', id: feature.siteId, key: `site:${feature.siteId}` } : null;
   }
-  if (COMPOSITE_TYPES.has(node.nodeType) && world?.systemNodes?.[node.id]) {
-    const level = node.nodeType;
-    return { level, id: node.id, key: `${level}:${node.id}` };
+  const compositeLevel = workspaceLevel(node.nodeType);
+  if (compositeLevel && world?.systemNodes?.[node.id]) {
+    return { level: compositeLevel, id: node.id, key: `${compositeLevel}:${node.id}` };
   }
+
   const state = node.inspectableState ?? {};
-  for (const [level, id] of [
+  const candidates: Array<[WorkspaceLevel, string | null | undefined]> = [
     ['site', node.siteId],
-    ['site', state.siteId],
+    ['site', stateString(state, 'siteId')],
     ['site', node.parentId],
     ['site', node.ownerId],
     ['site', node.compositeId],
-    ['site', state.parentId],
-    ['site', state.ownerId],
+    ['site', stateString(state, 'parentId')],
+    ['site', stateString(state, 'ownerId')],
     ['region', node.regionId],
-    ['region', state.regionId],
+    ['region', stateString(state, 'regionId')],
     ['region', node.parentId],
     ['region', node.ownerId],
     ['region', node.compositeId],
-    ['region', state.parentId],
-    ['region', state.ownerId],
+    ['region', stateString(state, 'parentId')],
+    ['region', stateString(state, 'ownerId')],
     ['planet', node.planetId],
-    ['planet', state.planetId],
+    ['planet', stateString(state, 'planetId')],
     ['planet', node.parentId],
     ['planet', node.ownerId],
     ['planet', node.compositeId],
-    ['planet', state.parentId],
-    ['planet', state.ownerId],
-  ]) {
-    if (id && world?.[`${level}s`]?.[id]) return { level, id, key: `${level}:${id}` };
+    ['planet', stateString(state, 'parentId')],
+    ['planet', stateString(state, 'ownerId')],
+  ];
+  for (const [level, id] of candidates) {
+    if (id && worldContains(world, level, id)) return { level, id, key: `${level}:${id}` };
   }
 
   return workspaceOwner(world, node.workspaceId ?? workspaceId);
 }
 
-function addEntry(entries, entry) {
-  if (!entry?.key || entries.has(entry.key)) return entries.get(entry.key) ?? null;
+function addEntry(entries: Map<string, NavigationEntry>, entry: NavigationEntry): NavigationEntry | null {
+  if (!entry.key || entries.has(entry.key)) return entries.get(entry.key) ?? null;
   entries.set(entry.key, entry);
   return entry;
 }
 
-function addOrEnrichEntry(entries, entry, enrich = {}) {
+function addOrEnrichEntry(
+  entries: Map<string, NavigationEntry>,
+  entry: NavigationEntry,
+  enrich: Partial<NavigationEntry> = {},
+): NavigationEntry {
   const existing = entries.get(entry.key);
   if (!existing) {
     entries.set(entry.key, entry);
     return entry;
   }
   Object.assign(existing, enrich);
-  existing.searchTerms = nonEmptyStrings([existing.label, ...existing.searchTerms, ...(enrich.searchTerms ?? [])]);
+  existing.searchTerms = nonEmptyStrings([
+    existing.label,
+    ...existing.searchTerms,
+    ...(enrich.searchTerms ?? []),
+  ]);
   if (!existing.nodeId && enrich.nodeId) existing.nodeId = enrich.nodeId;
   return existing;
 }
 
-function addCanonicalHierarchy(entries, world) {
+function addCanonicalHierarchy(entries: Map<string, NavigationEntry>, world: World | null | undefined): void {
   const planet = world?.planets?.[world?.planetId];
-  if (!planet) return;
+  if (!planet || !world) return;
 
   addEntry(entries, hierarchyEntry({
     key: `planet:${planet.id}`,
@@ -279,12 +393,18 @@ function addCanonicalHierarchy(entries, world) {
   }
 }
 
-function addGraphNode(entries, world, node, workspaceId) {
-  if (!node?.id) return;
+function addGraphNode(
+  entries: Map<string, NavigationEntry>,
+  world: World | null | undefined,
+  node: NavigationGraphNode,
+  workspaceId: string | null,
+): void {
+  if (!node.id) return;
   const category = categoryForNode(node);
   const owner = nodeOwner(world, node, workspaceId);
-  const canonicalComposite = COMPOSITE_TYPES.has(node.nodeType)
-    ? entries.get(`${node.nodeType}:${node.id}`)
+  const compositeLevel = workspaceLevel(node.nodeType);
+  const canonicalComposite = compositeLevel
+    ? entries.get(`${compositeLevel}:${node.id}`)
     : null;
   if (canonicalComposite) {
     addOrEnrichEntry(entries, canonicalComposite, {
@@ -307,12 +427,13 @@ function addGraphNode(entries, world, node, workspaceId) {
     return;
   }
 
+  const fallbackOwner = workspaceOwner(world, workspaceId);
   const parentKey = owner?.key ?? null;
-  const workspaceLevel = owner?.level
-    ?? workspaceOwner(world, workspaceId)?.level
-    ?? (COMPOSITE_TYPES.has(node.nodeType) ? node.nodeType : null);
+  const entryWorkspaceLevel = owner?.level
+    ?? fallbackOwner?.level
+    ?? compositeLevel;
   const workspaceOwnerId = owner?.id
-    ?? workspaceOwner(world, workspaceId)?.id
+    ?? fallbackOwner?.id
     ?? null;
   const key = `node:${node.id}`;
 
@@ -322,54 +443,60 @@ function addGraphNode(entries, world, node, workspaceId) {
     parentKey: parentKey === key ? null : parentKey,
     category,
     label: nodeLabel(node),
-    workspaceLevel,
+    workspaceLevel: entryWorkspaceLevel,
     workspaceId: workspaceOwnerId,
-    isComposite: node.kind === 'composite' || COMPOSITE_TYPES.has(node.nodeType) || Boolean(node.childWorkspaceId),
+    isComposite: node.kind === 'composite' || Boolean(compositeLevel) || Boolean(node.childWorkspaceId),
     searchTerms: graphNodeSearchTerms(world, node),
     source: node,
   }));
 }
 
-function collectGraphNodes(world, siteSessions = {}) {
-  const sources = [];
+function collectGraphNodes(
+  world: World | null | undefined,
+  siteSessions: Record<string, SiteSessionLike> = {},
+): GraphNodeSource[] {
+  const sources: GraphNodeSource[] = [];
   for (const node of Object.values(world?.systemNodes ?? {})) {
-    sources.push({ node, workspaceId: null });
+    sources.push({ node: node as SystemNode, workspaceId: null });
   }
 
   for (const [workspaceId, workspace] of Object.entries(world?.simulation?.workspaces ?? {})) {
     for (const node of Object.values(workspace?.nodes ?? {})) {
-      sources.push({ node, workspaceId });
+      sources.push({ node: node as BlueprintNode, workspaceId });
     }
   }
 
   for (const [sessionId, blueprint] of Object.entries(world?.simulation?.sessions ?? {})) {
     for (const node of Object.values(blueprint?.nodes ?? {})) {
-      sources.push({ node, workspaceId: `${sessionId}-workspace` });
+      sources.push({ node: node as BlueprintNode, workspaceId: `${sessionId}-workspace` });
     }
   }
 
-  for (const [siteId, session] of Object.entries(siteSessions ?? {})) {
-    for (const node of Object.values(session?.blueprint?.nodes ?? {})) {
-      sources.push({ node, workspaceId: `${siteId}-workspace` });
+  for (const [siteId, session] of Object.entries(siteSessions)) {
+    for (const node of Object.values(session.blueprint?.nodes ?? {})) {
+      sources.push({ node: node as BlueprintNode, workspaceId: `${siteId}-workspace` });
     }
   }
   return sources;
 }
 
-function normalizedCategorySet(categories, fallback) {
+function normalizedCategorySet(
+  categories: ReadonlySet<string> | readonly string[] | null | undefined,
+  fallback: readonly string[],
+): Set<string> {
   if (categories == null) return new Set(fallback);
-  const values = categories instanceof Set ? [...categories] : asArray(categories);
-  return new Set(values.map(category => typeof category === 'string' ? category : category?.key).filter(Boolean));
+  return new Set(categories instanceof Set ? categories : categories);
 }
 
-export function navigationCategoryVocabulary() {
+export function navigationCategoryVocabulary(): string[] {
   return [...CATEGORY_ORDER];
 }
 
-export function navigationAncestorKeys(index, key) {
-  const ancestors = [];
-  let entry = index?.byKey?.get(key);
-  const seen = new Set();
+export function navigationAncestorKeys(index: NavigationIndex, key: string | null | undefined): string[] {
+  if (!key) return [];
+  const ancestors: string[] = [];
+  let entry = index.byKey.get(key);
+  const seen = new Set<string>();
   while (entry?.parentKey && !seen.has(entry.key)) {
     seen.add(entry.key);
     ancestors.unshift(entry.parentKey);
@@ -378,34 +505,41 @@ export function navigationAncestorKeys(index, key) {
   return ancestors;
 }
 
-export function navigationExpandableKeys(index) {
-  return new Set([...index?.childrenByKey?.entries() ?? []]
+export function navigationExpandableKeys(index: NavigationIndex): Set<string> {
+  return new Set([...index.childrenByKey.entries()]
     .filter(([, children]) => children.length > 0)
     .map(([key]) => key));
 }
 
-export function expandNavigationPath(index, key, expandedKeys = []) {
+export function expandNavigationPath(
+  index: NavigationIndex,
+  key: string | null | undefined,
+  expandedKeys: Iterable<string> = [],
+): Set<string> {
   const expanded = new Set(expandedKeys);
   for (const ancestorKey of navigationAncestorKeys(index, key)) expanded.add(ancestorKey);
   return expanded;
 }
 
-export function navigationVisibleCategories(categories, hiddenCategories = []) {
+export function navigationVisibleCategories(
+  categories: readonly string[],
+  hiddenCategories: Iterable<string> = [],
+): Set<string> {
   const hidden = new Set(hiddenCategories);
-  return new Set(asArray(categories).filter(category => !hidden.has(category)));
+  return new Set(categories.filter(category => !hidden.has(category)));
 }
 
-function pathKeys(index, key) {
+function pathKeys(index: NavigationIndex, key: string): string[] {
   return [...navigationAncestorKeys(index, key), key];
 }
 
-export function searchNavigationIndex(index, query) {
+export function searchNavigationIndex(index: NavigationIndex, query: string | null | undefined): NavigationSearchResult {
   const normalizedQuery = String(query ?? '').trim().toLowerCase();
   if (!normalizedQuery) {
     return {
       query: '',
       matchKeys: new Set(),
-      includedKeys: new Set(index?.entries?.map(entry => entry.key) ?? []),
+      includedKeys: new Set(index.entries.map(entry => entry.key)),
       contextKeys: new Set(),
     };
   }
@@ -413,8 +547,8 @@ export function searchNavigationIndex(index, query) {
   const matchKeys = new Set(index.entries
     .filter(entry => entry.searchTerms.some(term => term.toLowerCase().includes(normalizedQuery)))
     .map(entry => entry.key));
-  const includedKeys = new Set();
-  const contextKeys = new Set();
+  const includedKeys = new Set<string>();
+  const contextKeys = new Set<string>();
   for (const matchKey of matchKeys) {
     for (const key of pathKeys(index, matchKey)) {
       includedKeys.add(key);
@@ -430,17 +564,20 @@ export function searchNavigationIndex(index, query) {
  * Search-derived expansion is returned separately from manual expansion so
  * clearing a query never destroys the player's expansion choices.
  */
-export function getNavigationRows(index, {
-  query = '',
-  visibleCategories = null,
-  manualExpandedKeys = [],
-  activeKey = null,
-  selectedKey = null,
-} = {}) {
-  const categories = normalizedCategorySet(visibleCategories, index?.categories ?? []);
+export function getNavigationRows(
+  index: NavigationIndex,
+  {
+    query = '',
+    visibleCategories = null,
+    manualExpandedKeys = [],
+    activeKey = null,
+    selectedKey = null,
+  }: NavigationRowsOptions = {},
+): NavigationProjection {
+  const categories = normalizedCategorySet(visibleCategories, index.categories);
   const manual = new Set(manualExpandedKeys);
   const search = searchNavigationIndex(index, query);
-  const activePath = activeKey ? new Set(pathKeys(index, activeKey)) : new Set();
+  const activePath = activeKey ? new Set(pathKeys(index, activeKey)) : new Set<string>();
   const includedKeys = new Set(search.includedKeys);
   const contextKeys = new Set(search.contextKeys);
   if (search.query && activeKey) {
@@ -454,15 +591,15 @@ export function getNavigationRows(index, {
     for (const key of navigationAncestorKeys(index, activeKey)) requiredExpandedKeys.add(key);
   }
   const expandedKeys = new Set([...manual, ...requiredExpandedKeys]);
-  const rows = [];
+  const rows: NavigationRow[] = [];
 
-  const visit = (entry, depth) => {
+  const visit = (entry: NavigationEntry, depth: number): void => {
     const included = search.query
       ? includedKeys.has(entry.key)
       : true;
     const visible = categories.has(entry.category);
     const context = contextKeys.has(entry.key);
-    if (included && (visible || search.query)) {
+    if (included && (visible || Boolean(search.query))) {
       rows.push({
         ...entry,
         depth,
@@ -494,17 +631,23 @@ export function getNavigationRows(index, {
   };
 }
 
-export function navigationEntryForTarget(index, targetId) {
+export function navigationEntryForTarget(
+  index: NavigationIndex,
+  targetId: string | null | undefined,
+): NavigationEntry | null {
   if (!targetId) return null;
-  return index?.entries?.find(entry => entry.targetId === targetId || entry.nodeId === targetId) ?? null;
+  return index.entries.find(entry => entry.targetId === targetId || entry.nodeId === targetId) ?? null;
 }
 
 /**
  * Build the navigator projection without invoking createWorldSimulation,
  * buildSiteSession, or any other state-creating helper.
  */
-export function buildNavigationIndex(world, { siteSessions = {} } = {}) {
-  const entries = new Map();
+export function buildNavigationIndex(
+  world: World | null | undefined,
+  { siteSessions = {} }: { siteSessions?: Record<string, SiteSessionLike> } = {},
+): NavigationIndex {
+  const entries = new Map<string, NavigationEntry>();
   addCanonicalHierarchy(entries, world);
   for (const { node, workspaceId } of collectGraphNodes(world, siteSessions)) {
     addGraphNode(entries, world, node, workspaceId);
@@ -512,10 +655,10 @@ export function buildNavigationIndex(world, { siteSessions = {} } = {}) {
 
   const allEntries = [...entries.values()];
   const byKey = new Map(allEntries.map(entry => [entry.key, entry]));
-  const childrenByKey = new Map(allEntries.map(entry => [entry.key, []]));
+  const childrenByKey = new Map<string, NavigationEntry[]>(allEntries.map(entry => [entry.key, []]));
   for (const entry of allEntries) {
     if (!entry.parentKey || !childrenByKey.has(entry.parentKey)) continue;
-    childrenByKey.get(entry.parentKey).push(entry);
+    childrenByKey.get(entry.parentKey)?.push(entry);
   }
   const roots = allEntries.filter(entry => !entry.parentKey || !byKey.has(entry.parentKey));
   const categories = [...new Set(allEntries.map(entry => entry.category))]
@@ -527,7 +670,7 @@ export function buildNavigationIndex(world, { siteSessions = {} } = {}) {
     roots,
     childrenByKey,
     categories,
-    categoryLabels: Object.fromEntries(Object.values(NODE_CATEGORIES).map(category => [category.key, category.label])),
+    categoryLabels: Object.fromEntries(CATEGORY_DEFINITIONS.map(category => [category.key, category.label])),
   };
 }
 
