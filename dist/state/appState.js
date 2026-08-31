@@ -1,3 +1,4 @@
+export const RESOURCE_FOCUS_ZOOM = 36;
 function regionFocusZoom(world, region) {
     const widthZoom = world.planet.width / Math.max(1, region.bounds.width * 1.35);
     const heightZoom = world.planet.height / Math.max(1, region.bounds.height * 1.35);
@@ -63,7 +64,7 @@ export class AppStore {
                 camera = {
                     centerX: resource.position.x,
                     centerY: resource.position.y,
-                    zoom: 7,
+                    zoom: RESOURCE_FOCUS_ZOOM,
                 };
             }
         }
