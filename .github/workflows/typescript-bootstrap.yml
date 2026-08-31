@@ -31,18 +31,15 @@ jobs:
               for path in sorted(root.rglob('*.js')):
                   if path.as_posix() == 'src/wasm/interlink_wasm.js':
                       continue
-                  target = path.with_suffix('.ts')
-                  subprocess.run(['git', 'mv', path.as_posix(), target.as_posix()], check=True)
+                  subprocess.run(['git', 'mv', path.as_posix(), path.with_suffix('.ts').as_posix()], check=True)
 
           index = Path('index.html')
-          text = index.read_text()
-          text = text.replace('src="src/app.js"', 'src="dist/src/app.js"')
-          index.write_text(text)
+          index.write_text(index.read_text().replace('src="src/app.js"', 'src="dist/src/app.js"'))
           PY
 
       - name: Add TypeScript toolchain
         run: |
-          npm install --save-dev typescript@latest tsx@latest @types/node@22
+          npm install --save-dev typescript tsx @types/node
           node - <<'NODE'
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -95,7 +92,7 @@ jobs:
               "sourceMap": false
             },
             "include": ["src/**/*.ts", "src/**/*.d.ts"],
-            "exclude": ["src/wasm/**/*.js", "dist", "target", "node_modules"]
+            "exclude": ["dist", "target", "node_modules"]
           }
           EOF
 
@@ -112,32 +109,19 @@ jobs:
           EOF
           chmod +x scripts/build-browser.sh
 
-      - name: Update canonical CI for TypeScript
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('.github/workflows/test.yml')
-          s = p.read_text()
-          s = s.replace('javascript:\n    name: JavaScript simulation tests', 'typescript:\n    name: TypeScript browser and simulation tests')
-          s = s.replace("      - name: Run JavaScript tests\n        run: npm test", "      - name: Install Node dependencies\n        run: npm ci\n\n      - name: Type-check browser and tests\n        run: npm run typecheck\n\n      - name: Run TypeScript tests\n        run: npm test\n\n      - name: Build static browser output\n        run: npm run build")
-          p.write_text(s)
-          PY
-
       - name: Capture strict TypeScript diagnostics
-        continue-on-error: true
         run: |
-          npm run typecheck
+          set +e
+          npm run typecheck > typescript-diagnostics.txt 2>&1
+          echo "TYPECHECK_EXIT=$?" >> typescript-diagnostics.txt
+          npm test > typescript-tests.txt 2>&1
+          echo "TEST_EXIT=$?" >> typescript-tests.txt
+          exit 0
 
-      - name: Capture converted test status
-        continue-on-error: true
+      - name: Commit conversion baseline
         run: |
-          npm test
-
-      - name: Remove bootstrap workflow and commit conversion baseline
-        run: |
-          git rm .github/workflows/typescript-bootstrap.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add -A -- ':!.github/workflows/typescript-bootstrap.yml'
           git commit -m "Convert browser source and tests to TypeScript [typescript-bootstrap]"
           git push origin HEAD:chatgpt/typescript-browser-conversion
