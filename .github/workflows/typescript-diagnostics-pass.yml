@@ -40,6 +40,16 @@ jobs:
           out += ['', 'By file:']
           out += [f'{k}: {v}' for k,v in by_file.most_common()]
           out += ['', 'First strict errors:', '\n'.join(text.splitlines()[:180])]
+          focused = [
+              'src/workspace/workspaceController.ts',
+              'src/simulation/rustWasmWorkerHost.ts',
+              'src/workspace/debug/debugDrawer.ts',
+              'src/simulation/packedWorldWorkerSetup.ts',
+              'src/simulation/packedRuntimeCompiler.ts',
+          ]
+          for target in focused:
+              matches = [line for line in text.splitlines() if line.startswith(target + '(')]
+              out += ['', f'Focused errors: {target}', '\n'.join(matches[:600])]
           out += ['', 'Test failures:', '\n'.join(failures[:100])]
           Path('typescript-current-diagnostics.txt').write_text('\n'.join(out)+'\n')
           PY
