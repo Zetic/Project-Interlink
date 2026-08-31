@@ -52,7 +52,9 @@ function installRuntimeControls(root: HTMLElement, store: AppStore, runtime: Run
     if (profiling) { profiling.disabled = !available; profiling.checked = runtimeState.profilingEnabled; }
     if (status) status.textContent = runtimeState.status === 'error'
       ? `Runtime error: ${runtimeState.error ?? 'unknown error'}`
-      : available ? 'Rust/WASM extraction runtime connected.' : 'Rust/WASM extraction runtime is connecting.';
+      : runtimeState.error
+        ? `Runtime warning: ${runtimeState.error}`
+        : available ? 'Rust/WASM extraction runtime connected.' : 'Rust/WASM extraction runtime is connecting.';
   };
 
   pause?.addEventListener('click', () => { const action = store.getState().runtime.running ? runtime.pause() : runtime.resume(); void action.catch(() => undefined); });
