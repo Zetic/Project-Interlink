@@ -8,7 +8,7 @@ function setText(root, name, value) {
         element.textContent = value;
 }
 function formatMs(value) {
-    return Number.isFinite(value) ? `${value.toFixed(2)} ms` : '—';
+    return value != null && Number.isFinite(value) ? `${value.toFixed(2)} ms` : '—';
 }
 function yesNo(value) {
     return value ? 'Available' : 'Unavailable';
@@ -27,34 +27,58 @@ function installRuntimeCapabilityStats(root) {
     setText(root, 'webgpu-capability', yesNo(capabilities.webGpu));
     setText(root, 'offscreen-capability', yesNo(capabilities.offscreenCanvas));
 }
-function disableRuntimeOnlyControls(root) {
-    const unavailableTitle = 'Available again when the original Rust/WASM runtime is reconnected.';
-    const deepProfiling = root.querySelector('#ws-debug-deep-profiling');
-    if (deepProfiling) {
-        deepProfiling.disabled = true;
-        deepProfiling.checked = false;
-        deepProfiling.title = unavailableTitle;
-    }
-    for (const action of ['toggle-pause', 'step-0.1', 'step-1', 'step-10', 'place-factories', 'remove-factories']) {
+function installRuntimeControls(root, store, runtime) {
+    const pause = root.querySelector('[data-debug-action="toggle-pause"]');
+    const step01 = root.querySelector('[data-debug-action="step-0.1"]');
+    const step1 = root.querySelector('[data-debug-action="step-1"]');
+    const step10 = root.querySelector('[data-debug-action="step-10"]');
+    const profiling = root.querySelector('#ws-debug-deep-profiling');
+    const status = root.querySelector('#ws-debug-status');
+    const sync = () => {
+        const runtimeState = store.getState().runtime;
+        const available = runtimeState.status === 'ready';
+        if (pause) {
+            pause.disabled = !available;
+            pause.textContent = runtimeState.running ? 'Pause World' : 'Resume World';
+        }
+        if (step01)
+            step01.disabled = !available;
+        if (step1)
+            step1.disabled = !available;
+        if (step10)
+            step10.disabled = !available;
+        if (profiling) {
+            profiling.disabled = !available;
+            profiling.checked = runtimeState.profilingEnabled;
+        }
+        if (status)
+            status.textContent = runtimeState.status === 'error'
+                ? `Runtime error: ${runtimeState.error ?? 'unknown error'}`
+                : available ? 'Rust/WASM extraction runtime connected.' : 'Rust/WASM extraction runtime is connecting.';
+    };
+    pause?.addEventListener('click', () => { const action = store.getState().runtime.running ? runtime.pause() : runtime.resume(); void action.catch(() => undefined); });
+    step01?.addEventListener('click', () => { void runtime.advanceFixedSteps(1).catch(() => undefined); });
+    step1?.addEventListener('click', () => { void runtime.advanceFixedSteps(10).catch(() => undefined); });
+    step10?.addEventListener('click', () => { void runtime.advanceFixedSteps(100).catch(() => undefined); });
+    profiling?.addEventListener('change', () => { void runtime.setProfiling(profiling.checked, true).catch(() => undefined); });
+    store.subscribe(sync);
+    for (const action of ['place-factories', 'remove-factories']) {
         const button = root.querySelector(`[data-debug-action="${action}"]`);
         if (button) {
             button.disabled = true;
-            button.title = unavailableTitle;
+            button.title = 'Test factory automation is outside the Phase 6 extraction runtime slice.';
         }
     }
     const count = root.querySelector('#ws-debug-factory-count');
     if (count)
         count.disabled = true;
-    const status = root.querySelector('#ws-debug-status');
-    if (status)
-        status.textContent = 'Runtime-dependent debug tools are unavailable until Rust/WASM is reconnected.';
 }
 function heapUsedText() {
     const performanceWithMemory = globalThis.performance;
     const bytes = performanceWithMemory?.memory?.usedJSHeapSize;
     return bytes ? `${(bytes / 1048576).toFixed(1)} MB` : 'Unavailable';
 }
-export function installDebugPanel(root, store) {
+export function installDebugPanel(root, store, runtime) {
     const drawer = root.querySelector('#ws-debug-drawer');
     if (!drawer)
         return;
@@ -64,24 +88,27 @@ export function installDebugPanel(root, store) {
     let lastFrameAtMs = null;
     let refreshTimerId = null;
     installRuntimeCapabilityStats(drawer);
-    disableRuntimeOnlyControls(drawer);
+    installRuntimeControls(drawer, store, runtime);
     const render = () => {
         const frameAverage = mean(frameSamplesMs);
         const frameP95 = percentile(frameSamplesMs, 0.95);
         const fps = frameAverage > 0 ? 1000 / frameAverage : 0;
         const simulation = collectSimulationDebugStats(latestState);
+        const runtimeState = latestState.runtime;
+        const telemetry = runtimeState.telemetry;
+        const profile = runtimeState.profile;
         setText(drawer, 'fps', frameSamplesMs.length ? fps.toFixed(1) : '—');
         setText(drawer, 'frame-average', frameSamplesMs.length ? formatMs(frameAverage) : '—');
         setText(drawer, 'frame-p95', frameSamplesMs.length ? formatMs(frameP95) : '—');
-        setText(drawer, 'step-accumulator', '—');
-        setText(drawer, 'scheduler-debt', '—');
-        setText(drawer, 'realtime-factor', '—');
-        setText(drawer, 'apparatus-cpu-tick', 'Rust/WASM');
-        setText(drawer, 'profile-tick-average', '—');
-        setText(drawer, 'profile-apparatus-average', '—');
-        setText(drawer, 'profile-other-average', '—');
-        setText(drawer, 'profile-worker-roundtrip', '—');
-        setText(drawer, 'profile-presentation-update', '—');
+        setText(drawer, 'step-accumulator', `${(telemetry.accumulatorSeconds * 1000).toFixed(1)} ms`);
+        setText(drawer, 'scheduler-debt', `${(telemetry.schedulerDebtSeconds * 1000).toFixed(1)} ms`);
+        setText(drawer, 'realtime-factor', telemetry.realtimeFactor > 0 ? `${telemetry.realtimeFactor.toFixed(2)}×` : '—');
+        setText(drawer, 'apparatus-cpu-tick', runtimeState.status === 'ready' ? 'Rust/WASM' : 'Connecting');
+        setText(drawer, 'profile-tick-average', profile ? formatMs(profile.tickAverageMs) : '—');
+        setText(drawer, 'profile-apparatus-average', profile ? formatMs(profile.apparatusAverageMs) : '—');
+        setText(drawer, 'profile-other-average', profile ? formatMs(profile.otherAverageMs) : '—');
+        setText(drawer, 'profile-worker-roundtrip', formatMs(telemetry.workerRoundTripMs));
+        setText(drawer, 'profile-presentation-update', formatMs(telemetry.presentationUpdateMs));
         setText(drawer, 'sessions', String(simulation.sessions));
         setText(drawer, 'nodes', String(simulation.nodes));
         setText(drawer, 'active-machines', String(simulation.activeMachines));
@@ -119,8 +146,11 @@ export function installDebugPanel(root, store) {
     };
     const syncOpenState = () => {
         stopSampling();
-        if (drawer.hidden)
+        if (drawer.hidden) {
+            if (store.getState().runtime.profilingEnabled)
+                void runtime.setProfiling(false).catch(() => undefined);
             return;
+        }
         render();
         frameRafId = requestAnimationFrame(sampleFrame);
         refreshTimerId = window.setInterval(render, DEBUG_REFRESH_MS);
@@ -128,6 +158,8 @@ export function installDebugPanel(root, store) {
     root.querySelector('[data-debug-action="reset-stats"]')?.addEventListener('click', () => {
         frameSamplesMs = [];
         lastFrameAtMs = null;
+        if (store.getState().runtime.profilingEnabled)
+            void runtime.setProfiling(true, true).catch(() => undefined);
         render();
     });
     store.subscribe(state => {
