@@ -120,7 +120,8 @@ export function installInspectorPanel(root: HTMLElement, store: AppStore, runtim
       : state.selection.type === 'region' ? `region:${state.selection.regionId}`
         : state.selection.type === 'resource' ? `resource:${state.selection.resourceNodeId}`
           : `mechanical:${state.selection.mechanicalNodeId}`;
-    const mustRebuild = state.world !== lastWorld || state.graph !== lastGraph || selectionKey !== lastSelectionKey;
+    const staticModelUnchanged = state.world === lastWorld && state.graph === lastGraph;
+    const mustRebuild = !staticModelUnchanged || selectionKey !== lastSelectionKey;
     if (mustRebuild) {
       lastWorld = state.world; lastGraph = state.graph; lastSelectionKey = selectionKey;
       container.replaceChildren(); const planet = state.world?.planet; if (!planet) { container.textContent = 'Generate a world to inspect it.'; return; }
