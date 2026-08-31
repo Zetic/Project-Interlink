@@ -7,7 +7,8 @@ import {
 } from '../graph/graphCommands.js';
 import { connectionsForNode, mechanicalNodeById } from '../graph/graphQueries.js';
 import type { MechanicalNode } from '../graph/types.js';
-import type { AppStore } from '../state/appState.js';
+import type { RuntimeController } from '../runtime/runtimeController.js';
+import type { AppState, AppStore } from '../state/appState.js';
 import { resourceDefinitionById } from '../world/resources.js';
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';
 import type { Planet, Region, ResourceNode } from '../world/types.js';
@@ -15,9 +16,22 @@ import type { Planet, Region, ResourceNode } from '../world/types.js';
 function addRow(container: HTMLElement, label: string, value: string): void {
   const row = document.createElement('div'); row.className = 'ws-ins-row'; const strong = document.createElement('b'); strong.textContent = `${label}: `; row.append(strong, document.createTextNode(value)); container.appendChild(row);
 }
+function addLiveRow(container: HTMLElement, label: string, key: string, value = '—'): void {
+  const row = document.createElement('div'); row.className = 'ws-ins-row'; const strong = document.createElement('b'); strong.textContent = `${label}: `; const live = document.createElement('span'); live.dataset.runtimeInspect = key; live.textContent = value; row.append(strong, live); container.appendChild(row);
+}
 function typeLabel(container: HTMLElement, value: string): void { const type = document.createElement('div'); type.className = 'ws-ins-type'; type.textContent = value; container.appendChild(type); }
 function sectionTitle(container: HTMLElement, value: string): void { const title = document.createElement('div'); title.className = 'ws-ins-section-title'; title.textContent = value; container.appendChild(title); }
 function speciesLabel(speciesId: string): string { return speciesId.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|[- ])\w/g, value => value.toUpperCase()).replaceAll('-', ' '); }
+function formatMass(value: number | null | undefined): string { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg`; }
+function formatRate(value: number | null | undefined): string { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg/s`; }
+function runtimeStatus(state: Readonly<AppState>): string {
+  const runtime = state.runtime;
+  if (runtime.status === 'ready') {
+    const connection = runtime.running ? 'Connected · running' : 'Connected · paused';
+    return runtime.error ? `${connection} · warning: ${runtime.error}` : connection;
+  }
+  return runtime.status === 'error' ? `Error · ${runtime.error ?? 'unknown'}` : runtime.status;
+}
 
 function renderPlanet(container: HTMLElement, planet: Planet): void {
   typeLabel(container, 'PLANET'); addRow(container, 'Name', planet.name); addRow(container, 'Seed', planet.seed); addRow(container, 'Map', `${planet.width} × ${planet.height}`);
@@ -36,10 +50,12 @@ function renderResource(container: HTMLElement, planet: Planet, resource: Resour
   addRow(container, 'Physical form', resource.source.physicalForm); addRow(container, 'Fragmentation', resource.source.fragmentationProfileId.replaceAll('-', ' ')); addRow(container, 'Initial reserve', resource.source.initialReserveMassKg == null ? 'Unbounded' : `${resource.source.initialReserveMassKg.toLocaleString()} kg`);
   for (const component of resource.source.composition) addRow(container, speciesLabel(component.speciesId), `${(component.massFraction * 100).toFixed(2)}%`);
   const port = resource.ports.find(candidate => candidate.id === resource.resourceAccessPortId); if (port) addRow(container, 'Output', `${port.label} · ${port.kind}`);
+  sectionTitle(container, 'Runtime');
+  addLiveRow(container, 'Status', 'runtime-status'); addLiveRow(container, 'Extracted', 'source-extracted'); addLiveRow(container, 'Remaining', 'source-remaining');
 }
-function renderMechanical(container: HTMLElement, node: MechanicalNode, store: AppStore): void {
+function renderMechanical(container: HTMLElement, node: MechanicalNode, store: AppStore, runtime: RuntimeController): void {
   const definition = apparatusDefinitionById(node.definitionId); typeLabel(container, node.category.toUpperCase()); addRow(container, 'Name', node.label); addRow(container, 'Definition', definition?.label ?? node.definitionId); addRow(container, 'Node type', node.nodeType);
-  addRow(container, 'Coordinates', `${node.position.x.toFixed(6)}, ${node.position.y.toFixed(6)}`); addRow(container, 'Footprint', `${node.physicalWidthMeters} m × ${node.physicalHeightMeters} m`); addRow(container, 'Runtime', 'Prepared · simulation disconnected until Phase 6');
+  addRow(container, 'Coordinates', `${node.position.x.toFixed(6)}, ${node.position.y.toFixed(6)}`); addRow(container, 'Footprint', `${node.physicalWidthMeters} m × ${node.physicalHeightMeters} m`);
 
   sectionTitle(container, 'Configuration');
   const enabledRow = document.createElement('div'); enabledRow.className = 'ws-ins-config-row';
@@ -60,6 +76,18 @@ function renderMechanical(container: HTMLElement, node: MechanicalNode, store: A
     row.append(label, input); container.appendChild(row);
   }
 
+  sectionTitle(container, 'Runtime');
+  addLiveRow(container, 'Status', 'runtime-status');
+  if (node.nodeType === 'extractor') {
+    addLiveRow(container, 'Operating', 'node-operating'); addLiveRow(container, 'Actual rate', 'node-actual-rate'); addLiveRow(container, 'Blocked reason', 'node-blocked'); addLiveRow(container, 'Source', 'extractor-source');
+  } else if (node.nodeType === 'hopper') {
+    addLiveRow(container, 'Stored', 'hopper-stored'); addLiveRow(container, 'Free', 'hopper-free');
+    const detailButton = document.createElement('button'); detailButton.type = 'button'; detailButton.className = 'ws-debug-button'; detailButton.textContent = 'Refresh Material Detail'; detailButton.addEventListener('click', () => { void runtime.queryHopperDetail(node.id); }); container.appendChild(detailButton);
+    const composition = document.createElement('div'); composition.dataset.runtimeComposition = node.id; container.appendChild(composition);
+  } else {
+    addRow(container, 'Execution', 'Not yet reconnected in the Phase 6 extraction slice');
+  }
+
   sectionTitle(container, 'Ports');
   for (const port of node.ports) addRow(container, port.label, `${port.direction} · ${port.kind} · ${port.medium}`);
   const connections = connectionsForNode(store.getState().graph, node.id); sectionTitle(container, `Connections (${connections.length})`);
@@ -70,7 +98,25 @@ function renderMechanical(container: HTMLElement, node: MechanicalNode, store: A
   const actions = document.createElement('div'); actions.className = 'ws-ins-actions'; const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove Node'; remove.addEventListener('click', () => { store.setGraph(removeMechanicalNode(store.getState().graph, node.id)); store.setSelection({ type: 'planet' }); }); actions.appendChild(remove); container.appendChild(actions);
 }
 
-export function installInspectorPanel(root: HTMLElement, store: AppStore): void {
+function setLive(container: HTMLElement, key: string, value: string): void { const target = container.querySelector<HTMLElement>(`[data-runtime-inspect="${key}"]`); if (target) target.textContent = value; }
+
+function updateRuntimeProjection(container: HTMLElement, state: Readonly<AppState>): void {
+  const selection = state.selection; const snapshot = state.runtime.snapshot; setLive(container, 'runtime-status', runtimeStatus(state));
+  if (selection.type === 'resource') {
+    const source = snapshot?.sources[selection.resourceNodeId]; setLive(container, 'source-extracted', formatMass(source?.extractedMassKg)); setLive(container, 'source-remaining', source?.remainingMassKg == null ? 'Unbounded' : formatMass(source.remainingMassKg)); return;
+  }
+  if (selection.type !== 'mechanical') return;
+  const node = state.graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId); if (!node) return; const runtimeNode = snapshot?.nodes[node.id];
+  if (node.nodeType === 'extractor') {
+    setLive(container, 'node-operating', runtimeNode?.operatingState ?? '—'); setLive(container, 'node-actual-rate', formatRate(runtimeNode?.actualRateKgPerSecond)); setLive(container, 'node-blocked', runtimeNode?.blockedReason || '—');
+    const sourceConnection = state.graph.connections.find(connection => connection.kind === 'resource-access' && connection.to.nodeId === node.id); const source = sourceConnection ? state.world?.planet.resourceNodes.find(resource => resource.id === sourceConnection.from.nodeId) : null; setLive(container, 'extractor-source', source?.name ?? '—');
+  } else if (node.nodeType === 'hopper') {
+    setLive(container, 'hopper-stored', formatMass(runtimeNode?.storedMassKg)); setLive(container, 'hopper-free', formatMass(runtimeNode?.freeCapacityKg));
+    const detail = state.runtime.details[`hopper:${node.id}`]; const detailRoot = container.querySelector<HTMLElement>(`[data-runtime-composition="${node.id}"]`); if (detailRoot) { detailRoot.replaceChildren(); if (detail?.kind === 'hopper') { sectionTitle(detailRoot, `Contained material · ${detail.storedMassKg.toFixed(2)} kg`); const entries = Object.entries(detail.compositionKg); if (!entries.length) addRow(detailRoot, 'Composition', 'Empty'); else for (const [speciesId, kg] of entries) addRow(detailRoot, speciesLabel(speciesId), `${kg.toFixed(2)} kg`); } }
+  }
+}
+
+export function installInspectorPanel(root: HTMLElement, store: AppStore, runtime: RuntimeController): void {
   const container = root.querySelector<HTMLElement>('#ws-map-inspector-body'); if (!container) return;
   let lastWorld = store.getState().world;
   let lastGraph = store.getState().graph;
@@ -81,13 +127,17 @@ export function installInspectorPanel(root: HTMLElement, store: AppStore): void 
       : state.selection.type === 'region' ? `region:${state.selection.regionId}`
         : state.selection.type === 'resource' ? `resource:${state.selection.resourceNodeId}`
           : `mechanical:${state.selection.mechanicalNodeId}`;
-    if (state.world === lastWorld && state.graph === lastGraph && selectionKey === lastSelectionKey) return;
-    lastWorld = state.world; lastGraph = state.graph; lastSelectionKey = selectionKey;
-    container.replaceChildren(); const planet = state.world?.planet; if (!planet) { container.textContent = 'Generate a world to inspect it.'; return; }
-    const selection = state.selection;
-    if (selection.type === 'planet') { renderPlanet(container, planet); return; }
-    if (selection.type === 'region') { const region = planet.regions.find(candidate => candidate.id === selection.regionId); region ? renderRegion(container, planet, region) : container.append('Selected region is unavailable.'); return; }
-    if (selection.type === 'resource') { const resource = planet.resourceNodes.find(candidate => candidate.id === selection.resourceNodeId); resource ? renderResource(container, planet, resource) : container.append('Selected resource is unavailable.'); return; }
-    const node = mechanicalNodeById(state.graph, selection.mechanicalNodeId); node ? renderMechanical(container, node, store) : container.append('Selected mechanical node is unavailable.');
+    const staticModelUnchanged = state.world === lastWorld && state.graph === lastGraph;
+    const mustRebuild = !staticModelUnchanged || selectionKey !== lastSelectionKey;
+    if (mustRebuild) {
+      lastWorld = state.world; lastGraph = state.graph; lastSelectionKey = selectionKey;
+      container.replaceChildren(); const planet = state.world?.planet; if (!planet) { container.textContent = 'Generate a world to inspect it.'; return; }
+      const selection = state.selection;
+      if (selection.type === 'planet') renderPlanet(container, planet);
+      else if (selection.type === 'region') { const region = planet.regions.find(candidate => candidate.id === selection.regionId); region ? renderRegion(container, planet, region) : container.append('Selected region is unavailable.'); }
+      else if (selection.type === 'resource') { const resource = planet.resourceNodes.find(candidate => candidate.id === selection.resourceNodeId); resource ? renderResource(container, planet, resource) : container.append('Selected resource is unavailable.'); }
+      else { const node = mechanicalNodeById(state.graph, selection.mechanicalNodeId); node ? renderMechanical(container, node, store, runtime) : container.append('Selected mechanical node is unavailable.'); }
+    }
+    updateRuntimeProjection(container, state);
   });
 }

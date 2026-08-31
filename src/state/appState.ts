@@ -1,5 +1,6 @@
 import { createEmptyGraphState } from '../graph/graphCommands.js';
 import type { GraphState, PortEndpoint } from '../graph/types.js';
+import { createDisconnectedRuntimeState, type RuntimePresentationState } from '../runtime/presentation.js';
 import type { MapCameraState, MapSelection, Region, WorldState } from '../world/types.js';
 
 export interface GraphInteractionState {
@@ -14,6 +15,7 @@ export interface AppState {
   selection: MapSelection;
   camera: MapCameraState;
   interaction: GraphInteractionState;
+  runtime: RuntimePresentationState;
 }
 
 export type AppStateListener = (state: Readonly<AppState>) => void;
@@ -38,6 +40,7 @@ export class AppStore {
     selection: { type: 'planet' },
     camera: { centerX: 0, centerY: 0, zoom: 1 },
     interaction: emptyInteraction(),
+    runtime: createDisconnectedRuntimeState(),
   };
 
   getState(): Readonly<AppState> {
@@ -51,6 +54,7 @@ export class AppStore {
       selection: { type: 'planet' },
       camera: { centerX: world.planet.width / 2, centerY: world.planet.height / 2, zoom: 1 },
       interaction: emptyInteraction(),
+      runtime: createDisconnectedRuntimeState(),
     };
     this.emit();
   }
@@ -67,6 +71,21 @@ export class AppStore {
 
   setGraph(graph: GraphState): void {
     this.state = { ...this.state, graph };
+    this.emit();
+  }
+
+  updateRuntime(patch: Partial<RuntimePresentationState>): void {
+    this.state = {
+      ...this.state,
+      runtime: {
+        ...this.state.runtime,
+        ...patch,
+        telemetry: patch.telemetry
+          ? { ...this.state.runtime.telemetry, ...patch.telemetry }
+          : this.state.runtime.telemetry,
+        details: patch.details ?? this.state.runtime.details,
+      },
+    };
     this.emit();
   }
 

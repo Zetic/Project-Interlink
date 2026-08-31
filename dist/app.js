@@ -1,4 +1,5 @@
 import { installMapRenderer } from './map/mapRenderer.js';
+import { installRuntimeController } from './runtime/runtimeController.js';
 import { AppStore } from './state/appState.js';
 import { generateWorld } from './world/generateWorld.js';
 import { installDebugPanel } from './ui/debugPanel.js';
@@ -46,10 +47,11 @@ function enterPlayerWorkspace() {
     landing?.remove();
     playerView.style.removeProperty('display');
     const root = renderWorkspaceShell(main, { title: `${world.planet.name} · Planet Map`, subtitle: `Seed ${world.planet.seed} · ${world.planet.regions.length} regions · ${world.planet.resourceNodes.length} resource nodes` });
+    const runtime = installRuntimeController(store);
     installNavigationPanel(root, store);
     installNodeCatalogPanel(root, store);
-    installInspectorPanel(root, store);
-    installDebugPanel(root, store);
+    installInspectorPanel(root, store, runtime);
+    installDebugPanel(root, store, runtime);
     installMapRenderer(root, store);
     store.subscribe(renderBreadcrumbs);
     store.setWorld(world);
