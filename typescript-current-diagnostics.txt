@@ -1,16 +1,16 @@
-errors=2335
-test_failures=12
+errors=2284
+test_failures=19
 
 By code:
-TS7006: 1122
-TS2339: 300
-TS18046: 281
-TS2345: 97
+TS7006: 1090
+TS2339: 295
+TS18046: 256
+TS2345: 109
 TS7005: 89
-TS18047: 82
-TS2322: 68
+TS18047: 80
+TS2322: 67
 TS7053: 66
-TS2353: 40
+TS2353: 38
 TS18048: 33
 TS7031: 31
 TS2532: 30
@@ -20,6 +20,7 @@ TS2538: 18
 TS2739: 11
 TS2740: 6
 TS2531: 5
+TS2352: 4
 TS2571: 4
 TS7019: 2
 TS2698: 1
@@ -30,8 +31,8 @@ TS2769: 1
 TS2741: 1
 
 By file:
-src/workspace/workspaceController.ts: 314
-src/simulation/packedWorldRuntimeCompiler.ts: 204
+src/workspace/workspaceController.ts: 320
+src/simulation/packedWorldRuntimeCompiler.ts: 185
 src/core/materials/solids/solidMaterialState.ts: 105
 src/workspace/debug/debugDrawer.ts: 85
 src/workspace/inspector/inspectionViewModel.ts: 76
@@ -40,7 +41,6 @@ src/simulation/realtimeRuntime.ts: 73
 src/generator/generatePlanet.ts: 68
 src/simulation/packedWorldWorkerSetup.ts: 63
 src/simulation/runtimePresentation.ts: 51
-src/simulation/worldSimulation.ts: 50
 src/simulation/rustWasmWorkerHost.ts: 47
 src/generator/generateResources.ts: 40
 tests/workspaceGraph.test.ts: 37
@@ -58,12 +58,12 @@ tests/packedWorldRuntimeCompiler.test.ts: 27
 tests/invariants.test.ts: 26
 src/core/materials/materialBatches.ts: 25
 src/generator/generateRegions.ts: 25
+tests/recursiveSystems.test.ts: 23
 tests/runtimePresentation.test.ts: 23
 src/workspace/graph/workspaceGraph.ts: 22
 src/simulation/packedComminutionCompiler.ts: 20
 src/simulation/packedRoastingCompiler.ts: 20
 src/workspace/inspector/genericApparatusInspectorUI.ts: 20
-tests/recursiveSystems.test.ts: 19
 src/simulation/hopperNode.ts: 17
 tests/apparatusControlUI.test.ts: 16
 tests/packedExtractionCompiler.test.ts: 16
@@ -90,6 +90,7 @@ src/simulation/apparatus/roastingFurnace.ts: 9
 src/workspace/inspector/featureInspectorUI.ts: 9
 tests/packedRoastingCompiler.test.ts: 9
 src/simulation/packedGasRuntime.ts: 8
+src/simulation/worldSimulation.ts: 8
 src/workspace/shell/workspaceUI.ts: 8
 tests/packedWorldWorkerSetup.test.ts: 8
 tests/postMigrationHygiene.test.ts: 8
@@ -344,7 +345,9 @@ src/workspace/workspaceController.ts(131,16): error TS7006: Parameter 'event' im
 src/workspace/workspaceController.ts(132,10): error TS7005: Variable 'dragState' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(132,24): error TS7005: Variable 'systemDragState' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(149,33): error TS7006: Parameter 'snapshot' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(161,34): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(175,45): error TS7006: Parameter 'key' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(202,17): error TS2339: Property 'status' does not exist on type '{}'.
 src/workspace/workspaceController.ts(211,40): error TS2322: Type 'string | null' is not assignable to type 'string'.
 src/workspace/workspaceController.ts(236,31): error TS7006: Parameter 'error' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(273,39): error TS7006: Parameter 'seed' implicitly has an 'any' type.
@@ -405,10 +408,11 @@ src/workspace/workspaceController.ts(667,34): error TS18047: 'event.target' is p
 src/workspace/workspaceController.ts(667,47): error TS2339: Property 'closest' does not exist on type 'EventTarget'.
 src/workspace/workspaceController.ts(675,28): error TS7006: Parameter '_occurrenceId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(675,43): error TS7006: Parameter 'siteId' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(676,48): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(677,27): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(683,30): error TS7006: Parameter 'occurrenceId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(683,44): error TS7006: Parameter 'siteId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(689,73): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'null | undefined'.
+src/workspace/workspaceController.ts(689,31): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(698,28): error TS7006: Parameter 'level' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(709,14): error TS2339: Property 'regionId' does not exist on type '{}'.
 src/workspace/workspaceController.ts(709,56): error TS2339: Property 'regionId' does not exist on type '{}'.
@@ -425,7 +429,7 @@ src/workspace/workspaceController.ts(754,23): error TS2339: Property 'selectSyst
 src/workspace/workspaceController.ts(755,26): error TS2339: Property 'selectSystemId' does not exist on type '{}'.
 src/workspace/workspaceController.ts(765,48): error TS18047: 'wsState.world' is possibly 'null'.
 src/workspace/workspaceController.ts(772,43): error TS2538: Type 'null' cannot be used as an index type.
-src/workspace/workspaceController.ts(774,68): error TS18046: 'node' is of type 'unknown'.
+src/workspace/workspaceController.ts(773,51): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(777,18): error TS18047: 'wsState.world' is possibly 'null'.
 src/workspace/workspaceController.ts(791,26): error TS7006: Parameter 'node' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(796,42): error TS18047: 'wsState.world' is possibly 'null'.
@@ -480,7 +484,6 @@ src/workspace/workspaceController.ts(1095,29): error TS7006: Parameter 'key' imp
 src/workspace/workspaceController.ts(1095,34): error TS7006: Parameter 'position' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1108,24): error TS7006: Parameter 'nodeId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1114,26): error TS7006: Parameter 'nodeId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1116,38): error TS18046: 'node' is of type 'unknown'.
 src/workspace/workspaceController.ts(1121,29): error TS7006: Parameter 'port' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1121,35): error TS7006: Parameter 'index' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1121,42): error TS7006: Parameter 'count' implicitly has an 'any' type.
@@ -503,16 +506,15 @@ src/workspace/workspaceController.ts(1192,38): error TS7006: Parameter 'event' i
 src/workspace/workspaceController.ts(1208,29): error TS7006: Parameter 'event' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1210,7): error TS7005: Variable 'systemDragState' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1234,32): error TS7006: Parameter 'container' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1250,5): error TS2345: Argument of type '{ id: string; title: any; nodes: unknown[]; scopeId: any; level: string; planetScopeId: string | undefined; layout: BlueprintLayout; }' is not assignable to parameter of type 'BoundaryGraphDefinition'.
 src/workspace/workspaceController.ts(1268,9): error TS18047: 'label' is possibly 'null'.
 src/workspace/workspaceController.ts(1269,29): error TS2345: Argument of type 'Element | null' is not assignable to parameter of type 'Node'.
 src/workspace/workspaceController.ts(1271,7): error TS18047: 'label' is possibly 'null'.
 src/workspace/workspaceController.ts(1282,26): error TS18047: 'wsState.world' is possibly 'null'.
 src/workspace/workspaceController.ts(1299,44): error TS18047: 'canvas' is possibly 'null'.
+src/workspace/workspaceController.ts(1312,51): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(1313,30): error TS18047: 'pendingGraphConnection.source' is possibly 'null'.
 src/workspace/workspaceController.ts(1314,25): error TS18047: 'pendingGraphConnection.source' is possibly 'null'.
 src/workspace/workspaceController.ts(1318,56): error TS18047: 'wsState.world' is possibly 'null'.
-src/workspace/workspaceController.ts(1319,11): error TS2322: Type 'string | null' is not assignable to type 'null | undefined'.
 src/workspace/workspaceController.ts(1326,29): error TS18046: 'error' is of type 'unknown'.
 src/workspace/workspaceController.ts(1354,32): error TS7006: Parameter 'container' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1358,114): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
@@ -543,14 +545,19 @@ src/workspace/workspaceController.ts(1425,47): error TS7006: Parameter 'html' im
 src/workspace/workspaceController.ts(1436,34): error TS7006: Parameter 'transfer' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1448,35): error TS7006: Parameter 'node' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1464,20): error TS18047: 'wsState.world' is possibly 'null'.
+src/workspace/workspaceController.ts(1466,46): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(1472,18): error TS18047: 'wsState.world' is possibly 'null'.
+src/workspace/workspaceController.ts(1477,46): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(1479,39): error TS2538: Type 'null' cannot be used as an index type.
 src/workspace/workspaceController.ts(1479,39): error TS2538: Type 'undefined' cannot be used as an index type.
 src/workspace/workspaceController.ts(1482,75): error TS7006: Parameter 'port' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1493,34): error TS2538: Type 'null' cannot be used as an index type.
+src/workspace/workspaceController.ts(1495,32): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(1495,97): error TS2538: Type 'null' cannot be used as an index type.
-src/workspace/workspaceController.ts(1510,11): error TS2345: Argument of type '{ id: string; title: any; nodes: unknown[]; scopeId: any; level: string; planetScopeId: string | undefined; layout: BlueprintLayout; }' is not assignable to parameter of type 'BoundaryGraphDefinition'.
 src/workspace/workspaceController.ts(1514,49): error TS2339: Property 'dataset' does not exist on type 'Element'.
+src/workspace/workspaceController.ts(1515,69): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
+src/workspace/workspaceController.ts(1534,46): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
+src/workspace/workspaceController.ts(1560,46): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(1562,39): error TS2538: Type 'null' cannot be used as an index type.
 src/workspace/workspaceController.ts(1562,39): error TS2538: Type 'undefined' cannot be used as an index type.
 src/workspace/workspaceController.ts(1568,20): error TS7006: Parameter 'node' implicitly has an 'any' type.
@@ -633,7 +640,7 @@ src/workspace/workspaceController.ts(2266,21): error TS18046: 'wsState.realtimeR
 src/workspace/workspaceController.ts(2272,52): error TS18047: 'runtime' is possibly 'null'.
 src/workspace/workspaceController.ts(2276,11): error TS18047: 'runtime' is possibly 'null'.
 src/workspace/workspaceController.ts(2276,11): error TS18046: 'runtime.recordPresentationTiming' is of type 'unknown'.
-src/workspace/workspaceController.ts(2306,71): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'null | undefined'.
+src/workspace/workspaceController.ts(2306,29): error TS2345: Argument of type 'World | null' is not assignable to parameter of type 'World'.
 src/workspace/workspaceController.ts(2308,29): error TS2322: Type 'string[]' is not assignable to type 'never[]'.
 src/workspace/workspaceController.ts(2330,31): error TS7006: Parameter 'world' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(2330,38): error TS7006: Parameter 'knowledge' implicitly has an 'any' type.
@@ -882,56 +889,14 @@ src/workspace/navigation/navigationProjection.ts(665,44): error TS2345: Argument
 src/workspace/navigation/navigationProjection.ts(665,72): error TS2345: Argument of type 'string' is not assignable to parameter of type '"apparatus" | "boundary" | "container" | "controller" | "facility" | "feature" | "logistics" | "planet" | "process" | "region" | "sensor" | "site" | "system"'.
 
 Focused errors: src/simulation/worldSimulation.ts
-src/simulation/worldSimulation.ts(16,26): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(29,32): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(43,23): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(43,29): error TS7006: Parameter 'ports' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(48,26): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(48,32): error TS7006: Parameter 'id' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(49,33): error TS7006: Parameter 'item' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(56,39): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(56,46): error TS7006: Parameter 'regionId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(56,56): error TS7006: Parameter 'regionNode' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(56,68): error TS7006: Parameter 'importHopperId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(56,84): error TS7006: Parameter 'exportHopperId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(102,38): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(129,5): error TS18046: 'site' is of type 'unknown'.
-src/simulation/worldSimulation.ts(160,5): error TS18046: 'region' is of type 'unknown'.
-src/simulation/worldSimulation.ts(165,37): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(165,44): error TS7006: Parameter 'siteId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(179,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
-src/simulation/worldSimulation.ts(184,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
-src/simulation/worldSimulation.ts(191,3): error TS18047: 'input' is possibly 'null'.
-src/simulation/worldSimulation.ts(192,3): error TS18047: 'input' is possibly 'null'.
-src/simulation/worldSimulation.ts(193,3): error TS18047: 'output' is possibly 'null'.
-src/simulation/worldSimulation.ts(194,3): error TS18047: 'output' is possibly 'null'.
-src/simulation/worldSimulation.ts(199,39): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(199,46): error TS7006: Parameter 'regionId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(213,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
-src/simulation/worldSimulation.ts(218,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
-src/simulation/worldSimulation.ts(233,33): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(233,40): error TS7006: Parameter 'simulation' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(233,52): error TS7006: Parameter 'cache' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(243,39): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(251,45): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(251,52): error TS7006: Parameter 'workspaceId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(251,65): error TS7006: Parameter 'workspace' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(259,43): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(259,50): error TS7006: Parameter 'sessionId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(259,61): error TS7006: Parameter 'blueprint' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(268,40): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(268,47): error TS7006: Parameter 'workspaceId' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(272,42): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(274,3): error TS2339: Property 'sourceCompositeId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
-src/simulation/worldSimulation.ts(275,3): error TS2339: Property 'sourcePortId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
-src/simulation/worldSimulation.ts(276,3): error TS2339: Property 'targetCompositeId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
-src/simulation/worldSimulation.ts(277,3): error TS2339: Property 'targetPortId' does not exist on type '{ capacityKgPerSecond?: number | undefined; id?: null | undefined; priority?: number | undefined; scopeId?: null | undefined; }'.
-src/simulation/worldSimulation.ts(291,9): error TS18046: 'existing' is of type 'unknown'.
-src/simulation/worldSimulation.ts(291,61): error TS18046: 'existing' is of type 'unknown'.
-src/simulation/worldSimulation.ts(294,9): error TS18046: 'existing' is of type 'unknown'.
-src/simulation/worldSimulation.ts(294,61): error TS18046: 'existing' is of type 'unknown'.
-src/simulation/worldSimulation.ts(316,40): error TS7006: Parameter 'world' implicitly has an 'any' type.
-src/simulation/worldSimulation.ts(316,47): error TS7006: Parameter 'transferId' implicitly has an 'any' type.
+src/simulation/worldSimulation.ts(214,33): error TS2352: Conversion of type '{ id: string; capacityKg: number; physicalForm: string; nominalParticleSizeMm: null; materialBody: { physicalForm: string; solidState: { fractions: any; textureProfiles: {}; }; thermalState: ThermalState; }; ... 6 more ...; ports: ({ ...; } | { ...; })[]; }' to type 'BlueprintNode' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/simulation/worldSimulation.ts(215,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
+src/simulation/worldSimulation.ts(219,33): error TS2352: Conversion of type '{ id: string; capacityKg: number; physicalForm: string; nominalParticleSizeMm: null; materialBody: { physicalForm: string; solidState: { fractions: any; textureProfiles: {}; }; thermalState: ThermalState; }; ... 6 more ...; ports: ({ ...; } | { ...; })[]; }' to type 'BlueprintNode' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/simulation/worldSimulation.ts(220,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
+src/simulation/worldSimulation.ts(248,39): error TS2352: Conversion of type '{ id: string; capacityKg: number; physicalForm: string; nominalParticleSizeMm: null; materialBody: { physicalForm: string; solidState: { fractions: any; textureProfiles: {}; }; thermalState: ThermalState; }; ... 6 more ...; ports: ({ ...; } | { ...; })[]; }' to type 'BlueprintNode' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/simulation/worldSimulation.ts(249,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
+src/simulation/worldSimulation.ts(253,39): error TS2352: Conversion of type '{ id: string; capacityKg: number; physicalForm: string; nominalParticleSizeMm: null; materialBody: { physicalForm: string; solidState: { fractions: any; textureProfiles: {}; }; thermalState: ThermalState; }; ... 6 more ...; ports: ({ ...; } | { ...; })[]; }' to type 'BlueprintNode' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/simulation/worldSimulation.ts(254,5): error TS2353: Object literal may only specify known properties, and 'id' does not exist in type '{ initialComponentsKg?: {} | undefined; initialMaterialBody?: null | undefined; initialParticleSizeMm?: null | undefined; }'.
 
 Test failures:
 not ok 5 - application installs the apparatus control upgrader and loads matching control styles
@@ -942,6 +907,13 @@ not ok 27 - player removal policy derives eligibility from canonical apparatus d
 not ok 28 - workspace implementation is owned directly by the canonical controller
 not ok 29 - application composes world generation directly instead of routing through core world state
 not ok 126 - standalone per-apparatus WASM browser adapters stay removed
+not ok 130 - auto selects the only production backend: rust-wasm-worker
+not ok 132 - request IDs resolve concurrent out-of-order Worker responses to the correct callers
+not ok 133 - detail query failure is non-terminal and physics can continue
+not ok 134 - Worker crash is terminal
+not ok 135 - Worker protocol ERROR is terminal
+not ok 136 - profiling facade toggles and queries Worker-owned timing without affecting physics state
+not ok 137 - deep profiling adds Worker round-trip and presentation timing to the Rust profile
 not ok 34 - tests/rustPresentationStability.test.ts
 not ok 198 - production Worker imports only the world runtime and protocol version
 not ok 206 - shared preview renderer creates and updates one cursor-following line
