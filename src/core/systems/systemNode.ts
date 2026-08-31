@@ -5,6 +5,8 @@
 
 import { normalizePortCapabilities } from './ports.js';
 import type {
+  BoundaryChildNode,
+  BoundaryChildWorkspace,
   BoundaryResolution,
   SystemNode,
   SystemNodeInput,
@@ -87,13 +89,16 @@ export function createCompositeNode(params: SystemNodeInput): SystemNode {
   return createSystemNode({ ...params, kind: 'composite' });
 }
 
-export function getSystemNodePort(node: Pick<SystemNode, 'ports'> | null | undefined, portId: string): SystemPort | null {
+export function getSystemNodePort(
+  node: { ports?: readonly SystemPort[] } | null | undefined,
+  portId: string,
+): SystemPort | null {
   return node?.ports?.find(port => port.id === portId) ?? null;
 }
 
 function assertMappedPortCompatibility(
   boundary: SystemPort,
-  childNode: SystemNode | null,
+  childNode: BoundaryChildNode | null,
   childPort: SystemPort | null,
   context: string,
 ): void {
@@ -133,7 +138,7 @@ export function setBoundaryMapping(
   portId: string,
   childNodeId: string,
   childPortId: string,
-  childWorkspace: SystemWorkspace | null = null,
+  childWorkspace: BoundaryChildWorkspace | null = null,
 ): SystemPort {
   const boundary = getSystemNodePort(composite, portId);
   if (!boundary) throw new Error(`Unknown boundary port '${portId}'`);
