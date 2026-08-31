@@ -13,7 +13,8 @@ interface NavigationRow {
 function selectionKey(selection: MapSelection): string {
   if (selection.type === 'planet') return 'planet';
   if (selection.type === 'region') return `region:${selection.regionId}`;
-  return `resource:${selection.resourceNodeId}`;
+  if (selection.type === 'resource') return `resource:${selection.resourceNodeId}`;
+  return `mechanical:${selection.mechanicalNodeId}`;
 }
 
 function resourceNodesForRegion(planet: Planet, region: Region): ResourceNode[] {

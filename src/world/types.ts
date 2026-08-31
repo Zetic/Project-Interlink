@@ -19,12 +19,14 @@ export interface ResourceDefinition {
 }
 
 export type NodePortDirection = 'input' | 'output';
-export type NodePortKind = 'resource-access';
+export type NodePortKind = 'resource-access' | 'material';
+export type NodePortMedium = 'resource' | 'solid' | 'gas';
 
 export interface NodePort {
   id: string;
   direction: NodePortDirection;
   kind: NodePortKind;
+  medium: NodePortMedium;
   label: string;
 }
 
@@ -67,16 +69,11 @@ export interface WorldState {
 export type MapSelection =
   | { type: 'planet' }
   | { type: 'region'; regionId: string }
-  | { type: 'resource'; resourceNodeId: string };
+  | { type: 'resource'; resourceNodeId: string }
+  | { type: 'mechanical'; mechanicalNodeId: string };
 
 export interface MapCameraState {
   centerX: number;
   centerY: number;
   zoom: number;
-}
-
-export interface AppState {
-  world: WorldState | null;
-  selection: MapSelection;
-  camera: MapCameraState;
 }

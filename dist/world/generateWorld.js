@@ -149,6 +149,7 @@ function createResources(seed, regions) {
                         id: 'resource-access',
                         direction: 'output',
                         kind: 'resource-access',
+                        medium: 'resource',
                         label: 'resources',
                     }],
             };
