@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AppStore } from '../dist/state/appState.js';
+import { RESOURCE_FOCUS_ZOOM, AppStore } from '../dist/state/appState.js';
+import {
+  MAP_MAX_ZOOM,
+  RESOURCE_NODE_FADE_START_ZOOM,
+  RESOURCE_NODE_FULL_OPACITY_ZOOM,
+  RESOURCE_NODE_INTERACTIVE_ZOOM,
+  RESOURCE_NODE_WORLD_WIDTH,
+} from '../dist/map/mapRenderer.js';
 import { generateWorld } from '../dist/world/generateWorld.js';
 
 test('NAV-style region focus selects and moves the camera toward the region', () => {
@@ -19,7 +26,7 @@ test('NAV-style region focus selects and moves the camera toward the region', ()
   assert.ok(state.camera.zoom >= 2);
 });
 
-test('NAV-style resource focus targets the resource coordinates at discovery zoom', () => {
+test('NAV-style resource focus targets the resource at engineering-scale zoom', () => {
   const world = generateWorld('resource-focus');
   const store = new AppStore();
   store.setWorld(world);
@@ -31,7 +38,17 @@ test('NAV-style resource focus targets the resource coordinates at discovery zoo
   assert.deepEqual(state.selection, { type: 'resource', resourceNodeId: resource.id });
   assert.equal(state.camera.centerX, resource.position.x);
   assert.equal(state.camera.centerY, resource.position.y);
-  assert.equal(state.camera.zoom, 7);
+  assert.equal(state.camera.zoom, RESOURCE_FOCUS_ZOOM);
+  assert.ok(RESOURCE_FOCUS_ZOOM > RESOURCE_NODE_FULL_OPACITY_ZOOM);
+  assert.ok(MAP_MAX_ZOOM > RESOURCE_FOCUS_ZOOM);
+});
+
+test('resource nodes occupy a deliberately tiny fraction of planet width', () => {
+  const world = generateWorld('resource-scale');
+  assert.ok(RESOURCE_NODE_WORLD_WIDTH / world.planet.width < 0.01);
+  assert.ok(RESOURCE_NODE_FADE_START_ZOOM >= 6);
+  assert.ok(RESOURCE_NODE_INTERACTIVE_ZOOM > RESOURCE_NODE_FADE_START_ZOOM);
+  assert.ok(RESOURCE_NODE_FULL_OPACITY_ZOOM >= RESOURCE_NODE_INTERACTIVE_ZOOM);
 });
 
 test('planet focus restores the full-map camera', () => {

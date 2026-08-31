@@ -51,70 +51,81 @@
   user-select: none;
 }
 
+.ws-map-resource-node-layer,
+.ws-map-region-label-layer {
+  transition: opacity 90ms linear;
+}
+
+/* Resource FEATURE cards are world-space geometry, not screen-space overlays. */
 .ws-map-resource-node {
   cursor: pointer;
 }
 
-.ws-map-resource-node foreignObject {
-  overflow: visible;
-  pointer-events: auto;
+.ws-map-resource-card-body {
+  fill: #0a121c;
+  stroke: #52765a;
+  stroke-width: 0.22;
 }
 
-.ws-map-resource-shell {
-  position: relative;
-  width: 248px;
-  height: 144px;
-  overflow: visible;
-  pointer-events: auto;
+.ws-map-resource-card-header {
+  fill: #315a34;
 }
 
-.ws-map-resource-card {
-  position: absolute;
-  left: 9px;
-  top: 0;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
-  background: #0a121c;
-  border-color: #52765a;
-  cursor: pointer;
+.ws-map-resource-card-divider {
+  stroke: #ffffff22;
+  stroke-width: 0.16;
 }
 
-.ws-map-resource-card .ws-node-label {
-  flex: 1 1 auto;
-  min-height: 0;
-  color: #d6e4ed;
+.ws-map-resource-category,
+.ws-map-resource-name,
+.ws-map-resource-type,
+.ws-map-resource-material {
+  font-family: 'Courier New', Courier, monospace;
+  pointer-events: none;
+  user-select: none;
 }
 
-.ws-map-resource-card .ws-node-label span:first-child {
-  color: #b9d8ff;
+.ws-map-resource-category {
+  fill: #e7edf3;
+  font-size: 1.18px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-anchor: start;
 }
 
-.ws-map-resource-card .ws-node-label span:nth-child(2) {
-  color: #d6e4ed;
+.ws-map-resource-name,
+.ws-map-resource-type,
+.ws-map-resource-material {
+  font-size: 1.34px;
+  text-anchor: middle;
 }
 
-.ws-map-resource-card .ws-node-label span:last-child {
-  color: #c6e0c2;
+.ws-map-resource-name { fill: #b9d8ff; }
+.ws-map-resource-type { fill: #d6e4ed; }
+.ws-map-resource-material { fill: #c6e0c2; }
+
+.ws-map-resource-port {
+  fill: #1f3823;
+  stroke: #7aa879;
+  stroke-width: 0.34;
+  cursor: crosshair;
 }
 
-.ws-map-resource-card .ws-map-resource-port {
-  left: auto !important;
-  right: -7px;
-  top: calc(50% - 7px);
+.ws-map-resource-node:hover .ws-map-resource-card-body {
+  fill: #0d1721;
+  stroke: #78a780;
 }
 
-.ws-map-resource-node:hover .ws-map-resource-card {
-  border-color: #78a780;
-  background: #0d1721;
+.ws-map-resource-node:hover .ws-map-resource-port {
+  stroke: #9bd3a0;
 }
 
-.ws-map-resource-node.ws-map-selected .ws-map-resource-card {
-  border-color: #ffcc44 !important;
-  box-shadow: 0 0 0 1px #ffcc4466;
+.ws-map-resource-node.ws-map-selected .ws-map-resource-card-body {
+  stroke: #ffcc44;
+  stroke-width: 0.34;
 }
 
 .ws-map-resource-node.ws-map-selected .ws-map-resource-port {
-  border-color: #7fbd83;
-  box-shadow: 0 0 0 1px #ffcc4455;
+  stroke: #ffcc44;
+  stroke-width: 0.4;
 }
