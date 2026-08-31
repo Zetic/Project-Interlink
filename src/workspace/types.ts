@@ -26,11 +26,10 @@ export interface PlacementState {
   graphPosition: Point | null;
 }
 
-export interface CatalogPointerGesture extends Point {
+export interface CatalogPointerGesture {
   pointerId: number;
   definitionId: string;
-  startX: number;
-  startY: number;
+  start: Point;
   dragging: boolean;
 }
 
