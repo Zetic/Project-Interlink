@@ -1,3 +1,4 @@
+import { apparatusDefinitionById } from '../apparatus/definitions.js';
 export function createEmptyGraphState() {
     return { nodes: [], connections: [], nextNodeSequence: 1, nextConnectionSequence: 1 };
 }
@@ -14,6 +15,7 @@ export function placeMechanicalNode(graph, definition, position) {
         physicalHeightMeters: definition.physicalHeightMeters,
         ports: definition.ports.map(port => ({ ...port })),
         enabled: false,
+        parameters: Object.fromEntries((definition.parameters ?? []).map(parameter => [parameter.id, parameter.defaultValue])),
     };
     return {
         node,
@@ -28,6 +30,34 @@ export function moveMechanicalNode(graph, nodeId, position) {
     return {
         ...graph,
         nodes: graph.nodes.map(node => node.id === nodeId ? { ...node, position: { ...position } } : node),
+    };
+}
+export function setMechanicalNodeEnabled(graph, nodeId, enabled) {
+    if (typeof enabled !== 'boolean')
+        throw new Error('Enabled state must be boolean.');
+    if (!graph.nodes.some(node => node.id === nodeId))
+        throw new Error(`Unknown mechanical node '${nodeId}'.`);
+    return {
+        ...graph,
+        nodes: graph.nodes.map(node => node.id === nodeId ? { ...node, enabled } : node),
+    };
+}
+export function setMechanicalNodeParameter(graph, nodeId, parameterId, value) {
+    const node = graph.nodes.find(candidate => candidate.id === nodeId);
+    if (!node)
+        throw new Error(`Unknown mechanical node '${nodeId}'.`);
+    const definition = apparatusDefinitionById(node.definitionId);
+    const parameter = definition?.parameters?.find(candidate => candidate.id === parameterId);
+    if (!parameter)
+        throw new Error(`Unknown parameter '${parameterId}' for '${node.definitionId}'.`);
+    if (!Number.isFinite(value) || value < parameter.min) {
+        throw new Error(`${parameter.label} must be at least ${parameter.min} ${parameter.unit}.`);
+    }
+    return {
+        ...graph,
+        nodes: graph.nodes.map(candidate => candidate.id === nodeId
+            ? { ...candidate, parameters: { ...candidate.parameters, [parameterId]: value } }
+            : candidate),
     };
 }
 export function removeMechanicalNode(graph, nodeId) {
@@ -62,6 +92,11 @@ export function connectPorts(graph, firstEndpoint, firstPort, secondEndpoint, se
         throw new Error('Port media are incompatible.');
     if (graph.connections.some(connection => endpointsEqual(connection.to, oriented.to))) {
         throw new Error('That input port already has a connection.');
+    }
+    // Resource access is a relationship and may fan out to multiple Extractors.
+    // Material is matter in transit and cannot fan out until an explicit Splitter exists.
+    if (oriented.fromPort.kind === 'material' && graph.connections.some(connection => endpointsEqual(connection.from, oriented.from))) {
+        throw new Error('That material output is already connected; use a Splitter for fan-out.');
     }
     if (graph.connections.some(connection => endpointsEqual(connection.from, oriented.from) && endpointsEqual(connection.to, oriented.to))) {
         throw new Error('That connection already exists.');

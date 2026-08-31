@@ -1,8 +1,12 @@
+/**
+ * World resources are geological/material source identities, not purified
+ * mineral species. Iron Ore, for example, contains hematite, magnetite,
+ * goethite, and quartz in its source composition.
+ */
 export const RESOURCE_DEFINITIONS = [
-    { id: 'hematite', name: 'Hematite', category: 'metallic' },
-    { id: 'magnetite', name: 'Magnetite', category: 'metallic' },
-    { id: 'chalcopyrite', name: 'Chalcopyrite', category: 'metallic' },
-    { id: 'bauxite', name: 'Bauxite', category: 'metallic' },
+    { id: 'iron-ore', name: 'Iron Ore', category: 'metallic' },
+    { id: 'copper-ore', name: 'Copper Ore', category: 'metallic' },
+    { id: 'aluminum-ore', name: 'Aluminum Ore', category: 'metallic' },
     { id: 'limestone', name: 'Limestone', category: 'industrial' },
     { id: 'silica-sand', name: 'Silica Sand', category: 'industrial' },
     { id: 'coal', name: 'Coal', category: 'fuel' },

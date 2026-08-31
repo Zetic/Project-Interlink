@@ -37,6 +37,9 @@ const define = (definition) => Object.freeze({
     ...definition,
     searchTerms: Object.freeze([...definition.searchTerms]),
     ports: Object.freeze(definition.ports.map(port => Object.freeze({ ...port }))),
+    ...(definition.parameters ? {
+        parameters: Object.freeze(definition.parameters.map(parameter => Object.freeze({ ...parameter }))),
+    } : {}),
 });
 export const APPARATUS_DEFINITIONS = Object.freeze([
     define({
@@ -45,6 +48,9 @@ export const APPARATUS_DEFINITIONS = Object.freeze([
         searchTerms: ['extractor', 'extraction', 'resource access', 'source', 'feed', 'raw material'],
         physicalWidthMeters: 12, physicalHeightMeters: 8,
         ports: [resourceInput('resource-source', 'resource source'), solidOutput('output', 'output')],
+        parameters: [
+            { id: 'rateKgPerSecond', label: 'Extraction rate', unit: 'kg/s', min: 0.001, step: 0.1, defaultValue: 5 },
+        ],
     }),
     define({
         id: 'jaw-crusher', nodeType: 'jawCrusher', label: 'Jaw Crusher', category: 'apparatus', order: 20,
@@ -122,6 +128,9 @@ export const APPARATUS_DEFINITIONS = Object.freeze([
         searchTerms: ['hopper', 'storage', 'buffer', 'container', 'holding', 'material'],
         physicalWidthMeters: 12, physicalHeightMeters: 8,
         ports: [solidInput('input', 'in'), solidOutput('output', 'out')],
+        parameters: [
+            { id: 'capacityKg', label: 'Capacity', unit: 'kg', min: 0.001, step: 10, defaultValue: 1000 },
+        ],
     }),
 ]);
 export function apparatusDefinitionById(id) {

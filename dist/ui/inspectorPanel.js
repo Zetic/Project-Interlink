@@ -1,5 +1,5 @@
 import { apparatusDefinitionById } from '../apparatus/definitions.js';
-import { disconnectConnection, removeMechanicalNode } from '../graph/graphCommands.js';
+import { disconnectConnection, removeMechanicalNode, setMechanicalNodeEnabled, setMechanicalNodeParameter, } from '../graph/graphCommands.js';
 import { connectionsForNode, mechanicalNodeById } from '../graph/graphQueries.js';
 import { resourceDefinitionById } from '../world/resources.js';
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';
@@ -12,6 +12,8 @@ function addRow(container, label, value) {
     container.appendChild(row);
 }
 function typeLabel(container, value) { const type = document.createElement('div'); type.className = 'ws-ins-type'; type.textContent = value; container.appendChild(type); }
+function sectionTitle(container, value) { const title = document.createElement('div'); title.className = 'ws-ins-section-title'; title.textContent = value; container.appendChild(title); }
+function speciesLabel(speciesId) { return speciesId.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|[- ])\w/g, value => value.toUpperCase()).replaceAll('-', ' '); }
 function renderPlanet(container, planet) {
     typeLabel(container, 'PLANET');
     addRow(container, 'Name', planet.name);
@@ -42,6 +44,12 @@ function renderResource(container, planet, resource) {
     addRow(container, 'Region', region?.name ?? resource.regionId);
     addRow(container, 'Coordinates', `${resource.position.x.toFixed(6)}, ${resource.position.y.toFixed(6)}`);
     addRow(container, 'Map position', `${formatPhysicalDistance(worldUnitsToMeters(resource.position.x))}, ${formatPhysicalDistance(worldUnitsToMeters(resource.position.y))}`);
+    sectionTitle(container, 'Material source');
+    addRow(container, 'Physical form', resource.source.physicalForm);
+    addRow(container, 'Fragmentation', resource.source.fragmentationProfileId.replaceAll('-', ' '));
+    addRow(container, 'Initial reserve', resource.source.initialReserveMassKg == null ? 'Unbounded' : `${resource.source.initialReserveMassKg.toLocaleString()} kg`);
+    for (const component of resource.source.composition)
+        addRow(container, speciesLabel(component.speciesId), `${(component.massFraction * 100).toFixed(2)}%`);
     const port = resource.ports.find(candidate => candidate.id === resource.resourceAccessPortId);
     if (port)
         addRow(container, 'Output', `${port.label} · ${port.kind}`);
@@ -54,18 +62,45 @@ function renderMechanical(container, node, store) {
     addRow(container, 'Node type', node.nodeType);
     addRow(container, 'Coordinates', `${node.position.x.toFixed(6)}, ${node.position.y.toFixed(6)}`);
     addRow(container, 'Footprint', `${node.physicalWidthMeters} m × ${node.physicalHeightMeters} m`);
-    addRow(container, 'Runtime', 'Disconnected until Phase 6');
-    const portsTitle = document.createElement('div');
-    portsTitle.className = 'ws-ins-section-title';
-    portsTitle.textContent = 'Ports';
-    container.appendChild(portsTitle);
+    addRow(container, 'Runtime', 'Prepared · simulation disconnected until Phase 6');
+    sectionTitle(container, 'Configuration');
+    const enabledRow = document.createElement('div');
+    enabledRow.className = 'ws-ins-config-row';
+    const enabledLabel = document.createElement('span');
+    enabledLabel.textContent = `Enabled: ${node.enabled ? 'Yes' : 'No'}`;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.textContent = node.enabled ? 'Disable' : 'Enable';
+    toggle.addEventListener('click', () => store.setGraph(setMechanicalNodeEnabled(store.getState().graph, node.id, !node.enabled)));
+    enabledRow.append(enabledLabel, toggle);
+    container.appendChild(enabledRow);
+    for (const parameter of definition?.parameters ?? []) {
+        const row = document.createElement('label');
+        row.className = 'ws-ins-config-row';
+        const label = document.createElement('span');
+        label.textContent = `${parameter.label} (${parameter.unit})`;
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = String(parameter.min);
+        input.step = String(parameter.step);
+        input.value = String(node.parameters[parameter.id] ?? parameter.defaultValue);
+        input.addEventListener('change', () => {
+            const value = Number(input.value);
+            try {
+                store.setGraph(setMechanicalNodeParameter(store.getState().graph, node.id, parameter.id, value));
+            }
+            catch {
+                input.value = String(node.parameters[parameter.id] ?? parameter.defaultValue);
+            }
+        });
+        row.append(label, input);
+        container.appendChild(row);
+    }
+    sectionTitle(container, 'Ports');
     for (const port of node.ports)
         addRow(container, port.label, `${port.direction} · ${port.kind} · ${port.medium}`);
     const connections = connectionsForNode(store.getState().graph, node.id);
-    const connTitle = document.createElement('div');
-    connTitle.className = 'ws-ins-section-title';
-    connTitle.textContent = `Connections (${connections.length})`;
-    container.appendChild(connTitle);
+    sectionTitle(container, `Connections (${connections.length})`);
     for (const connection of connections) {
         const row = document.createElement('div');
         row.className = 'ws-ins-connection-row';
