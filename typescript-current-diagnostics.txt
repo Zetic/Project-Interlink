@@ -1,42 +1,40 @@
-errors=2552
-test_failures=11
+errors=2446
+test_failures=12
 
 By code:
-TS7006: 1258
-TS2339: 323
-TS18046: 315
-TS2322: 104
-TS2345: 92
+TS7006: 1168
+TS2339: 306
+TS18046: 300
+TS2322: 98
+TS2345: 96
 TS7005: 90
-TS18047: 83
-TS7053: 71
-TS2353: 42
+TS18047: 82
+TS7053: 66
+TS2353: 40
 TS7031: 37
+TS18048: 33
 TS7034: 27
+TS2532: 23
 TS2551: 18
 TS2538: 17
-TS2532: 17
-TS2740: 16
+TS2740: 17
 TS2739: 11
-TS18048: 11
 TS2531: 5
 TS2571: 4
-TS2349: 2
-TS2554: 2
 TS7019: 2
 TS2698: 1
 TS2367: 1
 TS2365: 1
 TS2721: 1
 TS2769: 1
+TS2741: 1
 
 By file:
-src/workspace/workspaceController.ts: 367
+src/workspace/workspaceController.ts: 318
 src/simulation/packedWorldRuntimeCompiler.ts: 204
 src/core/materials/solids/solidMaterialState.ts: 105
 src/workspace/navigation/navigationProjection.ts: 95
 src/workspace/debug/debugDrawer.ts: 85
-src/workspace/graph/workspaceGraph.ts: 77
 src/workspace/inspector/inspectionViewModel.ts: 76
 tests/rustWasmWorkerHost.test.ts: 75
 src/simulation/realtimeRuntime.ts: 73
@@ -46,7 +44,7 @@ src/simulation/runtimePresentation.ts: 51
 src/simulation/worldSimulation.ts: 50
 src/simulation/rustWasmWorkerHost.ts: 47
 src/generator/generateResources.ts: 40
-tests/workspaceGraph.test.ts: 40
+tests/workspaceGraph.test.ts: 38
 src/core/materials/solids/mineralTextures.ts: 36
 src/simulation/simulationEngine.ts: 36
 src/generator/generateFeatures.ts: 34
@@ -63,6 +61,7 @@ src/core/materials/materialBatches.ts: 25
 src/generator/generateRegions.ts: 25
 tests/navigationProjection.test.ts: 24
 tests/runtimePresentation.test.ts: 23
+src/workspace/graph/workspaceGraph.ts: 22
 src/simulation/packedComminutionCompiler.ts: 20
 src/simulation/packedRoastingCompiler.ts: 20
 src/workspace/inspector/genericApparatusInspectorUI.ts: 20
@@ -499,51 +498,21 @@ src/workspace/workspaceController.ts(1127,47): error TS7006: Parameter 'portId' 
 src/workspace/workspaceController.ts(1134,33): error TS7006: Parameter 'definition' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1134,45): error TS7006: Parameter 'systemId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1134,55): error TS7006: Parameter 'portId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1140,5): error TS2345: Argument of type '(nodeId: any, endpointPortId: any) => { nodeId: any; portId: any; }' is not assignable to parameter of type 'null | undefined'.
-src/workspace/workspaceController.ts(1140,6): error TS7006: Parameter 'nodeId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1140,14): error TS7006: Parameter 'endpointPortId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1142,33): error TS7006: Parameter 'item' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1144,27): error TS7006: Parameter 'item' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1146,29): error TS7006: Parameter 'item' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1151,25): error TS7006: Parameter 'transferId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1163,34): error TS7006: Parameter 'svg' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1163,39): error TS7006: Parameter 'definition' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1168,5): error TS2345: Argument of type '(systemId: any, portId: any) => { nodeId: any; portId: any; }' is not assignable to parameter of type 'null | undefined'.
-src/workspace/workspaceController.ts(1168,6): error TS7006: Parameter 'systemId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1168,16): error TS7006: Parameter 'portId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1176,23): error TS7006: Parameter 'endpoint' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1177,5): error TS2322: Type '(connection: any) => any' is not assignable to type '() => 0'.
-src/workspace/workspaceController.ts(1177,11): error TS7006: Parameter 'connection' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1178,5): error TS2322: Type 'string | null' is not assignable to type 'null | undefined'.
-src/workspace/workspaceController.ts(1185,5): error TS2322: Type 'SVGLineElement | null' is not assignable to type 'null | undefined'.
-src/workspace/workspaceController.ts(1188,23): error TS7006: Parameter 'endpoint' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(1177,25): error TS18048: 'connection.transfer' is possibly 'undefined'.
 src/workspace/workspaceController.ts(1192,30): error TS7006: Parameter 'nodeId' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1192,38): error TS7006: Parameter 'event' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1208,29): error TS7006: Parameter 'event' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1210,7): error TS7005: Variable 'systemDragState' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1234,32): error TS7006: Parameter 'container' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1252,5): error TS2345: Argument of type '(systemId: any, portId: any) => { nodeId: any; portId: any; }' is not assignable to parameter of type 'null | undefined'.
-src/workspace/workspaceController.ts(1252,6): error TS7006: Parameter 'systemId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1252,16): error TS7006: Parameter 'portId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1263,5): error TS2322: Type '(_node: any, _port: any, direction: any) => string' is not assignable to type '() => ""'.
-src/workspace/workspaceController.ts(1263,17): error TS7006: Parameter '_node' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1263,24): error TS7006: Parameter '_port' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1263,31): error TS7006: Parameter 'direction' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1264,19): error TS7006: Parameter 'element' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1264,28): error TS7006: Parameter 'graphNode' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1264,39): error TS7006: Parameter 'isNew' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(1250,5): error TS2345: Argument of type '{ id: string; title: any; nodes: unknown[]; scopeId: any; level: string; planetScopeId: string | undefined; layout: BlueprintLayout; }' is not assignable to parameter of type 'BoundaryGraphDefinition'.
+src/workspace/workspaceController.ts(1268,9): error TS18047: 'label' is possibly 'null'.
+src/workspace/workspaceController.ts(1269,29): error TS2345: Argument of type 'Element | null' is not assignable to parameter of type 'Node'.
+src/workspace/workspaceController.ts(1271,7): error TS18047: 'label' is possibly 'null'.
 src/workspace/workspaceController.ts(1282,26): error TS18047: 'wsState.world' is possibly 'null'.
-src/workspace/workspaceController.ts(1289,25): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1289,31): error TS7006: Parameter 'event' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1291,19): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1291,25): error TS7006: Parameter 'portId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1291,33): error TS7006: Parameter 'event' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1292,36): error TS7006: Parameter 'item' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1299,44): error TS18047: 'canvas' is possibly 'null'.
-src/workspace/workspaceController.ts(1307,20): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1307,26): error TS7006: Parameter 'portId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1307,34): error TS7006: Parameter 'event' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1308,36): error TS7006: Parameter 'item' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1313,30): error TS18047: 'pendingGraphConnection.source' is possibly 'null'.
 src/workspace/workspaceController.ts(1314,25): error TS18047: 'pendingGraphConnection.source' is possibly 'null'.
 src/workspace/workspaceController.ts(1318,56): error TS18047: 'wsState.world' is possibly 'null'.
@@ -584,11 +553,8 @@ src/workspace/workspaceController.ts(1479,39): error TS2538: Type 'undefined' ca
 src/workspace/workspaceController.ts(1482,75): error TS7006: Parameter 'port' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1493,34): error TS2538: Type 'null' cannot be used as an index type.
 src/workspace/workspaceController.ts(1495,97): error TS2538: Type 'null' cannot be used as an index type.
-src/workspace/workspaceController.ts(1512,11): error TS2345: Argument of type '(systemId: any, portId: any) => { nodeId: any; portId: any; }' is not assignable to parameter of type 'null | undefined'.
-src/workspace/workspaceController.ts(1512,12): error TS7006: Parameter 'systemId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1512,22): error TS7006: Parameter 'portId' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(1510,11): error TS2345: Argument of type '{ id: string; title: any; nodes: unknown[]; scopeId: any; level: string; planetScopeId: string | undefined; layout: BlueprintLayout; }' is not assignable to parameter of type 'BoundaryGraphDefinition'.
 src/workspace/workspaceController.ts(1514,49): error TS2339: Property 'dataset' does not exist on type 'Element'.
-src/workspace/workspaceController.ts(1515,32): error TS7006: Parameter 'connection' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1562,39): error TS2538: Type 'null' cannot be used as an index type.
 src/workspace/workspaceController.ts(1562,39): error TS2538: Type 'undefined' cannot be used as an index type.
 src/workspace/workspaceController.ts(1568,20): error TS7006: Parameter 'node' implicitly has an 'any' type.
@@ -597,30 +563,16 @@ src/workspace/workspaceController.ts(1603,37): error TS7006: Parameter 'portId' 
 src/workspace/workspaceController.ts(1604,16): error TS18047: 'wsState.blueprint' is possibly 'null'.
 src/workspace/workspaceController.ts(1605,20): error TS18047: 'wsState.blueprintLayout' is possibly 'null'.
 src/workspace/workspaceController.ts(1614,28): error TS7006: Parameter 'svg' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1615,58): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type '{ nodePositions: {}; } | undefined'.
-src/workspace/workspaceController.ts(1622,23): error TS7006: Parameter 'endpoint' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1623,5): error TS2322: Type '(connection: any) => number' is not assignable to type '() => 0'.
-src/workspace/workspaceController.ts(1623,11): error TS7006: Parameter 'connection' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(1615,58): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type 'BlueprintLayout | undefined'.
 src/workspace/workspaceController.ts(1624,45): error TS2345: Argument of type 'Blueprint | null' is not assignable to parameter of type 'Blueprint'.
-src/workspace/workspaceController.ts(1627,5): error TS2322: Type 'string | null' is not assignable to type 'null | undefined'.
-src/workspace/workspaceController.ts(1634,5): error TS2322: Type 'SVGLineElement | null' is not assignable to type 'null | undefined'.
-src/workspace/workspaceController.ts(1637,23): error TS7006: Parameter 'endpoint' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1645,58): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type '{ nodePositions: {}; } | undefined'.
-src/workspace/workspaceController.ts(1649,5): error TS2353: Object literal may only specify known properties, and 'canvas' does not exist in type '{ className?: string | undefined; elements?: Map<any, any> | undefined; height?: number | undefined; label?: ((node: any) => any) | undefined; nodeClass?: ((node: any) => string) | undefined; portClass?: (() => "") | undefined; portRadius?: number | undefined; width?: number | undefined; }'.
-src/workspace/workspaceController.ts(1655,19): error TS7006: Parameter 'element' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1655,28): error TS7006: Parameter 'graphNode' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1655,39): error TS7006: Parameter 'isNew' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(1645,58): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type 'BlueprintLayout | undefined'.
+src/workspace/workspaceController.ts(1660,73): error TS18046: 'node.capacityKg' is of type 'unknown'.
+src/workspace/workspaceController.ts(1665,9): error TS18047: 'label' is possibly 'null'.
+src/workspace/workspaceController.ts(1666,29): error TS2345: Argument of type 'Element | null' is not assignable to parameter of type 'Node'.
+src/workspace/workspaceController.ts(1668,7): error TS18047: 'label' is possibly 'null'.
 src/workspace/workspaceController.ts(1668,57): error TS7006: Parameter 'line' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1674,25): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1674,31): error TS7006: Parameter 'event' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1676,19): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1676,25): error TS7006: Parameter 'portId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1676,33): error TS7006: Parameter 'event' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1677,36): error TS7006: Parameter 'item' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1680,20): error TS7006: Parameter 'node' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1680,26): error TS7006: Parameter 'portId' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1680,34): error TS7006: Parameter 'event' implicitly has an 'any' type.
-src/workspace/workspaceController.ts(1681,36): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(1671,14): error TS2339: Property 'style' does not exist on type 'Element'.
+src/workspace/workspaceController.ts(1671,73): error TS18046: 'node.capacityKg' is of type 'unknown'.
 src/workspace/workspaceController.ts(1694,30): error TS7006: Parameter 'container' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(1724,34): error TS18047: 'wsState.blueprintLayout' is possibly 'null'.
 src/workspace/workspaceController.ts(1729,24): error TS7006: Parameter 'nodeId' implicitly has an 'any' type.
@@ -672,12 +624,10 @@ src/workspace/workspaceController.ts(2149,25): error TS18046: 'error' is of type
 src/workspace/workspaceController.ts(2155,27): error TS7006: Parameter 'event' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(2158,18): error TS18047: 'wsState.blueprint' is possibly 'null'.
 src/workspace/workspaceController.ts(2160,22): error TS2345: Argument of type 'Blueprint | null' is not assignable to parameter of type 'Blueprint'.
-src/workspace/workspaceController.ts(2176,60): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type '{ nodePositions: {}; } | undefined'.
-src/workspace/workspaceController.ts(2178,18): error TS7006: Parameter 'connection' implicitly has an 'any' type.
+src/workspace/workspaceController.ts(2176,60): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type 'BlueprintLayout | undefined'.
 src/workspace/workspaceController.ts(2178,52): error TS2345: Argument of type 'Blueprint | null' is not assignable to parameter of type 'Blueprint'.
-src/workspace/workspaceController.ts(2182,60): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type '{ nodePositions: {}; } | undefined'.
+src/workspace/workspaceController.ts(2182,60): error TS2345: Argument of type 'BlueprintLayout | null' is not assignable to parameter of type 'BlueprintLayout | undefined'.
 src/workspace/workspaceController.ts(2183,48): error TS18047: 'wsState.blueprint' is possibly 'null'.
-src/workspace/workspaceController.ts(2186,22): error TS7006: Parameter 'item' implicitly has an 'any' type.
 src/workspace/workspaceController.ts(2186,50): error TS2345: Argument of type 'Blueprint | null' is not assignable to parameter of type 'Blueprint'.
 src/workspace/workspaceController.ts(2209,19): error TS18046: 'wsState.realtimeRuntime.resume' is of type 'unknown'.
 src/workspace/workspaceController.ts(2223,21): error TS18046: 'wsState.realtimeRuntime.pause' is of type 'unknown'.
@@ -942,6 +892,7 @@ not ok 29 - application composes world generation directly instead of routing th
 not ok 126 - standalone per-apparatus WASM browser adapters stay removed
 not ok 34 - tests/rustPresentationStability.test.ts
 not ok 198 - production Worker imports only the world runtime and protocol version
+not ok 206 - shared preview renderer creates and updates one cursor-following line
 not ok 45 - tests/workspaceWorkerCutover.test.ts
 STRICT_EXIT=1
 TEST_EXIT=1
