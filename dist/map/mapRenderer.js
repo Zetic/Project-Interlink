@@ -9,6 +9,7 @@ import { renderMechanicalLayer, updateMechanicalVisibility, updatePlacementPrevi
 import { renderResourceLayer, updateResourceVisibility, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_HIDE_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_SHOW_ZOOM, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, } from './rendering/resourceRenderer.js';
 import { initialRenderOrigin, renderOriginForCamera, sameRenderOrigin, worldToRenderPoint, } from './rendering/renderOrigin.js';
 export { MAP_MAX_ZOOM, MAP_MIN_ZOOM, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_HIDE_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_SHOW_ZOOM, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, wheelSensitivityForZoom, wheelZoomAfterDelta, };
+export const REGION_INTERACTION_MAX_ZOOM = 10;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const REGION_LABEL_FADE_START_ZOOM = 3.5;
 const REGION_LABEL_FADE_END_ZOOM = 6.5;
@@ -81,6 +82,9 @@ function updatePendingPort(svg, endpoint) {
 function updateZoomVisibility(svg, zoom) {
     updateResourceVisibility(svg, zoom);
     updateMechanicalVisibility(svg, zoom);
+    const regions = svg.querySelector('.ws-map-region-layer');
+    if (regions)
+        regions.style.pointerEvents = zoom >= REGION_INTERACTION_MAX_ZOOM ? 'none' : 'auto';
     const labels = svg.querySelector('.ws-map-region-label-layer');
     if (labels) {
         const progress = (zoom - REGION_LABEL_FADE_START_ZOOM) / (REGION_LABEL_FADE_END_ZOOM - REGION_LABEL_FADE_START_ZOOM);
@@ -111,12 +115,18 @@ export function installMapRenderer(root, store) {
     let wheelLastFrameAt = null;
     let internalCameraUpdate = false;
     let pointerId = null;
+    let pointerMode = null;
     let panStartClient = { x: 0, y: 0 };
     let panStartCamera = displayCamera;
     let draggedNodeId = null;
     let dragStartNode = null;
     let hoverWorld = null;
     let suppressClick = false;
+    let observedWorld = store.getState().world;
+    let observedGraph = store.getState().graph;
+    let observedSelection = store.getState().selection;
+    let observedCamera = store.getState().camera;
+    let observedInteraction = store.getState().interaction;
     const refreshPreview = (state) => {
         const definition = state.interaction.placementDefinitionId ? apparatusDefinitionById(state.interaction.placementDefinitionId) : null;
         updatePlacementPreview(svg, definition, hoverWorld, renderOrigin);
@@ -264,21 +274,37 @@ export function installMapRenderer(root, store) {
         }
     };
     store.subscribe(state => {
+        const worldChanged = state.world !== observedWorld;
+        const graphChanged = state.graph !== observedGraph;
+        const selectionChanged = state.selection !== observedSelection;
+        const cameraChanged = state.camera !== observedCamera;
+        const interactionChanged = state.interaction !== observedInteraction;
+        observedWorld = state.world;
+        observedGraph = state.graph;
+        observedSelection = state.selection;
+        observedCamera = state.camera;
+        observedInteraction = state.interaction;
+        if (!worldChanged && !graphChanged && !selectionChanged && !cameraChanged && !interactionChanged)
+            return;
         const planet = state.world?.planet;
         if (!planet)
             return;
-        if (renderedPlanet !== planet || renderedGraph !== state.graph) {
+        const worldNeedsRender = renderedPlanet !== planet || renderedGraph !== state.graph;
+        if (worldNeedsRender) {
             renderedPlanet = planet;
             renderedGraph = state.graph;
             renderWorld(svg, planet, state.graph, store, renderOrigin);
             applyCamera(displayCamera.zoom === 1 && displayCamera.centerX === 0 ? state.camera : displayCamera);
         }
-        else if (!internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
+        else if (cameraChanged && !internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
             animateToCamera(state.camera);
         }
-        updateSelection(svg, state.selection);
-        updatePendingPort(svg, state.interaction.pendingConnection);
-        refreshPreview(state);
+        if (worldNeedsRender || selectionChanged)
+            updateSelection(svg, state.selection);
+        if (worldNeedsRender || interactionChanged) {
+            updatePendingPort(svg, state.interaction.pendingConnection);
+            refreshPreview(state);
+        }
     });
     svg.addEventListener('click', event => {
         if (suppressClick) {
@@ -364,31 +390,47 @@ export function installMapRenderer(root, store) {
         queueWheelCamera(cameraForAnchor(anchor, nextVisible, zoom), anchor);
     }, { passive: false });
     svg.addEventListener('pointerdown', event => {
-        if (event.button !== 0)
+        const state = store.getState();
+        const target = event.target;
+        if (event.button === 1) {
+            event.preventDefault();
+            cancelWheelAnimation(true);
+            cancelNavigationAnimation();
+            pointerId = event.pointerId;
+            pointerMode = 'pan';
+            panStartClient = { x: event.clientX, y: event.clientY };
+            panStartCamera = { ...displayCamera };
+            suppressClick = false;
+            draggedNodeId = null;
+            dragStartNode = null;
+            svg.classList.add('ws-map-panning');
+            svg.setPointerCapture(event.pointerId);
+            return;
+        }
+        if (event.button !== 0 || target.closest('[data-port-id]'))
+            return;
+        const mechanical = target.closest('[data-mechanical-id]');
+        if (!mechanical || state.interaction.placementDefinitionId)
+            return;
+        const id = mechanical.getAttribute('data-mechanical-id');
+        const node = id ? mechanicalNodeById(state.graph, id) : null;
+        if (!id || !node)
             return;
         cancelWheelAnimation(true);
         cancelNavigationAnimation();
-        const state = store.getState();
-        const target = event.target;
-        if (target.closest('[data-port-id]'))
-            return;
         pointerId = event.pointerId;
+        pointerMode = 'node-drag';
         panStartClient = { x: event.clientX, y: event.clientY };
         panStartCamera = { ...displayCamera };
         suppressClick = false;
-        draggedNodeId = null;
-        dragStartNode = null;
-        const mechanical = target.closest('[data-mechanical-id]');
-        if (mechanical && !state.interaction.placementDefinitionId) {
-            const id = mechanical.getAttribute('data-mechanical-id');
-            const node = id ? mechanicalNodeById(state.graph, id) : null;
-            if (id && node) {
-                draggedNodeId = id;
-                dragStartNode = { ...node.position };
-                store.setSelection({ type: 'mechanical', mechanicalNodeId: id });
-            }
-        }
+        draggedNodeId = id;
+        dragStartNode = { ...node.position };
+        store.setSelection({ type: 'mechanical', mechanicalNodeId: id });
         svg.setPointerCapture(event.pointerId);
+    });
+    svg.addEventListener('auxclick', event => {
+        if (event.button === 1)
+            event.preventDefault();
     });
     svg.addEventListener('pointermove', event => {
         const planet = store.getState().world?.planet;
@@ -396,7 +438,7 @@ export function installMapRenderer(root, store) {
             return;
         hoverWorld = screenToWorld(svg, planet, displayCamera, event.clientX, event.clientY);
         refreshPreview(store.getState());
-        if (pointerId !== event.pointerId)
+        if (pointerId !== event.pointerId || !pointerMode)
             return;
         const rect = svg.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0)
@@ -406,7 +448,7 @@ export function installMapRenderer(root, store) {
         if (Math.hypot(dx, dy) > 4)
             suppressClick = true;
         const visible = visibleWorldSize(svg, planet, panStartCamera.zoom);
-        if (draggedNodeId && dragStartNode) {
+        if (pointerMode === 'node-drag' && draggedNodeId && dragStartNode) {
             const graph = store.getState().graph;
             store.setGraph(moveMechanicalNode(graph, draggedNodeId, {
                 x: dragStartNode.x + dx * (visible.width / rect.width),
@@ -414,21 +456,25 @@ export function installMapRenderer(root, store) {
             }));
             return;
         }
-        applyCamera({
-            centerX: panStartCamera.centerX - dx * (visible.width / rect.width),
-            centerY: panStartCamera.centerY - dy * (visible.height / rect.height),
-            zoom: panStartCamera.zoom,
-        });
+        if (pointerMode === 'pan') {
+            applyCamera({
+                centerX: panStartCamera.centerX - dx * (visible.width / rect.width),
+                centerY: panStartCamera.centerY - dy * (visible.height / rect.height),
+                zoom: panStartCamera.zoom,
+            });
+        }
     });
     const finishPointer = (event) => {
         if (pointerId !== event.pointerId)
             return;
-        const wasPanning = suppressClick && !draggedNodeId;
+        const wasPanning = pointerMode === 'pan';
         if (svg.hasPointerCapture(event.pointerId))
             svg.releasePointerCapture(event.pointerId);
         pointerId = null;
+        pointerMode = null;
         draggedNodeId = null;
         dragStartNode = null;
+        svg.classList.remove('ws-map-panning');
         if (wasPanning) {
             prepareRenderOrigin(displayCamera, { recenter: true, allowDeactivate: true });
             applyCamera(displayCamera);
