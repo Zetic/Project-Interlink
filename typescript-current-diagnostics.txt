@@ -1,14 +1,14 @@
-errors=2336
+errors=2335
 test_failures=12
 
 By code:
 TS7006: 1122
 TS2339: 300
 TS18046: 281
-TS2345: 96
+TS2345: 97
 TS7005: 89
 TS18047: 82
-TS2322: 70
+TS2322: 68
 TS7053: 66
 TS2353: 40
 TS18048: 33
@@ -43,7 +43,7 @@ src/simulation/runtimePresentation.ts: 51
 src/simulation/worldSimulation.ts: 50
 src/simulation/rustWasmWorkerHost.ts: 47
 src/generator/generateResources.ts: 40
-tests/workspaceGraph.test.ts: 38
+tests/workspaceGraph.test.ts: 37
 src/core/materials/solids/mineralTextures.ts: 36
 src/simulation/simulationEngine.ts: 36
 src/generator/generateFeatures.ts: 34
