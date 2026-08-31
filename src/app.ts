@@ -1,4 +1,5 @@
 import { AppStore } from './state/appState.js';
+import { installMapRenderer } from './map/mapRenderer.js';
 import { generateWorld } from './world/generateWorld.js';
 import type { AppState } from './world/types.js';
 import { installInspectorPanel } from './ui/inspectorPanel.js';
@@ -66,13 +67,9 @@ function enterPlayerWorkspace(): void {
   });
   installNavigationPanel(root, store);
   installInspectorPanel(root, store);
+  installMapRenderer(root, store);
   store.subscribe(renderBreadcrumbs);
   store.setWorld(world);
-
-  const canvas = root.querySelector<HTMLElement>('#ws-map-canvas');
-  if (canvas) {
-    canvas.innerHTML = `<p class="ws-empty">${world.planet.regions.length} regions and ${world.planet.resourceNodes.length} resource nodes loaded. Geographic rendering begins in Phase 3.</p>`;
-  }
 }
 
 function installLandingScreen(): void {
