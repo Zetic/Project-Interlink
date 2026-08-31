@@ -8,7 +8,7 @@ on:
 
 jobs:
   javascript:
-    name: JavaScript simulation tests
+    name: Browser and JavaScript tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,8 +21,17 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Run JavaScript tests
-        run: npm test
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Build TypeScript browser modules
+        run: npm run build
+
+      - name: Verify generated browser modules are committed
+        run: git diff --exit-code -- dist
+
+      - name: Run JavaScript regression tests
+        run: npm run test:js
 
   rust:
     name: Rust core and WASM browser package
