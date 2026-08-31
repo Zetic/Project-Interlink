@@ -1,4 +1,5 @@
 import { installMapRenderer } from './map/mapRenderer.js';
+import { installRuntimeController } from './runtime/runtimeController.js';
 import { AppStore, type AppState } from './state/appState.js';
 import { generateWorld } from './world/generateWorld.js';
 import { installDebugPanel } from './ui/debugPanel.js';
@@ -22,7 +23,8 @@ function renderBreadcrumbs(state: Readonly<AppState>): void {
 function enterPlayerWorkspace(): void {
   const seed = resolveSeed(); const world = generateWorld(seed); const landing = elementById<HTMLElement>('landing-screen'); const playerView = elementById<HTMLElement>('player-view'); const main = elementById<HTMLElement>('ws-main'); if (!playerView || !main) return;
   landing?.remove(); playerView.style.removeProperty('display'); const root = renderWorkspaceShell(main, { title: `${world.planet.name} · Planet Map`, subtitle: `Seed ${world.planet.seed} · ${world.planet.regions.length} regions · ${world.planet.resourceNodes.length} resource nodes` });
-  installNavigationPanel(root, store); installNodeCatalogPanel(root, store); installInspectorPanel(root, store); installDebugPanel(root, store); installMapRenderer(root, store); store.subscribe(renderBreadcrumbs); store.setWorld(world);
+  const runtime = installRuntimeController(store);
+  installNavigationPanel(root, store); installNodeCatalogPanel(root, store); installInspectorPanel(root, store, runtime); installDebugPanel(root, store, runtime); installMapRenderer(root, store); store.subscribe(renderBreadcrumbs); store.setWorld(world);
 }
 function installLandingScreen(): void { elementById<HTMLButtonElement>('generate-btn')?.addEventListener('click', enterPlayerWorkspace); elementById<HTMLInputElement>('seed-input')?.addEventListener('keydown', event => { if (event.key === 'Enter') enterPlayerWorkspace(); }); }
 document.addEventListener('DOMContentLoaded', installLandingScreen);
