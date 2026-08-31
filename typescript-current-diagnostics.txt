@@ -1,17 +1,17 @@
-errors=2569
+errors=2552
 test_failures=11
 
 By code:
-TS7006: 1271
-TS2339: 325
+TS7006: 1260
+TS2339: 323
 TS18046: 315
 TS2322: 102
+TS2345: 91
 TS7005: 90
-TS2345: 86
 TS18047: 83
 TS7053: 71
-TS7031: 46
 TS2353: 43
+TS7031: 37
 TS7034: 27
 TS2551: 18
 TS2538: 17
@@ -61,17 +61,16 @@ tests/packedWorldRuntimeCompiler.test.ts: 27
 tests/invariants.test.ts: 26
 src/core/materials/materialBatches.ts: 25
 src/generator/generateRegions.ts: 25
+tests/navigationProjection.test.ts: 24
 tests/runtimePresentation.test.ts: 23
-tests/navigationProjection.test.ts: 22
-tests/recursiveSystems.test.ts: 21
 src/simulation/packedComminutionCompiler.ts: 20
 src/simulation/packedRoastingCompiler.ts: 20
 src/workspace/inspector/genericApparatusInspectorUI.ts: 20
+tests/recursiveSystems.test.ts: 19
 src/simulation/hopperNode.ts: 17
 tests/apparatusControlUI.test.ts: 16
 tests/packedExtractionCompiler.test.ts: 16
 src/content/apparatus/definitions.ts: 15
-src/workspace/catalog/nodeCatalog.ts: 15
 src/workspace/graph/nodeRemoval.ts: 15
 src/workspace/inspector/apparatusControlUI.ts: 15
 tests/liveWorldReconfigure.test.ts: 15
@@ -80,9 +79,9 @@ tests/nodeCatalog.test.ts: 14
 src/core/world/knowledgeState.ts: 13
 src/simulation/liveWorldReconfigure.ts: 13
 src/simulation/packedRuntimeState.ts: 13
+tests/extractorResourceAccess.test.ts: 13
 tests/futureApparatusScalability.test.ts: 13
 src/simulation/packedThermalRuntime.ts: 12
-tests/extractorResourceAccess.test.ts: 12
 src/core/materials/occurrenceMaterialization.ts: 10
 src/generator/random.ts: 10
 src/simulation/apparatus/comminution.ts: 10
@@ -106,19 +105,18 @@ src/simulation/packedStorageRuntime.ts: 6
 tests/knowledge.test.ts: 6
 src/simulation/packedExtractionCompiler.ts: 5
 src/workspace/debug/runtimeDebugStats.ts: 5
-src/workspace/graph/nodePlacement.ts: 5
 src/workspace/sitePrototype.ts: 5
 src/workspace/siteSession.ts: 5
 src/core/systems/ports.ts: 4
 src/simulation/apparatus/registry.ts: 4
 src/simulation/boundaryTransfer.ts: 4
 src/simulation/runtimeProtocol.ts: 4
+tests/nodePlacement.test.ts: 4
 tests/packedSeparationCompiler.test.ts: 4
 tests/runtimeCapabilities.test.ts: 4
 src/core/materials/solids/liberationClasses.ts: 3
 src/simulation/packedThermalGasCompiler.ts: 3
 tests/apparatusCanonicalControls.test.ts: 3
-tests/nodePlacement.test.ts: 3
 tests/nodePresentation.test.ts: 3
 tests/nodeRemoval.test.ts: 3
 src/content/features/featureGeneration.ts: 2
@@ -147,6 +145,7 @@ src/simulation/apparatus/merger.ts: 1
 src/simulation/apparatus/screen.ts: 1
 src/simulation/apparatus/splitter.ts: 1
 src/simulation/runtimeCapabilities.ts: 1
+src/workspace/catalog/catalogState.ts: 1
 src/workspace/shell/utils.ts: 1
 tests/packedComminutionCompiler.test.ts: 1
 tests/rustOnlyRuntimeArchitecture.test.ts: 1
