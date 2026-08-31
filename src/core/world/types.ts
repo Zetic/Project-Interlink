@@ -1,5 +1,6 @@
 import type { ComminutionProperties, MineralTextureProfile, SolidMaterialBody } from '../materials/types.js';
 import type { SystemNode, SystemPort } from '../systems/types.js';
+import type { Blueprint, BlueprintNode } from '../../simulation/types.js';
 
 export type IdMap<T> = Record<string, T>;
 
@@ -105,10 +106,31 @@ export interface ProcessResult {
   [key: string]: unknown;
 }
 
+export interface BoundaryTransfer {
+  id: string;
+  sourceCompositeId: string;
+  sourcePortId: string;
+  targetCompositeId: string;
+  targetPortId: string;
+  capacityKgPerSecond: number;
+  priority: number;
+  scopeId: string | null;
+  lastMovedKg: number;
+  lastRateKgPerSecond: number;
+}
+
+export interface SimulationWorkspace {
+  id?: string;
+  nodes: Record<string, BlueprintNode>;
+}
+
 export interface WorldSimulationState {
   running: boolean;
   elapsedSeconds: number;
-  sessions: Record<string, unknown>;
+  sessions: Record<string, Blueprint>;
+  workspaces?: Record<string, SimulationWorkspace>;
+  transfers?: Record<string, BoundaryTransfer>;
+  nextTransferOrdinal?: number;
 }
 
 export interface World {
