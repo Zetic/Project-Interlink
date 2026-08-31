@@ -52,7 +52,8 @@ export function installRuntimeController(store: AppStore): RuntimeController {
   let frameId: number | null = null;
   let lastFrameAtMs: number | null = null;
   let accumulatorSeconds = 0;
-  let automaticStepInFlight = false;
+  let automaticAdvancePromise: Promise<void> | null = null;
+  let manualStepInFlight = false;
   let realtimeWindowWallSeconds = 0;
   let realtimeWindowSimulationSeconds = 0;
   let realtimeFactor = 0;
@@ -201,15 +202,12 @@ export function installRuntimeController(store: AppStore): RuntimeController {
   }
 
   async function automaticAdvance(steps: number): Promise<void> {
-    automaticStepInFlight = true;
     try {
       const message = await send('advance-fixed', { steps });
       realtimeWindowSimulationSeconds += steps * SIMULATION_STEP_SECONDS;
       applyEvent(message);
     } catch (error) {
       if (store.getState().runtime.status === 'ready') runtimePatch({ status: 'error', running: false, error: errorMessage(error) });
-    } finally {
-      automaticStepInFlight = false;
     }
   }
 
@@ -230,12 +228,16 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     }
     lastFrameAtMs = timestamp;
 
-    if (runtimeState.status === 'ready' && runtimeState.running && !automaticStepInFlight) {
+    if (runtimeState.status === 'ready' && runtimeState.running && !automaticAdvancePromise && !manualStepInFlight) {
       const availableSteps = Math.floor(accumulatorSeconds / SIMULATION_STEP_SECONDS);
       if (availableSteps > 0) {
         const steps = Math.min(availableSteps, 100);
         accumulatorSeconds -= steps * SIMULATION_STEP_SECONDS;
-        void automaticAdvance(steps);
+        const promise = automaticAdvance(steps);
+        automaticAdvancePromise = promise;
+        void promise.finally(() => {
+          if (automaticAdvancePromise === promise) automaticAdvancePromise = null;
+        });
       }
     }
     updateSchedulerTelemetry(timestamp);
@@ -256,12 +258,19 @@ export function installRuntimeController(store: AppStore): RuntimeController {
 
   async function advanceFixedSteps(steps: number): Promise<void> {
     if (steps <= 0) return;
-    const wasRunning = store.getState().runtime.running;
-    if (!wasRunning) await resume();
-    const message = await send('advance-fixed', { steps });
-    applyEvent(message);
-    if (!wasRunning) await pause();
-    updateSchedulerTelemetry(nowMs(), true);
+    manualStepInFlight = true;
+    try {
+      const inFlight = automaticAdvancePromise;
+      if (inFlight) await inFlight;
+      const wasRunning = store.getState().runtime.running;
+      if (!wasRunning) await resume();
+      const message = await send('advance-fixed', { steps });
+      applyEvent(message);
+      if (!wasRunning) await pause();
+      updateSchedulerTelemetry(nowMs(), true);
+    } finally {
+      manualStepInFlight = false;
+    }
   }
 
   async function setProfiling(enabled: boolean, reset = false): Promise<void> {
