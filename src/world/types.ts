@@ -1,3 +1,5 @@
+import type { ResourceSourceDefinition } from '../material/types.js';
+
 export interface Point {
   x: number;
   y: number;
@@ -30,6 +32,11 @@ export interface NodePort {
   label: string;
 }
 
+/**
+ * A FEATURE is a naturally generated world entity. It is not a Site, child
+ * workspace, or ResourceOccurrence hierarchy. The source descriptor is initial
+ * authoring data that can be compiled into the Rust runtime.
+ */
 export interface ResourceNode {
   id: string;
   name: string;
@@ -38,6 +45,7 @@ export interface ResourceNode {
   position: Point;
   nodeType: 'feature';
   featureType: 'mineral-deposit';
+  source: ResourceSourceDefinition;
   resourceAccessPortId: 'resource-access';
   ports: NodePort[];
 }
