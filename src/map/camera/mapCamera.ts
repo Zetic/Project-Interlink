@@ -32,6 +32,27 @@ export function wheelZoomAfterDelta(zoom: number, deltaPixels: number): number {
   return clamp(zoom * Math.exp(-deltaPixels * wheelSensitivityForZoom(zoom)), MAP_MIN_ZOOM, MAP_MAX_ZOOM);
 }
 
+
+export const WHEEL_CAMERA_RESPONSE_PER_SECOND = 20;
+
+/** Frame-rate-independent camera easing; zoom interpolates logarithmically. */
+export function approachCamera(
+  current: MapCameraState,
+  target: MapCameraState,
+  elapsedMs: number,
+  responsePerSecond = WHEEL_CAMERA_RESPONSE_PER_SECOND,
+): MapCameraState {
+  const seconds = clamp(elapsedMs, 0, 100) / 1000;
+  const alpha = 1 - Math.exp(-Math.max(0, responsePerSecond) * seconds);
+  if (alpha <= 0) return { ...current };
+  if (alpha >= 0.999999) return { ...target };
+  return {
+    centerX: current.centerX + (target.centerX - current.centerX) * alpha,
+    centerY: current.centerY + (target.centerY - current.centerY) * alpha,
+    zoom: Math.exp(Math.log(current.zoom) + (Math.log(target.zoom) - Math.log(current.zoom)) * alpha),
+  };
+}
+
 export function normalizeWheelDelta(event: WheelEvent, viewportHeight: number): number {
   let deltaPixels = event.deltaY;
   if (event.deltaMode === 1) deltaPixels *= 16;

@@ -51,11 +51,6 @@
   user-select: none;
 }
 
-.ws-map-resource-node-layer,
-.ws-map-region-label-layer {
-  transition: opacity 90ms linear;
-}
-
 /* Resource FEATURE cards are world-space geometry, not screen-space overlays. */
 .ws-map-resource-node {
   cursor: pointer;
@@ -124,7 +119,6 @@
 }
 
 /* Flat-map mechanical graph using the original fixed node-card visual grammar. */
-.ws-map-mechanical-layer { transition: opacity 90ms linear; }
 .ws-map-mechanical-node { cursor: move; }
 .ws-map-mechanical-card-body { fill: #111922; stroke: #52677a; stroke-width: 0.0000184; }
 .ws-map-mechanical-card-body--extractor { fill: #1e3a2f; }

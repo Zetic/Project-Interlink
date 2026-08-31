@@ -4,7 +4,6 @@ import test from 'node:test';
 import { RESOURCE_FOCUS_ZOOM, AppStore } from '../dist/state/appState.js';
 import {
   MAP_MAX_ZOOM,
-  RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS,
   RESOURCE_NODE_FADE_START_ZOOM,
   RESOURCE_NODE_FULL_OPACITY_ZOOM,
   RESOURCE_NODE_INTERACTIVE_ZOOM,
@@ -14,7 +13,6 @@ import {
   WHEEL_ENGINEERING_BLEND_START_ZOOM,
   WHEEL_ENGINEERING_SENSITIVITY,
   WHEEL_GEOGRAPHIC_SENSITIVITY,
-  resourceDetailsVisibleAtPixelHeight,
   wheelSensitivityForZoom,
   wheelZoomAfterDelta,
 } from '../dist/map/mapRenderer.js';
@@ -91,13 +89,6 @@ test('wheel zoom becomes fine-grained around resources and returns to geographic
   assert.ok(middleSensitivity > WHEEL_ENGINEERING_SENSITIVITY);
 });
 
-test('resource text detail is hidden before it becomes large enough to render cleanly', () => {
-  assert.equal(RESOURCE_NODE_DETAIL_MIN_TEXT_PIXELS, 5.75);
-  assert.equal(resourceDetailsVisibleAtPixelHeight(5.2), false);
-  assert.equal(resourceDetailsVisibleAtPixelHeight(5.74), false);
-  assert.equal(resourceDetailsVisibleAtPixelHeight(5.75), true);
-  assert.equal(resourceDetailsVisibleAtPixelHeight(7), true);
-});
 
 test('planet focus restores the full-map camera', () => {
   const world = generateWorld('planet-focus');

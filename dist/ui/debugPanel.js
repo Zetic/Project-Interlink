@@ -132,8 +132,6 @@ export function installDebugPanel(root, store) {
     });
     store.subscribe(state => {
         latestState = state;
-        if (!drawer.hidden)
-            render();
     });
     const observer = new MutationObserver(syncOpenState);
     observer.observe(drawer, { attributes: true, attributeFilter: ['hidden'] });

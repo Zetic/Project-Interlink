@@ -144,7 +144,6 @@ export function installDebugPanel(root: HTMLElement, store: AppStore): void {
 
   store.subscribe(state => {
     latestState = state;
-    if (!drawer.hidden) render();
   });
 
   const observer = new MutationObserver(syncOpenState);

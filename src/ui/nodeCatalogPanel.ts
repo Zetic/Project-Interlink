@@ -59,9 +59,14 @@ export function installNodeCatalogPanel(root: HTMLElement, store: AppStore): voi
   };
 
   search.addEventListener('input', render);
+  let lastStatusKey = '';
   store.subscribe(state => {
     const placement = state.interaction.placementDefinitionId;
     const pending = state.interaction.pendingConnection;
+    const scaleState = placement ? (state.camera.zoom < MECHANICAL_PLACEMENT_MIN_ZOOM ? 'far' : 'ready') : '';
+    const statusKey = `${placement ?? ''}|${pending?.nodeId ?? ''}:${pending?.portId ?? ''}|${state.interaction.notice ?? ''}|${scaleState}`;
+    if (statusKey === lastStatusKey) return;
+    lastStatusKey = statusKey;
     if (placement) {
       const definition = apparatusDefinitionById(placement);
       const label = definition?.label ?? placement;
