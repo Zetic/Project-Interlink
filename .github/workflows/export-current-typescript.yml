@@ -1,0 +1,44 @@
+name: Export Current TypeScript Workspace
+
+on:
+  push:
+    branches: [chatgpt/typescript-current-export]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/typescript-current-export
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: current-typescript-workspace
+          path: |
+            .github
+            src
+            tests
+            scripts
+            rust
+            node_modules
+            Cargo.toml
+            Cargo.lock
+            package.json
+            package-lock.json
+            tsconfig.json
+            tsconfig.build.json
+            index.html
+            *.md
+            *.css
+            rust-toolchain.toml
+          include-hidden-files: true
+          retention-days: 1
