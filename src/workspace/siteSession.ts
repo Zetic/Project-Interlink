@@ -7,16 +7,28 @@ import {
   DEFAULT_HOPPER_CAPACITY_KG,
 } from '../simulation/simulationEngine.js';
 import { setBoundaryMapping } from '../core/systems/systemNode.js';
+import type { World } from '../core/world/types.js';
+import type { BlueprintNode } from '../simulation/types.js';
+import type { SiteSessionLike } from './types.js';
+
+export interface BuildSiteSessionOptions {
+  siteImport?: BlueprintNode | null;
+  siteExport?: BlueprintNode | null;
+}
 
 /**
  * Build the current Site runtime graph from canonical Site → Feature →
  * ResourceOccurrence ownership. Apparatus and containers are added later by
  * the player through the NODE catalog.
  */
-export function buildSiteSession(world, siteId, {
-  siteImport = null,
-  siteExport = null,
-} = {}) {
+export function buildSiteSession(
+  world: World,
+  siteId: string,
+  {
+    siteImport = null,
+    siteExport = null,
+  }: BuildSiteSessionOptions = {},
+): SiteSessionLike {
   const site = world?.sites?.[siteId];
   if (!site) throw new Error(`Unknown Site '${siteId}'`);
 
@@ -34,7 +46,7 @@ export function buildSiteSession(world, siteId, {
   blueprint.nodes[importNode.id] = importNode;
   blueprint.nodes[exportNode.id] = exportNode;
 
-  const featureNodes = new Map();
+  const featureNodes = new Map<string, BlueprintNode>();
   for (const featureId of site.featureIds ?? []) {
     const feature = world.features?.[featureId];
     if (!feature) continue;
@@ -56,6 +68,9 @@ export function buildSiteSession(world, siteId, {
 
   const siteNode = world.systemNodes?.[siteId];
   if (siteNode) {
+    if (!importNode.inputPortId || !exportNode.outputPortId) {
+      throw new Error(`Site '${siteId}' boundary buffers are missing canonical material ports`);
+    }
     setBoundaryMapping(siteNode, 'material-input', importNode.id, importNode.inputPortId, blueprint);
     setBoundaryMapping(siteNode, 'material-output', exportNode.id, exportNode.outputPortId, blueprint);
   }
