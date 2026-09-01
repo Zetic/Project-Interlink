@@ -26,6 +26,8 @@ interface AppStateSubscription {
   domains: ReadonlySet<AppStateDomain> | null;
 }
 
+const STRUCTURAL_APP_DOMAINS: readonly AppStateDomain[] = ['world', 'graph', 'selection', 'camera', 'interaction'];
+
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
 
@@ -92,9 +94,9 @@ export class AppStore {
         details: patch.details ?? this.state.runtime.details,
       },
     };
-    const runtimeChanged = Object.keys(patch).some(key => key !== 'telemetry');
-    if (runtimeChanged && patch.telemetry) this.emit('runtime', 'telemetry');
-    else if (runtimeChanged) this.emit('runtime');
+    const presentationChanged = Object.keys(patch).some(key => key !== 'telemetry');
+    if (presentationChanged && patch.telemetry) this.emit('runtime', 'telemetry');
+    else if (presentationChanged) this.emit('runtime');
     else if (patch.telemetry) this.emit('telemetry');
   }
 
@@ -155,8 +157,9 @@ export class AppStore {
     this.emit('selection', 'camera');
   }
 
+  /** Structural UI subscription. Runtime presentation consumers use subscribeDomains. */
   subscribe(listener: AppStateListener): () => void {
-    return this.subscribeDomains(null, listener);
+    return this.subscribeDomains(STRUCTURAL_APP_DOMAINS, listener);
   }
 
   subscribeDomains(domains: readonly AppStateDomain[] | null, listener: AppStateListener): () => void {
