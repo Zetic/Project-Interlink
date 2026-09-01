@@ -62,7 +62,7 @@ function installRuntimeControls(root: HTMLElement, store: AppStore, runtime: Run
   step1?.addEventListener('click', () => { void runtime.advanceFixedSteps(10).catch(() => undefined); });
   step10?.addEventListener('click', () => { void runtime.advanceFixedSteps(100).catch(() => undefined); });
   profiling?.addEventListener('change', () => { void runtime.setProfiling(profiling.checked, true).catch(() => undefined); });
-  store.subscribe(sync);
+  store.subscribeDomains(['runtime'], sync);
 
   for (const action of ['place-factories', 'remove-factories']) {
     const button = root.querySelector<HTMLButtonElement>(`[data-debug-action="${action}"]`);
@@ -166,7 +166,7 @@ export function installDebugPanel(root: HTMLElement, store: AppStore, runtime: R
     render();
   });
 
-  store.subscribe(state => {
+  store.subscribeDomains(['world', 'graph', 'runtime'], state => {
     latestState = state;
   });
 
