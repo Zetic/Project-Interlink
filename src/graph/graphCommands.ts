@@ -27,28 +27,18 @@ export function placeMechanicalNode(
   };
   return {
     node,
-    graph: {
-      ...graph,
-      nodes: [...graph.nodes, node],
-      nextNodeSequence: sequence + 1,
-    },
+    graph: { ...graph, nodes: [...graph.nodes, node], nextNodeSequence: sequence + 1 },
   };
 }
 
 export function moveMechanicalNode(graph: GraphState, nodeId: string, position: Point): GraphState {
-  return {
-    ...graph,
-    nodes: graph.nodes.map(node => node.id === nodeId ? { ...node, position: { ...position } } : node),
-  };
+  return { ...graph, nodes: graph.nodes.map(node => node.id === nodeId ? { ...node, position: { ...position } } : node) };
 }
 
 export function setMechanicalNodeEnabled(graph: GraphState, nodeId: string, enabled: boolean): GraphState {
   if (typeof enabled !== 'boolean') throw new Error('Enabled state must be boolean.');
   if (!graph.nodes.some(node => node.id === nodeId)) throw new Error(`Unknown mechanical node '${nodeId}'.`);
-  return {
-    ...graph,
-    nodes: graph.nodes.map(node => node.id === nodeId ? { ...node, enabled } : node),
-  };
+  return { ...graph, nodes: graph.nodes.map(node => node.id === nodeId ? { ...node, enabled } : node) };
 }
 
 export function setMechanicalNodeParameter(graph: GraphState, nodeId: string, parameterId: string, value: number): GraphState {
@@ -57,12 +47,16 @@ export function setMechanicalNodeParameter(graph: GraphState, nodeId: string, pa
   const definition = apparatusDefinitionById(node.definitionId);
   const parameter = definition?.parameters?.find(candidate => candidate.id === parameterId);
   if (!parameter) throw new Error(`Unknown parameter '${parameterId}' for '${node.definitionId}'.`);
-  if (!Number.isFinite(value) || value < parameter.min) {
-    throw new Error(`${parameter.label} must be at least ${parameter.min} ${parameter.unit}.`);
+  if (!Number.isFinite(value) || value < parameter.min || (parameter.max != null && value > parameter.max)) {
+    const range = parameter.max == null ? `at least ${parameter.min}` : `between ${parameter.min} and ${parameter.max}`;
+    throw new Error(`${parameter.label} must be ${range} ${parameter.unit}.`);
+  }
+  if (parameter.choices && !parameter.choices.some(choice => Math.abs(choice.value - value) <= 1e-12)) {
+    throw new Error(`${parameter.label} must use one of the supported equipment settings.`);
   }
   return {
     ...graph,
-    nodes: graph.nodes.map(candidate => candidate.id === nodeId
+    nodes: graph.nodes.map(candidate => nodeId === candidate.id
       ? { ...candidate, parameters: { ...candidate.parameters, [parameterId]: value } }
       : candidate),
   };
@@ -110,8 +104,6 @@ export function connectPorts(
   if (graph.connections.some(connection => endpointsEqual(connection.to, oriented.to))) {
     throw new Error('That input port already has a connection.');
   }
-  // Resource access is a relationship and may fan out to multiple Extractors.
-  // Material is matter in transit and cannot fan out until an explicit Splitter exists.
   if (oriented.fromPort.kind === 'material' && graph.connections.some(connection => endpointsEqual(connection.from, oriented.from))) {
     throw new Error('That material output is already connected; use a Splitter for fan-out.');
   }
