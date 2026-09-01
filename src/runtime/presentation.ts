@@ -25,6 +25,26 @@ export interface RuntimeSnapshot {
   sources: Record<string, RuntimeSourceSnapshot>;
 }
 
+export interface RuntimeSourceDetail {
+  kind: 'source';
+  id: string;
+  elapsedSeconds: number;
+  extractedMassKg: number;
+  remainingMassKg: number | null;
+}
+
+export interface RuntimeNodeDetail {
+  kind: 'node';
+  id: string;
+  nodeType: string;
+  elapsedSeconds: number;
+  operatingState: RuntimeOperatingState | null;
+  actualRateKgPerSecond: number | null;
+  blockedReason: string | null;
+  storedMassKg: number | null;
+  freeCapacityKg: number | null;
+}
+
 export interface RuntimeHopperDetail {
   kind: 'hopper';
   id: string;
@@ -40,7 +60,7 @@ export interface RuntimeHopperDetail {
   populationCount: number;
 }
 
-export type RuntimeEntityDetail = RuntimeHopperDetail;
+export type RuntimeEntityDetail = RuntimeSourceDetail | RuntimeNodeDetail | RuntimeHopperDetail;
 
 export interface RuntimeProfileSnapshot {
   profiledTicks: number;
