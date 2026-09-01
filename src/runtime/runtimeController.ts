@@ -21,11 +21,10 @@ interface PendingRequest {
   startedAtMs: number;
 }
 
-interface SelectedDetailTarget {
+interface RichDetailTarget {
   key: string;
+  entityType: 'hopper';
   id: string;
-  richEntityType: 'hopper' | null;
-  fallback: RuntimeEntityDetail;
 }
 
 export interface RuntimeController {
@@ -44,49 +43,11 @@ function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now();
 }
 
-function selectedDetailTarget(state: Readonly<AppState>): SelectedDetailTarget | null {
-  const snapshot = state.runtime.snapshot;
-  if (!snapshot) return null;
-  const elapsedSeconds = snapshot.elapsedSeconds;
-
-  if (state.selection.type === 'resource') {
-    const id = state.selection.resourceNodeId;
-    const source = snapshot.sources[id];
-    if (!source) return null;
-    return {
-      key: `source:${id}`,
-      id,
-      richEntityType: null,
-      fallback: {
-        kind: 'source',
-        id,
-        elapsedSeconds,
-        extractedMassKg: source.extractedMassKg,
-        remainingMassKg: source.remainingMassKg,
-      },
-    };
-  }
-
+function selectedRichDetailTarget(state: Readonly<AppState>): RichDetailTarget | null {
   if (state.selection.type !== 'mechanical') return null;
   const node = state.graph.nodes.find(candidate => candidate.id === state.selection.mechanicalNodeId);
-  if (!node) return null;
-  const runtimeNode = snapshot.nodes[node.id];
-  return {
-    key: `node:${node.id}`,
-    id: node.id,
-    richEntityType: node.nodeType === 'hopper' ? 'hopper' : null,
-    fallback: {
-      kind: 'node',
-      id: node.id,
-      nodeType: node.nodeType,
-      elapsedSeconds,
-      operatingState: runtimeNode?.operatingState ?? null,
-      actualRateKgPerSecond: runtimeNode?.actualRateKgPerSecond ?? null,
-      blockedReason: runtimeNode?.blockedReason ?? null,
-      storedMassKg: runtimeNode?.storedMassKg ?? null,
-      freeCapacityKg: runtimeNode?.freeCapacityKg ?? null,
-    },
-  };
+  if (!node || node.nodeType !== 'hopper') return null;
+  return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
 }
 
 export function installRuntimeController(store: AppStore): RuntimeController {
@@ -164,25 +125,18 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     });
   }
 
-  function publishSelectedSummaryDetail(target = selectedDetailTarget(store.getState())): SelectedDetailTarget | null {
-    if (!target) return null;
-    const details = store.getState().runtime.details;
-    runtimePatch({ details: { ...details, [target.key]: target.fallback } });
-    return target;
-  }
-
   function queueSelectedDetailRefresh(): void {
-    if (disposed || store.getState().runtime.status !== 'ready') return;
-    const target = publishSelectedSummaryDetail();
-    if (!target?.richEntityType || !worker) return;
+    if (disposed || !worker || store.getState().runtime.status !== 'ready') return;
+    const target = selectedRichDetailTarget(store.getState());
+    if (!target) return;
     if (detailRequestInFlight) {
       detailRefreshPending = true;
       return;
     }
     detailRequestInFlight = target.key;
-    void send('query-detail', { entityType: target.richEntityType, id: target.id }).then(message => {
+    void send('query-detail', { entityType: target.entityType, id: target.id }).then(message => {
       if (message.type !== 'detail' || message.payload.ok !== true || !message.payload.detail) return;
-      const currentTarget = selectedDetailTarget(store.getState());
+      const currentTarget = selectedRichDetailTarget(store.getState());
       if (!currentTarget || currentTarget.key !== target.key) return;
       const detail = message.payload.detail as RuntimeEntityDetail;
       const details = store.getState().runtime.details;
@@ -208,11 +162,10 @@ export function installRuntimeController(store: AppStore): RuntimeController {
       patch.status = 'ready';
       patch.error = null;
     }
-    const presentationUpdateMs = Math.max(0, nowMs() - started);
     patch.telemetry = {
       ...store.getState().runtime.telemetry,
       workerRoundTripMs: lastWorkerRoundTripMs,
-      presentationUpdateMs,
+      presentationUpdateMs: Math.max(0, nowMs() - started),
     };
     runtimePatch(patch);
     queueSelectedDetailRefresh();
@@ -272,8 +225,8 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     syncChain = syncChain.then(synchronizeLatest, synchronizeLatest);
   }
 
-  store.subscribeDomains(['world', 'graph'], () => scheduleSynchronization());
-  store.subscribeDomains(['selection'], () => queueSelectedDetailRefresh());
+  store.subscribeDomains(['world', 'graph'], scheduleSynchronization);
+  store.subscribeDomains(['selection'], queueSelectedDetailRefresh);
 
   function updateSchedulerTelemetry(timestamp: number, force = false): void {
     if (!force && timestamp - lastTelemetryPublishMs < 200) return;
