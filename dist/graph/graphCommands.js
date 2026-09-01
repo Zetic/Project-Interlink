@@ -2,6 +2,13 @@ import { apparatusDefinitionById } from '../apparatus/definitions.js';
 export function createEmptyGraphState() {
     return { nodes: [], connections: [], nextNodeSequence: 1, nextConnectionSequence: 1 };
 }
+function clonePort(port) {
+    return {
+        ...port,
+        ...(port.accepts ? { accepts: [...port.accepts] } : {}),
+        ...(port.provides ? { provides: [...port.provides] } : {}),
+    };
+}
 export function placeMechanicalNode(graph, definition, position) {
     const sequence = graph.nextNodeSequence;
     const node = {
@@ -13,7 +20,7 @@ export function placeMechanicalNode(graph, definition, position) {
         position: { ...position },
         physicalWidthMeters: definition.physicalWidthMeters,
         physicalHeightMeters: definition.physicalHeightMeters,
-        ports: definition.ports.map(port => ({ ...port })),
+        ports: definition.ports.map(clonePort),
         enabled: false,
         parameters: Object.fromEntries((definition.parameters ?? []).map(parameter => [parameter.id, parameter.defaultValue])),
     };
@@ -74,6 +81,15 @@ function orientEndpoints(firstEndpoint, firstPort, secondEndpoint, secondPort) {
         return { from: firstEndpoint, fromPort: firstPort, to: secondEndpoint, toPort: secondPort };
     return { from: secondEndpoint, fromPort: secondPort, to: firstEndpoint, toPort: firstPort };
 }
+function materialCapabilitiesCompatible(output, input) {
+    if (output.kind !== 'material' || input.kind !== 'material')
+        return true;
+    const provided = output.provides ?? [];
+    const accepted = input.accepts ?? [];
+    if (!provided.length || !accepted.length)
+        return true;
+    return provided.some(capability => accepted.includes(capability));
+}
 export function connectPorts(graph, firstEndpoint, firstPort, secondEndpoint, secondPort) {
     if (endpointsEqual(firstEndpoint, secondEndpoint))
         throw new Error('Choose a different target port.');
@@ -84,6 +100,9 @@ export function connectPorts(graph, firstEndpoint, firstPort, secondEndpoint, se
         throw new Error('Port kinds are incompatible.');
     if (oriented.fromPort.medium !== oriented.toPort.medium)
         throw new Error('Port media are incompatible.');
+    if (!materialCapabilitiesCompatible(oriented.fromPort, oriented.toPort)) {
+        throw new Error('Material port capabilities are incompatible; use the required storage or metering apparatus.');
+    }
     if (graph.connections.some(connection => endpointsEqual(connection.to, oriented.to))) {
         throw new Error('That input port already has a connection.');
     }
