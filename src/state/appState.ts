@@ -26,8 +26,6 @@ interface AppStateSubscription {
   domains: ReadonlySet<AppStateDomain> | null;
 }
 
-const STRUCTURAL_APP_DOMAINS: readonly AppStateDomain[] = ['world', 'graph', 'selection', 'camera', 'interaction'];
-
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
 
@@ -94,9 +92,9 @@ export class AppStore {
         details: patch.details ?? this.state.runtime.details,
       },
     };
-    const presentationChanged = Object.keys(patch).some(key => key !== 'telemetry');
-    if (presentationChanged && patch.telemetry) this.emit('runtime', 'telemetry');
-    else if (presentationChanged) this.emit('runtime');
+    const runtimeChanged = Object.keys(patch).some(key => key !== 'telemetry');
+    if (runtimeChanged && patch.telemetry) this.emit('runtime', 'telemetry');
+    else if (runtimeChanged) this.emit('runtime');
     else if (patch.telemetry) this.emit('telemetry');
   }
 
@@ -157,13 +155,8 @@ export class AppStore {
     this.emit('selection', 'camera');
   }
 
-  /**
-   * Structural subscription used by legacy map/application consumers. Runtime
-   * presentation is intentionally excluded so simulation ticks cannot wake
-   * camera/geometry renderers. Runtime consumers must use subscribeDomains.
-   */
   subscribe(listener: AppStateListener): () => void {
-    return this.subscribeDomains(STRUCTURAL_APP_DOMAINS, listener);
+    return this.subscribeDomains(null, listener);
   }
 
   subscribeDomains(domains: readonly AppStateDomain[] | null, listener: AppStateListener): () => void {
