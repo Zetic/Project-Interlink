@@ -65,7 +65,7 @@ function renderResource(container: HTMLElement, planet: Planet, resource: Resour
   sectionTitle(container, 'Runtime');
   addLiveRow(container, 'Status', 'runtime-status'); addLiveRow(container, 'Extracted', 'source-extracted'); addLiveRow(container, 'Remaining', 'source-remaining');
 }
-function renderMechanical(container: HTMLElement, node: MechanicalNode, store: AppStore, runtime: RuntimeController): void {
+function renderMechanical(container: HTMLElement, node: MechanicalNode, store: AppStore): void {
   const definition = apparatusDefinitionById(node.definitionId); typeLabel(container, node.category.toUpperCase()); addRow(container, 'Name', node.label); addRow(container, 'Definition', definition?.label ?? node.definitionId); addRow(container, 'Node type', node.nodeType);
   addRow(container, 'Coordinates', `${node.position.x.toFixed(6)}, ${node.position.y.toFixed(6)}`); addRow(container, 'Footprint', `${node.physicalWidthMeters} m × ${node.physicalHeightMeters} m`);
 
@@ -94,7 +94,6 @@ function renderMechanical(container: HTMLElement, node: MechanicalNode, store: A
     addLiveRow(container, 'Operating', 'node-operating'); addLiveRow(container, 'Actual rate', 'node-actual-rate'); addLiveRow(container, 'Blocked reason', 'node-blocked'); addLiveRow(container, 'Source', 'extractor-source');
   } else if (node.nodeType === 'hopper') {
     addLiveRow(container, 'Stored', 'hopper-stored'); addLiveRow(container, 'Free', 'hopper-free');
-    const detailButton = document.createElement('button'); detailButton.type = 'button'; detailButton.className = 'ws-debug-button'; detailButton.textContent = 'Refresh Material Detail'; detailButton.addEventListener('click', () => { void runtime.queryHopperDetail(node.id); }); container.appendChild(detailButton);
     const composition = document.createElement('div'); composition.dataset.runtimeComposition = node.id; container.appendChild(composition);
   } else {
     addRow(container, 'Execution', 'Not yet reconnected in the current extraction slice');
@@ -147,12 +146,12 @@ function updateRuntimeProjection(container: HTMLElement, state: Readonly<AppStat
   }
 }
 
-export function installInspectorPanel(root: HTMLElement, store: AppStore, runtime: RuntimeController): void {
+export function installInspectorPanel(root: HTMLElement, store: AppStore, _runtime: RuntimeController): void {
   const container = root.querySelector<HTMLElement>('#ws-map-inspector-body'); if (!container) return;
   let lastWorld = store.getState().world;
   let lastGraph = store.getState().graph;
   let lastSelectionKey = '';
-  store.subscribe(state => {
+  store.subscribeDomains(['world', 'graph', 'selection', 'runtime'], state => {
     const selectionKey = state.selection.type === 'planet'
       ? 'planet'
       : state.selection.type === 'region' ? `region:${state.selection.regionId}`
@@ -167,7 +166,7 @@ export function installInspectorPanel(root: HTMLElement, store: AppStore, runtim
       if (selection.type === 'planet') renderPlanet(container, planet);
       else if (selection.type === 'region') { const region = planet.regions.find(candidate => candidate.id === selection.regionId); region ? renderRegion(container, planet, region) : container.append('Selected region is unavailable.'); }
       else if (selection.type === 'resource') { const resource = planet.resourceNodes.find(candidate => candidate.id === selection.resourceNodeId); resource ? renderResource(container, planet, resource) : container.append('Selected resource is unavailable.'); }
-      else { const node = mechanicalNodeById(state.graph, selection.mechanicalNodeId); node ? renderMechanical(container, node, store, runtime) : container.append('Selected mechanical node is unavailable.'); }
+      else { const node = mechanicalNodeById(state.graph, selection.mechanicalNodeId); node ? renderMechanical(container, node, store) : container.append('Selected mechanical node is unavailable.'); }
     }
     updateRuntimeProjection(container, state);
   });
