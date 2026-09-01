@@ -30,6 +30,7 @@ function formatMass(value) { return value == null || !Number.isFinite(value) ? '
 function formatRate(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg/s`; }
 function formatTemperature(value) { return value == null || !Number.isFinite(value) ? 'Unavailable' : `${value.toFixed(2)} K`; }
 function formatEnergy(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} J`; }
+function formatPower(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kW`; }
 function runtimeStatus(state) {
     const runtime = state.runtime;
     if (runtime.status === 'ready') {
@@ -91,6 +92,46 @@ function renderResource(container, planet, resource) {
     addLiveRow(container, 'Extracted', 'source-extracted');
     addLiveRow(container, 'Remaining', 'source-remaining');
 }
+function setParameter(store, node, parameter, control) {
+    const value = Number(control.value);
+    try {
+        store.setGraph(setMechanicalNodeParameter(store.getState().graph, node.id, parameter.id, value));
+    }
+    catch {
+        control.value = String(node.parameters[parameter.id] ?? parameter.defaultValue);
+    }
+}
+function renderParameter(container, node, parameter, store) {
+    const row = document.createElement('label');
+    row.className = 'ws-ins-config-row';
+    const label = document.createElement('span');
+    label.textContent = parameter.unit ? `${parameter.label} (${parameter.unit})` : parameter.label;
+    const current = String(node.parameters[parameter.id] ?? parameter.defaultValue);
+    if (parameter.choices?.length) {
+        const select = document.createElement('select');
+        select.value = current;
+        for (const choice of parameter.choices) {
+            const option = document.createElement('option');
+            option.value = String(choice.value);
+            option.textContent = choice.label;
+            select.appendChild(option);
+        }
+        select.addEventListener('change', () => setParameter(store, node, parameter, select));
+        row.append(label, select);
+    }
+    else {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = String(parameter.min);
+        if (parameter.max != null)
+            input.max = String(parameter.max);
+        input.step = String(parameter.step);
+        input.value = current;
+        input.addEventListener('change', () => setParameter(store, node, parameter, input));
+        row.append(label, input);
+    }
+    container.appendChild(row);
+}
 function renderMechanical(container, node, store) {
     const definition = apparatusDefinitionById(node.definitionId);
     typeLabel(container, node.category.toUpperCase());
@@ -110,45 +151,37 @@ function renderMechanical(container, node, store) {
     toggle.addEventListener('click', () => store.setGraph(setMechanicalNodeEnabled(store.getState().graph, node.id, !node.enabled)));
     enabledRow.append(enabledLabel, toggle);
     container.appendChild(enabledRow);
-    for (const parameter of definition?.parameters ?? []) {
-        const row = document.createElement('label');
-        row.className = 'ws-ins-config-row';
-        const label = document.createElement('span');
-        label.textContent = `${parameter.label} (${parameter.unit})`;
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.min = String(parameter.min);
-        input.step = String(parameter.step);
-        input.value = String(node.parameters[parameter.id] ?? parameter.defaultValue);
-        input.addEventListener('change', () => {
-            const value = Number(input.value);
-            try {
-                store.setGraph(setMechanicalNodeParameter(store.getState().graph, node.id, parameter.id, value));
-            }
-            catch {
-                input.value = String(node.parameters[parameter.id] ?? parameter.defaultValue);
-            }
-        });
-        row.append(label, input);
-        container.appendChild(row);
-    }
+    for (const parameter of definition?.parameters ?? [])
+        renderParameter(container, node, parameter, store);
     sectionTitle(container, 'Runtime');
     addLiveRow(container, 'Status', 'runtime-status');
-    if (node.nodeType === 'extractor') {
+    if (node.nodeType === 'hopper') {
+        addLiveRow(container, 'Stored', 'hopper-stored');
+        addLiveRow(container, 'Free', 'hopper-free');
+        const detail = document.createElement('div');
+        detail.dataset.runtimeDetail = `hopper:${node.id}`;
+        container.appendChild(detail);
+    }
+    else if (node.nodeType === 'exhaustVent') {
+        addLiveRow(container, 'Emitted gas', 'vent-emitted');
+        addLiveRow(container, 'Temperature', 'vent-temperature');
+        const detail = document.createElement('div');
+        detail.dataset.runtimeDetail = `exhaustVent:${node.id}`;
+        container.appendChild(detail);
+    }
+    else {
         addLiveRow(container, 'Operating', 'node-operating');
         addLiveRow(container, 'Actual rate', 'node-actual-rate');
         addLiveRow(container, 'Blocked reason', 'node-blocked');
-        addLiveRow(container, 'Source', 'extractor-source');
-    }
-    else if (node.nodeType === 'hopper') {
-        addLiveRow(container, 'Stored', 'hopper-stored');
-        addLiveRow(container, 'Free', 'hopper-free');
-        const composition = document.createElement('div');
-        composition.dataset.runtimeComposition = node.id;
-        container.appendChild(composition);
-    }
-    else {
-        addRow(container, 'Execution', 'Not yet reconnected in the current extraction slice');
+        if (node.nodeType === 'extractor')
+            addLiveRow(container, 'Source', 'extractor-source');
+        if (node.nodeType === 'roastingFurnace') {
+            addLiveRow(container, 'Charge temperature', 'furnace-temperature');
+            addLiveRow(container, 'Goethite conversion', 'furnace-conversion');
+            const detail = document.createElement('div');
+            detail.dataset.runtimeDetail = `furnace:${node.id}`;
+            container.appendChild(detail);
+        }
     }
     sectionTitle(container, 'Ports');
     for (const port of node.ports)
@@ -188,6 +221,61 @@ function renderMassDistribution(container, title, values, label) {
     for (const [id, kg] of entries)
         addRow(container, label(id), `${kg.toFixed(2)} kg`);
 }
+function detailRoot(container, key) { return container.querySelector(`[data-runtime-detail="${key}"]`); }
+function renderSelectedDetail(container, node, state) {
+    if (node.nodeType === 'hopper') {
+        const detail = state.runtime.details[`hopper:${node.id}`];
+        const root = detailRoot(container, `hopper:${node.id}`);
+        if (!root)
+            return;
+        root.replaceChildren();
+        if (detail?.kind !== 'hopper')
+            return;
+        sectionTitle(root, `Contained material · ${detail.storedMassKg.toFixed(2)} kg`);
+        addRow(root, 'Statistical populations', String(detail.populationCount));
+        addRow(root, 'Sensible enthalpy', formatEnergy(detail.sensibleEnthalpyJ));
+        addRow(root, 'Temperature', formatTemperature(detail.temperatureK));
+        renderMassDistribution(root, 'Composition', detail.compositionKg, speciesLabel);
+        renderMassDistribution(root, 'Particle size', detail.particleSizeKg, descriptorLabel);
+        renderMassDistribution(root, 'Liberation', detail.liberationKg, descriptorLabel);
+        renderMassDistribution(root, 'Texture lineage', detail.textureKg, value => value);
+        return;
+    }
+    if (node.nodeType === 'roastingFurnace') {
+        const detail = state.runtime.details[`furnace:${node.id}`];
+        const root = detailRoot(container, `furnace:${node.id}`);
+        if (!root)
+            return;
+        root.replaceChildren();
+        if (detail?.kind !== 'furnace')
+            return;
+        sectionTitle(root, 'Thermal process detail');
+        addRow(root, 'Charge', formatMass(detail.chargeMassKg));
+        addRow(root, 'Pending feed', formatMass(detail.pendingFeedMassKg));
+        addRow(root, 'Feed rate', formatRate(detail.feedRateKgPerSecond));
+        addRow(root, 'Product rate', formatRate(detail.productRateKgPerSecond));
+        addRow(root, 'Heater power', formatPower(detail.heaterPowerKw));
+        addRow(root, 'Heat loss', formatPower(detail.heatLossPowerKw));
+        addRow(root, 'Reaction power', formatPower(detail.reactionPowerKw));
+        addRow(root, 'Zones', String(detail.zoneCount));
+        detail.zoneMassKg.forEach((mass, index) => addRow(root, `Zone ${index + 1}`, `${formatMass(mass)} · ${formatTemperature(detail.zoneTemperatureK[index])}`));
+        return;
+    }
+    if (node.nodeType === 'exhaustVent') {
+        const detail = state.runtime.details[`exhaustVent:${node.id}`];
+        const root = detailRoot(container, `exhaustVent:${node.id}`);
+        if (!root)
+            return;
+        root.replaceChildren();
+        if (detail?.kind !== 'exhaust-vent')
+            return;
+        sectionTitle(root, 'Emissions');
+        addRow(root, 'Emitted mass', formatMass(detail.emittedMassKg));
+        addRow(root, 'Sensible enthalpy', formatEnergy(detail.sensibleEnthalpyJ));
+        addRow(root, 'Temperature', formatTemperature(detail.temperatureK));
+        renderMassDistribution(root, 'Composition', detail.compositionKg, speciesLabel);
+    }
+}
 function updateRuntimeProjection(container, state) {
     const selection = state.selection;
     const snapshot = state.runtime.snapshot;
@@ -204,10 +292,10 @@ function updateRuntimeProjection(container, state) {
     if (!node)
         return;
     const runtimeNode = snapshot?.nodes[node.id];
+    setLive(container, 'node-operating', runtimeNode?.operatingState ?? '—');
+    setLive(container, 'node-actual-rate', formatRate(runtimeNode?.actualRateKgPerSecond));
+    setLive(container, 'node-blocked', runtimeNode?.blockedReason || '—');
     if (node.nodeType === 'extractor') {
-        setLive(container, 'node-operating', runtimeNode?.operatingState ?? '—');
-        setLive(container, 'node-actual-rate', formatRate(runtimeNode?.actualRateKgPerSecond));
-        setLive(container, 'node-blocked', runtimeNode?.blockedReason || '—');
         const sourceConnection = state.graph.connections.find(connection => connection.kind === 'resource-access' && connection.to.nodeId === node.id);
         const source = sourceConnection ? state.world?.planet.resourceNodes.find(resource => resource.id === sourceConnection.from.nodeId) : null;
         setLive(container, 'extractor-source', source?.name ?? '—');
@@ -215,22 +303,16 @@ function updateRuntimeProjection(container, state) {
     else if (node.nodeType === 'hopper') {
         setLive(container, 'hopper-stored', formatMass(runtimeNode?.storedMassKg));
         setLive(container, 'hopper-free', formatMass(runtimeNode?.freeCapacityKg));
-        const detail = state.runtime.details[`hopper:${node.id}`];
-        const detailRoot = container.querySelector(`[data-runtime-composition="${node.id}"]`);
-        if (detailRoot) {
-            detailRoot.replaceChildren();
-            if (detail?.kind === 'hopper') {
-                sectionTitle(detailRoot, `Contained material · ${detail.storedMassKg.toFixed(2)} kg`);
-                addRow(detailRoot, 'Statistical populations', String(detail.populationCount));
-                addRow(detailRoot, 'Sensible enthalpy', formatEnergy(detail.sensibleEnthalpyJ));
-                addRow(detailRoot, 'Temperature', formatTemperature(detail.temperatureK));
-                renderMassDistribution(detailRoot, 'Composition', detail.compositionKg, speciesLabel);
-                renderMassDistribution(detailRoot, 'Particle size', detail.particleSizeKg, descriptorLabel);
-                renderMassDistribution(detailRoot, 'Liberation', detail.liberationKg, descriptorLabel);
-                renderMassDistribution(detailRoot, 'Texture lineage', detail.textureKg, value => value);
-            }
-        }
     }
+    else if (node.nodeType === 'roastingFurnace') {
+        setLive(container, 'furnace-temperature', formatTemperature(runtimeNode?.temperatureK));
+        setLive(container, 'furnace-conversion', runtimeNode?.conversionFraction == null ? '—' : `${(runtimeNode.conversionFraction * 100).toFixed(2)}%`);
+    }
+    else if (node.nodeType === 'exhaustVent') {
+        setLive(container, 'vent-emitted', formatMass(runtimeNode?.ventedGasMassKg));
+        setLive(container, 'vent-temperature', formatTemperature(runtimeNode?.temperatureK));
+    }
+    renderSelectedDetail(container, node, state);
 }
 export function installInspectorPanel(root, store) {
     const container = root.querySelector('#ws-map-inspector-body');
@@ -240,13 +322,8 @@ export function installInspectorPanel(root, store) {
     let lastGraph = store.getState().graph;
     let lastSelectionKey = '';
     store.subscribeDomains(['world', 'graph', 'selection', 'runtime'], state => {
-        const selectionKey = state.selection.type === 'planet'
-            ? 'planet'
-            : state.selection.type === 'region' ? `region:${state.selection.regionId}`
-                : state.selection.type === 'resource' ? `resource:${state.selection.resourceNodeId}`
-                    : `mechanical:${state.selection.mechanicalNodeId}`;
-        const staticModelUnchanged = state.world === lastWorld && state.graph === lastGraph;
-        const mustRebuild = !staticModelUnchanged || selectionKey !== lastSelectionKey;
+        const selectionKey = state.selection.type === 'planet' ? 'planet' : state.selection.type === 'region' ? `region:${state.selection.regionId}` : state.selection.type === 'resource' ? `resource:${state.selection.resourceNodeId}` : `mechanical:${state.selection.mechanicalNodeId}`;
+        const mustRebuild = state.world !== lastWorld || state.graph !== lastGraph || selectionKey !== lastSelectionKey;
         if (mustRebuild) {
             lastWorld = state.world;
             lastGraph = state.graph;
