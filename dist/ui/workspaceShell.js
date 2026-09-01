@@ -60,8 +60,8 @@ function debugDrawerMarkup() {
       <section class="ws-debug-section"><div class="ws-debug-section-title">Test factory</div>
         <div class="ws-debug-field"><label for="ws-debug-factory-template">Template</label><select id="ws-debug-factory-template" disabled><option>Iron Processing Line v2</option></select></div>
         <div class="ws-debug-field"><label for="ws-debug-factory-count">Factory count</label><select id="ws-debug-factory-count"><option value="1">1</option><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></div>
-        <div class="ws-debug-note">Visible placement uses the selected goethite-bearing iron Feature when possible, otherwise the first compatible Feature in the Site. Test factories run through the live Rust/WASM Worker.</div>
-        <div class="ws-debug-button-row"><button data-debug-action="place-factories" type="button">Place Factory</button></div>
+        <div class="ws-debug-note">Select a resource FEATURE first. Create Factory places the complete processing line beside that resource and connects its resource-access port directly to the new Extractor. Test factories run through the live Rust/WASM Worker.</div>
+        <div class="ws-debug-button-row"><button data-debug-action="place-factories" type="button">Create Factory</button></div>
         <button class="ws-debug-button ws-debug-button--danger" data-debug-action="remove-factories" type="button">Remove Test Factories</button>
         <div id="ws-debug-status" class="ws-debug-status" aria-live="polite"></div>
       </section>
