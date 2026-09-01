@@ -117,12 +117,10 @@ function formatParameterValue(node: MechanicalNode, definition: ApparatusDefinit
   if (!Number.isFinite(value)) return null;
   if (parameter.id === 'splitFractionToA') return `A ${(value * 100).toFixed(0)}%`;
   if (parameter.id === 'fieldStrength') return `B=${value.toFixed(2)}`;
+  if (parameter.id === 'flowRateKgPerSecond' || parameter.id === 'rateKgPerSecond') return `Set ${value.toFixed(2)} kg/s`;
+  if (parameter.id === 'temperatureSetpointK') return `Set ${(value - 273.15).toFixed(0)} °C`;
   const choice = parameter.choices?.find(candidate => Math.abs(candidate.value - value) <= 1e-12);
-  const formatted = choice?.label ?? `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(value < 1 ? 3 : 2)}${parameter.unit ? ` ${parameter.unit}` : ''}`;
-  if (parameter.id === 'flowRateKgPerSecond' || parameter.id === 'rateKgPerSecond' || parameter.id === 'temperatureSetpointK') {
-    return `Set ${formatted}`;
-  }
-  return formatted;
+  return choice?.label ?? `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}${parameter.unit ? ` ${parameter.unit}` : ''}`;
 }
 
 function formatRate(rate: number | undefined): string {
