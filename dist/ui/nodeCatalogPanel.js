@@ -66,7 +66,7 @@ export function installNodeCatalogPanel(root, store) {
     };
     search.addEventListener('input', render);
     let lastStatusKey = '';
-    store.subscribe(state => {
+    store.subscribeDomains(['interaction', 'camera'], state => {
         const placement = state.interaction.placementDefinitionId;
         const pending = state.interaction.pendingConnection;
         const scaleState = placement ? (state.camera.zoom < MECHANICAL_PLACEMENT_MIN_ZOOM ? 'far' : 'ready') : '';

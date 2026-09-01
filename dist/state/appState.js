@@ -1,5 +1,6 @@
 import { createEmptyGraphState } from '../graph/graphCommands.js';
 import { createDisconnectedRuntimeState } from '../runtime/presentation.js';
+const STRUCTURAL_APP_DOMAINS = ['world', 'graph', 'selection', 'camera', 'interaction'];
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
 function regionFocusZoom(world, region) {
@@ -9,7 +10,7 @@ function regionFocusZoom(world, region) {
 }
 const emptyInteraction = () => ({ placementDefinitionId: null, pendingConnection: null, notice: null });
 export class AppStore {
-    listeners = new Set();
+    subscriptions = new Set();
     state = {
         world: null,
         graph: createEmptyGraphState(),
@@ -30,19 +31,19 @@ export class AppStore {
             interaction: emptyInteraction(),
             runtime: createDisconnectedRuntimeState(),
         };
-        this.emit();
+        this.emit('world', 'graph', 'selection', 'camera', 'interaction', 'runtime', 'telemetry');
     }
     setSelection(selection) {
         this.state = { ...this.state, selection };
-        this.emit();
+        this.emit('selection');
     }
     setCamera(camera) {
         this.state = { ...this.state, camera };
-        this.emit();
+        this.emit('camera');
     }
     setGraph(graph) {
         this.state = { ...this.state, graph };
-        this.emit();
+        this.emit('graph');
     }
     updateRuntime(patch) {
         this.state = {
@@ -56,29 +57,35 @@ export class AppStore {
                 details: patch.details ?? this.state.runtime.details,
             },
         };
-        this.emit();
+        const presentationChanged = Object.keys(patch).some(key => key !== 'telemetry');
+        if (presentationChanged && patch.telemetry)
+            this.emit('runtime', 'telemetry');
+        else if (presentationChanged)
+            this.emit('runtime');
+        else if (patch.telemetry)
+            this.emit('telemetry');
     }
     setPlacement(placementDefinitionId) {
         this.state = {
             ...this.state,
             interaction: { placementDefinitionId, pendingConnection: null, notice: null },
         };
-        this.emit();
+        this.emit('interaction');
     }
     setPendingConnection(pendingConnection) {
         this.state = {
             ...this.state,
             interaction: { ...this.state.interaction, placementDefinitionId: null, pendingConnection },
         };
-        this.emit();
+        this.emit('interaction');
     }
     setInteractionNotice(notice) {
         this.state = { ...this.state, interaction: { ...this.state.interaction, notice } };
-        this.emit();
+        this.emit('interaction');
     }
     clearInteraction() {
         this.state = { ...this.state, interaction: emptyInteraction() };
-        this.emit();
+        this.emit('interaction');
     }
     focusSelection(selection) {
         const world = this.state.world;
@@ -111,15 +118,27 @@ export class AppStore {
                 camera = { centerX: node.position.x, centerY: node.position.y, zoom: MECHANICAL_FOCUS_ZOOM };
         }
         this.state = { ...this.state, selection, camera };
-        this.emit();
+        this.emit('selection', 'camera');
     }
+    /** Structural UI subscription. Runtime presentation consumers use subscribeDomains. */
     subscribe(listener) {
-        this.listeners.add(listener);
-        listener(this.state);
-        return () => this.listeners.delete(listener);
+        return this.subscribeDomains(STRUCTURAL_APP_DOMAINS, listener);
     }
-    emit() {
-        for (const listener of this.listeners)
-            listener(this.state);
+    subscribeDomains(domains, listener) {
+        const subscription = {
+            listener,
+            domains: domains ? new Set(domains) : null,
+        };
+        this.subscriptions.add(subscription);
+        listener(this.state);
+        return () => this.subscriptions.delete(subscription);
+    }
+    emit(...changedDomains) {
+        const changed = new Set(changedDomains);
+        for (const subscription of this.subscriptions) {
+            if (subscription.domains && ![...subscription.domains].some(domain => changed.has(domain)))
+                continue;
+            subscription.listener(this.state);
+        }
     }
 }

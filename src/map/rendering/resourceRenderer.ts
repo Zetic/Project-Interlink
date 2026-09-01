@@ -1,3 +1,4 @@
+import type { RuntimeSnapshot } from '../../runtime/presentation.js';
 import { resourceDefinitionById } from '../../world/resources.js';
 import type { Point, Planet, ResourceNode } from '../../world/types.js';
 import {
@@ -41,7 +42,7 @@ function svgElement<K extends keyof SVGElementTagNameMap>(tagName: K): SVGElemen
   return document.createElementNS(SVG_NS, tagName);
 }
 
-function appendText(group: SVGGElement, className: string, x: number, y: number, value: string, fontSize: number): void {
+function appendText(group: SVGGElement, className: string, x: number, y: number, value: string, fontSize: number): SVGTextElement {
   const text = svgElement('text');
   text.setAttribute('x', String(x));
   text.setAttribute('y', String(y));
@@ -49,6 +50,7 @@ function appendText(group: SVGGElement, className: string, x: number, y: number,
   text.setAttribute('class', className);
   text.textContent = value;
   group.appendChild(text);
+  return text;
 }
 
 export function resourcePortWorldPosition(resource: ResourceNode): Point {
@@ -76,8 +78,9 @@ function appendResourceCard(group: SVGGElement, resource: ResourceNode): void {
   appendText(details, 'ws-map-resource-category', -70, -36, 'FEATURE', NODE_CARD_LOCAL_CATEGORY_FONT_SIZE);
   const definition = resourceDefinitionById(resource.resourceId);
   appendText(details, 'ws-map-resource-name', 0, -8, resource.name, NODE_CARD_LOCAL_BODY_FONT_SIZE);
-  appendText(details, 'ws-map-resource-type', 0, 13, 'Mineral Deposit', NODE_CARD_LOCAL_BODY_FONT_SIZE);
-  appendText(details, 'ws-map-resource-material', 0, 34, definition?.name ?? resource.resourceId, NODE_CARD_LOCAL_BODY_FONT_SIZE);
+  appendText(details, 'ws-map-resource-type', 0, 13, definition?.name ?? resource.resourceId, NODE_CARD_LOCAL_BODY_FONT_SIZE);
+  const runtime = appendText(details, 'ws-map-resource-runtime', 0, 34, 'Reserve —', NODE_CARD_LOCAL_BODY_FONT_SIZE);
+  runtime.setAttribute('data-runtime-resource-text', resource.id);
 
   const port = svgElement('circle');
   port.setAttribute('cx', String(NODE_CARD_LOCAL_HALF_WIDTH)); port.setAttribute('cy', '0'); port.setAttribute('r', String(NODE_CARD_LOCAL_PORT_RADIUS));
@@ -85,6 +88,24 @@ function appendResourceCard(group: SVGGElement, resource: ResourceNode): void {
   port.setAttribute('class', 'ws-map-resource-port ws-map-port'); port.setAttribute('data-node-id', resource.id); port.setAttribute('data-port-id', resource.resourceAccessPortId);
   port.setAttribute('data-port-kind', 'resource-access'); port.setAttribute('data-port-direction', 'output'); port.setAttribute('data-port-medium', 'resource');
   const title = svgElement('title'); title.textContent = 'resources'; port.appendChild(title); details.appendChild(port);
+}
+
+function formatResourceRuntime(resource: ResourceNode, snapshot: RuntimeSnapshot | null): string {
+  const runtime = snapshot?.sources[resource.id];
+  if (!runtime) return 'Reserve —';
+  if (runtime.remainingMassKg == null) return `${runtime.extractedMassKg.toFixed(1)} kg extracted`;
+  return `${runtime.remainingMassKg.toFixed(1)} kg remaining`;
+}
+
+export function updateResourceRuntimePresentation(
+  svg: SVGSVGElement,
+  planet: Planet,
+  snapshot: RuntimeSnapshot | null,
+): void {
+  for (const resource of planet.resourceNodes) {
+    const text = svg.querySelector<SVGTextElement>(`[data-runtime-resource-text="${CSS.escape(resource.id)}"]`);
+    if (text) text.textContent = formatResourceRuntime(resource, snapshot);
+  }
 }
 
 export function renderResourceLayer(planet: Planet, renderOrigin: RenderOriginState, onSelect: (resourceId: string) => void): SVGGElement {

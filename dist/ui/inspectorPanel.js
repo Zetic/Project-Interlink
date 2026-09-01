@@ -91,7 +91,7 @@ function renderResource(container, planet, resource) {
     addLiveRow(container, 'Extracted', 'source-extracted');
     addLiveRow(container, 'Remaining', 'source-remaining');
 }
-function renderMechanical(container, node, store, runtime) {
+function renderMechanical(container, node, store) {
     const definition = apparatusDefinitionById(node.definitionId);
     typeLabel(container, node.category.toUpperCase());
     addRow(container, 'Name', node.label);
@@ -143,12 +143,6 @@ function renderMechanical(container, node, store, runtime) {
     else if (node.nodeType === 'hopper') {
         addLiveRow(container, 'Stored', 'hopper-stored');
         addLiveRow(container, 'Free', 'hopper-free');
-        const detailButton = document.createElement('button');
-        detailButton.type = 'button';
-        detailButton.className = 'ws-debug-button';
-        detailButton.textContent = 'Refresh Material Detail';
-        detailButton.addEventListener('click', () => { void runtime.queryHopperDetail(node.id); });
-        container.appendChild(detailButton);
         const composition = document.createElement('div');
         composition.dataset.runtimeComposition = node.id;
         container.appendChild(composition);
@@ -238,14 +232,14 @@ function updateRuntimeProjection(container, state) {
         }
     }
 }
-export function installInspectorPanel(root, store, runtime) {
+export function installInspectorPanel(root, store) {
     const container = root.querySelector('#ws-map-inspector-body');
     if (!container)
         return;
     let lastWorld = store.getState().world;
     let lastGraph = store.getState().graph;
     let lastSelectionKey = '';
-    store.subscribe(state => {
+    store.subscribeDomains(['world', 'graph', 'selection', 'runtime'], state => {
         const selectionKey = state.selection.type === 'planet'
             ? 'planet'
             : state.selection.type === 'region' ? `region:${state.selection.regionId}`
@@ -276,7 +270,7 @@ export function installInspectorPanel(root, store, runtime) {
             }
             else {
                 const node = mechanicalNodeById(state.graph, selection.mechanicalNodeId);
-                node ? renderMechanical(container, node, store, runtime) : container.append('Selected mechanical node is unavailable.');
+                node ? renderMechanical(container, node, store) : container.append('Selected mechanical node is unavailable.');
             }
         }
         updateRuntimeProjection(container, state);

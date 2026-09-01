@@ -181,7 +181,7 @@ export function installNavigationPanel(root: HTMLElement, store: AppStore): void
   collapseAll.addEventListener('click', () => { expandedKeys.clear(); render(); });
   let lastWorld = store.getState().world;
   let lastSelection = selectionKey(store.getState().selection);
-  store.subscribe(state => {
+  store.subscribeDomains(['world', 'selection'], state => {
     const nextSelection = selectionKey(state.selection);
     if (state.world === lastWorld && nextSelection === lastSelection) return;
     lastWorld = state.world; lastSelection = nextSelection; render();

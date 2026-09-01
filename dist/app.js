@@ -1,4 +1,5 @@
 import { installMapRenderer } from './map/mapRenderer.js';
+import { installMapRuntimePresentation } from './map/mapRuntimePresentation.js';
 import { installRuntimeController } from './runtime/runtimeController.js';
 import { AppStore } from './state/appState.js';
 import { generateWorld } from './world/generateWorld.js';
@@ -50,10 +51,11 @@ function enterPlayerWorkspace() {
     const runtime = installRuntimeController(store);
     installNavigationPanel(root, store);
     installNodeCatalogPanel(root, store);
-    installInspectorPanel(root, store, runtime);
+    installInspectorPanel(root, store);
     installDebugPanel(root, store, runtime);
     installMapRenderer(root, store);
-    store.subscribe(renderBreadcrumbs);
+    installMapRuntimePresentation(root, store);
+    store.subscribeDomains(['world', 'graph', 'selection'], renderBreadcrumbs);
     store.setWorld(world);
 }
 function installLandingScreen() { elementById('generate-btn')?.addEventListener('click', enterPlayerWorkspace); elementById('seed-input')?.addEventListener('keydown', event => { if (event.key === 'Enter')

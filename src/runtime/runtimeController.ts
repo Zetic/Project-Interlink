@@ -21,12 +21,17 @@ interface PendingRequest {
   startedAtMs: number;
 }
 
+interface RichDetailTarget {
+  key: string;
+  entityType: 'hopper';
+  id: string;
+}
+
 export interface RuntimeController {
   pause(): Promise<void>;
   resume(): Promise<void>;
   advanceFixedSteps(steps: number): Promise<void>;
   setProfiling(enabled: boolean, reset?: boolean): Promise<void>;
-  queryHopperDetail(nodeId: string): Promise<void>;
   dispose(): void;
 }
 
@@ -38,12 +43,19 @@ function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now();
 }
 
+function selectedRichDetailTarget(state: Readonly<AppState>): RichDetailTarget | null {
+  const selection = state.selection;
+  if (selection.type !== 'mechanical') return null;
+  const selectedNodeId = selection.mechanicalNodeId;
+  const node = state.graph.nodes.find(candidate => candidate.id === selectedNodeId);
+  if (!node || node.nodeType !== 'hopper') return null;
+  return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
+}
+
 export function installRuntimeController(store: AppStore): RuntimeController {
   let worker: Worker | null = null;
   let nextRequestId = 1;
   const pending = new Map<number, PendingRequest>();
-  let observedWorld: Readonly<AppState>['world'] = null;
-  let observedGraph: Readonly<AppState>['graph'] = store.getState().graph;
   let structureKey = '';
   let parameterKey = '';
   let setup: FlatWorkerSetup | null = null;
@@ -58,6 +70,9 @@ export function installRuntimeController(store: AppStore): RuntimeController {
   let realtimeWindowSimulationSeconds = 0;
   let realtimeFactor = 0;
   let lastTelemetryPublishMs = 0;
+  let lastWorkerRoundTripMs: number | null = null;
+  let detailRequestInFlight: string | null = null;
+  let detailRefreshPending = false;
 
   function runtimePatch(patch: Partial<RuntimePresentationState>): void {
     store.updateRuntime(patch);
@@ -71,6 +86,8 @@ export function installRuntimeController(store: AppStore): RuntimeController {
   function stopWorker(): void {
     if (worker) worker.terminate();
     worker = null;
+    detailRequestInFlight = null;
+    detailRefreshPending = false;
     rejectPending('Rust/WASM Worker runtime was restarted.');
   }
 
@@ -86,9 +103,7 @@ export function installRuntimeController(store: AppStore): RuntimeController {
       request.reject(new Error(message.payload.message ?? 'Rust/WASM Worker runtime error.'));
       return;
     }
-    const roundTrip = Math.max(0, nowMs() - request.startedAtMs);
-    const telemetry = store.getState().runtime.telemetry;
-    runtimePatch({ telemetry: { ...telemetry, workerRoundTripMs: roundTrip } });
+    lastWorkerRoundTripMs = Math.max(0, nowMs() - request.startedAtMs);
     request.resolve(message);
   }
 
@@ -112,6 +127,33 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     });
   }
 
+  function queueSelectedDetailRefresh(): void {
+    if (disposed || !worker || store.getState().runtime.status !== 'ready') return;
+    const target = selectedRichDetailTarget(store.getState());
+    if (!target) return;
+    if (detailRequestInFlight) {
+      detailRefreshPending = true;
+      return;
+    }
+    detailRequestInFlight = target.key;
+    void send('query-detail', { entityType: target.entityType, id: target.id }).then(message => {
+      if (message.type !== 'detail' || message.payload.ok !== true || !message.payload.detail) return;
+      const currentTarget = selectedRichDetailTarget(store.getState());
+      if (!currentTarget || currentTarget.key !== target.key) return;
+      const detail = message.payload.detail as RuntimeEntityDetail;
+      const details = store.getState().runtime.details;
+      runtimePatch({ details: { ...details, [target.key]: detail } });
+    }).catch(error => {
+      if (store.getState().runtime.status === 'ready') runtimePatch({ error: errorMessage(error) });
+    }).finally(() => {
+      detailRequestInFlight = null;
+      if (detailRefreshPending) {
+        detailRefreshPending = false;
+        queueSelectedDetailRefresh();
+      }
+    });
+  }
+
   function applyEvent(message: RuntimeEvent): void {
     const started = nowMs();
     const patch: Partial<RuntimePresentationState> = {};
@@ -122,10 +164,13 @@ export function installRuntimeController(store: AppStore): RuntimeController {
       patch.status = 'ready';
       patch.error = null;
     }
+    patch.telemetry = {
+      ...store.getState().runtime.telemetry,
+      workerRoundTripMs: lastWorkerRoundTripMs,
+      presentationUpdateMs: Math.max(0, nowMs() - started),
+    };
     runtimePatch(patch);
-    const presentationUpdateMs = Math.max(0, nowMs() - started);
-    const telemetry = store.getState().runtime.telemetry;
-    runtimePatch({ telemetry: { ...telemetry, presentationUpdateMs } });
+    queueSelectedDetailRefresh();
   }
 
   async function initialize(nextSetup: FlatWorkerSetup, nextStructureKey: string, nextParameterKey: string): Promise<void> {
@@ -182,12 +227,8 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     syncChain = syncChain.then(synchronizeLatest, synchronizeLatest);
   }
 
-  store.subscribe(state => {
-    if (state.world === observedWorld && state.graph === observedGraph) return;
-    observedWorld = state.world;
-    observedGraph = state.graph;
-    scheduleSynchronization();
-  });
+  store.subscribeDomains(['world', 'graph'], scheduleSynchronization);
+  store.subscribeDomains(['selection'], queueSelectedDetailRefresh);
 
   function updateSchedulerTelemetry(timestamp: number, force = false): void {
     if (!force && timestamp - lastTelemetryPublishMs < 200) return;
@@ -279,14 +320,6 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     applyEvent(message);
   }
 
-  async function queryHopperDetail(nodeId: string): Promise<void> {
-    const message = await send('query-detail', { entityType: 'hopper', id: nodeId });
-    if (message.type !== 'detail' || message.payload.ok !== true || !message.payload.detail) return;
-    const detail = message.payload.detail as RuntimeEntityDetail;
-    const details = store.getState().runtime.details;
-    runtimePatch({ details: { ...details, [`hopper:${nodeId}`]: detail } });
-  }
-
   function dispose(): void {
     disposed = true;
     if (frameId != null) cancelAnimationFrame(frameId);
@@ -294,5 +327,5 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     stopWorker();
   }
 
-  return { pause, resume, advanceFixedSteps, setProfiling, queryHopperDetail, dispose };
+  return { pause, resume, advanceFixedSteps, setProfiling, dispose };
 }
