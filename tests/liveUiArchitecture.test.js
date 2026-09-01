@@ -81,3 +81,18 @@ test('player-facing runtime presentation is live while profiling remains opt-in'
   assert.match(debug, /setProfiling/);
   assert.match(debug, /#ws-debug-deep-profiling/);
 });
+
+test('node progress and composite Inspector quantities retain the stable UI grammar', () => {
+  const mechanical = fs.readFileSync('src/map/rendering/mechanicalRenderer.ts', 'utf8');
+  const inspector = fs.readFileSync('src/ui/inspectorPanel.ts', 'utf8');
+  const css = fs.readFileSync('map.css', 'utf8');
+
+  assert.match(mechanical, /data-runtime-hopper-fill/);
+  assert.match(mechanical, /data-runtime-hopper-percent/);
+  assert.match(mechanical, /NODE_CARD_LOCAL_HEIGHT \* \(percent \/ 100\)/);
+  assert.match(mechanical, /Math\.round\(percent\).*%/);
+  assert.match(css, /\.ws-map-mechanical-label,\s*\.ws-map-mechanical-runtime \{ fill: #d6e4ed; text-anchor: middle; \}/);
+  assert.match(css, /\.ws-map-hopper-fill \{[\s\S]*fill-opacity: 0\.27/);
+  assert.match(inspector, /const total = entries\.reduce/);
+  assert.match(inspector, /\$\{percentage\.toFixed\(1\)\}%/);
+});
