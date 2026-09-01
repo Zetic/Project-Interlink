@@ -2,6 +2,7 @@ import type { ApparatusDefinition } from '../../apparatus/definitions.js';
 import { apparatusDefinitionById } from '../../apparatus/definitions.js';
 import { mechanicalNodeById, resourceNodeById } from '../../graph/graphQueries.js';
 import type { GraphState, MechanicalNode, PortEndpoint } from '../../graph/types.js';
+import type { RuntimeSnapshot } from '../../runtime/presentation.js';
 import { metersToWorldUnits } from '../../world/scale.js';
 import type { Point, Planet } from '../../world/types.js';
 import {
@@ -100,11 +101,18 @@ function appendNodeCard(group: SVGGElement, node: MechanicalNode): void {
   category.textContent = node.category.toUpperCase(); details.appendChild(category);
 
   const definition = apparatusDefinitionById(node.definitionId);
-  const label = svgElement('text'); label.setAttribute('x', '0'); label.setAttribute('y', '7');
+  const label = svgElement('text'); label.setAttribute('x', '0'); label.setAttribute('y', '2');
   label.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
   label.setAttribute('class', 'ws-map-mechanical-label');
   label.textContent = `${definition?.label ?? node.label} [${node.enabled ? 'on' : 'off'}]`;
   details.appendChild(label);
+
+  const runtime = svgElement('text'); runtime.setAttribute('x', '0'); runtime.setAttribute('y', '28');
+  runtime.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
+  runtime.setAttribute('class', 'ws-map-mechanical-runtime');
+  runtime.setAttribute('data-runtime-node-text', node.id);
+  runtime.textContent = 'Runtime —';
+  details.appendChild(runtime);
 
   for (const port of node.ports) {
     const position = mechanicalPortLocalPosition(node, port.id);
@@ -117,6 +125,34 @@ function appendNodeCard(group: SVGGElement, node: MechanicalNode): void {
     circle.setAttribute('data-port-kind', port.kind); circle.setAttribute('data-port-direction', port.direction); circle.setAttribute('data-port-medium', port.medium);
     const title = svgElement('title'); title.textContent = `${port.label} · ${port.direction} · ${port.medium}`; circle.appendChild(title);
     details.appendChild(circle);
+  }
+}
+
+function formatRuntimeText(node: MechanicalNode, snapshot: RuntimeSnapshot | null): string {
+  const runtime = snapshot?.nodes[node.id];
+  if (!runtime) return 'Runtime —';
+  if (node.nodeType === 'extractor') {
+    const state = (runtime.operatingState ?? 'idle').toUpperCase();
+    const rate = runtime.actualRateKgPerSecond;
+    return `${state} · ${Number.isFinite(rate) ? rate!.toFixed(2) : '0.00'} kg/s`;
+  }
+  if (node.nodeType === 'hopper') {
+    const stored = runtime.storedMassKg;
+    const free = runtime.freeCapacityKg;
+    if (Number.isFinite(stored) && Number.isFinite(free)) return `${stored!.toFixed(1)} / ${(stored! + free!).toFixed(1)} kg`;
+    return 'Inventory —';
+  }
+  return runtime.operatingState ? runtime.operatingState.toUpperCase() : 'Runtime —';
+}
+
+export function updateMechanicalRuntimePresentation(
+  svg: SVGSVGElement,
+  graph: GraphState,
+  snapshot: RuntimeSnapshot | null,
+): void {
+  for (const node of graph.nodes) {
+    const text = svg.querySelector<SVGTextElement>(`[data-runtime-node-text="${CSS.escape(node.id)}"]`);
+    if (text) text.textContent = formatRuntimeText(node, snapshot);
   }
 }
 
