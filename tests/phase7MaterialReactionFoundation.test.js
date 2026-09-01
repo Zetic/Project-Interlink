@@ -80,6 +80,42 @@ test('flat runtime setup packs species, size, liberation, and texture lineage fo
   assert.notEqual(occurrence.textureProfileIds[0], 0);
 });
 
+test('flat setup compiles immutable physical-property tables for Rust hot paths', () => {
+  const planet = generateWorld('phase7-runtime-tables').planet;
+  const setup = compileFlatWorkerSetup(compileFlatRuntimePlan(planet, createEmptyGraphState()));
+  const tables = setup.materialTables;
+
+  assert.equal(tables.sizeBins.filter(bin => bin.canonical).length, PARTICLE_SIZE_BINS.length);
+  assert.ok(tables.sizeBins.some(bin => bin.canonicalId === 'lt-1mm' && bin.canonical === false));
+  assert.deepEqual(tables.liberationClasses.map(item => item.canonicalId), [
+    'locked', 'partial', 'mostly-liberated', 'liberated',
+  ]);
+
+  const magnetiteRuntimeId = setup.speciesIds.indexOf('magnetite');
+  const magnetite = tables.species.find(item => item.runtimeId === magnetiteRuntimeId);
+  assert.ok(magnetite);
+  assert.equal(magnetite.magneticResponse, 1);
+  assert.equal(magnetite.specificHeatCapacityJPerKgK, 670);
+
+  const ironSource = planet.resourceNodes[0].source;
+  const sourceTextureRuntimeId = setup.textureProfileIds.indexOf(ironSource.mineralTexture.id);
+  assert.ok(sourceTextureRuntimeId > 0);
+  assert.ok(tables.textures.some(item => item.textureProfileId === sourceTextureRuntimeId));
+  assert.ok(tables.comminutionProperties.some(item => item.textureProfileId === sourceTextureRuntimeId));
+
+  const reaction = tables.goethiteReaction;
+  assert.equal(setup.speciesIds[reaction.sourceSpeciesId], 'goethite');
+  assert.equal(setup.speciesIds[reaction.solidProductSpeciesId], 'hematite');
+  assert.equal(setup.speciesIds[reaction.gasProductSpeciesId], 'waterVapor');
+  assert.ok(Math.abs(reaction.sourceMassPerExtentKg - reaction.solidProductMassPerExtentKg - reaction.gasProductMassPerExtentKg) < 1e-12);
+  assert.equal(reaction.sizeFactors.length, tables.sizeBins.length);
+  assert.ok(reaction.textureMappings.some(mapping => mapping.sourceTextureProfileId === sourceTextureRuntimeId));
+  for (const mapping of reaction.textureMappings) {
+    assert.ok(mapping.productTextureProfileId > 0);
+    assert.match(setup.textureProfileIds[mapping.productTextureProfileId], /goethite-dehydroxylation/);
+  }
+});
+
 test('intrinsic species properties live in the shared registry instead of material populations', () => {
   const magnetite = requireMaterialSpecies('magnetite');
   assert.equal(magnetite.formula, 'Fe3O4');
@@ -122,4 +158,28 @@ test('material contracts are form-specific and keep ore-only descriptors out of 
   assert.match(source, /interface BulkSolidBodyDescriptor/);
   assert.match(source, /interface ProductBodyDescriptor/);
   assert.doesNotMatch(source, /interface GasBodyDescriptor[\s\S]*liberationClassId/);
+});
+
+test('Worker and Inspector keep rich material detail query-driven while Rust owns state', () => {
+  const worker = fs.readFileSync('src/runtime/flatRuntimeWorker.ts', 'utf8');
+  const presentation = fs.readFileSync('src/runtime/presentation.ts', 'utf8');
+  const inspector = fs.readFileSync('src/ui/inspectorPanel.ts', 'utf8');
+
+  assert.match(worker, /populateMaterialTables/);
+  assert.match(worker, /set_specific_heat_capacity_j_per_kg_k/);
+  assert.match(worker, /set_species_magnetic_response/);
+  assert.match(worker, /set_comminution_species_texture/);
+  assert.match(worker, /set_comminution_texture_properties/);
+  assert.match(worker, /begin_goethite_reaction/);
+  assert.match(worker, /hopper_size_bin_ids/);
+  assert.match(worker, /hopper_liberation_class_ids/);
+  assert.match(worker, /hopper_texture_profile_ids/);
+  assert.match(worker, /hopper_sensible_enthalpy_j/);
+  assert.match(presentation, /particleSizeKg/);
+  assert.match(presentation, /liberationKg/);
+  assert.match(presentation, /textureKg/);
+  assert.match(inspector, /Refresh Material Detail/);
+  assert.match(inspector, /Particle size/);
+  assert.match(inspector, /Liberation/);
+  assert.match(inspector, /Texture lineage/);
 });
