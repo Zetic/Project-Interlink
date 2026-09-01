@@ -1,4 +1,11 @@
-import type { FragmentationProfileId, MaterialComponentFraction, MaterialPhysicalForm, SolidParticulatePopulation } from '../material/types.js';
+import type {
+  ComminutionProperties,
+  FragmentationProfileId,
+  MaterialComponentFraction,
+  MaterialPhysicalForm,
+  MineralTextureProfile,
+  SolidParticulatePopulation,
+} from '../material/types.js';
 
 export type RuntimeParameterValue = number | boolean | string;
 
@@ -10,6 +17,8 @@ export interface RuntimeResourceSourcePlan {
   composition: MaterialComponentFraction[];
   fragmentationProfileId: FragmentationProfileId;
   particulatePopulations: SolidParticulatePopulation[];
+  mineralTexture: MineralTextureProfile | null;
+  comminutionProperties: ComminutionProperties | null;
   initialReserveMassKg: number | null;
 }
 
