@@ -33,6 +33,7 @@ import type { RenderOriginState } from './renderOrigin.js';
 import { worldToRenderPoint } from './renderOrigin.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const NODE_TEXT_MAX_WIDTH = NODE_CARD_LOCAL_WIDTH - 18;
 export const MECHANICAL_NODE_HIDE_ZOOM = ENGINEERING_NODE_HIDE_ZOOM;
 export const MECHANICAL_NODE_SHOW_ZOOM = ENGINEERING_NODE_SHOW_ZOOM;
 export const MECHANICAL_NODE_INTERACTIVE_ZOOM = ENGINEERING_NODE_INTERACTIVE_ZOOM;
@@ -45,6 +46,17 @@ export const ENGINEERING_NODE_CARD_PHYSICAL_HEIGHT_METERS = RESOURCE_NODE_PHYSIC
 
 function svgElement<K extends keyof SVGElementTagNameMap>(tagName: K): SVGElementTagNameMap[K] {
   return document.createElementNS(SVG_NS, tagName);
+}
+
+function setFittedText(text: SVGTextElement, value: string): void {
+  text.textContent = value;
+  if (value.length > 22) {
+    text.setAttribute('textLength', String(NODE_TEXT_MAX_WIDTH));
+    text.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+  } else {
+    text.removeAttribute('textLength');
+    text.removeAttribute('lengthAdjust');
+  }
 }
 
 function mechanicalPortLocalPosition(node: MechanicalNode, portId: string): Point | null {
@@ -79,6 +91,86 @@ export function endpointWorldPosition(planet: Planet, graph: GraphState, endpoin
   return null;
 }
 
+function compactNodeLabel(node: MechanicalNode, definition: ApparatusDefinition | null): string {
+  if (node.nodeType === 'roastingFurnace') return 'Roasting Furnace';
+  if (node.nodeType === 'magSep') return 'Mag. Separator';
+  return definition?.label ?? node.label;
+}
+
+function operatingState(node: MechanicalNode, runtime: RuntimeNodeSnapshot | undefined): string | null {
+  if (node.nodeType === 'hopper' || node.nodeType === 'exhaustVent') return null;
+  return runtime?.operatingState ?? (node.enabled ? 'on' : 'off');
+}
+
+function formatNodeLabel(node: MechanicalNode, runtime: RuntimeNodeSnapshot | undefined): string {
+  const definition = apparatusDefinitionById(node.definitionId);
+  const label = compactNodeLabel(node, definition);
+  const state = operatingState(node, runtime);
+  return state ? `${label} [${state}]` : label;
+}
+
+function formatParameterValue(node: MechanicalNode, definition: ApparatusDefinition | null): string | null {
+  const parameter = definition?.parameters?.[0];
+  if (!parameter || parameter.id === 'capacityKg') return null;
+  const raw = node.parameters[parameter.id];
+  const value = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(value)) return null;
+  if (parameter.id === 'splitFractionToA') return `A ${(value * 100).toFixed(0)}%`;
+  if (parameter.id === 'fieldStrength') return `B=${value.toFixed(2)}`;
+  if (parameter.id === 'flowRateKgPerSecond' || parameter.id === 'rateKgPerSecond') return `Set ${value.toFixed(2)} kg/s`;
+  if (parameter.id === 'temperatureSetpointK') return `Set ${(value - 273.15).toFixed(0)} °C`;
+  const choice = parameter.choices?.find(candidate => Math.abs(candidate.value - value) <= 1e-12);
+  return choice?.label ?? `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}${parameter.unit ? ` ${parameter.unit}` : ''}`;
+}
+
+function formatRate(rate: number | undefined): string {
+  return `${Number.isFinite(rate) ? rate!.toFixed(2) : '0.00'} kg/s`;
+}
+
+function hopperCapacityPercent(runtime: RuntimeNodeSnapshot | undefined): number | null {
+  const stored = runtime?.storedMassKg;
+  const free = runtime?.freeCapacityKg;
+  if (!Number.isFinite(stored) || !Number.isFinite(free)) return null;
+  const capacity = stored! + free!;
+  if (!(capacity > 0)) return 0;
+  return Math.max(0, Math.min(100, (stored! / capacity) * 100));
+}
+
+function formatCardLines(node: MechanicalNode, snapshot: RuntimeSnapshot | null): [string, string] {
+  const runtime = snapshot?.nodes[node.id];
+  const definition = apparatusDefinitionById(node.definitionId);
+  if (node.nodeType === 'hopper') {
+    const stored = runtime?.storedMassKg;
+    const free = runtime?.freeCapacityKg;
+    const mass = Number.isFinite(stored) && Number.isFinite(free)
+      ? `${stored!.toFixed(1)} / ${(stored! + free!).toFixed(1)} kg`
+      : 'Inventory —';
+    const percent = hopperCapacityPercent(runtime);
+    return [mass, percent == null ? '—' : `${Math.round(percent)}%`];
+  }
+  if (node.nodeType === 'roastingFurnace') {
+    const zones = Number(definition?.runtimeDefaults?.internalZoneCount ?? 4);
+    const holdUp = Number(definition?.runtimeDefaults?.effectiveChamberHoldUpKg ?? 0);
+    const setting = formatParameterValue(node, definition)?.replace(/^Set /, '') ?? '—';
+    const temperatureC = runtime?.temperatureK != null && Number.isFinite(runtime.temperatureK)
+      ? runtime.temperatureK - 273.15
+      : null;
+    return [
+      `${zones} zones · ${holdUp.toFixed(0)} kg`,
+      `${temperatureC == null ? 'No charge' : `${temperatureC.toFixed(0)} °C`} · set ${setting}`,
+    ];
+  }
+  if (node.nodeType === 'exhaustVent') {
+    const emitted = runtime?.ventedGasMassKg;
+    return ['Gas boundary', Number.isFinite(emitted) ? `${emitted!.toFixed(1)} kg vented` : 'Runtime —'];
+  }
+
+  const parameter = formatParameterValue(node, definition);
+  const rate = runtime?.actualRateKgPerSecond;
+  if (parameter) return [parameter, `Flow ${formatRate(rate)}`];
+  return [`Flow ${formatRate(rate)}`, runtime?.blockedReason ? 'BLOCKED' : ''];
+}
+
 function appendNodeCard(group: SVGGElement, node: MechanicalNode): void {
   const body = svgElement('rect');
   body.setAttribute('x', String(-NODE_CARD_LOCAL_HALF_WIDTH)); body.setAttribute('y', String(-NODE_CARD_LOCAL_HALF_HEIGHT));
@@ -108,27 +200,23 @@ function appendNodeCard(group: SVGGElement, node: MechanicalNode): void {
   category.setAttribute('class', 'ws-map-mechanical-category');
   category.textContent = node.category.toUpperCase(); details.appendChild(category);
 
-  const definition = apparatusDefinitionById(node.definitionId);
-  const label = svgElement('text'); label.setAttribute('x', '0'); label.setAttribute('y', '2');
+  const label = svgElement('text'); label.setAttribute('x', '0'); label.setAttribute('y', '-3');
   label.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
-  label.setAttribute('class', 'ws-map-mechanical-label');
-  label.textContent = `${definition?.label ?? node.label} [${node.enabled ? 'on' : 'off'}]`;
-  details.appendChild(label);
+  label.setAttribute('class', 'ws-map-mechanical-label'); label.setAttribute('data-runtime-node-label', node.id);
+  setFittedText(label, formatNodeLabel(node, undefined)); details.appendChild(label);
 
-  const runtime = svgElement('text'); runtime.setAttribute('x', '0'); runtime.setAttribute('y', node.nodeType === 'hopper' ? '22' : '28');
-  runtime.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
-  runtime.setAttribute('class', 'ws-map-mechanical-runtime');
-  runtime.setAttribute('data-runtime-node-text', node.id);
-  runtime.textContent = 'Runtime —';
-  details.appendChild(runtime);
+  const [primaryValue, secondaryValue] = formatCardLines(node, null);
+  const primary = svgElement('text'); primary.setAttribute('x', '0'); primary.setAttribute('y', '19');
+  primary.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
+  primary.setAttribute('class', 'ws-map-mechanical-runtime'); primary.setAttribute('data-runtime-node-text', node.id);
+  setFittedText(primary, primaryValue); details.appendChild(primary);
 
-  if (node.nodeType === 'hopper') {
-    const progress = svgElement('text'); progress.setAttribute('x', '0'); progress.setAttribute('y', '40');
-    progress.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
-    progress.setAttribute('class', 'ws-map-mechanical-runtime ws-map-hopper-progress');
-    progress.setAttribute('data-runtime-hopper-percent', node.id); progress.textContent = '—';
-    details.appendChild(progress);
-  }
+  const secondary = svgElement('text'); secondary.setAttribute('x', '0'); secondary.setAttribute('y', '38');
+  secondary.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
+  secondary.setAttribute('class', node.nodeType === 'hopper' ? 'ws-map-mechanical-runtime ws-map-hopper-progress' : 'ws-map-mechanical-runtime');
+  secondary.setAttribute('data-runtime-node-secondary', node.id);
+  if (node.nodeType === 'hopper') secondary.setAttribute('data-runtime-hopper-percent', node.id);
+  setFittedText(secondary, secondaryValue); details.appendChild(secondary);
 
   for (const port of node.ports) {
     const position = mechanicalPortLocalPosition(node, port.id);
@@ -144,46 +232,24 @@ function appendNodeCard(group: SVGGElement, node: MechanicalNode): void {
   }
 }
 
-function formatRuntimeText(node: MechanicalNode, snapshot: RuntimeSnapshot | null): string {
-  const runtime = snapshot?.nodes[node.id];
-  if (!runtime) return 'Runtime —';
-  if (node.nodeType === 'extractor') {
-    const state = (runtime.operatingState ?? 'idle').toUpperCase();
-    const rate = runtime.actualRateKgPerSecond;
-    return `${state} · ${Number.isFinite(rate) ? rate!.toFixed(2) : '0.00'} kg/s`;
-  }
-  if (node.nodeType === 'hopper') {
-    const stored = runtime.storedMassKg;
-    const free = runtime.freeCapacityKg;
-    if (Number.isFinite(stored) && Number.isFinite(free)) return `${stored!.toFixed(1)} / ${(stored! + free!).toFixed(1)} kg`;
-    return 'Inventory —';
-  }
-  return runtime.operatingState ? runtime.operatingState.toUpperCase() : 'Runtime —';
-}
-
-function hopperCapacityPercent(runtime: RuntimeNodeSnapshot | undefined): number | null {
-  const stored = runtime?.storedMassKg;
-  const free = runtime?.freeCapacityKg;
-  if (!Number.isFinite(stored) || !Number.isFinite(free)) return null;
-  const capacity = stored! + free!;
-  if (!(capacity > 0)) return 0;
-  return Math.max(0, Math.min(100, (stored! / capacity) * 100));
-}
-
 export function updateMechanicalRuntimePresentation(
   svg: SVGSVGElement,
   graph: GraphState,
   snapshot: RuntimeSnapshot | null,
 ): void {
   for (const node of graph.nodes) {
-    const text = svg.querySelector<SVGTextElement>(`[data-runtime-node-text="${CSS.escape(node.id)}"]`);
-    if (text) text.textContent = formatRuntimeText(node, snapshot);
+    const runtime = snapshot?.nodes[node.id];
+    const label = svg.querySelector<SVGTextElement>(`[data-runtime-node-label="${CSS.escape(node.id)}"]`);
+    if (label) setFittedText(label, formatNodeLabel(node, runtime));
+
+    const [primaryValue, secondaryValue] = formatCardLines(node, snapshot);
+    const primary = svg.querySelector<SVGTextElement>(`[data-runtime-node-text="${CSS.escape(node.id)}"]`);
+    if (primary) setFittedText(primary, primaryValue);
+    const secondary = svg.querySelector<SVGTextElement>(`[data-runtime-node-secondary="${CSS.escape(node.id)}"]`);
+    if (secondary) setFittedText(secondary, secondaryValue);
+
     if (node.nodeType !== 'hopper') continue;
-
-    const percent = hopperCapacityPercent(snapshot?.nodes[node.id]);
-    const progress = svg.querySelector<SVGTextElement>(`[data-runtime-hopper-percent="${CSS.escape(node.id)}"]`);
-    if (progress) progress.textContent = percent == null ? '—' : `${Math.round(percent)}%`;
-
+    const percent = hopperCapacityPercent(runtime);
     const fill = svg.querySelector<SVGRectElement>(`[data-runtime-hopper-fill="${CSS.escape(node.id)}"]`);
     if (fill) {
       const fillHeight = percent == null ? 0 : NODE_CARD_LOCAL_HEIGHT * (percent / 100);
@@ -258,5 +324,5 @@ export function updatePlacementPreview(
   rect.setAttribute('class', 'ws-map-placement-preview-body'); preview.appendChild(rect);
   const text = svgElement('text'); text.setAttribute('x', '0'); text.setAttribute('y', '4');
   text.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE)); text.setAttribute('class', 'ws-map-placement-preview-label');
-  text.textContent = definition.label; preview.appendChild(text);
+  setFittedText(text, definition.label); preview.appendChild(text);
 }
