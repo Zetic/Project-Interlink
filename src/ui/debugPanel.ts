@@ -88,6 +88,7 @@ function installFactoryControls(root: HTMLElement, store: AppStore): void {
   const remove = root.querySelector<HTMLButtonElement>('[data-debug-action="remove-factories"]');
   const count = root.querySelector<HTMLSelectElement>('#ws-debug-factory-count');
   let manifests: DebugFactoryManifest[] = [];
+  if (create) create.textContent = 'Create Factory';
 
   const sync = (): void => {
     const state = store.getState();
@@ -107,7 +108,8 @@ function installFactoryControls(root: HTMLElement, store: AppStore): void {
       sync();
       return;
     }
-    const resource = state.world.planet.resourceNodes.find(candidate => candidate.id === state.selection.resourceNodeId);
+    const resourceNodeId = state.selection.resourceNodeId;
+    const resource = state.world.planet.resourceNodes.find(candidate => candidate.id === resourceNodeId);
     if (!resource) {
       setFactoryStatus(root, 'The selected resource node is no longer available.', true);
       sync();
