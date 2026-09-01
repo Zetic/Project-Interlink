@@ -25,6 +25,7 @@ function appendText(group, className, x, y, value, fontSize) {
     text.setAttribute('class', className);
     text.textContent = value;
     group.appendChild(text);
+    return text;
 }
 export function resourcePortWorldPosition(resource) {
     return { x: resource.position.x + RESOURCE_NODE_WORLD_WIDTH / 2, y: resource.position.y };
@@ -58,8 +59,9 @@ function appendResourceCard(group, resource) {
     appendText(details, 'ws-map-resource-category', -70, -36, 'FEATURE', NODE_CARD_LOCAL_CATEGORY_FONT_SIZE);
     const definition = resourceDefinitionById(resource.resourceId);
     appendText(details, 'ws-map-resource-name', 0, -8, resource.name, NODE_CARD_LOCAL_BODY_FONT_SIZE);
-    appendText(details, 'ws-map-resource-type', 0, 13, 'Mineral Deposit', NODE_CARD_LOCAL_BODY_FONT_SIZE);
-    appendText(details, 'ws-map-resource-material', 0, 34, definition?.name ?? resource.resourceId, NODE_CARD_LOCAL_BODY_FONT_SIZE);
+    appendText(details, 'ws-map-resource-type', 0, 13, definition?.name ?? resource.resourceId, NODE_CARD_LOCAL_BODY_FONT_SIZE);
+    const runtime = appendText(details, 'ws-map-resource-runtime', 0, 34, 'Reserve —', NODE_CARD_LOCAL_BODY_FONT_SIZE);
+    runtime.setAttribute('data-runtime-resource-text', resource.id);
     const port = svgElement('circle');
     port.setAttribute('cx', String(NODE_CARD_LOCAL_HALF_WIDTH));
     port.setAttribute('cy', '0');
@@ -75,6 +77,21 @@ function appendResourceCard(group, resource) {
     title.textContent = 'resources';
     port.appendChild(title);
     details.appendChild(port);
+}
+function formatResourceRuntime(resource, snapshot) {
+    const runtime = snapshot?.sources[resource.id];
+    if (!runtime)
+        return 'Reserve —';
+    if (runtime.remainingMassKg == null)
+        return `${runtime.extractedMassKg.toFixed(1)} kg extracted`;
+    return `${runtime.remainingMassKg.toFixed(1)} kg remaining`;
+}
+export function updateResourceRuntimePresentation(svg, planet, snapshot) {
+    for (const resource of planet.resourceNodes) {
+        const text = svg.querySelector(`[data-runtime-resource-text="${CSS.escape(resource.id)}"]`);
+        if (text)
+            text.textContent = formatResourceRuntime(resource, snapshot);
+    }
 }
 export function renderResourceLayer(planet, renderOrigin, onSelect) {
     const layer = svgElement('g');

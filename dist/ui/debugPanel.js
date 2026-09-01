@@ -63,7 +63,7 @@ function installRuntimeControls(root, store, runtime) {
     step1?.addEventListener('click', () => { void runtime.advanceFixedSteps(10).catch(() => undefined); });
     step10?.addEventListener('click', () => { void runtime.advanceFixedSteps(100).catch(() => undefined); });
     profiling?.addEventListener('change', () => { void runtime.setProfiling(profiling.checked, true).catch(() => undefined); });
-    store.subscribe(sync);
+    store.subscribeDomains(['runtime'], sync);
     for (const action of ['place-factories', 'remove-factories']) {
         const button = root.querySelector(`[data-debug-action="${action}"]`);
         if (button) {
@@ -164,7 +164,7 @@ export function installDebugPanel(root, store, runtime) {
             void runtime.setProfiling(true, true).catch(() => undefined);
         render();
     });
-    store.subscribe(state => {
+    store.subscribeDomains(['world', 'graph', 'runtime', 'telemetry'], state => {
         latestState = state;
     });
     const observer = new MutationObserver(syncOpenState);
