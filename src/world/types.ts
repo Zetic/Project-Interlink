@@ -23,6 +23,7 @@ export interface ResourceDefinition {
 export type NodePortDirection = 'input' | 'output';
 export type NodePortKind = 'resource-access' | 'material';
 export type NodePortMedium = 'resource' | 'solid' | 'gas';
+export type NodePortCapability = 'solid-particulate' | 'stored-solid-particulate' | 'metered-solid-particulate' | 'gas';
 
 export interface NodePort {
   id: string;
@@ -30,6 +31,8 @@ export interface NodePort {
   kind: NodePortKind;
   medium: NodePortMedium;
   label: string;
+  accepts?: readonly NodePortCapability[];
+  provides?: readonly NodePortCapability[];
 }
 
 /**
