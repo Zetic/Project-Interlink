@@ -18,7 +18,7 @@ export interface AppState {
   runtime: RuntimePresentationState;
 }
 
-export type AppStateDomain = keyof AppState;
+export type AppStateDomain = keyof AppState | 'telemetry';
 export type AppStateListener = (state: Readonly<AppState>) => void;
 
 interface AppStateSubscription {
@@ -62,7 +62,7 @@ export class AppStore {
       interaction: emptyInteraction(),
       runtime: createDisconnectedRuntimeState(),
     };
-    this.emit('world', 'graph', 'selection', 'camera', 'interaction', 'runtime');
+    this.emit('world', 'graph', 'selection', 'camera', 'interaction', 'runtime', 'telemetry');
   }
 
   setSelection(selection: MapSelection): void {
@@ -92,7 +92,10 @@ export class AppStore {
         details: patch.details ?? this.state.runtime.details,
       },
     };
-    this.emit('runtime');
+    const presentationChanged = Object.keys(patch).some(key => key !== 'telemetry');
+    if (presentationChanged && patch.telemetry) this.emit('runtime', 'telemetry');
+    else if (presentationChanged) this.emit('runtime');
+    else if (patch.telemetry) this.emit('telemetry');
   }
 
   setPlacement(placementDefinitionId: string | null): void {
