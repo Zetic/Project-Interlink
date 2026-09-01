@@ -26,6 +26,8 @@ interface AppStateSubscription {
   domains: ReadonlySet<AppStateDomain> | null;
 }
 
+const STRUCTURAL_APP_DOMAINS: readonly AppStateDomain[] = ['world', 'graph', 'selection', 'camera', 'interaction'];
+
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
 
@@ -155,8 +157,13 @@ export class AppStore {
     this.emit('selection', 'camera');
   }
 
+  /**
+   * Structural subscription used by legacy map/application consumers. Runtime
+   * presentation is intentionally excluded so simulation ticks cannot wake
+   * camera/geometry renderers. Runtime consumers must use subscribeDomains.
+   */
   subscribe(listener: AppStateListener): () => void {
-    return this.subscribeDomains(null, listener);
+    return this.subscribeDomains(STRUCTURAL_APP_DOMAINS, listener);
   }
 
   subscribeDomains(domains: readonly AppStateDomain[] | null, listener: AppStateListener): () => void {
