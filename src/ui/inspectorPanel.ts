@@ -128,7 +128,11 @@ function renderMechanical(container: HTMLElement, node: MechanicalNode, store: A
 function setLive(container: HTMLElement, key: string, value: string): void { const target = container.querySelector<HTMLElement>(`[data-runtime-inspect="${key}"]`); if (target) target.textContent = value; }
 function renderMassDistribution(container: HTMLElement, title: string, values: Record<string, number>, label: (id: string) => string): void {
   sectionTitle(container, title); const entries = Object.entries(values).sort((a, b) => b[1] - a[1]); if (!entries.length) { addRow(container, title, 'Empty'); return; }
-  for (const [id, kg] of entries) addRow(container, label(id), `${kg.toFixed(2)} kg`);
+  const total = entries.reduce((sum, [, kg]) => Number.isFinite(kg) && kg > 0 ? sum + kg : sum, 0);
+  for (const [id, kg] of entries) {
+    const percentage = total > 0 && Number.isFinite(kg) ? (kg / total) * 100 : 0;
+    addRow(container, label(id), `${kg.toFixed(2)} kg (${percentage.toFixed(1)}%)`);
+  }
 }
 function detailRoot(container: HTMLElement, key: string): HTMLElement | null { return container.querySelector<HTMLElement>(`[data-runtime-detail="${key}"]`); }
 
