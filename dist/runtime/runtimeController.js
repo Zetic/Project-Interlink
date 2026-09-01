@@ -1,6 +1,6 @@
 import { compileFlatRuntimePlan } from './compileRuntimePlan.js';
 import { REALTIME_RUNTIME_PROTOCOL_VERSION, SIMULATION_STEP_SECONDS, runtimeCommand, } from './runtimeProtocol.js';
-import { compileFlatWorkerSetup, flatWorkerParameterKey, flatWorkerStructureKey, } from './workerSetup.js';
+import { compileFlatWorkerSetup, flatWorkerParameterKey, flatWorkerStructureKey, } from './fullWorkerSetup.js';
 function errorMessage(error) {
     return error instanceof Error ? error.message : String(error);
 }
@@ -11,11 +11,16 @@ function selectedRichDetailTarget(state) {
     const selection = state.selection;
     if (selection.type !== 'mechanical')
         return null;
-    const selectedNodeId = selection.mechanicalNodeId;
-    const node = state.graph.nodes.find(candidate => candidate.id === selectedNodeId);
-    if (!node || node.nodeType !== 'hopper')
+    const node = state.graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId);
+    if (!node)
         return null;
-    return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
+    if (node.nodeType === 'hopper')
+        return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
+    if (node.nodeType === 'roastingFurnace')
+        return { key: `furnace:${node.id}`, entityType: 'furnace', id: node.id };
+    if (node.nodeType === 'exhaustVent')
+        return { key: `exhaustVent:${node.id}`, entityType: 'exhaustVent', id: node.id };
+    return null;
 }
 export function installRuntimeController(store) {
     let worker = null;
@@ -73,7 +78,7 @@ export function installRuntimeController(store) {
         request.resolve(message);
     }
     function createWorker() {
-        const nextWorker = new Worker(new URL('./flatRuntimeWorker.js', import.meta.url), { type: 'module' });
+        const nextWorker = new Worker(new URL('./fullRuntimeWorker.js', import.meta.url), { type: 'module' });
         nextWorker.addEventListener('message', handleEvent);
         nextWorker.addEventListener('error', event => {
             const message = event.message || 'Rust/WASM Worker failed.';
@@ -109,8 +114,7 @@ export function installRuntimeController(store) {
             if (!currentTarget || currentTarget.key !== target.key)
                 return;
             const detail = message.payload.detail;
-            const details = store.getState().runtime.details;
-            runtimePatch({ details: { ...details, [target.key]: detail } });
+            runtimePatch({ details: { ...store.getState().runtime.details, [target.key]: detail } });
         }).catch(error => {
             if (store.getState().runtime.status === 'ready')
                 runtimePatch({ error: errorMessage(error) });
@@ -183,8 +187,7 @@ export function installRuntimeController(store) {
             runtimePatch({ status: 'disconnected', running: false, error: null, snapshot: null, profile: null, details: {} });
             return;
         }
-        const plan = compileFlatRuntimePlan(planet, state.graph);
-        const nextSetup = compileFlatWorkerSetup(plan);
+        const nextSetup = compileFlatWorkerSetup(compileFlatRuntimePlan(planet, state.graph));
         const nextStructureKey = flatWorkerStructureKey(nextSetup);
         const nextParameterKey = flatWorkerParameterKey(nextSetup);
         if (!worker || !setup || nextStructureKey !== structureKey) {
@@ -203,9 +206,8 @@ export function installRuntimeController(store) {
         if (!force && timestamp - lastTelemetryPublishMs < 200)
             return;
         lastTelemetryPublishMs = timestamp;
-        const telemetry = store.getState().runtime.telemetry;
         runtimePatch({ telemetry: {
-                ...telemetry,
+                ...store.getState().runtime.telemetry,
                 accumulatorSeconds,
                 schedulerDebtSeconds: Math.max(0, accumulatorSeconds - SIMULATION_STEP_SECONDS),
                 realtimeFactor,
@@ -232,9 +234,7 @@ export function installRuntimeController(store) {
             if (runtimeState.status === 'ready' && runtimeState.running)
                 accumulatorSeconds += deltaSeconds;
             if (realtimeWindowWallSeconds >= 5) {
-                realtimeFactor = realtimeWindowWallSeconds > 0
-                    ? realtimeWindowSimulationSeconds / realtimeWindowWallSeconds
-                    : 0;
+                realtimeFactor = realtimeWindowWallSeconds > 0 ? realtimeWindowSimulationSeconds / realtimeWindowWallSeconds : 0;
                 realtimeWindowWallSeconds = 0;
                 realtimeWindowSimulationSeconds = 0;
             }
@@ -258,8 +258,7 @@ export function installRuntimeController(store) {
     }
     frameId = requestAnimationFrame(sampleFrame);
     async function pause() {
-        const message = await send('pause', {});
-        applyEvent(message);
+        applyEvent(await send('pause', {}));
     }
     async function resume() {
         const message = await send('resume', {});
@@ -277,8 +276,7 @@ export function installRuntimeController(store) {
             const wasRunning = store.getState().runtime.running;
             if (!wasRunning)
                 await resume();
-            const message = await send('advance-fixed', { steps });
-            applyEvent(message);
+            applyEvent(await send('advance-fixed', { steps }));
             if (!wasRunning)
                 await pause();
             updateSchedulerTelemetry(nowMs(), true);

@@ -1,5 +1,5 @@
 import type { RuntimeProfileSnapshot, RuntimeSnapshot } from './presentation.js';
-import type { FlatWorkerSetup } from './workerSetup.js';
+import type { FlatWorkerSetup } from './fullWorkerSetup.js';
 
 export const REALTIME_RUNTIME_PROTOCOL_VERSION = 6;
 export const SIMULATION_STEP_SECONDS = 0.1;

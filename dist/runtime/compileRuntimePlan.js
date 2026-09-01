@@ -1,3 +1,4 @@
+import { apparatusDefinitionById } from '../apparatus/definitions.js';
 import { materializeSolidParticulateUnit } from '../material/particulate.js';
 function materialFormForMedium(medium) {
     if (medium === 'solid')
@@ -43,12 +44,13 @@ export function compileFlatRuntimePlan(planet, graph) {
     const machines = graph.nodes.map((node, index) => {
         const runtimeId = index + 1;
         machineRuntimeIds.set(node.id, runtimeId);
+        const definition = apparatusDefinitionById(node.definitionId);
         return {
             runtimeId,
             nodeId: node.id,
             nodeType: node.nodeType,
             enabled: node.enabled,
-            parameters: { ...node.parameters },
+            parameters: { ...(definition?.runtimeDefaults ?? {}), ...node.parameters },
         };
     });
     const resourceBindings = [];

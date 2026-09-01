@@ -13,7 +13,7 @@ import {
   flatWorkerParameterKey,
   flatWorkerStructureKey,
   type FlatWorkerSetup,
-} from './workerSetup.js';
+} from './fullWorkerSetup.js';
 
 interface PendingRequest {
   resolve: (event: RuntimeEvent) => void;
@@ -23,7 +23,7 @@ interface PendingRequest {
 
 interface RichDetailTarget {
   key: string;
-  entityType: 'hopper';
+  entityType: 'hopper' | 'furnace' | 'exhaustVent';
   id: string;
 }
 
@@ -46,10 +46,12 @@ function nowMs(): number {
 function selectedRichDetailTarget(state: Readonly<AppState>): RichDetailTarget | null {
   const selection = state.selection;
   if (selection.type !== 'mechanical') return null;
-  const selectedNodeId = selection.mechanicalNodeId;
-  const node = state.graph.nodes.find(candidate => candidate.id === selectedNodeId);
-  if (!node || node.nodeType !== 'hopper') return null;
-  return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
+  const node = state.graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId);
+  if (!node) return null;
+  if (node.nodeType === 'hopper') return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
+  if (node.nodeType === 'roastingFurnace') return { key: `furnace:${node.id}`, entityType: 'furnace', id: node.id };
+  if (node.nodeType === 'exhaustVent') return { key: `exhaustVent:${node.id}`, entityType: 'exhaustVent', id: node.id };
+  return null;
 }
 
 export function installRuntimeController(store: AppStore): RuntimeController {
@@ -108,7 +110,7 @@ export function installRuntimeController(store: AppStore): RuntimeController {
   }
 
   function createWorker(): Worker {
-    const nextWorker = new Worker(new URL('./flatRuntimeWorker.js', import.meta.url), { type: 'module' });
+    const nextWorker = new Worker(new URL('./fullRuntimeWorker.js', import.meta.url), { type: 'module' });
     nextWorker.addEventListener('message', handleEvent);
     nextWorker.addEventListener('error', event => {
       const message = event.message || 'Rust/WASM Worker failed.';
@@ -141,8 +143,7 @@ export function installRuntimeController(store: AppStore): RuntimeController {
       const currentTarget = selectedRichDetailTarget(store.getState());
       if (!currentTarget || currentTarget.key !== target.key) return;
       const detail = message.payload.detail as RuntimeEntityDetail;
-      const details = store.getState().runtime.details;
-      runtimePatch({ details: { ...details, [target.key]: detail } });
+      runtimePatch({ details: { ...store.getState().runtime.details, [target.key]: detail } });
     }).catch(error => {
       if (store.getState().runtime.status === 'ready') runtimePatch({ error: errorMessage(error) });
     }).finally(() => {
@@ -212,8 +213,7 @@ export function installRuntimeController(store: AppStore): RuntimeController {
       runtimePatch({ status: 'disconnected', running: false, error: null, snapshot: null, profile: null, details: {} });
       return;
     }
-    const plan = compileFlatRuntimePlan(planet, state.graph);
-    const nextSetup = compileFlatWorkerSetup(plan);
+    const nextSetup = compileFlatWorkerSetup(compileFlatRuntimePlan(planet, state.graph));
     const nextStructureKey = flatWorkerStructureKey(nextSetup);
     const nextParameterKey = flatWorkerParameterKey(nextSetup);
     if (!worker || !setup || nextStructureKey !== structureKey) {
@@ -233,9 +233,8 @@ export function installRuntimeController(store: AppStore): RuntimeController {
   function updateSchedulerTelemetry(timestamp: number, force = false): void {
     if (!force && timestamp - lastTelemetryPublishMs < 200) return;
     lastTelemetryPublishMs = timestamp;
-    const telemetry = store.getState().runtime.telemetry;
     runtimePatch({ telemetry: {
-      ...telemetry,
+      ...store.getState().runtime.telemetry,
       accumulatorSeconds,
       schedulerDebtSeconds: Math.max(0, accumulatorSeconds - SIMULATION_STEP_SECONDS),
       realtimeFactor,
@@ -260,9 +259,7 @@ export function installRuntimeController(store: AppStore): RuntimeController {
       realtimeWindowWallSeconds += deltaSeconds;
       if (runtimeState.status === 'ready' && runtimeState.running) accumulatorSeconds += deltaSeconds;
       if (realtimeWindowWallSeconds >= 5) {
-        realtimeFactor = realtimeWindowWallSeconds > 0
-          ? realtimeWindowSimulationSeconds / realtimeWindowWallSeconds
-          : 0;
+        realtimeFactor = realtimeWindowWallSeconds > 0 ? realtimeWindowSimulationSeconds / realtimeWindowWallSeconds : 0;
         realtimeWindowWallSeconds = 0;
         realtimeWindowSimulationSeconds = 0;
       }
@@ -287,8 +284,7 @@ export function installRuntimeController(store: AppStore): RuntimeController {
   frameId = requestAnimationFrame(sampleFrame);
 
   async function pause(): Promise<void> {
-    const message = await send('pause', {});
-    applyEvent(message);
+    applyEvent(await send('pause', {}));
   }
 
   async function resume(): Promise<void> {
@@ -305,8 +301,7 @@ export function installRuntimeController(store: AppStore): RuntimeController {
       if (inFlight) await inFlight;
       const wasRunning = store.getState().runtime.running;
       if (!wasRunning) await resume();
-      const message = await send('advance-fixed', { steps });
-      applyEvent(message);
+      applyEvent(await send('advance-fixed', { steps }));
       if (!wasRunning) await pause();
       updateSchedulerTelemetry(nowMs(), true);
     } finally {
