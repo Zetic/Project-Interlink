@@ -6,6 +6,14 @@ export function createEmptyGraphState(): GraphState {
   return { nodes: [], connections: [], nextNodeSequence: 1, nextConnectionSequence: 1 };
 }
 
+function clonePort(port: NodePort): NodePort {
+  return {
+    ...port,
+    ...(port.accepts ? { accepts: [...port.accepts] } : {}),
+    ...(port.provides ? { provides: [...port.provides] } : {}),
+  };
+}
+
 export function placeMechanicalNode(
   graph: GraphState,
   definition: ApparatusDefinition,
@@ -21,7 +29,7 @@ export function placeMechanicalNode(
     position: { ...position },
     physicalWidthMeters: definition.physicalWidthMeters,
     physicalHeightMeters: definition.physicalHeightMeters,
-    ports: definition.ports.map(port => ({ ...port })),
+    ports: definition.ports.map(clonePort),
     enabled: false,
     parameters: Object.fromEntries((definition.parameters ?? []).map(parameter => [parameter.id, parameter.defaultValue])),
   };
@@ -89,6 +97,14 @@ function orientEndpoints(
   return { from: secondEndpoint, fromPort: secondPort, to: firstEndpoint, toPort: firstPort };
 }
 
+function materialCapabilitiesCompatible(output: NodePort, input: NodePort): boolean {
+  if (output.kind !== 'material' || input.kind !== 'material') return true;
+  const provided = output.provides ?? [];
+  const accepted = input.accepts ?? [];
+  if (!provided.length || !accepted.length) return true;
+  return provided.some(capability => accepted.includes(capability));
+}
+
 export function connectPorts(
   graph: GraphState,
   firstEndpoint: PortEndpoint,
@@ -101,6 +117,9 @@ export function connectPorts(
   const oriented = orientEndpoints(firstEndpoint, firstPort, secondEndpoint, secondPort);
   if (oriented.fromPort.kind !== oriented.toPort.kind) throw new Error('Port kinds are incompatible.');
   if (oriented.fromPort.medium !== oriented.toPort.medium) throw new Error('Port media are incompatible.');
+  if (!materialCapabilitiesCompatible(oriented.fromPort, oriented.toPort)) {
+    throw new Error('Material port capabilities are incompatible; use the required storage or metering apparatus.');
+  }
   if (graph.connections.some(connection => endpointsEqual(connection.to, oriented.to))) {
     throw new Error('That input port already has a connection.');
   }
