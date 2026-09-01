@@ -1,3 +1,4 @@
+import { apparatusDefinitionById } from '../apparatus/definitions.js';
 import type { GraphState } from '../graph/types.js';
 import { materializeSolidParticulateUnit } from '../material/particulate.js';
 import type { MineralTextureProfile } from '../material/types.js';
@@ -57,12 +58,13 @@ export function compileFlatRuntimePlan(planet: Planet, graph: GraphState): FlatR
   const machines: RuntimeMachinePlan[] = graph.nodes.map((node, index) => {
     const runtimeId = index + 1;
     machineRuntimeIds.set(node.id, runtimeId);
+    const definition = apparatusDefinitionById(node.definitionId);
     return {
       runtimeId,
       nodeId: node.id,
       nodeType: node.nodeType,
       enabled: node.enabled,
-      parameters: { ...node.parameters },
+      parameters: { ...(definition?.runtimeDefaults ?? {}), ...node.parameters },
     };
   });
 
