@@ -33,8 +33,75 @@ function normalizeOptionalMass(value: number): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function populateMaterialTables(target: WasmPackedWorldRuntime, nextSetup: FlatWorkerSetup): void {
+  const tables = nextSetup.materialTables;
+  for (const species of tables.species) {
+    target.set_species_magnetic_response(species.runtimeId, species.magneticResponse);
+    if (species.specificHeatCapacityJPerKgK != null) {
+      target.set_specific_heat_capacity_j_per_kg_k(species.runtimeId, species.specificHeatCapacityJPerKgK);
+    }
+  }
+  for (const size of tables.sizeBins) {
+    target.add_comminution_size_bin(
+      size.runtimeId,
+      size.orderIndex,
+      size.maxMm,
+      size.representativeMm,
+      size.canonical,
+    );
+    target.add_separation_size_bin(size.runtimeId, size.maxMm, size.magneticSuitability);
+  }
+  target.set_comminution_legacy_lt_one_mm_id(tables.legacyLtOneMmId);
+  for (const liberation of tables.liberationClasses) {
+    target.add_comminution_liberation_class(liberation.runtimeId, liberation.orderIndex);
+    target.add_separation_liberation_class(liberation.runtimeId, liberation.recoveryFactor);
+  }
+  for (const texture of tables.textures) {
+    target.set_comminution_species_texture(
+      texture.textureProfileId,
+      texture.speciesId,
+      texture.d10Um,
+      texture.d50Um,
+      texture.d90Um,
+      texture.free,
+      texture.boundary,
+      texture.intergrown,
+      texture.included,
+    );
+  }
+  for (const properties of tables.comminutionProperties) {
+    target.set_comminution_texture_properties(
+      properties.textureProfileId,
+      properties.bondCrushingWorkIndexKWhPerT,
+      properties.bondBallMillWorkIndexKWhPerT,
+      properties.bondAbrasionIndex,
+    );
+  }
+
+  const reaction = tables.goethiteReaction;
+  target.begin_goethite_reaction(
+    reaction.sourceSpeciesId,
+    reaction.solidProductSpeciesId,
+    reaction.gasProductSpeciesId,
+    reaction.sourceMassPerExtentKg,
+    reaction.solidProductMassPerExtentKg,
+    reaction.gasProductMassPerExtentKg,
+    reaction.reactionEnthalpyJPerMolExtent,
+    reaction.activationEnergyJPerMol,
+    reaction.preExponentialFactorPerSecond,
+  );
+  for (const sizeFactor of reaction.sizeFactors) {
+    target.set_reaction_size_factor(sizeFactor.sizeBinId, sizeFactor.factor);
+  }
+  for (const mapping of reaction.textureMappings) {
+    target.set_reaction_product_texture_mapping(mapping.sourceTextureProfileId, mapping.productTextureProfileId);
+  }
+  target.commit_goethite_reaction();
+}
+
 function populateRuntime(target: WasmPackedWorldRuntime, nextSetup: FlatWorkerSetup): void {
   target.add_site(nextSetup.siteId);
+  populateMaterialTables(target, nextSetup);
   for (const hopper of nextSetup.hoppers) {
     target.add_hopper_state(
       hopper.nodeId,
@@ -127,17 +194,46 @@ function profileSnapshot(target: WasmPackedWorldRuntime): RuntimeProfileSnapshot
   };
 }
 
+function addQuantity(target: Record<string, number>, key: string, quantity: number): void {
+  target[key] = (target[key] ?? 0) + quantity;
+}
+
+function hopperTemperatureK(target: WasmPackedWorldRuntime, nodeId: number): number | null {
+  try {
+    const temperature = target.hopper_temperature_k(nodeId);
+    return Number.isFinite(temperature) ? temperature : null;
+  } catch {
+    return null;
+  }
+}
+
 function hopperDetail(target: WasmPackedWorldRuntime, currentSetup: FlatWorkerSetup, id: string): RuntimeHopperDetail {
   const hopper = currentSetup.hoppers.find(candidate => candidate.canonicalNodeId === id);
   if (!hopper) throw new Error(`Unknown runtime Hopper '${id}'.`);
   const species = Array.from(target.hopper_species_ids(hopper.nodeId)) as number[];
+  const sizes = Array.from(target.hopper_size_bin_ids(hopper.nodeId)) as number[];
+  const liberation = Array.from(target.hopper_liberation_class_ids(hopper.nodeId)) as number[];
+  const textures = Array.from(target.hopper_texture_profile_ids(hopper.nodeId)) as number[];
   const quantities = Array.from(target.hopper_quantities(hopper.nodeId)) as number[];
-  if (species.length !== quantities.length) throw new Error('Rust Hopper material columns are misaligned.');
+  const lengths = [species.length, sizes.length, liberation.length, textures.length, quantities.length];
+  if (!lengths.every(length => length === quantities.length)) throw new Error('Rust Hopper material columns are misaligned.');
+
   const compositionKg: Record<string, number> = {};
+  const particleSizeKg: Record<string, number> = {};
+  const liberationKg: Record<string, number> = {};
+  const textureKg: Record<string, number> = {};
+  let populationCount = 0;
   quantities.forEach((quantity, index) => {
     if (!Number.isFinite(quantity) || quantity <= 0) return;
-    const speciesId = currentSetup.speciesIds[species[index] ?? -1] ?? `species:${species[index]}`;
-    compositionKg[speciesId] = (compositionKg[speciesId] ?? 0) + quantity;
+    populationCount += 1;
+    const speciesRuntimeId = species[index] ?? -1;
+    const sizeRuntimeId = sizes[index] ?? -1;
+    const liberationRuntimeId = liberation[index] ?? -1;
+    const textureRuntimeId = textures[index] ?? -1;
+    addQuantity(compositionKg, currentSetup.speciesIds[speciesRuntimeId] ?? `species:${speciesRuntimeId}`, quantity);
+    addQuantity(particleSizeKg, currentSetup.sizeBinIds[sizeRuntimeId] ?? `size:${sizeRuntimeId}`, quantity);
+    addQuantity(liberationKg, currentSetup.liberationClassIds[liberationRuntimeId] ?? `liberation:${liberationRuntimeId}`, quantity);
+    addQuantity(textureKg, currentSetup.textureProfileIds[textureRuntimeId] ?? `texture:${textureRuntimeId}`, quantity);
   });
   const storedMassKg = target.hopper_stored_mass_kg(hopper.nodeId);
   return {
@@ -147,6 +243,12 @@ function hopperDetail(target: WasmPackedWorldRuntime, currentSetup: FlatWorkerSe
     storedMassKg,
     freeCapacityKg: Math.max(0, hopper.capacityKg - storedMassKg),
     compositionKg,
+    particleSizeKg,
+    liberationKg,
+    textureKg,
+    sensibleEnthalpyJ: target.hopper_sensible_enthalpy_j(hopper.nodeId),
+    temperatureK: hopperTemperatureK(target, hopper.nodeId),
+    populationCount,
   };
 }
 
@@ -261,7 +363,7 @@ async function handle(command: RuntimeCommand): Promise<RuntimeEvent> {
     case 'query-detail': {
       const current = requireRuntime();
       if (command.payload.entityType !== 'hopper' || typeof command.payload.id !== 'string') {
-        throw new Error('Phase 6 detail queries currently support Hopper entities only.');
+        throw new Error('Runtime detail queries currently support Hopper entities only.');
       }
       return runtimeEvent('detail', {
         ok: true,
