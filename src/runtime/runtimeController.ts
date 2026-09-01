@@ -44,8 +44,10 @@ function nowMs(): number {
 }
 
 function selectedRichDetailTarget(state: Readonly<AppState>): RichDetailTarget | null {
-  if (state.selection.type !== 'mechanical') return null;
-  const node = state.graph.nodes.find(candidate => candidate.id === state.selection.mechanicalNodeId);
+  const selection = state.selection;
+  if (selection.type !== 'mechanical') return null;
+  const selectedNodeId = selection.mechanicalNodeId;
+  const node = state.graph.nodes.find(candidate => candidate.id === selectedNodeId);
   if (!node || node.nodeType !== 'hopper') return null;
   return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
 }
