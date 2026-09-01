@@ -218,8 +218,11 @@ function renderMassDistribution(container, title, values, label) {
         addRow(container, title, 'Empty');
         return;
     }
-    for (const [id, kg] of entries)
-        addRow(container, label(id), `${kg.toFixed(2)} kg`);
+    const total = entries.reduce((sum, [, kg]) => Number.isFinite(kg) && kg > 0 ? sum + kg : sum, 0);
+    for (const [id, kg] of entries) {
+        const percentage = total > 0 && Number.isFinite(kg) ? (kg / total) * 100 : 0;
+        addRow(container, label(id), `${kg.toFixed(2)} kg (${percentage.toFixed(1)}%)`);
+    }
 }
 function detailRoot(container, key) { return container.querySelector(`[data-runtime-detail="${key}"]`); }
 function renderSelectedDetail(container, node, state) {
