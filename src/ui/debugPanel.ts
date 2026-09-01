@@ -166,7 +166,7 @@ export function installDebugPanel(root: HTMLElement, store: AppStore, runtime: R
     render();
   });
 
-  store.subscribeDomains(['world', 'graph', 'runtime'], state => {
+  store.subscribeDomains(['world', 'graph', 'runtime', 'telemetry'], state => {
     latestState = state;
   });
 
