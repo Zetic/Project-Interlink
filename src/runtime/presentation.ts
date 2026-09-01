@@ -32,6 +32,12 @@ export interface RuntimeHopperDetail {
   storedMassKg: number;
   freeCapacityKg: number;
   compositionKg: Record<string, number>;
+  particleSizeKg: Record<string, number>;
+  liberationKg: Record<string, number>;
+  textureKg: Record<string, number>;
+  sensibleEnthalpyJ: number;
+  temperatureK: number | null;
+  populationCount: number;
 }
 
 export type RuntimeEntityDetail = RuntimeHopperDetail;
