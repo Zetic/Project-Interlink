@@ -25,8 +25,11 @@ function addLiveRow(container, label, key, value = '—') {
 function typeLabel(container, value) { const type = document.createElement('div'); type.className = 'ws-ins-type'; type.textContent = value; container.appendChild(type); }
 function sectionTitle(container, value) { const title = document.createElement('div'); title.className = 'ws-ins-section-title'; title.textContent = value; container.appendChild(title); }
 function speciesLabel(speciesId) { return speciesId.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|[- ])\w/g, value => value.toUpperCase()).replaceAll('-', ' '); }
+function descriptorLabel(id) { return id.replaceAll('-', ' '); }
 function formatMass(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg`; }
 function formatRate(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg/s`; }
+function formatTemperature(value) { return value == null || !Number.isFinite(value) ? 'Unavailable' : `${value.toFixed(2)} K`; }
+function formatEnergy(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} J`; }
 function runtimeStatus(state) {
     const runtime = state.runtime;
     if (runtime.status === 'ready') {
@@ -71,6 +74,15 @@ function renderResource(container, planet, resource) {
     addRow(container, 'Initial reserve', resource.source.initialReserveMassKg == null ? 'Unbounded' : `${resource.source.initialReserveMassKg.toLocaleString()} kg`);
     for (const component of resource.source.composition)
         addRow(container, speciesLabel(component.speciesId), `${(component.massFraction * 100).toFixed(2)}%`);
+    if (resource.source.mineralTexture) {
+        addRow(container, 'Texture lineage', resource.source.mineralTexture.id);
+        addRow(container, 'Textured species', String(Object.keys(resource.source.mineralTexture.speciesTextures).length));
+    }
+    if (resource.source.comminutionProperties) {
+        addRow(container, 'Bond CWi', `${resource.source.comminutionProperties.bondCrushingWorkIndexKWhPerT.toFixed(2)} kWh/t`);
+        addRow(container, 'Bond BWi', `${resource.source.comminutionProperties.bondBallMillWorkIndexKWhPerT.toFixed(2)} kWh/t`);
+        addRow(container, 'Abrasion index', resource.source.comminutionProperties.bondAbrasionIndex.toFixed(3));
+    }
     const port = resource.ports.find(candidate => candidate.id === resource.resourceAccessPortId);
     if (port)
         addRow(container, 'Output', `${port.label} · ${port.kind}`);
@@ -142,7 +154,7 @@ function renderMechanical(container, node, store, runtime) {
         container.appendChild(composition);
     }
     else {
-        addRow(container, 'Execution', 'Not yet reconnected in the Phase 6 extraction slice');
+        addRow(container, 'Execution', 'Not yet reconnected in the current extraction slice');
     }
     sectionTitle(container, 'Ports');
     for (const port of node.ports)
@@ -172,6 +184,16 @@ function renderMechanical(container, node, store, runtime) {
 }
 function setLive(container, key, value) { const target = container.querySelector(`[data-runtime-inspect="${key}"]`); if (target)
     target.textContent = value; }
+function renderMassDistribution(container, title, values, label) {
+    sectionTitle(container, title);
+    const entries = Object.entries(values).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) {
+        addRow(container, title, 'Empty');
+        return;
+    }
+    for (const [id, kg] of entries)
+        addRow(container, label(id), `${kg.toFixed(2)} kg`);
+}
 function updateRuntimeProjection(container, state) {
     const selection = state.selection;
     const snapshot = state.runtime.snapshot;
@@ -205,12 +227,13 @@ function updateRuntimeProjection(container, state) {
             detailRoot.replaceChildren();
             if (detail?.kind === 'hopper') {
                 sectionTitle(detailRoot, `Contained material · ${detail.storedMassKg.toFixed(2)} kg`);
-                const entries = Object.entries(detail.compositionKg);
-                if (!entries.length)
-                    addRow(detailRoot, 'Composition', 'Empty');
-                else
-                    for (const [speciesId, kg] of entries)
-                        addRow(detailRoot, speciesLabel(speciesId), `${kg.toFixed(2)} kg`);
+                addRow(detailRoot, 'Statistical populations', String(detail.populationCount));
+                addRow(detailRoot, 'Sensible enthalpy', formatEnergy(detail.sensibleEnthalpyJ));
+                addRow(detailRoot, 'Temperature', formatTemperature(detail.temperatureK));
+                renderMassDistribution(detailRoot, 'Composition', detail.compositionKg, speciesLabel);
+                renderMassDistribution(detailRoot, 'Particle size', detail.particleSizeKg, descriptorLabel);
+                renderMassDistribution(detailRoot, 'Liberation', detail.liberationKg, descriptorLabel);
+                renderMassDistribution(detailRoot, 'Texture lineage', detail.textureKg, value => value);
             }
         }
     }
