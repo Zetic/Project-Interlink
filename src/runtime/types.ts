@@ -1,4 +1,11 @@
-import type { MaterialComponentFraction, MaterialPhysicalForm } from '../material/types.js';
+import type {
+  ComminutionProperties,
+  FragmentationProfileId,
+  MaterialComponentFraction,
+  MaterialPhysicalForm,
+  MineralTextureProfile,
+  SolidParticulatePopulation,
+} from '../material/types.js';
 
 export type RuntimeParameterValue = number | boolean | string;
 
@@ -8,8 +15,11 @@ export interface RuntimeResourceSourcePlan {
   resourceId: string;
   physicalForm: 'solid-particulate';
   composition: MaterialComponentFraction[];
+  fragmentationProfileId: FragmentationProfileId;
+  particulatePopulations: SolidParticulatePopulation[];
+  mineralTexture: MineralTextureProfile | null;
+  comminutionProperties: ComminutionProperties | null;
   initialReserveMassKg: number | null;
-  fragmentationProfileId: 'run-of-mine-rock' | 'coarse-solid';
 }
 
 export interface RuntimeMachinePlan {
@@ -31,7 +41,7 @@ export interface RuntimeResourceBinding {
 
 /**
  * TypeScript owns only this stream identity/topology binding. Rust/WASM owns
- * mass flow, composition state, inventories, temperature, and all mutation.
+ * mass flow, composition/state dimensions, inventories, temperature, and mutation.
  */
 export interface RuntimeMaterialStreamBinding {
   streamId: string;

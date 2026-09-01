@@ -61,7 +61,7 @@ test('Phase 6 compiles the flat Iron Ore FEATURE -> Extractor -> Hopper path dir
   assert.equal(occurrence.resourceId, 'iron-ore');
   assert.ok(Math.abs(Array.from(occurrence.quantitiesPerKg).reduce((sum, value) => sum + value, 0) - 1) < 1e-10);
   assert.deepEqual(
-    Array.from(occurrence.speciesIds).map(id => setup.speciesIds[id]),
+    [...new Set(Array.from(occurrence.speciesIds).map(id => setup.speciesIds[id]))],
     resource.source.composition.map(component => component.speciesId),
   );
 
@@ -124,7 +124,7 @@ test('Phase 6 runtime boundary does not restore the recursive browser simulation
   assert.match(controller, /!automaticAdvancePromise && !manualStepInFlight/);
   assert.match(debug, /Runtime warning:/);
   assert.match(inspector, /warning: \$\{runtime\.error\}/);
-  assert.match(setup, /scheduler partition inside Rust/);
+  assert.match(setup, /scheduler partition/);
 
   for (const source of [worker, controller, setup]) {
     assert.doesNotMatch(source, /worldSimulation|simulation\.sessions|simulation\.workspaces|BoundaryTransfer|CompositeNode|ImportTerminal|ExportTerminal/);

@@ -1,9 +1,25 @@
+import { materializeSolidParticulateUnit } from '../material/particulate.js';
 function materialFormForMedium(medium) {
     if (medium === 'solid')
         return 'solid-particulate';
     if (medium === 'gas')
         return 'gas';
     throw new Error('Resource-access edges do not compile into material streams.');
+}
+function cloneMineralTexture(profile) {
+    if (!profile)
+        return null;
+    return {
+        id: profile.id,
+        speciesTextures: Object.fromEntries(Object.entries(profile.speciesTextures).map(([speciesId, texture]) => [
+            speciesId,
+            {
+                grainSizeUm: { ...texture.grainSizeUm },
+                occurrenceModes: { ...texture.occurrenceModes },
+            },
+        ])),
+        ...(profile.comminutionProperties ? { comminutionProperties: { ...profile.comminutionProperties } } : {}),
+    };
 }
 export function compileFlatRuntimePlan(planet, graph) {
     const resourceRuntimeIds = new Map();
@@ -17,8 +33,11 @@ export function compileFlatRuntimePlan(planet, graph) {
             resourceId: resource.resourceId,
             physicalForm: resource.source.physicalForm,
             composition: resource.source.composition.map(component => ({ ...component })),
-            initialReserveMassKg: resource.source.initialReserveMassKg,
             fragmentationProfileId: resource.source.fragmentationProfileId,
+            particulatePopulations: materializeSolidParticulateUnit(resource.source),
+            mineralTexture: cloneMineralTexture(resource.source.mineralTexture),
+            comminutionProperties: resource.source.comminutionProperties ? { ...resource.source.comminutionProperties } : null,
+            initialReserveMassKg: resource.source.initialReserveMassKg,
         };
     });
     const machines = graph.nodes.map((node, index) => {

@@ -1,4 +1,6 @@
 import type { GraphState } from '../graph/types.js';
+import { materializeSolidParticulateUnit } from '../material/particulate.js';
+import type { MineralTextureProfile } from '../material/types.js';
 import type { Planet } from '../world/types.js';
 import type {
   FlatRuntimePlan,
@@ -14,6 +16,23 @@ function materialFormForMedium(medium: 'resource' | 'solid' | 'gas'): 'solid-par
   throw new Error('Resource-access edges do not compile into material streams.');
 }
 
+function cloneMineralTexture(profile: MineralTextureProfile | null): MineralTextureProfile | null {
+  if (!profile) return null;
+  return {
+    id: profile.id,
+    speciesTextures: Object.fromEntries(
+      Object.entries(profile.speciesTextures).map(([speciesId, texture]) => [
+        speciesId,
+        {
+          grainSizeUm: { ...texture.grainSizeUm },
+          occurrenceModes: { ...texture.occurrenceModes },
+        },
+      ]),
+    ),
+    ...(profile.comminutionProperties ? { comminutionProperties: { ...profile.comminutionProperties } } : {}),
+  };
+}
+
 export function compileFlatRuntimePlan(planet: Planet, graph: GraphState): FlatRuntimePlan {
   const resourceRuntimeIds = new Map<string, number>();
   const machineRuntimeIds = new Map<string, number>();
@@ -27,8 +46,11 @@ export function compileFlatRuntimePlan(planet: Planet, graph: GraphState): FlatR
       resourceId: resource.resourceId,
       physicalForm: resource.source.physicalForm,
       composition: resource.source.composition.map(component => ({ ...component })),
-      initialReserveMassKg: resource.source.initialReserveMassKg,
       fragmentationProfileId: resource.source.fragmentationProfileId,
+      particulatePopulations: materializeSolidParticulateUnit(resource.source),
+      mineralTexture: cloneMineralTexture(resource.source.mineralTexture),
+      comminutionProperties: resource.source.comminutionProperties ? { ...resource.source.comminutionProperties } : null,
+      initialReserveMassKg: resource.source.initialReserveMassKg,
     };
   });
 
