@@ -2,7 +2,6 @@ import type {
   ComminutionProperties,
   FragmentationProfileId,
   MaterialComponentFraction,
-  MaterialPhysicalForm,
   MineralTextureProfile,
   SolidParticulatePopulation,
 } from '../material/types.js';
@@ -40,8 +39,8 @@ export interface RuntimeResourceBinding {
 }
 
 /**
- * TypeScript owns only this stream identity/topology binding. Rust/WASM owns
- * mass flow, composition/state dimensions, inventories, temperature, and mutation.
+ * The active flat graph currently authors solid-particulate and gas streams.
+ * TypeScript owns only stream identity/topology; Rust/WASM owns flow and state.
  */
 export interface RuntimeMaterialStreamBinding {
   streamId: string;
@@ -52,7 +51,7 @@ export interface RuntimeMaterialStreamBinding {
   targetRuntimeId: number;
   targetNodeId: string;
   targetPortId: string;
-  physicalForm: MaterialPhysicalForm;
+  physicalForm: 'solid-particulate' | 'gas';
 }
 
 export interface FlatRuntimePlan {
