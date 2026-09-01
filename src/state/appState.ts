@@ -18,7 +18,13 @@ export interface AppState {
   runtime: RuntimePresentationState;
 }
 
+export type AppStateDomain = keyof AppState;
 export type AppStateListener = (state: Readonly<AppState>) => void;
+
+interface AppStateSubscription {
+  listener: AppStateListener;
+  domains: ReadonlySet<AppStateDomain> | null;
+}
 
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
@@ -32,7 +38,7 @@ function regionFocusZoom(world: WorldState, region: Region): number {
 const emptyInteraction = (): GraphInteractionState => ({ placementDefinitionId: null, pendingConnection: null, notice: null });
 
 export class AppStore {
-  private readonly listeners = new Set<AppStateListener>();
+  private readonly subscriptions = new Set<AppStateSubscription>();
 
   private state: AppState = {
     world: null,
@@ -56,22 +62,22 @@ export class AppStore {
       interaction: emptyInteraction(),
       runtime: createDisconnectedRuntimeState(),
     };
-    this.emit();
+    this.emit('world', 'graph', 'selection', 'camera', 'interaction', 'runtime');
   }
 
   setSelection(selection: MapSelection): void {
     this.state = { ...this.state, selection };
-    this.emit();
+    this.emit('selection');
   }
 
   setCamera(camera: MapCameraState): void {
     this.state = { ...this.state, camera };
-    this.emit();
+    this.emit('camera');
   }
 
   setGraph(graph: GraphState): void {
     this.state = { ...this.state, graph };
-    this.emit();
+    this.emit('graph');
   }
 
   updateRuntime(patch: Partial<RuntimePresentationState>): void {
@@ -86,7 +92,7 @@ export class AppStore {
         details: patch.details ?? this.state.runtime.details,
       },
     };
-    this.emit();
+    this.emit('runtime');
   }
 
   setPlacement(placementDefinitionId: string | null): void {
@@ -94,7 +100,7 @@ export class AppStore {
       ...this.state,
       interaction: { placementDefinitionId, pendingConnection: null, notice: null },
     };
-    this.emit();
+    this.emit('interaction');
   }
 
   setPendingConnection(pendingConnection: PortEndpoint | null): void {
@@ -102,17 +108,17 @@ export class AppStore {
       ...this.state,
       interaction: { ...this.state.interaction, placementDefinitionId: null, pendingConnection },
     };
-    this.emit();
+    this.emit('interaction');
   }
 
   setInteractionNotice(notice: string | null): void {
     this.state = { ...this.state, interaction: { ...this.state.interaction, notice } };
-    this.emit();
+    this.emit('interaction');
   }
 
   clearInteraction(): void {
     this.state = { ...this.state, interaction: emptyInteraction() };
-    this.emit();
+    this.emit('interaction');
   }
 
   focusSelection(selection: MapSelection): void {
@@ -143,16 +149,28 @@ export class AppStore {
     }
 
     this.state = { ...this.state, selection, camera };
-    this.emit();
+    this.emit('selection', 'camera');
   }
 
   subscribe(listener: AppStateListener): () => void {
-    this.listeners.add(listener);
-    listener(this.state);
-    return () => this.listeners.delete(listener);
+    return this.subscribeDomains(null, listener);
   }
 
-  private emit(): void {
-    for (const listener of this.listeners) listener(this.state);
+  subscribeDomains(domains: readonly AppStateDomain[] | null, listener: AppStateListener): () => void {
+    const subscription: AppStateSubscription = {
+      listener,
+      domains: domains ? new Set(domains) : null,
+    };
+    this.subscriptions.add(subscription);
+    listener(this.state);
+    return () => this.subscriptions.delete(subscription);
+  }
+
+  private emit(...changedDomains: AppStateDomain[]): void {
+    const changed = new Set(changedDomains);
+    for (const subscription of this.subscriptions) {
+      if (subscription.domains && ![...subscription.domains].some(domain => changed.has(domain))) continue;
+      subscription.listener(this.state);
+    }
   }
 }
