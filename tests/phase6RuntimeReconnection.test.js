@@ -116,7 +116,7 @@ test('Phase 6 runtime boundary does not restore the recursive browser simulation
   assert.match(worker, /clone_for_live_reconfigure/);
   assert.match(worker, /replace_hopper_state_live/);
   assert.match(worker, /upsert_extractor_live/);
-  assert.match(controller, /new Worker\(new URL\('\.\/flatRuntimeWorker\.js'/);
+  assert.match(controller, /new Worker\(new URL\('\.\/fullRuntimeWorker\.js'/);
   assert.match(controller, /compileFlatRuntimePlan/);
   assert.match(controller, /automaticAdvancePromise/);
   assert.match(controller, /manualStepInFlight/);
