@@ -50,7 +50,9 @@ test('debug Create Factory builds the stable processing line from the selected r
   assert.equal(setup.feeders.length, 1);
   assert.equal(setup.roastingFurnaces.length, 1);
   assert.equal(setup.exhaustVents.length, 1);
-  assert.equal(setup.streams.length, 18);
+  // The graph has 18 connections, but resource-access is a source relationship,
+  // not a physical material stream. The Worker setup therefore has 17 streams.
+  assert.equal(setup.streams.length, 17);
   assert.ok(setup.streams.every(stream => stream.runtimeSupported));
   assert.equal(setup.feeders[0].flowRateKgPerSecond, DEBUG_FACTORY_FEEDER_RATE_KG_PER_SECOND);
 
