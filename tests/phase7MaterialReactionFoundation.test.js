@@ -160,7 +160,7 @@ test('material contracts are form-specific and keep ore-only descriptors out of 
   assert.doesNotMatch(source, /interface GasBodyDescriptor[\s\S]*liberationClassId/);
 });
 
-test('Worker and Inspector keep rich material detail query-driven while Rust owns state', () => {
+test('Worker and Inspector expose rich Rust-owned material detail without player-triggered refresh', () => {
   const worker = fs.readFileSync('src/runtime/flatRuntimeWorker.ts', 'utf8');
   const presentation = fs.readFileSync('src/runtime/presentation.ts', 'utf8');
   const inspector = fs.readFileSync('src/ui/inspectorPanel.ts', 'utf8');
@@ -178,7 +178,7 @@ test('Worker and Inspector keep rich material detail query-driven while Rust own
   assert.match(presentation, /particleSizeKg/);
   assert.match(presentation, /liberationKg/);
   assert.match(presentation, /textureKg/);
-  assert.match(inspector, /Refresh Material Detail/);
+  assert.doesNotMatch(inspector, /Refresh Material Detail/);
   assert.match(inspector, /Particle size/);
   assert.match(inspector, /Liberation/);
   assert.match(inspector, /Texture lineage/);
