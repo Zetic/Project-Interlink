@@ -120,24 +120,16 @@ function renderMassDistribution(container: HTMLElement, title: string, values: R
 function updateRuntimeProjection(container: HTMLElement, state: Readonly<AppState>): void {
   const selection = state.selection; const snapshot = state.runtime.snapshot; setLive(container, 'runtime-status', runtimeStatus(state));
   if (selection.type === 'resource') {
-    const detail = state.runtime.details[`source:${selection.resourceNodeId}`];
-    const source = detail?.kind === 'source' ? detail : snapshot?.sources[selection.resourceNodeId];
-    setLive(container, 'source-extracted', formatMass(source?.extractedMassKg));
-    setLive(container, 'source-remaining', source?.remainingMassKg == null ? 'Unbounded' : formatMass(source.remainingMassKg));
-    return;
+    const source = snapshot?.sources[selection.resourceNodeId]; setLive(container, 'source-extracted', formatMass(source?.extractedMassKg)); setLive(container, 'source-remaining', source?.remainingMassKg == null ? 'Unbounded' : formatMass(source.remainingMassKg)); return;
   }
   if (selection.type !== 'mechanical') return;
-  const node = state.graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId); if (!node) return;
-  const detail = state.runtime.details[`node:${node.id}`];
-  const runtimeNode = detail?.kind === 'node' ? detail : snapshot?.nodes[node.id];
+  const node = state.graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId); if (!node) return; const runtimeNode = snapshot?.nodes[node.id];
   if (node.nodeType === 'extractor') {
     setLive(container, 'node-operating', runtimeNode?.operatingState ?? '—'); setLive(container, 'node-actual-rate', formatRate(runtimeNode?.actualRateKgPerSecond)); setLive(container, 'node-blocked', runtimeNode?.blockedReason || '—');
     const sourceConnection = state.graph.connections.find(connection => connection.kind === 'resource-access' && connection.to.nodeId === node.id); const source = sourceConnection ? state.world?.planet.resourceNodes.find(resource => resource.id === sourceConnection.from.nodeId) : null; setLive(container, 'extractor-source', source?.name ?? '—');
   } else if (node.nodeType === 'hopper') {
-    const storedMassKg = detail?.kind === 'hopper' ? detail.storedMassKg : runtimeNode?.storedMassKg;
-    const freeCapacityKg = detail?.kind === 'hopper' ? detail.freeCapacityKg : runtimeNode?.freeCapacityKg;
-    setLive(container, 'hopper-stored', formatMass(storedMassKg)); setLive(container, 'hopper-free', formatMass(freeCapacityKg));
-    const detailRoot = container.querySelector<HTMLElement>(`[data-runtime-composition="${node.id}"]`); if (detailRoot) {
+    setLive(container, 'hopper-stored', formatMass(runtimeNode?.storedMassKg)); setLive(container, 'hopper-free', formatMass(runtimeNode?.freeCapacityKg));
+    const detail = state.runtime.details[`hopper:${node.id}`]; const detailRoot = container.querySelector<HTMLElement>(`[data-runtime-composition="${node.id}"]`); if (detailRoot) {
       detailRoot.replaceChildren();
       if (detail?.kind === 'hopper') {
         sectionTitle(detailRoot, `Contained material · ${detail.storedMassKg.toFixed(2)} kg`);
