@@ -21,10 +21,11 @@ interface PendingRequest {
   startedAtMs: number;
 }
 
-interface RuntimeDetailTarget {
+interface SelectedDetailTarget {
   key: string;
-  entityType: 'hopper';
   id: string;
+  richEntityType: 'hopper' | null;
+  fallback: RuntimeEntityDetail;
 }
 
 export interface RuntimeController {
@@ -32,7 +33,6 @@ export interface RuntimeController {
   resume(): Promise<void>;
   advanceFixedSteps(steps: number): Promise<void>;
   setProfiling(enabled: boolean, reset?: boolean): Promise<void>;
-  queryHopperDetail(nodeId: string): Promise<void>;
   dispose(): void;
 }
 
@@ -44,11 +44,49 @@ function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now();
 }
 
-function selectedDetailTarget(state: Readonly<AppState>): RuntimeDetailTarget | null {
+function selectedDetailTarget(state: Readonly<AppState>): SelectedDetailTarget | null {
+  const snapshot = state.runtime.snapshot;
+  if (!snapshot) return null;
+  const elapsedSeconds = snapshot.elapsedSeconds;
+
+  if (state.selection.type === 'resource') {
+    const id = state.selection.resourceNodeId;
+    const source = snapshot.sources[id];
+    if (!source) return null;
+    return {
+      key: `source:${id}`,
+      id,
+      richEntityType: null,
+      fallback: {
+        kind: 'source',
+        id,
+        elapsedSeconds,
+        extractedMassKg: source.extractedMassKg,
+        remainingMassKg: source.remainingMassKg,
+      },
+    };
+  }
+
   if (state.selection.type !== 'mechanical') return null;
   const node = state.graph.nodes.find(candidate => candidate.id === state.selection.mechanicalNodeId);
-  if (!node || node.nodeType !== 'hopper') return null;
-  return { key: `hopper:${node.id}`, entityType: 'hopper', id: node.id };
+  if (!node) return null;
+  const runtimeNode = snapshot.nodes[node.id];
+  return {
+    key: `node:${node.id}`,
+    id: node.id,
+    richEntityType: node.nodeType === 'hopper' ? 'hopper' : null,
+    fallback: {
+      kind: 'node',
+      id: node.id,
+      nodeType: node.nodeType,
+      elapsedSeconds,
+      operatingState: runtimeNode?.operatingState ?? null,
+      actualRateKgPerSecond: runtimeNode?.actualRateKgPerSecond ?? null,
+      blockedReason: runtimeNode?.blockedReason ?? null,
+      storedMassKg: runtimeNode?.storedMassKg ?? null,
+      freeCapacityKg: runtimeNode?.freeCapacityKg ?? null,
+    },
+  };
 }
 
 export function installRuntimeController(store: AppStore): RuntimeController {
@@ -126,16 +164,23 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     });
   }
 
+  function publishSelectedSummaryDetail(target = selectedDetailTarget(store.getState())): SelectedDetailTarget | null {
+    if (!target) return null;
+    const details = store.getState().runtime.details;
+    runtimePatch({ details: { ...details, [target.key]: target.fallback } });
+    return target;
+  }
+
   function queueSelectedDetailRefresh(): void {
-    if (disposed || !worker || store.getState().runtime.status !== 'ready') return;
-    const target = selectedDetailTarget(store.getState());
-    if (!target) return;
+    if (disposed || store.getState().runtime.status !== 'ready') return;
+    const target = publishSelectedSummaryDetail();
+    if (!target?.richEntityType || !worker) return;
     if (detailRequestInFlight) {
       detailRefreshPending = true;
       return;
     }
     detailRequestInFlight = target.key;
-    void send('query-detail', { entityType: target.entityType, id: target.id }).then(message => {
+    void send('query-detail', { entityType: target.richEntityType, id: target.id }).then(message => {
       if (message.type !== 'detail' || message.payload.ok !== true || !message.payload.detail) return;
       const currentTarget = selectedDetailTarget(store.getState());
       if (!currentTarget || currentTarget.key !== target.key) return;
@@ -320,14 +365,6 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     applyEvent(message);
   }
 
-  async function queryHopperDetail(nodeId: string): Promise<void> {
-    const message = await send('query-detail', { entityType: 'hopper', id: nodeId });
-    if (message.type !== 'detail' || message.payload.ok !== true || !message.payload.detail) return;
-    const detail = message.payload.detail as RuntimeEntityDetail;
-    const details = store.getState().runtime.details;
-    runtimePatch({ details: { ...details, [`hopper:${nodeId}`]: detail } });
-  }
-
   function dispose(): void {
     disposed = true;
     if (frameId != null) cancelAnimationFrame(frameId);
@@ -335,5 +372,5 @@ export function installRuntimeController(store: AppStore): RuntimeController {
     stopWorker();
   }
 
-  return { pause, resume, advanceFixedSteps, setProfiling, queryHopperDetail, dispose };
+  return { pause, resume, advanceFixedSteps, setProfiling, dispose };
 }
