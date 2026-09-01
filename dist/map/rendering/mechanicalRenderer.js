@@ -60,6 +60,16 @@ function appendNodeCard(group, node) {
     body.setAttribute('rx', '3');
     body.setAttribute('class', `ws-map-mechanical-card-body ws-map-mechanical-card-body--${node.nodeType}`);
     group.appendChild(body);
+    if (node.nodeType === 'hopper') {
+        const fill = svgElement('rect');
+        fill.setAttribute('x', String(-NODE_CARD_LOCAL_HALF_WIDTH));
+        fill.setAttribute('y', String(NODE_CARD_LOCAL_HALF_HEIGHT));
+        fill.setAttribute('width', String(NODE_CARD_LOCAL_WIDTH));
+        fill.setAttribute('height', '0');
+        fill.setAttribute('class', 'ws-map-hopper-fill');
+        fill.setAttribute('data-runtime-hopper-fill', node.id);
+        group.appendChild(fill);
+    }
     const header = svgElement('rect');
     header.setAttribute('x', String(-NODE_CARD_LOCAL_HALF_WIDTH));
     header.setAttribute('y', String(-NODE_CARD_LOCAL_HALF_HEIGHT));
@@ -87,12 +97,22 @@ function appendNodeCard(group, node) {
     details.appendChild(label);
     const runtime = svgElement('text');
     runtime.setAttribute('x', '0');
-    runtime.setAttribute('y', '28');
+    runtime.setAttribute('y', node.nodeType === 'hopper' ? '22' : '28');
     runtime.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
     runtime.setAttribute('class', 'ws-map-mechanical-runtime');
     runtime.setAttribute('data-runtime-node-text', node.id);
     runtime.textContent = 'Runtime —';
     details.appendChild(runtime);
+    if (node.nodeType === 'hopper') {
+        const progress = svgElement('text');
+        progress.setAttribute('x', '0');
+        progress.setAttribute('y', '40');
+        progress.setAttribute('font-size', String(NODE_CARD_LOCAL_BODY_FONT_SIZE));
+        progress.setAttribute('class', 'ws-map-mechanical-runtime ws-map-hopper-progress');
+        progress.setAttribute('data-runtime-hopper-percent', node.id);
+        progress.textContent = '—';
+        details.appendChild(progress);
+    }
     for (const port of node.ports) {
         const position = mechanicalPortLocalPosition(node, port.id);
         if (!position)
@@ -131,11 +151,33 @@ function formatRuntimeText(node, snapshot) {
     }
     return runtime.operatingState ? runtime.operatingState.toUpperCase() : 'Runtime —';
 }
+function hopperCapacityPercent(runtime) {
+    const stored = runtime?.storedMassKg;
+    const free = runtime?.freeCapacityKg;
+    if (!Number.isFinite(stored) || !Number.isFinite(free))
+        return null;
+    const capacity = stored + free;
+    if (!(capacity > 0))
+        return 0;
+    return Math.max(0, Math.min(100, (stored / capacity) * 100));
+}
 export function updateMechanicalRuntimePresentation(svg, graph, snapshot) {
     for (const node of graph.nodes) {
         const text = svg.querySelector(`[data-runtime-node-text="${CSS.escape(node.id)}"]`);
         if (text)
             text.textContent = formatRuntimeText(node, snapshot);
+        if (node.nodeType !== 'hopper')
+            continue;
+        const percent = hopperCapacityPercent(snapshot?.nodes[node.id]);
+        const progress = svg.querySelector(`[data-runtime-hopper-percent="${CSS.escape(node.id)}"]`);
+        if (progress)
+            progress.textContent = percent == null ? '—' : `${Math.round(percent)}%`;
+        const fill = svg.querySelector(`[data-runtime-hopper-fill="${CSS.escape(node.id)}"]`);
+        if (fill) {
+            const fillHeight = percent == null ? 0 : NODE_CARD_LOCAL_HEIGHT * (percent / 100);
+            fill.setAttribute('y', String(NODE_CARD_LOCAL_HALF_HEIGHT - fillHeight));
+            fill.setAttribute('height', String(fillHeight));
+        }
     }
 }
 function connectionPath(start, end) {
