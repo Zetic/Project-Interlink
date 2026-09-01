@@ -1,3 +1,8 @@
+import {
+  placeDebugProcessingFactories,
+  removeDebugProcessingFactories,
+  type DebugFactoryManifest,
+} from '../debug/factoryFixture.js';
 import { browserRuntimeCapabilities } from '../debug/runtimeCapabilities.js';
 import { collectSimulationDebugStats, mean, percentile } from '../debug/debugTelemetry.js';
 import type { RuntimeController } from '../runtime/runtimeController.js';
@@ -50,11 +55,11 @@ function installRuntimeControls(root: HTMLElement, store: AppStore, runtime: Run
     if (step1) step1.disabled = !available;
     if (step10) step10.disabled = !available;
     if (profiling) { profiling.disabled = !available; profiling.checked = runtimeState.profilingEnabled; }
-    if (status) status.textContent = runtimeState.status === 'error'
+    if (status && !status.dataset.factoryMessage) status.textContent = runtimeState.status === 'error'
       ? `Runtime error: ${runtimeState.error ?? 'unknown error'}`
       : runtimeState.error
         ? `Runtime warning: ${runtimeState.error}`
-        : available ? 'Rust/WASM extraction runtime connected.' : 'Rust/WASM extraction runtime is connecting.';
+        : available ? 'Rust/WASM full apparatus runtime connected.' : 'Rust/WASM full apparatus runtime is connecting.';
   };
 
   pause?.addEventListener('click', () => { const action = store.getState().runtime.running ? runtime.pause() : runtime.resume(); void action.catch(() => undefined); });
@@ -63,12 +68,73 @@ function installRuntimeControls(root: HTMLElement, store: AppStore, runtime: Run
   step10?.addEventListener('click', () => { void runtime.advanceFixedSteps(100).catch(() => undefined); });
   profiling?.addEventListener('change', () => { void runtime.setProfiling(profiling.checked, true).catch(() => undefined); });
   store.subscribeDomains(['runtime'], sync);
+}
 
-  for (const action of ['place-factories', 'remove-factories']) {
-    const button = root.querySelector<HTMLButtonElement>(`[data-debug-action="${action}"]`);
-    if (button) { button.disabled = true; button.title = 'Test factory automation is outside the Phase 6 extraction runtime slice.'; }
-  }
-  const count = root.querySelector<HTMLSelectElement>('#ws-debug-factory-count'); if (count) count.disabled = true;
+function selectedFactoryCount(root: HTMLElement): number {
+  const value = Number(root.querySelector<HTMLSelectElement>('#ws-debug-factory-count')?.value ?? 1);
+  return Number.isInteger(value) && value >= 1 && value <= 100 ? value : 1;
+}
+
+function setFactoryStatus(root: HTMLElement, message: string, error = false): void {
+  const status = root.querySelector<HTMLElement>('#ws-debug-status');
+  if (!status) return;
+  status.dataset.factoryMessage = 'true';
+  status.textContent = message;
+  status.classList.toggle('ws-debug-status--error', error);
+}
+
+function installFactoryControls(root: HTMLElement, store: AppStore): void {
+  const create = root.querySelector<HTMLButtonElement>('[data-debug-action="place-factories"]');
+  const remove = root.querySelector<HTMLButtonElement>('[data-debug-action="remove-factories"]');
+  const count = root.querySelector<HTMLSelectElement>('#ws-debug-factory-count');
+  let manifests: DebugFactoryManifest[] = [];
+
+  const sync = (): void => {
+    const state = store.getState();
+    const resourceSelected = state.selection.type === 'resource';
+    if (create) {
+      create.disabled = !resourceSelected;
+      create.title = resourceSelected ? 'Create the processing factory beside the selected resource.' : 'Select a resource node first.';
+    }
+    if (count) count.disabled = !resourceSelected;
+    if (remove) remove.disabled = manifests.length === 0;
+  };
+
+  create?.addEventListener('click', () => {
+    const state = store.getState();
+    if (state.selection.type !== 'resource' || !state.world?.planet) {
+      setFactoryStatus(root, 'Select a resource node before creating a factory.', true);
+      sync();
+      return;
+    }
+    const resource = state.world.planet.resourceNodes.find(candidate => candidate.id === state.selection.resourceNodeId);
+    if (!resource) {
+      setFactoryStatus(root, 'The selected resource node is no longer available.', true);
+      sync();
+      return;
+    }
+    try {
+      const placed = placeDebugProcessingFactories(state.graph, resource, selectedFactoryCount(root));
+      manifests = [...manifests, ...placed.manifests];
+      store.setGraph(placed.graph);
+      setFactoryStatus(root, `Created ${placed.manifests.length} factory line${placed.manifests.length === 1 ? '' : 's'} linked to ${resource.name}.`);
+    } catch (error) {
+      setFactoryStatus(root, error instanceof Error ? error.message : String(error), true);
+    }
+    sync();
+  });
+
+  remove?.addEventListener('click', () => {
+    if (!manifests.length) return;
+    const countRemoved = manifests.length;
+    store.setGraph(removeDebugProcessingFactories(store.getState().graph, manifests));
+    manifests = [];
+    setFactoryStatus(root, `Removed ${countRemoved} debug factory line${countRemoved === 1 ? '' : 's'}.`);
+    sync();
+  });
+
+  store.subscribeDomains(['selection', 'graph'], sync);
+  sync();
 }
 
 function heapUsedText(): string {
@@ -91,6 +157,7 @@ export function installDebugPanel(root: HTMLElement, store: AppStore, runtime: R
 
   installRuntimeCapabilityStats(drawer);
   installRuntimeControls(drawer, store, runtime);
+  installFactoryControls(drawer, store);
 
   const render = (): void => {
     const frameAverage = mean(frameSamplesMs);
