@@ -7,6 +7,9 @@ export interface RuntimeNodeSnapshot {
   blockedReason?: string | null;
   storedMassKg?: number;
   freeCapacityKg?: number;
+  temperatureK?: number | null;
+  conversionFraction?: number;
+  ventedGasMassKg?: number;
 }
 
 export interface RuntimeStreamSnapshot {
@@ -40,7 +43,36 @@ export interface RuntimeHopperDetail {
   populationCount: number;
 }
 
-export type RuntimeEntityDetail = RuntimeHopperDetail;
+export interface RuntimeFurnaceDetail {
+  kind: 'furnace';
+  id: string;
+  elapsedSeconds: number;
+  chargeMassKg: number;
+  pendingFeedMassKg: number;
+  chargeTemperatureK: number | null;
+  feedRateKgPerSecond: number;
+  productRateKgPerSecond: number;
+  goethiteConversionFraction: number;
+  heaterPowerKw: number;
+  heatLossPowerKw: number;
+  reactionPowerKw: number;
+  zoneCount: number;
+  zoneMassKg: number[];
+  zoneTemperatureK: Array<number | null>;
+  solverEvaluationCount: number;
+}
+
+export interface RuntimeExhaustVentDetail {
+  kind: 'exhaust-vent';
+  id: string;
+  elapsedSeconds: number;
+  emittedMassKg: number;
+  compositionKg: Record<string, number>;
+  sensibleEnthalpyJ: number;
+  temperatureK: number | null;
+}
+
+export type RuntimeEntityDetail = RuntimeHopperDetail | RuntimeFurnaceDetail | RuntimeExhaustVentDetail;
 
 export interface RuntimeProfileSnapshot {
   profiledTicks: number;
