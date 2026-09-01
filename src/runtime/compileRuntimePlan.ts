@@ -1,5 +1,6 @@
 import type { GraphState } from '../graph/types.js';
 import { materializeSolidParticulateUnit } from '../material/particulate.js';
+import type { MineralTextureProfile } from '../material/types.js';
 import type { Planet } from '../world/types.js';
 import type {
   FlatRuntimePlan,
@@ -13,6 +14,23 @@ function materialFormForMedium(medium: 'resource' | 'solid' | 'gas'): 'solid-par
   if (medium === 'solid') return 'solid-particulate';
   if (medium === 'gas') return 'gas';
   throw new Error('Resource-access edges do not compile into material streams.');
+}
+
+function cloneMineralTexture(profile: MineralTextureProfile | null): MineralTextureProfile | null {
+  if (!profile) return null;
+  return {
+    id: profile.id,
+    speciesTextures: Object.fromEntries(
+      Object.entries(profile.speciesTextures).map(([speciesId, texture]) => [
+        speciesId,
+        {
+          grainSizeUm: { ...texture.grainSizeUm },
+          occurrenceModes: { ...texture.occurrenceModes },
+        },
+      ]),
+    ),
+    ...(profile.comminutionProperties ? { comminutionProperties: { ...profile.comminutionProperties } } : {}),
+  };
 }
 
 export function compileFlatRuntimePlan(planet: Planet, graph: GraphState): FlatRuntimePlan {
@@ -30,6 +48,8 @@ export function compileFlatRuntimePlan(planet: Planet, graph: GraphState): FlatR
       composition: resource.source.composition.map(component => ({ ...component })),
       fragmentationProfileId: resource.source.fragmentationProfileId,
       particulatePopulations: materializeSolidParticulateUnit(resource.source),
+      mineralTexture: cloneMineralTexture(resource.source.mineralTexture),
+      comminutionProperties: resource.source.comminutionProperties ? { ...resource.source.comminutionProperties } : null,
       initialReserveMassKg: resource.source.initialReserveMassKg,
     };
   });
