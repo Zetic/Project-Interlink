@@ -95,7 +95,7 @@ test('camera updates no longer force unrelated panels to rebuild every frame', (
   const debug = fs.readFileSync('src/ui/debugPanel.ts', 'utf8');
   const renderer = fs.readFileSync('src/map/mapRenderer.ts', 'utf8');
   assert.match(nav, /state\.world === lastWorld/);
-  assert.match(inspector, /state\.world === lastWorld && state\.graph === lastGraph/);
+  assert.match(inspector, /state\.world !== lastWorld \|\| state\.graph !== lastGraph \|\| selectionKey !== lastSelectionKey/);
   assert.doesNotMatch(debug, /if \(!drawer\.hidden\) render\(\);/);
   assert.match(renderer, /wheelAnchor/);
   assert.match(renderer, /cameraForAnchor/);
