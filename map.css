@@ -204,6 +204,12 @@
   text-align: left;
   font-weight: inherit;
 }
+#ws-map-inspector-body [data-runtime-detail] .ws-ins-row {
+  margin-bottom: 2px;
+  color: #8090a0;
+  font-size: 11px;
+  line-height: 1.35;
+}
 #ws-map-inspector-body .ws-ins-section-title {
   clear: both;
 }
