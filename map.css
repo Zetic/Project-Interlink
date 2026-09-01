@@ -136,13 +136,21 @@
 .ws-map-mechanical-card-header--container { fill: #324a66; }
 .ws-map-mechanical-category,
 .ws-map-mechanical-label,
+.ws-map-mechanical-runtime,
 .ws-map-placement-preview-label {
   font-family: 'Courier New', Courier, monospace;
   user-select: none;
   pointer-events: none;
 }
 .ws-map-mechanical-category { fill: #e7edf3; font-weight: 700; letter-spacing: 0.12em; text-anchor: start; }
-.ws-map-mechanical-label { fill: #d6e4ed; text-anchor: middle; }
+.ws-map-mechanical-label,
+.ws-map-mechanical-runtime { fill: #d6e4ed; text-anchor: middle; }
+.ws-map-hopper-progress { fill: #b9d8ff; }
+.ws-map-hopper-fill {
+  fill: #1e3a5f;
+  fill-opacity: 0.27;
+  pointer-events: none;
+}
 .ws-map-mechanical-port { fill: #172431; stroke: #8aa1b3; stroke-width: 2; cursor: crosshair; }
 .ws-map-port--resource-access { fill: #1f3823; stroke: #7aa879; }
 .ws-map-port--gas { fill: #29324a; stroke: #8c9bd0; }
