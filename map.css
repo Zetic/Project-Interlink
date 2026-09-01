@@ -77,7 +77,8 @@
 .ws-map-resource-category,
 .ws-map-resource-name,
 .ws-map-resource-type,
-.ws-map-resource-material {
+.ws-map-resource-material,
+.ws-map-resource-runtime {
   font-family: 'Courier New', Courier, monospace;
   pointer-events: none;
   user-select: none;
@@ -92,13 +93,15 @@
 
 .ws-map-resource-name,
 .ws-map-resource-type,
-.ws-map-resource-material {
+.ws-map-resource-material,
+.ws-map-resource-runtime {
   text-anchor: middle;
 }
 
 .ws-map-resource-name { fill: #b9d8ff; }
 .ws-map-resource-type { fill: #d6e4ed; }
 .ws-map-resource-material { fill: #c6e0c2; }
+.ws-map-resource-runtime { fill: #c0d4e8; }
 
 .ws-map-resource-port {
   fill: #1f3823;
@@ -185,6 +188,24 @@
 .ws-ins-config-row button {
   font-size: 10px;
   padding: 2px 7px;
+}
+
+/* Restore the stable Inspector's two-column quantity presentation. */
+#ws-map-inspector-body .ws-ins-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 10px;
+  align-items: start;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#ws-map-inspector-body .ws-ins-row > b {
+  min-width: 0;
+  text-align: left;
+  font-weight: inherit;
+}
+#ws-map-inspector-body .ws-ins-section-title {
+  clear: both;
 }
 
 /* Deep-zoom shape hint only; text remains normal-sized in local card units. */
