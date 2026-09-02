@@ -34,7 +34,7 @@ jobs:
         run: npm run test:ts
 
   rust:
-    name: Rust core and WASM browser package
+    name: Rust core and WASM browser packages
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,19 +50,32 @@ jobs:
       - name: Run Rust core tests
         run: cargo test --workspace
 
-      - name: Compile browser WASM target
-        run: cargo check -p interlink-wasm --target wasm32-unknown-unknown
+      - name: Smoke-test native Planet Engine CLI
+        run: cargo run -p interlink-worldgen-cli -- generate --seed ci-wg0 --width 64 --height 32
+
+      - name: Compile browser WASM targets
+        run: |
+          cargo check -p interlink-wasm --target wasm32-unknown-unknown
+          cargo check -p interlink-worldgen-wasm --target wasm32-unknown-unknown
 
       - name: Install pinned wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
 
-      - name: Package browser WASM module
-        run: npm run check:wasm-package
+      - name: Package browser WASM modules
+        run: |
+          npm run check:wasm-package
+          npm run check:worldgen-wasm-package
 
-      - name: Verify packaged Worker assets
+      - name: Verify packaged runtime Worker assets
         run: |
           test -s target/wasm-package/interlink_wasm.js
           test -s target/wasm-package/interlink_wasm_bg.wasm
           cmp target/wasm-package/interlink_wasm.js src/wasm/interlink_wasm.js
           cmp target/wasm-package/interlink_wasm.d.ts src/wasm/interlink_wasm.d.ts
           cmp target/wasm-package/interlink_wasm_bg.wasm src/wasm/interlink_wasm_bg.wasm
+
+      - name: Verify independent Planet Engine WASM package
+        run: |
+          test -s target/worldgen-wasm-package/interlink_worldgen_wasm.js
+          test -s target/worldgen-wasm-package/interlink_worldgen_wasm.d.ts
+          test -s target/worldgen-wasm-package/interlink_worldgen_wasm_bg.wasm
