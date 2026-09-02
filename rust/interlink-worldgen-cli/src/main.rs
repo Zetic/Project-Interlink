@@ -14,11 +14,12 @@ struct Options {
     height: u32,
     iterations: u32,
     level: u8,
+    coarse_level: u8,
     plates: u16,
 }
 
 fn usage() -> &'static str {
-    "interlink-worldgen-cli <generate|benchmark|topology|tectonics|geology|lithosphere> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N] [--plates N]"
+    "interlink-worldgen-cli <generate|benchmark|topology|tectonics|geology|lithosphere|inheritance|profile> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N] [--coarse-level N] [--plates N]"
 }
 fn parse_u32(name: &str, value: Option<String>) -> Result<u32, String> {
     value
@@ -32,7 +33,14 @@ fn parse_options() -> Result<Options, String> {
     let command = args.next().ok_or_else(|| usage().to_owned())?;
     if !matches!(
         command.as_str(),
-        "generate" | "benchmark" | "topology" | "tectonics" | "geology" | "lithosphere"
+        "generate"
+            | "benchmark"
+            | "topology"
+            | "tectonics"
+            | "geology"
+            | "lithosphere"
+            | "inheritance"
+            | "profile"
     ) {
         return Err(format!("unsupported command '{command}'\n{}", usage()));
     }
@@ -42,7 +50,8 @@ fn parse_options() -> Result<Options, String> {
         width: 512,
         height: 256,
         iterations: 5,
-        level: 5,
+        level: 6,
+        coarse_level: 4,
         plates: 16,
     };
     while let Some(flag) = args.next() {
@@ -58,6 +67,10 @@ fn parse_options() -> Result<Options, String> {
             "--level" => {
                 options.level = u8::try_from(parse_u32("--level", args.next())?)
                     .map_err(|_| "--level exceeds u8 range".to_owned())?
+            }
+            "--coarse-level" => {
+                options.coarse_level = u8::try_from(parse_u32("--coarse-level", args.next())?)
+                    .map_err(|_| "--coarse-level exceeds u8 range".to_owned())?
             }
             "--plates" => {
                 options.plates = u16::try_from(parse_u32("--plates", args.next())?)
