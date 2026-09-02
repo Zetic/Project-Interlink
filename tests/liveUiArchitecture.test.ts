@@ -85,7 +85,7 @@ test('player-facing runtime presentation is live while profiling remains opt-in'
 test('node progress and composite Inspector quantities retain the stable UI grammar', () => {
   const mechanical = fs.readFileSync('src/map/rendering/mechanicalRenderer.ts', 'utf8');
   const inspector = fs.readFileSync('src/ui/inspectorPanel.ts', 'utf8');
-  const css = fs.readFileSync('map.css', 'utf8');
+  const css = fs.readFileSync('styles/map.css', 'utf8');
 
   assert.match(mechanical, /data-runtime-hopper-fill/);
   assert.match(mechanical, /data-runtime-hopper-percent/);

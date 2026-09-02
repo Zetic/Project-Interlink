@@ -10,12 +10,10 @@ The project is simulation-first: outcomes should emerge from material state, app
 
 ## Documentation
 
-- [`DESIGN.md`](DESIGN.md) — long-term game and simulation design
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — current code ownership and extension boundaries
-- [`ARCHITECTURE_PERFORMANCE.md`](ARCHITECTURE_PERFORMANCE.md) — realtime runtime/performance contract
-- [`MATERIAL_REACTION_SYSTEM.md`](MATERIAL_REACTION_SYSTEM.md) — material/reaction architecture and expansion direction
-- [`.github/copilot-instructions.md`](.github/copilot-instructions.md) — implementation guardrails
-- [`PATCH_NOTES.md`](PATCH_NOTES.md) — historical development record
+- [`docs/DESIGN.md`](docs/DESIGN.md) — long-term game and simulation design
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — current code ownership and extension boundaries
+- [`docs/ARCHITECTURE_PERFORMANCE.md`](docs/ARCHITECTURE_PERFORMANCE.md) — realtime runtime/performance contract
+- [`docs/MATERIAL_REACTION_SYSTEM.md`](docs/MATERIAL_REACTION_SYSTEM.md) — material/reaction architecture and expansion direction
 
 ## Current architecture
 
@@ -32,7 +30,7 @@ TypeScript browser application
       Rust physical runtime
 ```
 
-There is no browser-side fallback physics engine. Handwritten legacy JavaScript application/simulation code has been removed. Remaining JavaScript is generated browser output, generated wasm-bindgen glue, or the active Node test harness.
+There is no browser-side fallback physics engine. Handwritten legacy JavaScript application/simulation code has been removed. Remaining JavaScript is generated browser output or generated wasm-bindgen glue; active regression source is TypeScript.
 
 ## Current world model
 
@@ -140,7 +138,9 @@ Create Factory requires a selected resource FEATURE. It places a complete ore-pr
 ## Source layout
 
 ```text
-src/
+docs/            design and architecture references
+styles/          browser stylesheets
+src/             TypeScript browser source
   app.ts
   apparatus/
   debug/
@@ -155,7 +155,8 @@ src/
 
 dist/            generated TypeScript output
 rust/            authoritative physical runtime
-tests/           active Node regression harness
+tests/           TypeScript Node regression harness
+scripts/         build helpers
 ```
 
 Do not edit generated `dist/` or wasm-bindgen JavaScript as source. Browser feature work belongs in TypeScript; physical execution belongs in Rust.

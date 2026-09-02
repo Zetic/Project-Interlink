@@ -64,7 +64,7 @@ test('debug Create Factory builds the stable processing line from the selected r
 test('node cards expose settings, live furnace/feeder data, and readable resource runtime text', () => {
   const mechanical = fs.readFileSync('src/map/rendering/mechanicalRenderer.ts', 'utf8');
   const debugPanel = fs.readFileSync('src/ui/debugPanel.ts', 'utf8');
-  const css = fs.readFileSync('map.css', 'utf8');
+  const css = fs.readFileSync('styles/map.css', 'utf8');
 
   assert.match(mechanical, /formatParameterValue/);
   assert.match(mechanical, /flowRateKgPerSecond/);

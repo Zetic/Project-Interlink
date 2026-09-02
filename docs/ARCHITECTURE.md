@@ -1,6 +1,6 @@
 # Project Interlink — Current Architecture
 
-This document is the source of truth for current browser code ownership, dependency direction, runtime authority, and extension paths. `DESIGN.md` describes long-term game design. `MATERIAL_REACTION_SYSTEM.md` describes the material/reaction direction. `ARCHITECTURE_PERFORMANCE.md` defines realtime performance constraints. Historical migration details belong in `PATCH_NOTES.md` and Git history.
+This document is the source of truth for current browser code ownership, dependency direction, runtime authority, and extension paths. `DESIGN.md` describes long-term game design. `MATERIAL_REACTION_SYSTEM.md` describes the material/reaction direction. `ARCHITECTURE_PERFORMANCE.md` defines realtime performance constraints. Historical migration details belong in Git history.
 
 ## 1. Production runtime authority
 
@@ -28,6 +28,8 @@ The browser owns deterministic authored world data, graph topology, apparatus co
 Browser/application source is TypeScript. The active composition root is `src/app.ts`; `tsc` emits committed browser modules under `dist/`, and `index.html` loads `dist/app.js`.
 
 ```text
+docs/             project design and architecture references
+styles/           browser stylesheets
 src/
 ├── app.ts
 ├── apparatus/     typed apparatus catalog and parameters
@@ -41,9 +43,9 @@ src/
 ├── world/         flat world model, deterministic generation, geometry/scale
 └── wasm/          generated wasm-bindgen browser package
 
-dist/              generated JavaScript emitted from TypeScript
-tests/             active TypeScript Node regression harness
-rust/              authoritative physical runtime and domain crates
+dist/             generated JavaScript emitted from TypeScript
+tests/            active TypeScript Node regression harness
+rust/             authoritative physical runtime and domain crates
 ```
 
 Handwritten browser JavaScript source is intentionally absent. JavaScript under `dist/` is generated TypeScript output. `src/wasm/interlink_wasm.js` is generated wasm-bindgen glue. Active regression tests are TypeScript. Generated `dist/**` and `src/wasm/**` paths are marked `linguist-generated` so GitHub language statistics reflect authored source rather than committed build products.
