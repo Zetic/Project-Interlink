@@ -53,9 +53,9 @@ src/world/        flat world model/generation/geometry/scale
 src/wasm/         generated wasm-bindgen package
 ```
 
-`dist/**/*.js` is generated from TypeScript and is committed for static hosting. `src/wasm/interlink_wasm.js` is generated wasm-bindgen glue. Do not hand-edit either as source.
+`dist/**/*.js` is generated from TypeScript and is committed for static hosting. `src/wasm/interlink_wasm.js` is generated wasm-bindgen glue. Do not hand-edit either as source. Both generated trees are marked `linguist-generated` so they do not distort GitHub language statistics.
 
-Do not add handwritten production `.js` modules under `src`. JavaScript under `tests/` is the active Node regression harness and may import generated `dist/` modules or inspect TypeScript/Rust source as appropriate.
+Do not add handwritten production `.js` modules under `src`. Active Node regressions are TypeScript under `tests/**/*.test.ts`; they may import generated `dist/` modules or inspect TypeScript/Rust source as appropriate.
 
 ## Flat browser world
 
@@ -127,14 +127,13 @@ DEBUG pause/step/profiling controls must call `RuntimeController`; debug fixture
 
 For TypeScript changes:
 
-1. run the TypeScript build;
-2. regenerate `dist/`;
-3. commit generated output exactly;
-4. run Node regressions;
-5. run Rust workspace tests;
-6. compile/package browser WASM and verify generated assets when runtime/WASM surfaces are involved.
+1. run the TypeScript build; `npm run build` cleans `dist/` before emitting so deleted source cannot leave orphaned generated modules;
+2. commit generated `dist/` output exactly;
+3. run the TypeScript Node regressions;
+4. run Rust workspace tests;
+5. compile/package browser WASM and verify generated assets when runtime/WASM surfaces are involved.
 
-Keep `tests/postMigrationHygiene.test.js` enforcing the no-handwritten-JavaScript source policy and retired-source absence.
+Keep `tests/postMigrationHygiene.test.ts` enforcing the no-handwritten-JavaScript source policy, retired-source absence, TypeScript regression policy, and generated-language metadata.
 
 ## Dependency and infrastructure guardrails
 
