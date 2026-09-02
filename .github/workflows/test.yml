@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  javascript:
+  typescript:
     name: Browser and TypeScript tests
     runs-on: ubuntu-latest
     permissions:
