@@ -82,7 +82,7 @@ The browser world is deliberately flat at engineering scale:
 Planet
 ├── Continents
 ├── Oceans
-└── geographic land and ocean Regions
+└── semantic geographic Regions
     └── resource FEATURE nodes
 ```
 
@@ -90,17 +90,33 @@ A resource FEATURE is a natural source node with a `resource-access` output. `re
 
 The current browser architecture does not use nested Site workspaces, child workspaces, boundary-transfer terminals, or recursive system ownership. Do not restore those concepts as compatibility infrastructure unless a future design change explicitly requires them.
 
-World generation is deterministic by `generatorVersion + seed`. Generator v5 follows one causal pipeline:
+World generation is deterministic by `generatorVersion + seed`. Generator v6 follows one causal pipeline:
 
 ```text
-Tectonic plates → cached high-resolution scalar surface → sea-level contour
-                → Continents/Oceans → irregular Region ownership
-                → topology-resolved interior boundary deformation → natural Features
+Tectonic plates
+      ↓
+cached scalar surface + canonical environment fields
+      ↓
+sea-level clipping → Continents / Oceans
+      ↓
+geographic analysis
+      ↓
+mountain / volcanic / rift / basin / coastal / shelf / ridge / trench provinces
+      ↓
+connected semantic Regions
+      ↓
+point-sampled natural Features
 ```
 
-Plate crust and motion affect elevation, relief, boundary setting, volcanism, and sedimentary tendency. A cached 176 × 88 generation field remains the canonical surface source selected through controlled profiling. Sea-level crossings are interpolated while triangle patches are clipped, producing one canonical coastline. Continents and Oceans own this geography before a jittered, additively weighted Region seed field assigns the shared patches. Generator v5 keeps that deterministic ownership topology, then restores the full shared boundary vertex chain and applies one cached deterministic deformation only to interior Region vertices. Parent/coastline vertices remain frozen, so coastal Regions still carry exact segments of the parent contour while interior borders no longer expose the 0°/45°/90°/135° technical-triangle signature as strongly. The deformation is intentionally small: global polygon-area drift is accepted only at a visually/materially negligible relative tolerance while canonical coastlines, Region parentage, resource ownership, and spatial indexing remain unchanged. Technical samples do not map one-to-one to Regions and remain generation-time details rather than player entities.
+Plate crust and motion affect elevation, relief, boundary setting, volcanism, and sedimentary tendency. The cached 176 × 88 generation field remains the canonical surface source selected through controlled profiling. Sea-level crossings are interpolated while triangle patches are clipped, producing one canonical coastline. Those technical patches are useful for deterministic sampling, adjacency, coverage, and connected-component analysis, but they no longer supply a regular player-facing Region seed lattice and they are not themselves geographic meaning.
 
-Nearest-two plate lookup is single-pass and allocation-free. Resource candidate evaluation samples the environment once per point and reuses it across resource types. `profileWorldGeneration()` exposes stage timings for developer measurement without adding nondeterministic timing data to world truth.
+`geographicProvinces.ts` constructs patch adjacency and coast-distance information, samples canonical environment truth, and classifies land and ocean geography before Region ownership is assembled. Current semantic classes include mountain ranges, volcanic arcs, rift zones, plateaus, highlands, sedimentary basins, coastal plains/highlands, lowlands/interior plains, oceanic trenches, mid-ocean ridges, continental shelves/slopes, ocean plateaus, abyssal plains, and ocean basins. High-confidence significant structures become connected geographic province seeds. Large generic interiors may receive a small number of additional seeds solely to retain useful player navigation scale. A deterministic multi-source geographic-affinity flood assigns the complete parent surface while strongly penalizing transitions across unlike significant structures.
+
+Each Region therefore has an explicit `geographicType` and a set of causal `geographicTraits` such as coastal, orogenic, volcanic, rift, sedimentary, shelf, ridge, or trench. Region naming is derived from semantic type rather than selecting a suffix after an arbitrary geometric partition. Region counts now emerge from generated geographic complexity; representative v6 seed-bank worlds currently contain hundreds of semantic Regions rather than a fixed several-thousand-cell tessellation.
+
+Canonical Continent/Ocean coastline vertices remain frozen and are reused by coastal Regions. Internal ownership retains shared technical edge topology so the world remains a complete non-overlapping authored surface; one cached deterministic transform is applied consistently to shared interior boundary vertices for presentation/topology continuity. The semantic classification—not the transform or the technical mesh—is what determines why a Region exists.
+
+Nearest-two plate lookup is single-pass and allocation-free. Resource candidate evaluation samples the environment once per point and reuses it across resource types. Resource candidate count scales with Region area so the reduction from thousands of arbitrary Regions to hundreds of meaningful Regions does not reduce natural Feature density. `profileWorldGeneration()` exposes stage timings for developer measurement without adding nondeterministic timing data to world truth.
 
 Continents, Oceans, and Regions form a geographic classification of the continuous planetary surface. They do not own nested engineering workspaces or independent runtime graphs. Player-built engineering remains one flat world-space graph.
 
@@ -182,7 +198,7 @@ The map uses one continuous Earth-scale coordinate space with deep engineering z
 
 SVG remains the active renderer. Whole-planet presentation uses clickable Continent and Ocean polygons from the canonical sea-level geometry. Region and Feature layers query `WorldSpatialIndex` from quantized camera windows, update only when their meaningful query signature changes, and enforce semantic zoom/label budgets. Pointer movement only reprioritizes and fades the existing visible label set in a scheduled animation frame; it performs no spatial query or DOM replacement. Camera center supplies the fallback when pointer focus is absent. Labels expand in budget, shrink in screen pixels, and disappear before engineering scale. Feature marker radius is converted from desired pixels to current world units so markers remain stable through geographic zoom. Camera animation still updates the SVG `viewBox`; it does not rebuild the entire world DOM every frame.
 
-NAV is a bounded camera-context/search projection rather than an eager world hierarchy. Normal presentation derives the current Continent/Ocean and Region from camera center, lists limited nearby Regions and Features, and displays selection separately. Global Continent/Ocean/Region/Feature/engineering search scans authored metadata but renders at most its explicit result budget. Inspector `Selected` preserves deliberate object and live Rust-runtime inspection while Inspector `Location` independently samples the geographic truth beneath camera center.
+NAV is a bounded camera-context/search projection rather than an eager world hierarchy. Normal presentation derives the current Continent/Ocean and Region from camera center, lists limited nearby Regions and Features, and displays selection separately. Global Continent/Ocean/Region/Feature/engineering search scans authored metadata but renders at most its explicit result budget. Inspector `Selected` preserves deliberate object and live Rust-runtime inspection while Inspector `Location` independently samples the geographic truth beneath camera center. Region inspection exposes semantic geographic type and traits in addition to environmental summaries.
 
 ## 9. JavaScript and generated-file policy
 

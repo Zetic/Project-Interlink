@@ -21,7 +21,7 @@ test('normal NAV context remains bounded and follows camera location independent
   assert.equal(context.currentRegion?.id, feature.regionId);
   assert.ok(context.nearbyRegions.length <= NAV_NEARBY_REGION_LIMIT);
   assert.ok(context.nearbyFeatures.length <= NAV_NEARBY_FEATURE_LIMIT);
-  assert.ok(context.nearbyRegions.length < planet.regions.length / 100);
+  if (planet.regions.length > NAV_NEARBY_REGION_LIMIT) assert.ok(context.nearbyRegions.length < planet.regions.length);
 });
 
 test('global NAV search finds world entities while enforcing its DOM result budget', () => {

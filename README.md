@@ -40,11 +40,15 @@ The active browser world is a continuous Earth-scale map rather than a recursive
 Planet
 ├── Continents
 ├── Oceans
-└── thousands of land and ocean Regions
+└── semantic land and ocean Regions
     └── natural resource FEATURE nodes
 ```
 
-World generation is deterministic by generator version plus seed. Generator v5 retains the v4 tectonic/surface pipeline: 12–24 deterministic tectonic plates, a profiled 176 × 88 scalar elevation field, interpolated sea-level clipping, Continents/Ocean basins, and roughly 4,000–10,000 independently seeded Regions. Region ownership still comes from the proven deterministic patch partition, but player-visible interior Region boundary vertices are now deformed only after topology is resolved. Canonical Continent/Ocean boundary vertices remain frozen and shared internal vertices use one cached deterministic transform, breaking the visible technical-triangle angle signature without moving coastlines or changing the underlying geographic ownership model. Technical samples and spatial chunks remain invisible implementation details rather than player-facing Regions. Resource FEATURE candidates sample each exact point once, then evaluate resource-specific geology and deterministic province fields. Natural sources currently include:
+World generation is deterministic by generator version plus seed. Generator v6 keeps the tectonic/surface foundation—12–24 deterministic tectonic plates, a profiled 176 × 88 scalar elevation field, interpolated sea-level clipping, and canonical Continent/Ocean geography—but changes what a player-facing Region means. Regions are no longer seeded by a regular geometric Region lattice. Generation first analyzes the canonical world fields and classifies coherent geography such as mountain ranges, volcanic arcs, rifts, plateaus, sedimentary basins, coastal plains/highlands, continental shelves/slopes, mid-ocean ridges, trenches, abyssal plains, and ocean basins. Connected significant structures become geographic province seeds; only very large generic interiors are subdivided for usable scale. A deterministic multi-source geographic-affinity flood then assigns the complete canonical surface while strongly resisting transitions across unlike significant structures.
+
+The technical surface patches still provide deterministic sampling, adjacency, and exact canonical coverage, but they are implementation details rather than the reason a Region exists. Region identity, naming, traits, and ownership are driven by generated geography. Canonical Continent/Ocean coastline vertices remain shared with coastal Regions, while shared interior boundary geometry is transformed consistently so neighboring Regions remain topologically aligned. Representative v6 worlds currently produce hundreds of meaningful Regions rather than thousands of arbitrary tessellation cells, and Region counts emerge from geographic complexity rather than a fixed target.
+
+Resource FEATURE candidates remain point-sampled from canonical world truth. Candidate density scales with Region area so larger semantic Regions do not reduce natural Feature density, and resource-specific geology/province fields continue to influence occurrence. Natural sources currently include:
 
 - Iron Ore
 - Copper Ore
@@ -58,7 +62,7 @@ A resource FEATURE exposes a `resource-access` relationship. That relationship a
 
 The map remains one continuous SVG coordinate space from whole-planet geography through engineering zoom. A shared technical chunk index supplies candidate-only visible/nearby Region and Feature queries, so world record count is independent from SVG/DOM count. Whole-planet zoom renders clickable Continents and Oceans; regional zoom renders only viewport Regions. While the pointer is over the map, existing Region labels are prioritized and faded around it without spatial requery or DOM reconstruction; camera center is the fallback outside the map. Screen-sized Feature markers bridge geography to deep engineering cards without expanding in world space while zooming.
 
-NAV is camera-aware, contextual, and searchable rather than a complete Planet → every Continent/Ocean → every Region → every Feature tree. Its normal view follows camera location while the Inspector keeps deliberate selection and camera Location in separate tabs. Global search supports all geographic and engineering entity types while remaining bounded to 60 rendered results.
+NAV is camera-aware, contextual, and searchable rather than a complete Planet → every Continent/Ocean → every Region → every Feature tree. Its normal view follows camera location while the Inspector keeps deliberate selection and camera Location in separate tabs. Region Inspector/Location presentation exposes the generated geographic type and traits alongside elevation, relief, tectonic setting, and environment. Global search supports all geographic and engineering entity types while remaining bounded to 60 rendered results.
 
 The older Site/child-workspace hierarchy is not part of the active browser model.
 
@@ -158,7 +162,6 @@ src/             TypeScript browser source
   ui/
   world/
   wasm/          generated wasm-bindgen package
-
 dist/            generated TypeScript output
 rust/            authoritative physical runtime
 tests/           TypeScript Node regression harness
@@ -180,4 +183,4 @@ The CI workflow also runs Rust workspace tests, compiles the browser WASM target
 
 ## Near-term expansion areas
 
-The mature processing vertical slice is reconnected and the Earth-scale geography foundation is active. Near-term expansion can build a generic Feature model and player knowledge/surveying layer on top of world truth, followed by a first industrial objective loop. Fluids, power, logistics, automation, and recursive blueprints remain later systems implemented through the existing TypeScript → Worker → Rust/WASM boundary.
+The mature processing vertical slice is reconnected and Earth-scale semantic geography is now the world-truth foundation. Near-term expansion can build a generic Feature model and player knowledge/surveying layer on top of geographic structure, followed by a first industrial objective loop. Fluids, power, logistics, automation, and recursive blueprints remain later systems implemented through the existing TypeScript → Worker → Rust/WASM boundary.

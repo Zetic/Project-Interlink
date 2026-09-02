@@ -1,55 +1,37 @@
 import { pointInPolygon, polygonArea, polygonBounds, polygonCentroid, polygonSignedArea } from '../geometry.js';
 import { createRng, deterministicUnit } from '../random.js';
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from '../scale.js';
-import { parentIdAtPoint, tracePatchBoundaries, } from './geography.js';
+import { generateGeographicProvinceAssignments } from './geographicProvinces.js';
 import { createRegionEnvironment } from './regionEnvironment.js';
 import { samplePlanetEnvironment } from './surfaceField.js';
-import { wrappedDistanceSquared } from './tectonics.js';
-export const REGION_SEED_COLUMNS = 100;
-export const REGION_SEED_ROWS = 50;
-export const TARGET_REGION_SPACING_WORLD_UNITS = PLANET_MAP_WIDTH / REGION_SEED_COLUMNS;
-const REGION_SEED_BIN_SIZE = 64;
 const REGION_WARP_SCALE_CELLS = 2.15;
-const REGION_WARP_AMPLITUDE = 0.11;
-const REGION_WARP_DETAIL = 0.006;
+const REGION_WARP_AMPLITUDE = 0.13;
+const REGION_WARP_DETAIL = 0.008;
 const NAME_STARTS = ['Aer', 'Ald', 'Ar', 'Bel', 'Cal', 'Cer', 'Cor', 'Dar', 'Del', 'Eir', 'El', 'Fal', 'Gal', 'Hal', 'Ith', 'Kar', 'Kel', 'Kor', 'Lor', 'Mar', 'Nor', 'Or', 'Ser', 'Tal'];
 const NAME_MIDDLES = ['a', 'ae', 'al', 'an', 'ar', 'el', 'en', 'er', 'eth', 'ia', 'il', 'in', 'ir', 'or', 'os', 'ra', 're', 'ro', 'ul', 'un', 'ur', 'va', 've', 'yr'];
 const NAME_ENDS = ['d', 'l', 'm', 'n', 'r', 's', 'th', 'v', 'x', 'ya', 'en', 'is', 'on', 'or', 'um', 'ys'];
-function suffixForEnvironment(environment, ocean) {
-    if (ocean) {
-        if (environment.boundaryType === 'divergent' && environment.boundaryProximity > 0.65)
-            return 'Ridge';
-        if (environment.boundaryType === 'convergent' && environment.boundaryProximity > 0.7)
-            return 'Trench';
-        if (environment.meanElevationMeters < -4_000)
-            return 'Abyss';
-        if (environment.sedimentaryBasinFactor > 0.7)
-            return 'Basin';
-        if (environment.meanElevationMeters > -1_800)
-            return 'Rise';
-        return 'Pelagic Plain';
-    }
-    if (environment.volcanicActivity > 0.74)
-        return 'Volcanic Belt';
-    if (environment.tectonicActivity > 0.72 && environment.boundaryType === 'divergent')
-        return 'Rift';
-    if (environment.meanElevationMeters > 2_450 && environment.reliefMeters > 1_250)
-        return 'Highlands';
-    if (environment.meanElevationMeters > 2_300)
-        return 'Plateau';
-    if (environment.sedimentaryBasinFactor > 0.72)
-        return 'Basin';
-    if (environment.reliefMeters > 1_500)
-        return 'Range';
-    if (environment.moistureIndex < 0.32 && environment.reliefMeters < 900)
-        return 'Flats';
-    if (environment.meanElevationMeters < 900)
-        return 'Lowlands';
-    return environment.reliefMeters < 850 ? 'Plain' : 'Reach';
-}
-function createUniqueName(seed, regionId, environment, ocean, used) {
+const TYPE_LABELS = {
+    'mountain-range': 'Range',
+    'volcanic-arc': 'Volcanic Arc',
+    'rift-zone': 'Rift',
+    plateau: 'Plateau',
+    highlands: 'Highlands',
+    'sedimentary-basin': 'Basin',
+    'coastal-plain': 'Coastal Plain',
+    'coastal-highlands': 'Coastal Highlands',
+    lowlands: 'Lowlands',
+    'interior-plain': 'Interior Plain',
+    'oceanic-trench': 'Trench',
+    'mid-ocean-ridge': 'Ridge',
+    'continental-shelf': 'Shelf',
+    'continental-slope': 'Continental Slope',
+    'ocean-plateau': 'Ocean Plateau',
+    'abyssal-plain': 'Abyssal Plain',
+    'ocean-basin': 'Ocean Basin',
+};
+function createUniqueName(seed, regionId, geographicType, used) {
     const rng = createRng(seed, `region-name:${regionId}`);
-    const suffix = suffixForEnvironment(environment, ocean);
+    const suffix = TYPE_LABELS[geographicType];
     for (let attempt = 0; attempt < 100; attempt += 1) {
         const candidate = `${rng.pick(NAME_STARTS)}${rng.pick(NAME_MIDDLES)}${rng.pick(NAME_ENDS)} ${suffix}`;
         if (!used.has(candidate)) {
@@ -61,87 +43,17 @@ function createUniqueName(seed, regionId, environment, ocean, used) {
     used.add(fallback);
     return fallback;
 }
-function createRegionSeeds(seed, geography, context) {
-    const seeds = [];
-    const cellWidth = PLANET_MAP_WIDTH / REGION_SEED_COLUMNS;
-    const cellHeight = PLANET_MAP_HEIGHT / REGION_SEED_ROWS;
-    const density = 0.87 + deterministicUnit(seed, 'regions:density:v4') * 0.1;
-    for (let row = 0; row < REGION_SEED_ROWS; row += 1)
-        for (let column = 0; column < REGION_SEED_COLUMNS; column += 1) {
-            const rng = createRng(seed, `region-seed:${row}:${column}`);
-            if (rng.next() > density)
-                continue;
-            const point = {
-                x: Number(((column + 0.5 + rng.range(-0.36, 0.36)) * cellWidth).toFixed(6)),
-                y: Number(Math.max(0.001, Math.min(PLANET_MAP_HEIGHT - 0.001, (row + 0.5 + rng.range(-0.36, 0.36)) * cellHeight)).toFixed(6)),
-            };
-            const surfaceType = samplePlanetEnvironment(context, point).surfaceType;
-            seeds.push({ id: `seed-${row}-${column}`, point, surfaceType, parentId: parentIdAtPoint(geography.anchors, surfaceType, point), powerBias: rng.range(-cellWidth * cellHeight * 0.65, cellWidth * cellHeight * 0.95) });
-        }
-    for (const anchor of geography.anchors) {
-        if (seeds.some(candidate => candidate.parentId === anchor.id))
-            continue;
-        const surfaceType = anchor.kind === 'continent' ? 'land' : 'ocean';
-        seeds.push({ id: `seed-${anchor.id}`, point: anchor.point, surfaceType, parentId: anchor.id, powerBias: 0 });
-    }
-    return seeds;
-}
-function seedBinKey(parentId, column, row) { return `${parentId}:${column}:${row}`; }
-function assignPatchesToSeeds(patches, seeds) {
-    const binColumns = Math.ceil(PLANET_MAP_WIDTH / REGION_SEED_BIN_SIZE);
-    const binRows = Math.ceil(PLANET_MAP_HEIGHT / REGION_SEED_BIN_SIZE);
-    const bins = new Map();
-    const byParent = new Map();
-    for (const seed of seeds) {
-        const column = Math.floor(seed.point.x / REGION_SEED_BIN_SIZE) % binColumns;
-        const row = Math.min(binRows - 1, Math.floor(seed.point.y / REGION_SEED_BIN_SIZE));
-        const key = seedBinKey(seed.parentId, column, row);
-        const values = bins.get(key) ?? [];
-        values.push(seed);
-        bins.set(key, values);
-        const parentValues = byParent.get(seed.parentId) ?? [];
-        parentValues.push(seed);
-        byParent.set(seed.parentId, parentValues);
-    }
-    const assigned = new Map();
-    for (const patch of patches) {
-        const centerColumn = Math.floor(patch.center.x / REGION_SEED_BIN_SIZE) % binColumns;
-        const centerRow = Math.min(binRows - 1, Math.max(0, Math.floor(patch.center.y / REGION_SEED_BIN_SIZE)));
-        const candidates = [];
-        for (let radius = 0; radius <= 2; radius += 1)
-            for (let row = Math.max(0, centerRow - radius); row <= Math.min(binRows - 1, centerRow + radius); row += 1)
-                for (let columnOffset = -radius; columnOffset <= radius; columnOffset += 1) {
-                    if (radius > 0 && Math.abs(columnOffset) !== radius && Math.abs(row - centerRow) !== radius)
-                        continue;
-                    const column = ((centerColumn + columnOffset) % binColumns + binColumns) % binColumns;
-                    candidates.push(...(bins.get(seedBinKey(patch.parentId, column, row)) ?? []));
-                }
-        const available = candidates.length ? candidates : (byParent.get(patch.parentId) ?? []);
-        if (!available.length)
-            throw new Error(`No Region seed resolves parent ${patch.parentId}.`);
-        let nearest = available[0];
-        let nearestScore = wrappedDistanceSquared(patch.center, nearest.point) - nearest.powerBias;
-        for (let index = 1; index < available.length; index += 1) {
-            const candidate = available[index];
-            const score = wrappedDistanceSquared(patch.center, candidate.point) - candidate.powerBias;
-            if (score < nearestScore || (score === nearestScore && candidate.id < nearest.id)) {
-                nearest = candidate;
-                nearestScore = score;
-            }
-        }
-        const owned = assigned.get(nearest.id) ?? [];
-        owned.push(patch);
-        assigned.set(nearest.id, owned);
-    }
-    return assigned;
-}
 function roundPoint(point) { return { x: Number(point.x.toFixed(6)), y: Number(point.y.toFixed(6)) }; }
 function pointKey(point) { return `${point.x.toFixed(6)}:${point.y.toFixed(6)}`; }
 function edgeKey(start, end) { const a = pointKey(start); const b = pointKey(end); return a < b ? `${a}|${b}` : `${b}|${a}`; }
-/** Exposed technical vertices are reinserted only after v4 has resolved loop topology. */
-function exposedBoundaryVertices(patches) {
+/**
+ * Region topology must retain the complete shared patch-edge chain until after
+ * the deterministic shared warp. This traces those full loops directly instead
+ * of simplifying and then doing the old O(boundary²) vertex-reinsertion pass.
+ */
+function traceRegionBoundaryLoops(patches) {
     const boundary = new Map();
-    for (const patch of patches)
+    for (const patch of patches) {
         for (let index = 0; index < patch.polygon.length; index += 1) {
             const start = roundPoint(patch.polygon[index]);
             const end = roundPoint(patch.polygon[(index + 1) % patch.polygon.length]);
@@ -149,46 +61,52 @@ function exposedBoundaryVertices(patches) {
             if (boundary.has(key))
                 boundary.delete(key);
             else
-                boundary.set(key, { start, end });
+                boundary.set(key, { start, end, startKey: pointKey(start), endKey: pointKey(end) });
         }
-    const vertices = new Map();
-    for (const edge of boundary.values()) {
-        vertices.set(pointKey(edge.start), edge.start);
-        vertices.set(pointKey(edge.end), edge.end);
     }
-    return [...vertices.values()];
-}
-function interiorSegmentPosition(point, start, end) {
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const lengthSquared = dx * dx + dy * dy;
-    if (lengthSquared <= 1e-12)
-        return null;
-    const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared;
-    if (t <= 1e-8 || t >= 1 - 1e-8)
-        return null;
-    const distance = Math.hypot(point.x - (start.x + dx * t), point.y - (start.y + dy * t));
-    return distance <= 2e-6 ? t : null;
-}
-function densifyResolvedLoop(loop, boundaryVertices) {
-    const dense = [];
-    for (let index = 0; index < loop.length; index += 1) {
-        const start = roundPoint(loop[index]);
-        const end = roundPoint(loop[(index + 1) % loop.length]);
-        dense.push(start);
-        const intermediate = [];
-        for (const point of boundaryVertices) {
-            const t = interiorSegmentPosition(point, start, end);
-            if (t !== null)
-                intermediate.push({ point, t });
+    const edges = [...boundary.values()].sort((left, right) => left.startKey.localeCompare(right.startKey) || left.endKey.localeCompare(right.endKey));
+    const outgoing = new Map();
+    edges.forEach((edge, index) => {
+        const values = outgoing.get(edge.startKey) ?? [];
+        values.push(index);
+        outgoing.set(edge.startKey, values);
+    });
+    const used = new Uint8Array(edges.length);
+    const loops = [];
+    for (let startIndex = 0; startIndex < edges.length; startIndex += 1) {
+        if (used[startIndex])
+            continue;
+        const first = edges[startIndex];
+        const loop = [first.start];
+        let currentIndex = startIndex;
+        while (!used[currentIndex]) {
+            used[currentIndex] = 1;
+            const current = edges[currentIndex];
+            if (current.endKey === first.startKey)
+                break;
+            loop.push(current.end);
+            const candidates = (outgoing.get(current.endKey) ?? []).filter(index => !used[index]);
+            if (!candidates.length)
+                break;
+            if (candidates.length === 1)
+                currentIndex = candidates[0];
+            else {
+                const incomingAngle = Math.atan2(current.end.y - current.start.y, current.end.x - current.start.x);
+                currentIndex = candidates.reduce((best, candidate) => {
+                    const edge = edges[candidate];
+                    const bestEdge = edges[best];
+                    const turn = (Math.atan2(edge.end.y - edge.start.y, edge.end.x - edge.start.x) - incomingAngle + Math.PI * 2) % (Math.PI * 2);
+                    const bestTurn = (Math.atan2(bestEdge.end.y - bestEdge.start.y, bestEdge.end.x - bestEdge.start.x) - incomingAngle + Math.PI * 2) % (Math.PI * 2);
+                    return turn < bestTurn ? candidate : best;
+                });
+            }
         }
-        intermediate.sort((left, right) => left.t - right.t || pointKey(left.point).localeCompare(pointKey(right.point)));
-        for (const value of intermediate)
-            dense.push(value.point);
+        if (loop.length >= 3 && polygonArea(loop) > 1e-6)
+            loops.push(loop);
     }
-    return dense;
+    return loops.sort((left, right) => polygonArea(right) - polygonArea(left) || pointKey(left[0]).localeCompare(pointKey(right[0])));
 }
-/** Parent/coastline vertices remain immutable so LOD levels share canonical geography. */
+/** Canonical parent/coastline vertices remain immutable across geographic LOD. */
 function frozenParentBoundaryVertices(patches) {
     const owners = new Map();
     for (const patch of patches)
@@ -217,7 +135,7 @@ function smoothWarpUnit(seed, axis, x, y) {
     const y0 = Math.floor(y);
     const tx = smoothstep(x - x0);
     const ty = smoothstep(y - y0);
-    const sample = (column, row) => deterministicUnit(seed, `region-warp:${axis}:${column}:${row}`);
+    const sample = (column, row) => deterministicUnit(seed, `region-warp:v6:${axis}:${column}:${row}`);
     return lerp(lerp(sample(x0, y0), sample(x0 + 1, y0), tx), lerp(sample(x0, y0 + 1), sample(x0 + 1, y0 + 1), tx), ty);
 }
 function warpedRegionPoint(seed, point, frozen, cellWidth, cellHeight) {
@@ -226,8 +144,8 @@ function warpedRegionPoint(seed, point, frozen, cellWidth, cellHeight) {
         return roundPoint(point);
     const noiseX = smoothWarpUnit(seed, 'x', point.x / (cellWidth * REGION_WARP_SCALE_CELLS), point.y / (cellHeight * REGION_WARP_SCALE_CELLS));
     const noiseY = smoothWarpUnit(seed, 'y', point.x / (cellWidth * REGION_WARP_SCALE_CELLS), point.y / (cellHeight * REGION_WARP_SCALE_CELLS));
-    const detailX = deterministicUnit(seed, `region-warp-detail:x:${key}`) - 0.5;
-    const detailY = deterministicUnit(seed, `region-warp-detail:y:${key}`) - 0.5;
+    const detailX = deterministicUnit(seed, `region-warp-detail:v6:x:${key}`) - 0.5;
+    const detailY = deterministicUnit(seed, `region-warp-detail:v6:y:${key}`) - 0.5;
     return roundPoint({
         x: Math.max(0, Math.min(PLANET_MAP_WIDTH, point.x + (noiseX - 0.5) * 2 * cellWidth * REGION_WARP_AMPLITUDE + detailX * 2 * cellWidth * REGION_WARP_DETAIL)),
         y: Math.max(0, Math.min(PLANET_MAP_HEIGHT, point.y + (noiseY - 0.5) * 2 * cellHeight * REGION_WARP_AMPLITUDE + detailY * 2 * cellHeight * REGION_WARP_DETAIL)),
@@ -248,7 +166,9 @@ function createRegionBoundaryWarper(seed, geography) {
         return transformed;
     };
 }
-function centerInsidePolygon(polygon, patches, context, expectedSurfaceType) {
+function centerInsidePolygon(preferred, polygon, patches, context, expectedSurfaceType) {
+    if (pointInPolygon(preferred, polygon) && samplePlanetEnvironment(context, preferred).surfaceType === expectedSurfaceType)
+        return roundPoint(preferred);
     const centroid = polygonCentroid(polygon);
     if (pointInPolygon(centroid, polygon) && samplePlanetEnvironment(context, centroid).surfaceType === expectedSurfaceType)
         return roundPoint(centroid);
@@ -288,23 +208,33 @@ function bindParents(parents, regions) {
         parent.regionIds = (ids.get(parent.id) ?? []).sort();
 }
 export function generateRegions(seed, geography, context) {
-    const seeds = createRegionSeeds(seed, geography, context);
-    const seedsById = new Map(seeds.map(regionSeed => [regionSeed.id, regionSeed]));
-    const patchesBySeed = assignPatchesToSeeds(geography.patches, seeds);
+    const assignments = generateGeographicProvinceAssignments(geography, context);
     const warpBoundaryPoint = createRegionBoundaryWarper(seed, geography);
     const usedNames = new Set();
     const regions = [];
-    for (const [seedId, patches] of [...patchesBySeed.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-        const regionSeed = seedsById.get(seedId);
-        const loops = tracePatchBoundaries(patches).filter(polygon => polygonSignedArea(polygon) > 0);
-        const boundaryVertices = exposedBoundaryVertices(patches);
+    for (const assignment of assignments) {
+        const loops = traceRegionBoundaryLoops(assignment.patches).filter(polygon => polygonSignedArea(polygon) > 0);
         for (let component = 0; component < loops.length; component += 1) {
-            const denseLoop = densifyResolvedLoop(loops[component], boundaryVertices);
-            const polygon = denseLoop.map(warpBoundaryPoint);
-            const center = centerInsidePolygon(polygon, patches, context, regionSeed.surfaceType);
+            const polygon = loops[component].map(warpBoundaryPoint);
+            const center = centerInsidePolygon(assignment.seed.point, polygon, assignment.patches, context, assignment.seed.surfaceType);
             const environment = createRegionEnvironment(context, center);
-            const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
-            regions.push({ id, name: createUniqueName(seed, id, environment, regionSeed.surfaceType === 'ocean', usedNames), parentKind: regionSeed.surfaceType === 'land' ? 'continent' : 'ocean', parentId: regionSeed.parentId, surfaceType: regionSeed.surfaceType, bounds: polygonBounds(polygon), polygon, center, approximateAreaSquareKm: approximateAreaSquareKm(polygon, environment.latitudeDeg), environment, resourceNodeIds: [], neighborRegionIds: [] });
+            const id = `region-${assignment.seed.id.replace(/^province-/, '')}-${component}`;
+            regions.push({
+                id,
+                name: createUniqueName(seed, id, assignment.seed.geographicType, usedNames),
+                parentKind: assignment.seed.surfaceType === 'land' ? 'continent' : 'ocean',
+                parentId: assignment.seed.parentId,
+                surfaceType: assignment.seed.surfaceType,
+                geographicType: assignment.seed.geographicType,
+                geographicTraits: assignment.seed.geographicTraits,
+                bounds: polygonBounds(polygon),
+                polygon,
+                center,
+                approximateAreaSquareKm: approximateAreaSquareKm(polygon, environment.latitudeDeg),
+                environment,
+                resourceNodeIds: [],
+                neighborRegionIds: [],
+            });
         }
     }
     populateNeighbors(regions);

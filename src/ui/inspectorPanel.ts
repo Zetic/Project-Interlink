@@ -28,6 +28,7 @@ function typeLabel(container: HTMLElement, value: string): void { const type = d
 function sectionTitle(container: HTMLElement, value: string): void { const title = document.createElement('div'); title.className = 'ws-ins-section-title'; title.textContent = value; container.appendChild(title); }
 function speciesLabel(speciesId: string): string { return speciesId.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|[- ])\w/g, value => value.toUpperCase()).replaceAll('-', ' '); }
 function descriptorLabel(id: string): string { return id.replaceAll('-', ' '); }
+function geographicLabel(id: string): string { return id.replaceAll('-', ' ').replace(/(^| )\w/g, value => value.toUpperCase()); }
 function formatMass(value: number | null | undefined): string { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg`; }
 function formatRate(value: number | null | undefined): string { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg/s`; }
 function formatTemperature(value: number | null | undefined): string { return value == null || !Number.isFinite(value) ? 'Unavailable' : `${value.toFixed(2)} K`; }
@@ -59,6 +60,8 @@ function renderRegion(container: HTMLElement, planet: Planet, region: Region): v
   const environment = region.environment;
   typeLabel(container, 'REGION'); addRow(container, 'Name', region.name); addRow(container, region.parentKind === 'continent' ? 'Continent' : 'Ocean', parent?.name ?? region.parentId); addRow(container, 'Surface', region.surfaceType); addRow(container, 'Planet', planet.name);
   sectionTitle(container, 'Geography');
+  addRow(container, 'Geographic type', geographicLabel(region.geographicType));
+  addRow(container, 'Traits', region.geographicTraits.length ? region.geographicTraits.map(geographicLabel).join(' · ') : 'None');
   addRow(container, 'Latitude', formatLatitude(environment.latitudeDeg));
   addRow(container, 'Approx. area', `${region.approximateAreaSquareKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km²`);
   addRow(container, 'Approx. extent', `${formatPhysicalDistance(worldUnitsToMeters(region.bounds.width))} × ${formatPhysicalDistance(worldUnitsToMeters(region.bounds.height))}`);
@@ -92,7 +95,9 @@ function renderLocation(container: HTMLElement, planet: Planet, point: { x: numb
   const context = geographicLocationAt(planet, point);
   if (!context) { container.textContent = 'Camera location is outside generated geography.'; return; }
   typeLabel(container, 'LOCATION'); addRow(container, 'Planet', planet.name); addRow(container, context.parent.kind === 'continent' ? 'Continent' : 'Ocean', context.parent.name);
-  addRow(container, 'Region', context.region.name); addRow(container, 'Coordinates', `${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
+  addRow(container, 'Region', context.region.name); addRow(container, 'Geographic type', geographicLabel(context.region.geographicType));
+  addRow(container, 'Traits', context.region.geographicTraits.length ? context.region.geographicTraits.map(geographicLabel).join(' · ') : 'None');
+  addRow(container, 'Coordinates', `${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
   sectionTitle(container, 'Surface'); addRow(container, 'Type', context.environment.surfaceType); addRow(container, context.environment.surfaceElevationMeters >= 0 ? 'Elevation' : 'Depth', `${Math.abs(context.environment.surfaceElevationMeters).toLocaleString()} m`);
   addRow(container, 'Latitude', formatLatitude(context.environment.latitudeDeg)); addRow(container, 'Plate', context.environment.plateId); addRow(container, 'Boundary', context.environment.boundaryType);
   sectionTitle(container, 'Environment'); addRow(container, 'Thermal', formatIndex(context.environment.thermalIndex)); addRow(container, 'Moisture', formatIndex(context.environment.moistureIndex)); addRow(container, 'Tectonic activity', formatIndex(context.environment.tectonicActivity));
