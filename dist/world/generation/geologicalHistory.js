@@ -11,13 +11,11 @@ function bell(value, center, width) {
     return Math.exp(-normalized * normalized);
 }
 /**
- * Lightweight generation-time geological history. This is not runtime plate
- * simulation: it converts the deterministic plate arrangement and motions into
- * persistent crustal age/thickness and uplift/subsidence fields that terrain,
- * semantic geography, resources, and analysis overlays can share.
+ * Converts one already-resolved plate sample into deterministic geological
+ * history. Hot generation paths should use this form to avoid resolving the
+ * same nearest plate pair twice for one world point.
  */
-export function sampleGeologicalHistory(seed, plates, point) {
-    const plateSample = samplePlateModel(plates, point);
+export function geologicalHistoryFromPlateSample(seed, point, plateSample) {
     const plate = plateSample.plate;
     const neighbor = plateSample.neighbor;
     const proximity = plateSample.boundaryProximity;
@@ -41,13 +39,9 @@ export function sampleGeologicalHistory(seed, plates, point) {
     const hotspotUplift = clamp01((hotspot - 0.72) / 0.28) * 0.18;
     let crustAgeMyr = plate.baseCrustAgeMyr;
     if (plate.crustType === 'oceanic') {
-        // Oceanic crust is youngest at spreading ridges and progressively reflects
-        // its plate's older background age away from the active spreading center.
         crustAgeMyr = Math.max(1, crustAgeMyr * (1 - ridgeStrength * 0.94));
     }
     else {
-        // Continental rifting reworks old crust without unrealistically resetting
-        // it to new oceanic-crust ages.
         crustAgeMyr = Math.max(250, crustAgeMyr * (1 - riftStrength * 0.08));
     }
     const oceanicCoolingSubsidence = oceanic * clamp01((crustAgeMyr - 20) / 150) * 0.28;
@@ -75,4 +69,8 @@ export function sampleGeologicalHistory(seed, plates, point) {
         trenchInfluence: round(trenchInfluence),
         basinInfluence: round(basinInfluence),
     };
+}
+/** Convenience entry point for callers that do not already have a plate sample. */
+export function sampleGeologicalHistory(seed, plates, point) {
+    return geologicalHistoryFromPlateSample(seed, point, samplePlateModel(plates, point));
 }
