@@ -1,3 +1,6 @@
+mod lithosphere_bridge;
+pub use lithosphere_bridge::WasmWorldgenLithosphere;
+
 use interlink_worldgen::{
     build_icosphere, generate_crust_and_history, generate_synthetic, generate_tectonics,
     CrustalModel, GeodesicTopology, GeologyRequest, PlanetPhysicalParameters, SyntheticDiagnostic,
@@ -5,7 +8,7 @@ use interlink_worldgen::{
 };
 use wasm_bindgen::prelude::*;
 
-pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 4;
+pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 5;
 #[wasm_bindgen] pub fn worldgen_protocol_version() -> u32 { WORLDGEN_WASM_PROTOCOL_VERSION }
 #[wasm_bindgen] pub fn worldgen_engine_version() -> u32 { WORLDGEN_ENGINE_VERSION }
 
@@ -159,7 +162,7 @@ impl WasmWorldgenGeology {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn wasm_protocol_and_engine_versions_are_explicit() { assert_eq!(worldgen_protocol_version(), 4); assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION); }
+    #[test] fn wasm_protocol_and_engine_versions_are_explicit() { assert_eq!(worldgen_protocol_version(), 5); assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION); }
     #[test] fn topology_bridge_exposes_canonical_counts_and_flux_geometry() { let topology = WasmWorldgenTopology::new(2).unwrap(); assert_eq!(topology.sample_count(), 162); assert_eq!(topology.five_neighbor_count(), 12); assert_eq!(topology.faces().len(), 320 * 3); assert_eq!(topology.neighbors().len(), topology.neighbor_arc_lengths_rad().len()); assert_eq!(topology.neighbors().len(), topology.neighbor_interface_arc_lengths_rad().len()); }
     #[test] fn tectonics_bridge_exposes_complete_partition_and_boundaries() { let tectonics = WasmWorldgenTectonics::new("wasm-wg2".to_owned(), 3, 12).unwrap(); assert_eq!(tectonics.plate_ids().len(), tectonics.sample_count() as usize); assert_eq!(tectonics.plate_seed_samples().len(), 12); assert_eq!(tectonics.boundary_samples().len(), tectonics.boundary_edge_count() as usize * 2); assert_eq!(tectonics.boundary_kinds().len(), tectonics.boundary_edge_count() as usize); }
     #[test] fn geology_bridge_exposes_complete_sample_fields_and_boundary_interpretation() {
@@ -172,5 +175,15 @@ mod tests {
         assert_eq!(geology.geological_boundary_regimes().len(), geology.boundary_edge_count() as usize);
         assert_eq!(geology.subduction_polarities().len(), geology.boundary_edge_count() as usize);
         assert_eq!(geology.plate_scale_classes().len(), geology.plate_count() as usize);
+    }
+    #[test] fn lithosphere_bridge_exposes_mechanics_and_refinement_fields() {
+        let lithosphere = WasmWorldgenLithosphere::new("wasm-wg3-5".to_owned(), 3, 12).unwrap();
+        let samples = lithosphere.sample_count() as usize;
+        assert_eq!(lithosphere.strength_index().len(), samples);
+        assert_eq!(lithosphere.effective_elastic_thickness_km().len(), samples);
+        assert_eq!(lithosphere.structural_zone_kind().len(), samples);
+        assert_eq!(lithosphere.fragment_ids().len(), samples);
+        assert_eq!(lithosphere.kinematic_domain_ids().len(), samples);
+        assert_eq!(lithosphere.fragment_kinds().len(), lithosphere.tectonic_fragment_count() as usize);
     }
 }
