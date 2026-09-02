@@ -12,7 +12,7 @@ pub use diagnostics::{FieldStatistics, StageIdentity};
 pub use fields::{DenseU16Field, MAX_SYNTHETIC_SAMPLES};
 pub use parameters::PlanetPhysicalParameters;
 pub use random::derive_stage_seed;
-pub use topology::{build_icosphere, expected_edge_count, expected_face_count, expected_sample_count, GeodesicTopology, TopologyMetrics, INVALID_SAMPLE_ID, MAX_TOPOLOGY_LEVEL};
+pub use topology::{build_icosphere, expected_edge_count, expected_face_count, expected_sample_count, GeodesicTopology, PlanetTopology, TopologyMetrics, INVALID_SAMPLE_ID, MAX_TOPOLOGY_LEVEL};
 
 pub const WORLDGEN_ENGINE_VERSION: u32 = 2;
 pub const SYNTHETIC_STAGE_ID: &str = "foundation:synthetic";
