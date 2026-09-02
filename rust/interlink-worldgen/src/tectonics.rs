@@ -181,28 +181,48 @@ fn random_unit_vector(seed: u64, stream: u64) -> [f64; 3] {
 
 fn select_plate_seeds<T: PlanetTopology>(topology: &T, plate_count: u16, stage_seed: u64) -> Vec<u32> {
     let sample_count = topology.sample_count() as usize;
+    let expected_spacing_rad = (4.0 * PI / f64::from(plate_count)).sqrt();
+    let minimum_separation_rad = (expected_spacing_rad * 0.40).clamp(0.10, 0.55);
+    let candidate_attempts = sample_count.clamp(256, 4_096);
     let first = (random::mix64(stage_seed ^ 0xd1b5_4a32_d192_ed03) % sample_count as u64) as u32;
     let mut seeds = Vec::with_capacity(plate_count as usize);
     seeds.push(first);
-    let mut nearest = vec![PI; sample_count];
 
     for plate_index in 1..plate_count as usize {
-        let newest = topology.unit_position(seeds[plate_index - 1]);
-        for sample in 0..sample_count {
-            nearest[sample] = nearest[sample].min(arc_radians(topology.unit_position(sample as u32), newest));
-        }
-        let mut best_sample = 0_u32;
-        let mut best_score = f64::NEG_INFINITY;
-        for sample in 0..sample_count {
-            if nearest[sample] <= 1.0e-14 { continue; }
-            let jitter = 0.88 + 0.24 * unit_random(stage_seed ^ ((plate_index as u64) << 40) ^ sample as u64 ^ 0xe703_7ed1_a0b4_28db);
-            let score = nearest[sample] * jitter;
-            if score > best_score || (score == best_score && (sample as u32) < best_sample) {
-                best_score = score;
-                best_sample = sample as u32;
+        let mut accepted = None;
+        let mut best_sample = None;
+        let mut best_separation = f64::NEG_INFINITY;
+        for attempt in 0..candidate_attempts {
+            let stream = stage_seed
+                ^ (plate_index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                ^ (attempt as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9)
+                ^ 0x94d0_49bb_1331_11eb;
+            let candidate = (random::mix64(stream) % sample_count as u64) as u32;
+            if seeds.contains(&candidate) { continue; }
+            let position = topology.unit_position(candidate);
+            let separation = seeds.iter().map(|seed| arc_radians(position, topology.unit_position(*seed))).fold(PI, f64::min);
+            if separation > best_separation || (separation == best_separation && Some(candidate) < best_sample) {
+                best_separation = separation;
+                best_sample = Some(candidate);
+            }
+            if separation >= minimum_separation_rad {
+                accepted = Some(candidate);
+                break;
             }
         }
-        seeds.push(best_sample);
+
+        if accepted.is_none() {
+            for sample in 0..sample_count as u32 {
+                if seeds.contains(&sample) { continue; }
+                let position = topology.unit_position(sample);
+                let separation = seeds.iter().map(|seed| arc_radians(position, topology.unit_position(*seed))).fold(PI, f64::min);
+                if separation > best_separation || (separation == best_separation && Some(sample) < best_sample) {
+                    best_separation = separation;
+                    best_sample = Some(sample);
+                }
+            }
+        }
+        seeds.push(accepted.or(best_sample).expect("plate seed selection requires an unused topology sample"));
     }
     seeds
 }
