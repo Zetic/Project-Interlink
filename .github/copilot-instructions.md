@@ -1,353 +1,141 @@
 # Project Interlink — Coding Agent Guardrails
 
-Use this file for implementation constraints. Read the active issue/PR request plus `ARCHITECTURE.md` before editing runtime or workspace code.
+Read the active request plus `ARCHITECTURE.md` before editing runtime, graph, world, or UI code. Historical migration architecture is not an implementation target.
 
-Document roles:
-
-- `DESIGN.md` — long-term game/simulation design;
-- `ARCHITECTURE.md` — current code ownership, dependency direction, and extension paths;
-- `ARCHITECTURE_PERFORMANCE.md` — runtime/performance contract;
-- `README.md` — current implemented gameplay/state summary;
-- `PATCH_NOTES.md` — historical development record;
-- this file — coding-agent guardrails.
-
-Historical migration architecture is not a valid implementation target.
-
----
-
-## Working Rules
+## Working rules
 
 - Prefer the smallest coherent change that satisfies the active task.
-- Preserve established physical ownership, conservation, deterministic-generation, graph, and runtime-authority contracts unless the task explicitly changes them.
+- Preserve deterministic authoring, typed graph contracts, physical ownership, conservation, and runtime-authority boundaries unless the task explicitly changes them.
 - Add focused regressions for new invariants and bug fixes.
-- Run the complete relevant regression suite before declaring work complete.
-- Do not claim browser/manual behavior was verified unless it actually was.
+- Run the complete relevant browser and Rust/WASM validation before declaring work complete.
 - Update active documentation when code ownership or current behavior materially changes.
-- Do not keep dead compatibility files merely because old imports once existed.
+- Do not retain or recreate dead compatibility source.
 
----
-
-## Production Runtime Authority
-
-Production physical simulation has one authority:
+## Production runtime authority
 
 ```text
-main-thread UI / canonical authoring
-        ↓ coarse setup, commands, queries
-simulation Worker
+TypeScript main-thread application
+        ↓ coarse setup / commands / queries
+module Worker
         ↓
 WasmPackedWorldRuntime
         ↓
 Rust interlink-runtime + domain crates
 ```
 
-Rust/WASM owns:
+Rust/WASM owns fixed-step physical time advancement, retained material/thermal state, apparatus execution, routing/backpressure, conservation-sensitive transformations, and process physics.
 
-- fixed-step physical time advancement;
-- retained runtime material/thermal state;
-- apparatus execution;
-- routing/backpressure;
-- conservation-sensitive transformations;
-- Site/world scheduling.
+TypeScript owns deterministic authored world data, readable graph/configuration state, setup compilation, Worker lifecycle/protocol/pacing, authoritative presentation projection, and DOM interaction.
 
-JavaScript owns:
+Do not:
 
-- generated/canonical world and content authoring;
-- readable Blueprint/node state;
-- canonical → packed runtime setup compilation;
-- Worker lifecycle/protocol/pacing;
-- authoritative snapshot/detail presentation;
-- workspace and DOM interaction.
-
-Do **not**:
-
-- create a JavaScript fallback physics engine;
+- create TypeScript or JavaScript fallback physics;
 - advance production physical time on the main thread;
 - recreate standalone per-apparatus WASM browser runtimes;
-- send full-world state across the Worker boundary every fixed step;
-- add per-fraction/per-machine JS↔WASM hot-path loops.
+- send full physical-world state across the Worker boundary every fixed step;
+- add per-population/per-machine browser↔WASM hot loops.
 
-`src/simulation/packed*` JavaScript types are setup/compiler representations. Do not delete them simply because they contain `Runtime` in the name; delete only code proven unused by the current world-runtime setup path.
+## Browser source policy
 
----
-
-## Platform Guardrails
-
-Preserve the current lightweight browser architecture unless an active task requires otherwise:
-
-- vanilla HTML/CSS/ES modules;
-- relative imports compatible with GitHub Pages project paths;
-- dedicated Worker + Rust/WASM physical runtime;
-- Node-based JavaScript regression tests;
-- Cargo workspace Rust tests.
-
-Do not introduce a frontend framework, backend, database, ECS, dependency-injection framework, or other large infrastructure layer without a concrete requirement.
-
----
-
-## JavaScript Domain Ownership
+Production browser source is TypeScript.
 
 ```text
-src/content/     declarative resources, Features, apparatus, reactions
-src/core/        canonical materials, process contracts, system primitives,
-                 world assembly/validation/versions
-src/generator/   deterministic world generation
-src/simulation/  browser authoring/setup compiler + Worker boundary/presentation
-src/workspace/   graph/navigation/catalog/Inspector/debug/shell DOM application
-src/app.js       browser composition root
-src/wasm/        generated wasm-bindgen browser package
+src/app.ts        composition root
+src/apparatus/    apparatus catalog/parameters
+src/debug/        telemetry, capabilities, debug fixtures
+src/graph/        flat graph contracts/commands/queries
+src/map/          map camera/rendering/interactions
+src/material/     authored material/reaction contracts
+src/runtime/      runtime plan/setup/protocol/controller/Worker
+src/state/        AppStore and subscriptions
+src/ui/           NAV/NODE/Inspector/DEBUG/shell
+src/world/        flat world model/generation/geometry/scale
+src/wasm/         generated wasm-bindgen package
 ```
 
-Preferred dependency direction:
+`dist/**/*.js` is generated from TypeScript and is committed for static hosting. `src/wasm/interlink_wasm.js` is generated wasm-bindgen glue. Do not hand-edit either as source.
+
+Do not add handwritten production `.js` modules under `src`. JavaScript under `tests/` is the active Node regression harness and may import generated `dist/` modules or inspect TypeScript/Rust source as appropriate.
+
+## Flat browser world
+
+The active browser model is:
 
 ```text
-app → generator + core + workspace
-workspace → simulation + content + core
-simulation → content + core
-generator → content + core
-content → core
-core → core
+Planet → Regions → resource FEATURE nodes
 ```
 
-Internal code should import canonical paths directly. Do not recreate `src/data/`, mirrored generator folders, top-level workspace forwarding files, root material forwarding files, or a `core/world/worldState.js` compatibility facade.
+Resource FEATURE nodes live directly on the continuous map. The browser does not use nested Site workspaces, child workspaces, boundary-transfer terminals, or recursive system ownership. Do not restore retired hierarchy concepts for compatibility.
 
----
+A `resource-access` edge authorizes/selects a source and carries no matter. Physical flow begins at an Extractor material output.
 
-## State Separation
+## Graph and apparatus
 
-Keep these concerns distinct:
+`src/apparatus/definitions.ts` is the canonical player-facing apparatus catalog. Do not create a second machine catalog or machine-pair whitelist.
+
+`src/graph/` owns authoring mutations and compatibility checks. Preserve:
+
+- one input source per input port;
+- no implicit material-output fan-out;
+- explicit Splitter for fan-out;
+- explicit Material Merger for fan-in;
+- stored/metered solid capability semantics;
+- gas capability semantics;
+- canonical string IDs in authored state.
+
+Runtime-local numeric IDs are transient packing details.
+
+## Material and reaction model
+
+TypeScript owns readable definitions and setup metadata. Rust owns mutable inventories and physical transformations.
+
+Detailed particulate identity is conceptually:
 
 ```text
-Canonical world/authored state  → readable generated topology and Blueprint definitions
-Rust runtime state              → authoritative time-evolving physical state
-Knowledge state                 → player measurements/knowledge
-Application/UI state            → selection/layout/viewport/panels/gestures
+species × particle-size bin × liberation class × texture lineage → quantity
 ```
 
-Worker snapshots/details are projections of Rust authority, not a second simulation state.
+Preserve occurrence-specific texture, staged size vocabulary, liberation state, magnetic response, thermal state, and reaction conservation when extending existing ore-processing behavior.
 
-Physical truth must never exist only in DOM elements.
+Do not simplify an existing physical mechanic merely because browser-side code is being changed.
 
----
+## Runtime setup and Worker
 
-## Natural World Ownership
-
-Preserve:
+Active runtime path:
 
 ```text
-Planet → Region → Site → Feature → ResourceOccurrence
-```
-
-- Regions group Sites; they do not directly own natural resource inventory.
-- Sites reference Features.
-- Natural `ResourceOccurrence`s are Feature-owned.
-- Independently exploitable natural sources should normally be distinct Features.
-- Broadly distributed resources still require physical access through Sites/Features rather than Region inventory.
-
-Do not reintroduce parallel ownership fields such as `region.resources`, `region.features`, or `region.backgroundResourceOccurrences`.
-
-Current schema/generator constants live only in `src/core/world/versions.js`. Do not duplicate version numbers in code.
-
----
-
-## Content and Generation
-
-Canonical content locations:
-
-```text
-src/content/resources/
-src/content/features/
-src/content/apparatus/
-src/content/reactions/
-```
-
-Canonical generator entry point:
-
-```text
-src/generator/generateWorld.js
-```
-
-Deterministic generation algorithms live directly under `src/generator/`; forwarding subfolders were intentionally removed.
-
-If a change alters same-seed generated world truth, consider the generator-version rule. Bump schema version only when the serialized world-state contract changes.
-
----
-
-## Material Model
-
-Canonical solid particulate state is aggregate/statistical. Textured ore populations use:
-
-```text
-speciesId × sizeBinId × liberationClassId × textureProfileId → quantity
-```
-
-Legacy/untextured populations may omit the texture profile.
-
-A fraction is a population, not an individually simulated particle.
-
-Keep composition, particle size, liberation, texture lineage, separation, and routing conceptually distinct.
-
-`MaterialBody.thermalState.sensibleEnthalpyJ` owns body thermal energy. Do not add temperature to the particulate identity key.
-
-Do not reintroduce placeholder generated pseudo-species such as generic gangue/iron-oxide mixtures when concrete registered species are available.
-
-Compatibility note: older particle-size IDs may remain readable; new processing should emit current canonical bins.
-
----
-
-## Process and Apparatus Architecture
-
-Browser process contracts live in:
-
-```text
-src/core/processes/definitions/
-```
-
-Production fixed-step process physics and conservation enforcement belong in Rust domain/runtime crates. Do not create parallel JavaScript transformation or conservation kernels as a production fallback.
-
-Canonical apparatus metadata lives in:
-
-```text
-src/content/apparatus/definitions.js
-```
-
-Browser node constructors live in `src/simulation/apparatus/` plus specialized node-construction modules such as `extractorNode.js` and `hopperNode.js`. `src/simulation/apparatus/registry.js` is a node-factory registry, not a physics runtime registry.
-
-The generic `Crusher` remains compatibility-only and is not player-placeable. Do not remove compatibility behavior without an explicit migration/save-state decision.
-
-### Adding an apparatus
-
-Normally update:
-
-1. apparatus definition metadata/ports/defaults;
-2. browser-readable process contract if a new process family is needed;
-3. canonical browser node construction/registry;
-4. appropriate Rust physical-domain implementation;
-5. `interlink-runtime` scheduler/state integration;
-6. coarse WASM/world setup fields and JS compiler only as needed;
-7. generic workspace controls/Inspector presentation;
-8. JS, Rust, Worker, and WASM regressions.
-
-Avoid machine-pair whitelists, duplicate catalogs, standalone WASM machine objects, and central JavaScript physics switches.
-
----
-
-## Typed Ports and Routing
-
-Connection eligibility derives from edge kind plus interface/physical capabilities, not explicit machine pairs.
-
-Important capabilities include:
-
-```text
-resource-source
-solid-particulate
-stored-solid-particulate
-gas
-```
-
-Rules:
-
-- `resource-access` authorizes/selects a source; it carries no matter/kg/s;
-- ordinary material outputs are single-consumer; use Splitter for explicit fan-out;
-- ordinary material inputs are single-source; use Material Merger for explicit fan-in;
-- required outputs must not silently delete matter;
-- multi-output and multi-input process commits remain transactional;
-- recursive boundary movement must be explicit and conserved.
-
----
-
-## Worker and Packed Runtime Setup
-
-Canonical setup path:
-
-```text
-canonical world / Blueprints
-  → packedWorldRuntimeCompiler.js
-  → packedWorldWorkerSetup.js
-  → Worker structured-clone-safe setup
+compileFlatRuntimePlan
+  → compileFlatWorkerSetup
+  → runtimeController
+  → fullRuntimeWorker
   → WasmPackedWorldRuntime
 ```
 
-Runtime-local numeric IDs are transient execution details. Do not serialize them as canonical world identity.
+Structural graph changes may rebuild the runtime. Parameter-only edits should use the existing live-reconfiguration path when supported and preserve retained Rust state transactionally.
 
-`runtimeProtocol.js`, `rustWasmWorkerHost.js`, and `realtimeRuntime.js` coordinate the Worker boundary. `runtimePresentation.js` projects authoritative snapshots/details for the browser.
+Routine responses should stay compact. Rich entity state should remain query-driven rather than bloating every snapshot.
 
-Live topology/parameter changes should use explicit reconfiguration rather than silently rebuilding a second runtime on the main thread.
+## UI/presentation
 
-The current fixed step is `0.1 s`.
+UI code may display authoritative runtime state but must not become physical state ownership.
 
----
+Preserve domain-selective subscriptions: runtime/telemetry updates should not rebuild structural geometry or unrelated panels. Node cards, Inspector, DEBUG, and map runtime presentation should consume snapshot/detail projections.
 
-## Rust Workspace Rules
+DEBUG pause/step/profiling controls must call `RuntimeController`; debug fixtures must create ordinary authored graphs that execute through the normal Rust/WASM runtime.
 
-Current physical/runtime crates include:
+## Testing and generated assets
 
-```text
-interlink-core
-interlink-processes
-interlink-extraction
-interlink-comminution
-interlink-separation
-interlink-routing
-interlink-thermal
-interlink-thermochemistry
-interlink-roasting
-interlink-runtime
-interlink-wasm
-```
+For TypeScript changes:
 
-`interlink-runtime` owns packed world scheduling and retained execution state. `interlink-wasm` exposes the coarse world browser interface.
+1. run the TypeScript build;
+2. regenerate `dist/`;
+3. commit generated output exactly;
+4. run Node regressions;
+5. run Rust workspace tests;
+6. compile/package browser WASM and verify generated assets when runtime/WASM surfaces are involved.
 
-Preserve deterministic ordering and conservation semantics when extending scheduler phases.
+Keep `tests/postMigrationHygiene.test.js` enforcing the no-handwritten-JavaScript source policy and retired-source absence.
 
-Deep profiling must remain optional and should not add timing calls to the disabled path.
+## Dependency and infrastructure guardrails
 
----
-
-## Workspace Rules
-
-Canonical workspace domains:
-
-```text
-src/workspace/catalog/
-src/workspace/debug/
-src/workspace/graph/
-src/workspace/inspector/
-src/workspace/navigation/
-src/workspace/shell/
-```
-
-`workspaceController.js` is currently the large DOM/application orchestrator. Refactoring it should split responsibilities without moving physical execution/state ownership out of the Worker.
-
-Prefer definition-driven generic controls/Inspector rendering over machine-specific controller branches.
-
-Do not recreate removed top-level forwarding aliases.
-
----
-
-## Compatibility and Hygiene
-
-Migration-era forwarding modules and per-apparatus WASM browser adapters are intentionally removed.
-
-Compatibility should remain only where an actual serialized/gameplay contract requires it, such as the generic legacy Crusher or readable legacy particle-size IDs.
-
-`tests/postMigrationHygiene.test.js` guards removed compatibility paths, relative-module integrity, absence of forwarding-only source modules, absence of old standalone WASM adapters, and current runtime-authority documentation.
-
-If a compatibility surface is no longer consumed, remove the file, callers, tests, docs, and empty directory together.
-
----
-
-## Completion Checklist
-
-Before finishing a PR:
-
-1. confirm one Rust/WASM production physical authority is preserved;
-2. confirm no missing/duplicate matter ownership or conservation regression;
-3. confirm deterministic generation semantics/version rules;
-4. confirm canonical module paths and no new forwarding compatibility shim;
-5. confirm Worker setup/protocol does not introduce per-step full-world or per-fraction bridge traffic;
-6. add/update focused regressions;
-7. run `npm run check:runtime`;
-8. allow the PR workflow to rebuild and verify the wasm-bindgen browser package;
-9. perform browser smoke testing for interaction/layout changes, or state clearly when not manually verified;
-10. update active docs when current architecture or behavior changes.
+Keep the application lightweight: vanilla HTML/CSS, TypeScript ES modules, module Worker, Rust/WASM, and static hosting. Do not introduce a frontend framework, backend, database, ECS, dependency-injection framework, or other large infrastructure layer without a concrete requirement.
