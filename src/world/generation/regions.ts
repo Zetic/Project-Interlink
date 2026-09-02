@@ -11,7 +11,6 @@ import {
 import { createRegionEnvironment } from './regionEnvironment.js';
 import type { PlanetEnvironmentContext } from './surfaceField.js';
 import { samplePlanetEnvironment } from './surfaceField.js';
-import { wrappedDeltaX } from './tectonics.js';
 
 export const REGION_SEED_COLUMNS = 100;
 export const REGION_SEED_ROWS = 50;
@@ -38,7 +37,6 @@ interface SeedSpatialIndex {
   binColumns: number;
   binRows: number;
   bins: Map<string, RegionSeed[]>;
-  byParent: Map<string, RegionSeed[]>;
 }
 
 interface PatchSpatialIndex {
@@ -130,7 +128,6 @@ function buildSeedSpatialIndex(seeds: readonly RegionSeed[]): SeedSpatialIndex {
   const binColumns = Math.ceil(PLANET_MAP_WIDTH / REGION_SEED_BIN_SIZE);
   const binRows = Math.ceil(PLANET_MAP_HEIGHT / REGION_SEED_BIN_SIZE);
   const bins = new Map<string, RegionSeed[]>();
-  const byParent = new Map<string, RegionSeed[]>();
   for (const seed of seeds) {
     const column = Math.min(binColumns - 1, Math.max(0, Math.floor(seed.point.x / REGION_SEED_BIN_SIZE)));
     const row = Math.min(binRows - 1, Math.max(0, Math.floor(seed.point.y / REGION_SEED_BIN_SIZE)));
@@ -138,12 +135,8 @@ function buildSeedSpatialIndex(seeds: readonly RegionSeed[]): SeedSpatialIndex {
     const values = bins.get(key) ?? [];
     values.push(seed);
     bins.set(key, values);
-    const parentValues = byParent.get(seed.parentId) ?? [];
-    parentValues.push(seed);
-    byParent.set(seed.parentId, parentValues);
   }
-  for (const values of byParent.values()) values.sort((left, right) => left.id.localeCompare(right.id));
-  return { binColumns, binRows, bins, byParent };
+  return { binColumns, binRows, bins };
 }
 
 function localSeedCandidates(seed: RegionSeed, index: SeedSpatialIndex): RegionSeed[] {
@@ -159,7 +152,7 @@ function localSeedCandidates(seed: RegionSeed, index: SeedSpatialIndex): RegionS
 }
 
 function halfPlaneForSeeds(seed: RegionSeed, competitor: RegionSeed): PowerHalfPlane {
-  const competitorX = seed.point.x + wrappedDeltaX(seed.point.x, competitor.point.x);
+  const competitorX = competitor.point.x;
   const a = 2 * (competitorX - seed.point.x);
   const b = 2 * (competitor.point.y - seed.point.y);
   const c = competitorX * competitorX + competitor.point.y * competitor.point.y - competitor.powerBias
@@ -202,21 +195,9 @@ function powerCellForSeed(seed: RegionSeed, index: SeedSpatialIndex): Point[] {
     { x: PLANET_MAP_WIDTH, y: PLANET_MAP_HEIGHT },
     { x: 0, y: PLANET_MAP_HEIGHT },
   ];
-  const applied = new Set<string>([seed.id]);
   for (const competitor of localSeedCandidates(seed, index)) {
     if (competitor.id === seed.id) continue;
     cell = clipPolygonByHalfPlane(cell, halfPlaneForSeeds(seed, competitor));
-    applied.add(competitor.id);
-    if (cell.length < 3) return [];
-  }
-  // Local bins shrink the cell quickly. The parent-wide validation below keeps
-  // the resulting power diagram exact without paying full clipping cost for
-  // distant seeds whose half-planes already contain the complete cell.
-  for (const competitor of index.byParent.get(seed.parentId) ?? []) {
-    if (applied.has(competitor.id)) continue;
-    const plane = halfPlaneForSeeds(seed, competitor);
-    if (cell.every(point => signedHalfPlaneDistance(plane, point) <= GEOMETRY_EPSILON)) continue;
-    cell = clipPolygonByHalfPlane(cell, plane);
     if (cell.length < 3) return [];
   }
   return removeCollinearVertices(cell.map(roundPoint));
