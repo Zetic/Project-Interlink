@@ -11,10 +11,10 @@ import { createWorldSpatialIndex, worldSpatialIndexFor } from '../dist/world/spa
 
 const MAX_REGION_SURFACE_AREA_RELATIVE_ERROR = 7e-5;
 
-test('generator v6 creates semantic land and ocean Regions at Earth scale', () => {
+test('generator v7 creates semantic land and ocean Regions at Earth scale', () => {
   const planet = generateWorld('phase-ten-one-world').planet;
   assert.equal(planet.generatorVersion, WORLD_GENERATOR_VERSION);
-  assert.equal(WORLD_GENERATOR_VERSION, 6);
+  assert.equal(WORLD_GENERATOR_VERSION, 7);
   assert.equal(planet.surfaceResolution.columns * planet.surfaceResolution.rows === planet.regions.length, false);
   assert.ok(planet.tectonicPlates.length >= 12 && planet.tectonicPlates.length <= 24);
   assert.ok(planet.continents.length >= 3 && planet.continents.length <= 8);
@@ -26,10 +26,11 @@ test('generator v6 creates semantic land and ocean Regions at Earth scale', () =
   assert.ok(planet.resourceNodes.length > 100 && planet.resourceNodes.length < 2_000);
   assert.equal(new Set(planet.regions.map(region => region.name)).size, planet.regions.length);
   assert.ok(planet.regions.every(region => region.geographicType.length > 0));
+  assert.ok(planet.tectonicPlates.every(plate => plate.baseCrustAgeMyr > 0 && plate.baseCrustThicknessKm > 0));
 });
 
 test('geographic parents and semantic Regions form one complete canonical surface', () => {
-  const planet = generateWorld('bounded-geography-v6').planet;
+  const planet = generateWorld('bounded-geography-v7').planet;
   const environmentContext = environmentContextForPlanet(planet);
   const parents = new Map([...planet.continents, ...planet.oceans].map(parent => [parent.id, parent]));
   let totalArea = 0;
@@ -43,6 +44,10 @@ test('geographic parents and semantic Regions form one complete canonical surfac
     assert.equal(region.surfaceType, region.parentKind === 'continent' ? 'land' : 'ocean');
     assert.ok(parent.regionIds.includes(region.id));
     assert.ok(region.environment.meanElevationMeters >= 0 === (region.surfaceType === 'land'));
+    assert.ok(region.environment.crustAgeMyr > 0);
+    assert.ok(region.environment.crustThicknessKm > 0);
+    assert.ok(region.environment.upliftIndex >= 0 && region.environment.upliftIndex <= 1);
+    assert.ok(region.environment.subsidenceIndex >= 0 && region.environment.subsidenceIndex <= 1);
     for (const point of region.polygon) assert.ok(point.x >= 0 && point.x <= PLANET_MAP_WIDTH && point.y >= 0 && point.y <= PLANET_MAP_HEIGHT);
   }
   const canonicalSurfaceArea = PLANET_MAP_WIDTH * PLANET_MAP_HEIGHT;
@@ -66,7 +71,7 @@ test('planet logical coordinates retain an Earth-scale physical interpretation',
 });
 
 test('point-sampled resources remain land Features and preserve guaranteed Iron Ore', () => {
-  const planet = generateWorld('resource-suitability-v6').planet;
+  const planet = generateWorld('resource-suitability-v7').planet;
   const regions = new Map(planet.regions.map(region => [region.id, region]));
   assert.equal(planet.resourceNodes[0]!.resourceId, 'iron-ore');
   for (const node of planet.resourceNodes) {
@@ -84,7 +89,7 @@ test('point-sampled resources remain land Features and preserve guaranteed Iron 
 });
 
 test('the shared chunk index resolves candidate-only geographic and Feature queries', () => {
-  const planet = generateWorld('spatial-query-world-v6').planet;
+  const planet = generateWorld('spatial-query-world-v7').planet;
   const index = createWorldSpatialIndex(planet);
   assert.equal(worldSpatialIndexFor(planet), worldSpatialIndexFor(planet));
   const feature = planet.resourceNodes[Math.floor(planet.resourceNodes.length / 2)]!;
@@ -98,9 +103,9 @@ test('the shared chunk index resolves candidate-only geographic and Feature quer
 });
 
 test('seed plus generator version deterministically identifies tectonic and semantic geographic truth', () => {
-  const first = generateWorld('repeatable-v6');
-  const second = generateWorld('repeatable-v6');
-  const different = generateWorld('different-v6');
+  const first = generateWorld('repeatable-v7');
+  const second = generateWorld('repeatable-v7');
+  const different = generateWorld('different-v7');
   assert.deepEqual(second, first);
   assert.notDeepEqual(different.planet.tectonicPlates, first.planet.tectonicPlates);
   assert.notDeepEqual(different.planet.continents, first.planet.continents);
@@ -108,7 +113,7 @@ test('seed plus generator version deterministically identifies tectonic and sema
 });
 
 test('generation stays split and does not restore retired geographic/workspace models', () => {
-  const serialized = JSON.stringify(generateWorld('flat-world-model-v6'));
+  const serialized = JSON.stringify(generateWorld('flat-world-model-v7'));
   for (const retiredField of ['landmasses', 'landmassId', 'siteIds', 'childWorkspaceId', 'systemNodes']) assert.equal(serialized.includes(retiredField), false);
   const orchestrator = fs.readFileSync('src/world/generateWorld.ts', 'utf8');
   assert.match(orchestrator, /generateTectonicPlates/); assert.match(orchestrator, /generateSurfaceField/); assert.match(orchestrator, /generateGeography/); assert.match(orchestrator, /generateRegions/); assert.match(orchestrator, /generateResourceFeatures/);

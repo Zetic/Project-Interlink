@@ -12,8 +12,13 @@ const BASE_OPTIONS = [
     { id: 'moisture', label: 'Moisture', group: 'Surface' },
     { id: 'tectonic-plates', label: 'Tectonic Plates', group: 'Geology' },
     { id: 'crust-type', label: 'Crust Type', group: 'Geology' },
+    { id: 'crust-age', label: 'Crust Age', group: 'Geology' },
+    { id: 'crust-thickness', label: 'Crust Thickness', group: 'Geology' },
     { id: 'plate-boundaries', label: 'Plate Boundaries', group: 'Geology' },
     { id: 'tectonic-activity', label: 'Tectonic Activity', group: 'Geology' },
+    { id: 'uplift-subsidence', label: 'Uplift / Subsidence', group: 'Geology' },
+    { id: 'orogeny', label: 'Orogenic Influence', group: 'Geology' },
+    { id: 'rifting', label: 'Rift Influence', group: 'Geology' },
     { id: 'volcanic-activity', label: 'Volcanic Activity', group: 'Geology' },
     { id: 'sedimentary-tendency', label: 'Sedimentary Tendency', group: 'Geology' },
     { id: 'semantic-geography', label: 'Semantic Geography', group: 'Geography' },
@@ -64,6 +69,22 @@ const ELEVATION_STOPS = [
     [3200, [174, 159, 139]],
     [5800, [244, 244, 239]],
 ];
+const CRUST_AGE_STOPS = [
+    [0, [63, 211, 219]],
+    [100, [65, 142, 198]],
+    [500, [83, 92, 164]],
+    [1500, [121, 85, 139]],
+    [2500, [160, 105, 112]],
+    [3300, [211, 151, 105]],
+];
+const CRUST_THICKNESS_STOPS = [
+    [5, [36, 70, 112]],
+    [10, [62, 111, 143]],
+    [25, [111, 129, 117]],
+    [35, [163, 142, 99]],
+    [50, [205, 166, 107]],
+    [60, [239, 207, 151]],
+];
 function clamp01(value) { return Math.max(0, Math.min(1, value)); }
 function byte(value) { return Math.max(0, Math.min(255, Math.round(value))); }
 function interpolateStops(stops, value, alpha = 236) {
@@ -95,6 +116,13 @@ function heat(value, low, high, alpha = 236) {
         alpha,
     ];
 }
+function diverging(value) {
+    const clamped = Math.max(-1, Math.min(1, value));
+    const neutral = [88, 94, 98];
+    return clamped >= 0
+        ? heat(clamped, neutral, [236, 122, 70])
+        : heat(-clamped, neutral, [61, 132, 187]);
+}
 function hslToRgb(hue, saturation = 0.58, lightness = 0.52) {
     const h = ((hue % 360) + 360) % 360 / 360;
     const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
@@ -121,13 +149,23 @@ export function overlayLegendFor(id) {
     if (id === 'elevation')
         return { title: 'Elevation / Bathymetry', detail: '−7.5 km → sea level → +5.8 km', gradient: 'linear-gradient(90deg,#081337,#2d6897,#dacea0,#58804b,#89774f,#f4f4ef)' };
     if (id === 'relief')
-        return { title: 'Relief', detail: 'Local ruggedness · 0 → ~3.3 km', gradient: 'linear-gradient(90deg,#17232c,#747b58,#d7b861,#f2eee0)' };
+        return { title: 'Relief', detail: 'Local ruggedness · 0 → ~4 km', gradient: 'linear-gradient(90deg,#17232c,#747b58,#d7b861,#f2eee0)' };
     if (id === 'thermal')
         return { title: 'Thermal Index', detail: 'Cold → warm', gradient: 'linear-gradient(90deg,#315b8c,#64b6cf,#e5d56a,#d5654f)' };
     if (id === 'moisture')
         return { title: 'Moisture', detail: 'Dry → wet', gradient: 'linear-gradient(90deg,#8a6947,#758a63,#4d92a8,#6db8cf)' };
+    if (id === 'crust-age')
+        return { title: 'Crust Age', detail: 'Young spreading crust → ancient continental crust', gradient: 'linear-gradient(90deg,#3fd3db,#418ec6,#535ca4,#79558b,#d39769)' };
+    if (id === 'crust-thickness')
+        return { title: 'Crust Thickness', detail: '~5 km oceanic → ~60 km thickened continental', gradient: 'linear-gradient(90deg,#244670,#3e6f8f,#6f8175,#a38e63,#efcf97)' };
     if (id === 'tectonic-activity')
         return { title: 'Tectonic Activity', detail: 'Stable interior → active boundary', gradient: 'linear-gradient(90deg,#202a31,#d0a04d,#e34d3f)' };
+    if (id === 'uplift-subsidence')
+        return { title: 'Uplift / Subsidence', detail: 'Subsidence → neutral → uplift', gradient: 'linear-gradient(90deg,#3d84bb,#585e62,#ec7a46)' };
+    if (id === 'orogeny')
+        return { title: 'Orogenic Influence', detail: 'Low → active crustal shortening / mountain building', gradient: 'linear-gradient(90deg,#20252b,#8d6d56,#d49a62,#f2d6a2)' };
+    if (id === 'rifting')
+        return { title: 'Rift Influence', detail: 'Low → active continental extension', gradient: 'linear-gradient(90deg,#20252b,#5d547b,#a74f78,#e26d78)' };
     if (id === 'volcanic-activity')
         return { title: 'Volcanic Activity', detail: 'Low → high', gradient: 'linear-gradient(90deg,#201a2d,#8d3f74,#e46b35,#f6c15d)' };
     if (id === 'sedimentary-tendency')
@@ -139,7 +177,7 @@ export function overlayLegendFor(id) {
     if (id === 'crust-type')
         return { title: 'Crust Type', detail: 'Continental tan · oceanic blue' };
     if (id === 'semantic-geography')
-        return { title: 'Semantic Geography', detail: 'Generator v6 Region classification' };
+        return { title: 'Semantic Geography', detail: 'Generator v7 Region classification' };
     if (id.startsWith('resource:')) {
         const resourceId = id.slice('resource:'.length);
         const definition = RESOURCE_DEFINITIONS.find(candidate => candidate.id === resourceId);
@@ -151,7 +189,7 @@ export function overlayColorForEnvironment(id, sample, plateIndex = 0, crustType
     if (id === 'elevation')
         return interpolateStops(ELEVATION_STOPS, sample.surfaceElevationMeters);
     if (id === 'relief')
-        return heat(sample.reliefMeters / 3_300, [23, 35, 44], [242, 238, 224]);
+        return heat(sample.reliefMeters / 4_000, [23, 35, 44], [242, 238, 224]);
     if (id === 'thermal') {
         const cold = [49, 91, 140];
         const warm = [213, 82, 63];
@@ -159,8 +197,18 @@ export function overlayColorForEnvironment(id, sample, plateIndex = 0, crustType
     }
     if (id === 'moisture')
         return heat(sample.moistureIndex, [132, 97, 65], [79, 164, 191]);
+    if (id === 'crust-age')
+        return interpolateStops(CRUST_AGE_STOPS, sample.crustAgeMyr);
+    if (id === 'crust-thickness')
+        return interpolateStops(CRUST_THICKNESS_STOPS, sample.crustThicknessKm);
     if (id === 'tectonic-activity')
         return heat(sample.tectonicActivity, [29, 39, 46], [229, 69, 51]);
+    if (id === 'uplift-subsidence')
+        return diverging(sample.upliftIndex - sample.subsidenceIndex);
+    if (id === 'orogeny')
+        return heat(sample.orogenicInfluence, [29, 35, 42], [242, 205, 151]);
+    if (id === 'rifting')
+        return heat(sample.riftInfluence, [28, 34, 42], [226, 91, 119]);
     if (id === 'volcanic-activity')
         return heat(sample.volcanicActivity, [30, 24, 43], [244, 167, 66]);
     if (id === 'sedimentary-tendency')

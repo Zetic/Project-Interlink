@@ -25,7 +25,7 @@ export function wrappedDistanceSquared(left: Point, right: Point): number {
 }
 
 export function generateTectonicPlates(seed: string): TectonicPlate[] {
-  const rng = createRng(seed, 'tectonics:plates:v3');
+  const rng = createRng(seed, 'tectonics:plates:v7');
   const count = rng.int(12, 24);
   const points: Point[] = [];
   const minimumSeparation = Math.sqrt((PLANET_MAP_WIDTH * PLANET_MAP_HEIGHT) / count) * 0.34;
@@ -49,7 +49,7 @@ export function generateTectonicPlates(seed: string): TectonicPlate[] {
   });
   const continental = new Set(crustOrder.slice(0, continentalTarget));
   return points.map((seedPoint, index) => {
-    const plateRng = createRng(seed, `tectonics:plate:${index}`);
+    const plateRng = createRng(seed, `tectonics:plate:v7:${index}`);
     const direction = plateRng.range(0, Math.PI * 2);
     const speed = plateRng.range(0.35, 1);
     const crustType = continental.has(index) ? 'continental' as const : 'oceanic' as const;
@@ -59,6 +59,8 @@ export function generateTectonicPlates(seed: string): TectonicPlate[] {
       motion: { x: Number((Math.cos(direction) * speed).toFixed(6)), y: Number((Math.sin(direction) * speed).toFixed(6)) },
       crustType,
       crustBias: Number((crustType === 'continental' ? plateRng.range(0.28, 0.48) : plateRng.range(-0.48, -0.2)).toFixed(6)),
+      baseCrustAgeMyr: Number((crustType === 'continental' ? plateRng.range(650, 3_200) : plateRng.range(18, 180)).toFixed(1)),
+      baseCrustThicknessKm: Number((crustType === 'continental' ? plateRng.range(30, 43) : plateRng.range(6.1, 8.7)).toFixed(2)),
     };
   });
 }
