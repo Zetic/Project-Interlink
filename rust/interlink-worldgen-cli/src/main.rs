@@ -1,20 +1,20 @@
 use interlink_worldgen::{
-    build_icosphere, generate_crust_and_history, generate_synthetic, generate_tectonics,
-    GeologyRequest, PlanetPhysicalParameters, PlateScaleClass, SyntheticRequest,
-    TectonicsRequest, WORLDGEN_ENGINE_VERSION,
+    build_icosphere, generate_crust_and_history, generate_lithosphere, generate_synthetic, generate_tectonics,
+    GeologyRequest, LithosphereRequest, PlanetPhysicalParameters, PlateScaleClass, SyntheticRequest,
+    TectonicFragmentKind, TectonicsRequest, WORLDGEN_ENGINE_VERSION,
 };
 use std::{env, process, time::Instant};
 
 #[derive(Debug)]
 struct Options { command: String, seed: String, width: u32, height: u32, iterations: u32, level: u8, plates: u16 }
 
-fn usage() -> &'static str { "interlink-worldgen-cli <generate|benchmark|topology|tectonics|geology> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N] [--plates N]" }
+fn usage() -> &'static str { "interlink-worldgen-cli <generate|benchmark|topology|tectonics|geology|lithosphere> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N] [--plates N]" }
 fn parse_u32(name: &str, value: Option<String>) -> Result<u32, String> { value.ok_or_else(|| format!("{name} requires a value"))?.parse::<u32>().map_err(|_| format!("{name} requires an unsigned integer")) }
 
 fn parse_options() -> Result<Options, String> {
     let mut args = env::args().skip(1);
     let command = args.next().ok_or_else(|| usage().to_owned())?;
-    if !matches!(command.as_str(), "generate" | "benchmark" | "topology" | "tectonics" | "geology") { return Err(format!("unsupported command '{command}'\n{}", usage())); }
+    if !matches!(command.as_str(), "generate" | "benchmark" | "topology" | "tectonics" | "geology" | "lithosphere") { return Err(format!("unsupported command '{command}'\n{}", usage())); }
     let mut options = Options { command, seed: "worldgen-cli".to_owned(), width: 512, height: 256, iterations: 5, level: 5, plates: 16 };
     while let Some(flag) = args.next() {
         match flag.as_str() {
@@ -130,6 +130,34 @@ fn geology(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
+fn lithosphere(options: &Options) -> Result<(), String> {
+    let started = Instant::now();
+    let topology = build_icosphere(options.level).map_err(|error| error.to_string())?;
+    let parameters = PlanetPhysicalParameters::earthlike_reference();
+    let tectonics = generate_tectonics(&topology, &TectonicsRequest::new(options.seed.as_str(), options.plates), parameters).map_err(|error| error.to_string())?;
+    let geology = generate_crust_and_history(&topology, &tectonics, &GeologyRequest::new(options.seed.as_str()), parameters).map_err(|error| error.to_string())?;
+    let lithosphere = generate_lithosphere(&topology, &tectonics, &geology, &LithosphereRequest::new(options.seed.as_str())).map_err(|error| error.to_string())?;
+    let elapsed = started.elapsed();
+    let metrics = &lithosphere.metrics;
+    let microplates = lithosphere.fragments.iter().filter(|fragment| fragment.kind == TectonicFragmentKind::Microplate).count();
+    let terranes = lithosphere.fragments.len() - microplates;
+    println!("Project Interlink Planet Engine WG-3.5 lithosphere and tectonic refinement");
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("stage={}@{}", lithosphere.stage.id, lithosphere.stage.version);
+    println!("seed={} stage_seed={:016x} mechanical_seed={:016x} mantle_seed={:016x} refinement_seed={:016x}", options.seed, lithosphere.stage.derived_seed, lithosphere.mechanical_seed, lithosphere.mantle_seed, lithosphere.refinement_seed);
+    println!("topology_level={} samples={} macro_plates={}", options.level, metrics.sample_count, options.plates);
+    println!("mechanics mean_strength={:.5} mean_weakness={:.5} mean_effective_elastic_thickness_km={:.3}", metrics.mean_strength_index, metrics.mean_weakness_index, metrics.mean_effective_elastic_thickness_km);
+    println!("mantle mean_upwelling={:.5} mean_dynamic_support={:.5}", metrics.mean_mantle_upwelling_index, metrics.mean_dynamic_support_index);
+    println!("structural_zones sutures={} rifts={} transforms={} continental_margins={}", metrics.suture_sample_count, metrics.rift_zone_sample_count, metrics.transform_zone_sample_count, metrics.continental_margin_sample_count);
+    println!("tectonic_refinement fragments={} microplates={} terranes={} fragmented_area_fraction={:.6}", metrics.tectonic_fragment_count, microplates, terranes, metrics.fragmented_area_fraction);
+    for fragment in lithosphere.fragments.iter().take(12) {
+        println!("fragment id={} kind={:?} parent_plate={} samples={} parent_area_fraction={:.5} weakness={:.4} propensity={:.4}", fragment.id, fragment.kind, fragment.parent_plate_id, fragment.sample_count, fragment.area_fraction_of_parent, fragment.mean_weakness, fragment.mean_fragmentation_propensity);
+    }
+    println!("tectonic_hash={} geology_hash={} lithosphere_hash={}", tectonics.metrics.tectonic_hash_hex(), geology.metrics.geology_hash_hex(), metrics.lithosphere_hash_hex());
+    println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0);
+    Ok(())
+}
+
 fn main() {
     let options = match parse_options() { Ok(options) => options, Err(message) => { eprintln!("{message}"); process::exit(2); } };
     let result = match options.command.as_str() {
@@ -137,6 +165,7 @@ fn main() {
         "topology" => topology(&options),
         "tectonics" => tectonics(&options),
         "geology" => geology(&options),
+        "lithosphere" => lithosphere(&options),
         _ => generate_once(&options),
     };
     if let Err(message) = result { eprintln!("worldgen error: {message}"); process::exit(1); }
