@@ -5,6 +5,7 @@ This directory defines the greenfield Planet Engine rewrite that runs in paralle
 - [`VISION.md`](VISION.md) — mission and legacy-worldgen policy.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — Rust/WASM/Worker ownership and isolation.
 - [`TOPOLOGY.md`](TOPOLOGY.md) — canonical hierarchical geodesic sphere and finite-volume geometry.
+- [`TECTONICS.md`](TECTONICS.md) — deterministic spherical plate partitioning and rigid plate kinematics.
 - [`RESOLUTION.md`](RESOLUTION.md) — process-specific multiresolution policy.
 - [`DETERMINISM.md`](DETERMINISM.md) — generator/stage identity and random-stream isolation.
 - [`VALIDATION.md`](VALIDATION.md) — numerical, topology, and later physical acceptance gates.
@@ -29,4 +30,19 @@ WG-1 introduces the first production planetary state:
 - native/WASM/browser topology diagnostics;
 - committed worldgen WASM assets so the standalone lab is compatible with static GitHub Pages after merge.
 
-WG-1 still generates no tectonics, terrain, climate, resources, Regions, or gameplay world. The next physical stage is spherical plate tectonics only after the topology acceptance gates pass.
+WG-1 generates no tectonics or downstream geography. Its topology is the fixed physical substrate consumed by later stages.
+
+## WG-2 — spherical plate tectonics
+
+WG-2 adds deterministic plate-scale physical truth without yet creating crust or terrain:
+
+- seeded farthest-point plate origins on the canonical sphere;
+- connected graph-Voronoi plate ownership using canonical geodesic edge distances;
+- one rigid Euler pole/angular velocity per plate;
+- plate area accounting from canonical dual-cell areas;
+- boundary extraction from inter-plate neighbor edges;
+- relative normal/shear kinematics and convergent/divergent/transform classification;
+- deterministic tectonic identity independent from later geology;
+- native, WASM, Worker, and browser plate diagnostics.
+
+WG-2 intentionally stops before continental/oceanic crust, geological history, uplift/subsidence, elevation, lithology, climate, hydrology, resources, Regions, or gameplay state. Those must derive from accepted plate truth rather than be embedded into the plate partition algorithm.
