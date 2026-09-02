@@ -2,16 +2,17 @@ import { createResourceSource } from '../../material/resourceSources.js';
 import { pointInPolygon, polygonArea } from '../geometry.js';
 import { createRng } from '../random.js';
 import { RESOURCE_DEFINITIONS, resourceDefinitionById } from '../resources.js';
-import { samplePlanetEnvironment, wrappedValueNoise } from './surfaceField.js';
+import { wrappedValueNoise } from './generationNoise.js';
+import { samplePlanetEnvironment } from './surfaceField.js';
 function clamp01(value) { return Math.max(0.01, Math.min(1, value)); }
 function environmentSuitability(environment, resourceId) {
     switch (resourceId) {
-        case 'iron-ore': return clamp01(0.2 + environment.tectonicActivity * 0.38 + environment.reliefMeters / 8_500);
-        case 'copper-ore': return clamp01(0.04 + environment.volcanicActivity * 0.6 + environment.tectonicActivity * 0.28);
+        case 'iron-ore': return clamp01(0.18 + environment.tectonicActivity * 0.28 + environment.orogenicInfluence * 0.18 + environment.reliefMeters / 9_500);
+        case 'copper-ore': return clamp01(0.04 + environment.volcanicActivity * 0.5 + environment.orogenicInfluence * 0.18 + environment.tectonicActivity * 0.18);
         case 'aluminum-ore': return clamp01(0.04 + environment.thermalIndex * 0.46 + environment.moistureIndex * 0.43);
-        case 'limestone': return clamp01(0.05 + environment.sedimentaryBasinFactor * 0.72 + (1 - environment.reliefMeters / 3_500) * 0.18);
-        case 'silica-sand': return clamp01(0.08 + environment.sedimentaryBasinFactor * 0.45 + (1 - environment.reliefMeters / 3_000) * 0.32);
-        case 'coal': return clamp01(0.03 + environment.sedimentaryBasinFactor * 0.5 + environment.moistureIndex * 0.25 + environment.thermalIndex * 0.12);
+        case 'limestone': return clamp01(0.05 + environment.sedimentaryBasinFactor * 0.65 + environment.basinInfluence * 0.12 + (1 - environment.reliefMeters / 3_500) * 0.14);
+        case 'silica-sand': return clamp01(0.08 + environment.sedimentaryBasinFactor * 0.4 + environment.basinInfluence * 0.1 + (1 - environment.reliefMeters / 3_000) * 0.28);
+        case 'coal': return clamp01(0.03 + environment.sedimentaryBasinFactor * 0.43 + environment.basinInfluence * 0.12 + environment.moistureIndex * 0.22 + environment.thermalIndex * 0.1);
         case 'water-ice': return clamp01(0.01 + (1 - environment.thermalIndex) * 0.9);
         default: return 0.01;
     }
@@ -64,7 +65,7 @@ export function generateResourceFeatures(seed, regions, context) {
     const iron = resourceDefinitionById('iron-ore');
     const landRegions = regions.filter(region => region.surfaceType === 'land');
     if (!iron || landRegions.length === 0)
-        throw new Error('Generator v6 requires land and an Iron Ore definition.');
+        throw new Error('Generator v7 requires land and an Iron Ore definition.');
     const candidates = landRegions.flatMap(region => Array.from({ length: candidateCountForRegion(region) }, (_, index) => {
         const point = candidatePoint(seed, region, index);
         const environment = samplePlanetEnvironment(context, point);
