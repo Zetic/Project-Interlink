@@ -29,8 +29,8 @@ test('NAV-style region focus selects and moves the camera toward the region', ()
   const state = store.getState();
 
   assert.deepEqual(state.selection, { type: 'region', regionId: region.id });
-  assert.equal(state.camera.centerX, region.bounds.x + region.bounds.width / 2);
-  assert.equal(state.camera.centerY, region.bounds.y + region.bounds.height / 2);
+  assert.equal(state.camera.centerX, region.center.x);
+  assert.equal(state.camera.centerY, region.center.y);
   assert.ok(state.camera.zoom >= 2);
 });
 

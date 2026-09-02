@@ -1,5 +1,6 @@
 import { createEmptyGraphState } from '../graph/graphCommands.js';
 import { createDisconnectedRuntimeState } from '../runtime/presentation.js';
+import { worldSpatialIndexFor } from '../world/spatialIndex.js';
 const STRUCTURAL_APP_DOMAINS = ['world', 'graph', 'selection', 'camera', 'interaction'];
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
@@ -94,31 +95,32 @@ export class AppStore {
             return;
         }
         let camera = this.state.camera;
+        const index = worldSpatialIndexFor(world.planet);
         if (selection.type === 'planet') {
             camera = { centerX: world.planet.width / 2, centerY: world.planet.height / 2, zoom: 1 };
         }
         else if (selection.type === 'continent') {
-            const continent = world.planet.continents.find(candidate => candidate.id === selection.continentId);
+            const continent = index.continentById(selection.continentId);
             if (continent)
-                camera = { centerX: continent.bounds.x + continent.bounds.width / 2, centerY: continent.bounds.y + continent.bounds.height / 2, zoom: geographicFocusZoom(world, continent.bounds) };
+                camera = { centerX: continent.center.x, centerY: continent.center.y, zoom: geographicFocusZoom(world, continent.focusBounds) };
         }
         else if (selection.type === 'ocean') {
-            const ocean = world.planet.oceans.find(candidate => candidate.id === selection.oceanId);
+            const ocean = index.oceanById(selection.oceanId);
             if (ocean)
-                camera = { centerX: ocean.bounds.x + ocean.bounds.width / 2, centerY: ocean.bounds.y + ocean.bounds.height / 2, zoom: geographicFocusZoom(world, ocean.bounds) };
+                camera = { centerX: ocean.center.x, centerY: ocean.center.y, zoom: geographicFocusZoom(world, ocean.focusBounds) };
         }
         else if (selection.type === 'region') {
-            const region = world.planet.regions.find(candidate => candidate.id === selection.regionId);
+            const region = index.regionById(selection.regionId);
             if (region) {
                 camera = {
-                    centerX: region.bounds.x + region.bounds.width / 2,
-                    centerY: region.bounds.y + region.bounds.height / 2,
+                    centerX: region.center.x,
+                    centerY: region.center.y,
                     zoom: geographicFocusZoom(world, region.bounds),
                 };
             }
         }
         else if (selection.type === 'resource') {
-            const resource = world.planet.resourceNodes.find(candidate => candidate.id === selection.resourceNodeId);
+            const resource = index.featureById(selection.resourceNodeId);
             if (resource)
                 camera = { centerX: resource.position.x, centerY: resource.position.y, zoom: RESOURCE_FOCUS_ZOOM };
         }

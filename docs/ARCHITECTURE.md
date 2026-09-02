@@ -90,14 +90,16 @@ A resource FEATURE is a natural source node with a `resource-access` output. `re
 
 The current browser architecture does not use nested Site workspaces, child workspaces, boundary-transfer terminals, or recursive system ownership. Do not restore those concepts as compatibility infrastructure unless a future design change explicitly requires them.
 
-World generation is deterministic by `generatorVersion + seed`. Generator v3 follows one causal pipeline:
+World generation is deterministic by `generatorVersion + seed`. Generator v4 follows one causal pipeline:
 
 ```text
-Tectonic plates → canonical surface fields → sea level
-                → Continents/Oceans → Regions → natural Features
+Tectonic plates → cached high-resolution scalar surface → sea-level contour
+                → Continents/Oceans → independent irregular Regions → natural Features
 ```
 
-Plate crust and motion affect elevation, relief, boundary setting, volcanism, and sedimentary tendency. Sea level classifies the canonical surface; Continent/Ocean outlines and their child Regions are projections of that same classification, never separately generated coastlines. Resource candidates sample resource-specific potential at exact points. The temporary generation grid is discarded after the compact parent, Region, plate, and Feature records are built.
+Plate crust and motion affect elevation, relief, boundary setting, volcanism, and sedimentary tendency. A cached 176 × 88 generation field was selected through controlled v3/v4 profiling to avoid trading substantially worse generation cost for fidelity. Sea-level crossings are interpolated while triangle patches are clipped, producing one canonical smooth coastline. Continents and Oceans own this geography before a jittered, additively weighted Region seed field partitions the shared patches. Coastal Regions therefore carry exact segments of the parent contour, while interior boundaries vary in area, aspect, orientation, compactness, and effective vertex count. Technical samples do not map one-to-one to Regions. The dense field and mesh remain generation-time details; compact plate, parent, Region, and Feature records are retained, with a per-Planet field cache available for canonical point sampling.
+
+Nearest-two plate lookup is single-pass and allocation-free. Resource candidate evaluation samples the environment once per point and reuses it across resource types. `profileWorldGeneration()` exposes stage timings for developer measurement without adding nondeterministic timing data to world truth.
 
 Continents, Oceans, and Regions form a geographic classification of the continuous planetary surface. They do not own nested engineering workspaces or independent runtime graphs. Player-built engineering remains one flat world-space graph.
 
@@ -177,7 +179,7 @@ Routine runtime responses are compact snapshots. Rich Hopper, Furnace, and Exhau
 
 The map uses one continuous Earth-scale coordinate space with deep engineering zoom and a floating render origin. Engineering cards use a fixed visual grammar independent of apparatus physical footprint metadata.
 
-SVG remains the active renderer. Whole-planet presentation uses clickable Continent and Ocean polygons derived from the canonical Region surface. Region and Feature layers query `WorldSpatialIndex` from quantized camera windows, update only when their meaningful query signature changes, and enforce semantic zoom/label budgets. Camera-centered labels expand in budget, shrink in screen pixels, fade toward viewport edges, and disappear before engineering scale. Lightweight Feature markers close the Region-to-card LOD gap. Camera animation still updates the SVG `viewBox`; it does not rebuild the entire world DOM every frame.
+SVG remains the active renderer. Whole-planet presentation uses clickable Continent and Ocean polygons from the canonical sea-level geometry. Region and Feature layers query `WorldSpatialIndex` from quantized camera windows, update only when their meaningful query signature changes, and enforce semantic zoom/label budgets. Pointer movement only reprioritizes and fades the existing visible label set in a scheduled animation frame; it performs no spatial query or DOM replacement. Camera center supplies the fallback when pointer focus is absent. Labels expand in budget, shrink in screen pixels, and disappear before engineering scale. Feature marker radius is converted from desired pixels to current world units so markers remain stable through geographic zoom. Camera animation still updates the SVG `viewBox`; it does not rebuild the entire world DOM every frame.
 
 NAV is a bounded camera-context/search projection rather than an eager world hierarchy. Normal presentation derives the current Continent/Ocean and Region from camera center, lists limited nearby Regions and Features, and displays selection separately. Global Continent/Ocean/Region/Feature/engineering search scans authored metadata but renders at most its explicit result budget. Inspector `Selected` preserves deliberate object and live Rust-runtime inspection while Inspector `Location` independently samples the geographic truth beneath camera center.
 

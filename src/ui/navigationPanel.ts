@@ -25,10 +25,10 @@ function selectionKey(selection: MapSelection): string {
   return `mechanical:${selection.mechanicalNodeId}`;
 }
 
-function parentById(planet: Planet, id: string): GeographicParent | null { return planet.continents.find(parent => parent.id === id) ?? planet.oceans.find(parent => parent.id === id) ?? null; }
+function parentById(index: WorldSpatialIndex, id: string): GeographicParent | null { return index.continentById(id) ?? index.oceanById(id); }
 function resultForParent(parent: Continent | Ocean): NavigationResult { return { key: `${parent.kind}:${parent.id}`, label: parent.name, detail: `${parent.regionIds.length.toLocaleString()} Regions`, category: parent.kind, selection: parent.kind === 'continent' ? { type: 'continent', continentId: parent.id } : { type: 'ocean', oceanId: parent.id } }; }
-function resultForRegion(region: Region, planet: Planet): NavigationResult { const parent = parentById(planet, region.parentId); return { key: `region:${region.id}`, label: region.name, detail: parent?.name ?? region.parentId, category: 'region', selection: { type: 'region', regionId: region.id } }; }
-function resultForFeature(feature: ResourceNode, regionNames: ReadonlyMap<string, string>): NavigationResult { return { key: `resource:${feature.id}`, label: feature.name, detail: regionNames.get(feature.regionId) ?? feature.regionId, category: 'feature', selection: { type: 'resource', resourceNodeId: feature.id } }; }
+function resultForRegion(region: Region, index: WorldSpatialIndex): NavigationResult { const parent = parentById(index, region.parentId); return { key: `region:${region.id}`, label: region.name, detail: parent?.name ?? region.parentId, category: 'region', selection: { type: 'region', regionId: region.id } }; }
+function resultForFeature(feature: ResourceNode, index: WorldSpatialIndex): NavigationResult { return { key: `resource:${feature.id}`, label: feature.name, detail: index.regionById(feature.regionId)?.name ?? feature.regionId, category: 'feature', selection: { type: 'resource', resourceNodeId: feature.id } }; }
 function resultForMechanical(node: MechanicalNode): NavigationResult { return { key: `mechanical:${node.id}`, label: node.label, detail: node.category === 'apparatus' ? 'Apparatus' : 'Storage', category: 'engineering', selection: { type: 'mechanical', mechanicalNodeId: node.id } }; }
 
 export function navigationContext(planet: Planet, camera: MapCameraState, index = worldSpatialIndexFor(planet)): NavigationContext {
@@ -53,12 +53,12 @@ export function searchWorldNavigation(planet: Planet, graph: GraphState, queryIn
   const query = queryInput.trim().toLocaleLowerCase();
   if (!query) return { results: [], totalMatches: 0 };
   const all: NavigationResult[] = [];
-  const regionNames = new Map(planet.regions.map(region => [region.id, region.name]));
+  const index = worldSpatialIndexFor(planet);
   if (categories.has('planet') && planet.name.toLocaleLowerCase().includes(query)) all.push({ key: 'planet', label: planet.name, detail: 'Planet', category: 'planet', selection: { type: 'planet' } });
   if (categories.has('continent')) for (const parent of planet.continents) if (parent.name.toLocaleLowerCase().includes(query)) all.push(resultForParent(parent));
   if (categories.has('ocean')) for (const parent of planet.oceans) if (parent.name.toLocaleLowerCase().includes(query)) all.push(resultForParent(parent));
-  if (categories.has('region')) for (const region of planet.regions) if (region.name.toLocaleLowerCase().includes(query)) all.push(resultForRegion(region, planet));
-  if (categories.has('feature')) for (const feature of planet.resourceNodes) if (feature.name.toLocaleLowerCase().includes(query)) all.push(resultForFeature(feature, regionNames));
+  if (categories.has('region')) for (const region of planet.regions) if (region.name.toLocaleLowerCase().includes(query)) all.push(resultForRegion(region, index));
+  if (categories.has('feature')) for (const feature of planet.resourceNodes) if (feature.name.toLocaleLowerCase().includes(query)) all.push(resultForFeature(feature, index));
   if (categories.has('engineering')) for (const node of graph.nodes) if (node.label.toLocaleLowerCase().includes(query)) all.push(resultForMechanical(node));
   all.sort((left, right) => left.label.localeCompare(right.label) || left.key.localeCompare(right.key));
   return { results: all.slice(0, Math.max(0, limit)), totalMatches: all.length };
@@ -72,12 +72,12 @@ function createNavigationRow(row: NavigationResult, selectedKey: string, onSelec
   const detail = document.createElement('span'); detail.className = 'ws-navigation-context-detail'; detail.textContent = row.detail; content.append(label, detail); element.append(category, content); element.addEventListener('click', () => onSelect(row.selection)); return element;
 }
 
-function selectedResult(planet: Planet, graph: GraphState, selection: MapSelection): NavigationResult | null {
+function selectedResult(planet: Planet, graph: GraphState, selection: MapSelection, index = worldSpatialIndexFor(planet)): NavigationResult | null {
   if (selection.type === 'planet') return null;
   if (selection.type === 'continent') { const value = planet.continents.find(candidate => candidate.id === selection.continentId); return value ? resultForParent(value) : null; }
   if (selection.type === 'ocean') { const value = planet.oceans.find(candidate => candidate.id === selection.oceanId); return value ? resultForParent(value) : null; }
-  if (selection.type === 'region') { const value = planet.regions.find(candidate => candidate.id === selection.regionId); return value ? resultForRegion(value, planet) : null; }
-  if (selection.type === 'resource') { const value = planet.resourceNodes.find(candidate => candidate.id === selection.resourceNodeId); return value ? resultForFeature(value, new Map(planet.regions.map(region => [region.id, region.name]))) : null; }
+  if (selection.type === 'region') { const value = index.regionById(selection.regionId); return value ? resultForRegion(value, index) : null; }
+  if (selection.type === 'resource') { const value = index.featureById(selection.resourceNodeId); return value ? resultForFeature(value, index) : null; }
   const node = graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId); return node ? resultForMechanical(node) : null;
 }
 
@@ -90,13 +90,14 @@ export function installNavigationPanel(root: HTMLElement, store: AppStore): void
   const render = (): void => {
     const state = store.getState(); if (!state.world) { tree.textContent = 'No world generated.'; count.textContent = ''; return; }
     const planet = state.world.planet; if (indexedPlanet !== planet || !spatialIndex) { indexedPlanet = planet; spatialIndex = worldSpatialIndexFor(planet); }
+    const index = spatialIndex; if (!index) return;
     const selectedKey = selectionKey(state.selection); const query = search.value.trim();
     if (query) { const matches = searchWorldNavigation(planet, state.graph, query, visibleCategories); tree.replaceChildren(createSection('Search results'), renderRows(matches.results, selectedKey)); count.textContent = matches.totalMatches > matches.results.length ? `Showing ${matches.results.length} of ${matches.totalMatches} matches` : `${matches.totalMatches} match${matches.totalMatches === 1 ? '' : 'es'}`; return; }
-    const context = navigationContext(planet, state.camera, spatialIndex); const currentRows = [resultForParent(context.currentParent), resultForRegion(context.currentRegion, planet)]; const selected = selectedResult(planet, state.graph, state.selection);
+    const context = navigationContext(planet, state.camera, index); const currentRows = [resultForParent(context.currentParent), resultForRegion(context.currentRegion, index)]; const selected = selectedResult(planet, state.graph, state.selection, index);
     const children: Node[] = [createSection('Current location', planet.name), renderRows(currentRows, selectedKey)];
     if (selected && !currentRows.some(row => row.key === selected.key)) children.push(createSection('Selected'), renderRows([selected], selectedKey));
-    if (visibleCategories.has('region')) children.push(createSection('Nearby regions'), renderRows(context.nearbyRegions.map(region => resultForRegion(region, planet)), selectedKey));
-    if (visibleCategories.has('feature')) children.push(createSection('Features'), renderRows(context.nearbyFeatures.map(feature => resultForFeature(feature, new Map(planet.regions.map(region => [region.id, region.name])))), selectedKey));
+    if (visibleCategories.has('region')) children.push(createSection('Nearby regions'), renderRows(context.nearbyRegions.map(region => resultForRegion(region, index)), selectedKey));
+    if (visibleCategories.has('feature')) children.push(createSection('Features'), renderRows(context.nearbyFeatures.map(feature => resultForFeature(feature, index)), selectedKey));
     tree.replaceChildren(...children); count.textContent = `${planet.continents.length} continents · ${planet.oceans.length} oceans · ${planet.regions.length.toLocaleString()} regions`;
   };
   search.addEventListener('input', render); let lastWorld = store.getState().world; let lastGraph = store.getState().graph; let lastSelection = selectionKey(store.getState().selection); let lastContextKey = '';

@@ -65,11 +65,21 @@ export function generateTectonicPlates(seed: string): TectonicPlate[] {
 
 export function samplePlateModel(plates: readonly TectonicPlate[], point: Point): PlateSample {
   if (plates.length < 2) throw new Error('A tectonic model requires at least two plates.');
-  const ranked = plates
-    .map(plate => ({ plate, distanceSquared: wrappedDistanceSquared(point, plate.seedPoint) }))
-    .sort((left, right) => left.distanceSquared - right.distanceSquared || left.plate.id.localeCompare(right.plate.id));
-  const nearest = ranked[0]!;
-  const second = ranked[1]!;
+  let nearest = { plate: plates[0]!, distanceSquared: wrappedDistanceSquared(point, plates[0]!.seedPoint) };
+  let second = { plate: plates[1]!, distanceSquared: wrappedDistanceSquared(point, plates[1]!.seedPoint) };
+  if (second.distanceSquared < nearest.distanceSquared || (second.distanceSquared === nearest.distanceSquared && second.plate.id < nearest.plate.id)) {
+    [nearest, second] = [second, nearest];
+  }
+  for (let index = 2; index < plates.length; index += 1) {
+    const plate = plates[index]!;
+    const candidate = { plate, distanceSquared: wrappedDistanceSquared(point, plate.seedPoint) };
+    if (candidate.distanceSquared < nearest.distanceSquared || (candidate.distanceSquared === nearest.distanceSquared && candidate.plate.id < nearest.plate.id)) {
+      second = nearest;
+      nearest = candidate;
+    } else if (candidate.distanceSquared < second.distanceSquared || (candidate.distanceSquared === second.distanceSquared && candidate.plate.id < second.plate.id)) {
+      second = candidate;
+    }
+  }
   const nearestDistance = Math.sqrt(nearest.distanceSquared);
   const secondDistance = Math.sqrt(second.distanceSquared);
   const boundaryProximity = clamp01(1 - (secondDistance - nearestDistance) / 300);

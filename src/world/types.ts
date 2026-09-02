@@ -72,6 +72,7 @@ export interface GeographicParent {
   kind: GeographicParentKind;
   polygons: Point[][];
   bounds: Bounds;
+  focusBounds: Bounds;
   center: Point;
   approximateAreaSquareKm: number;
   regionIds: string[];
@@ -107,6 +108,7 @@ export interface Region {
   approximateAreaSquareKm: number;
   environment: RegionEnvironment;
   resourceNodeIds: string[];
+  neighborRegionIds: string[];
 }
 
 export interface Planet {
@@ -119,6 +121,7 @@ export interface Planet {
   physicalWidthMeters: number;
   physicalHeightMeters: number;
   seaLevelRaw: number;
+  surfaceResolution: { columns: number; rows: number };
   tectonicPlates: TectonicPlate[];
   continents: Continent[];
   oceans: Ocean[];

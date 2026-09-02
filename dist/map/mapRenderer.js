@@ -83,14 +83,18 @@ function regionElement(region, renderOrigin, store) {
     polygon.addEventListener('click', event => { event.stopPropagation(); store.setSelection({ type: 'region', regionId: region.id }); });
     return polygon;
 }
-function regionLabelElement(region, renderOrigin, opacity, pixelSize) {
+function regionLabelElement(region, renderOrigin, pixelSize) {
     const center = worldToRenderPoint(region.center, renderOrigin);
     const label = svgElement('text');
     label.setAttribute('x', center.x.toFixed(6));
     label.setAttribute('y', center.y.toFixed(6));
     label.setAttribute('class', 'ws-map-region-label');
-    label.setAttribute('opacity', opacity.toFixed(3));
+    label.setAttribute('opacity', '0');
     label.setAttribute('data-label-px', pixelSize.toFixed(2));
+    label.setAttribute('data-world-x', region.center.x.toFixed(6));
+    label.setAttribute('data-world-y', region.center.y.toFixed(6));
+    label.setAttribute('data-region-id', region.id);
+    label.setAttribute('data-feature-count', String(region.resourceNodeIds.length));
     label.textContent = region.name;
     return label;
 }
@@ -104,13 +108,22 @@ export function regionLabelPixelSizeForZoom(zoom) {
     const progress = Math.max(0, Math.min(1, Math.log2(Math.max(1, zoom)) / 10));
     return 15 - progress * 5;
 }
-export function regionLabelOpacity(normalizedX, normalizedY) {
-    const radius = Math.hypot((normalizedX - 0.5) * 2, (normalizedY - 0.5) * 2);
+export function regionLabelOpacityAroundPointer(normalizedX, normalizedY, focusX, focusY) {
+    const radius = Math.hypot((normalizedX - focusX) * 2, (normalizedY - focusY) * 2);
     if (radius >= 0.95)
         return 0;
     if (radius <= 0.45)
         return 1;
     return 1 - (radius - 0.45) / 0.5;
+}
+export function regionLabelOpacity(normalizedX, normalizedY) {
+    return regionLabelOpacityAroundPointer(normalizedX, normalizedY, 0.5, 0.5);
+}
+export function regionLabelFocusPoint(hoverFocus) {
+    return hoverFocus ? { x: hoverFocus.normalizedX, y: hoverFocus.normalizedY } : { x: 0.5, y: 0.5 };
+}
+export function featureMarkerWorldRadius(unitsPerPixel, desiredPixelRadius = 3) {
+    return Math.max(0, unitsPerPixel) * desiredPixelRadius;
 }
 function featureMarkerLayer(resources, renderOrigin, store) {
     const layer = svgElement('g');
@@ -120,7 +133,8 @@ function featureMarkerLayer(resources, renderOrigin, store) {
         const marker = svgElement('circle');
         marker.setAttribute('cx', String(local.x));
         marker.setAttribute('cy', String(local.y));
-        marker.setAttribute('r', '2.5');
+        marker.setAttribute('r', '1');
+        marker.setAttribute('data-marker-radius-px', '3');
         marker.setAttribute('class', 'ws-map-feature-marker');
         marker.setAttribute('data-map-kind', 'resource');
         marker.setAttribute('data-resource-id', resource.id);
@@ -171,6 +185,8 @@ function updateZoomVisibility(svg, zoom) {
     const unitsPerPixel = rect.width > 0 && viewBox.width > 0 ? viewBox.width / rect.width : 1;
     for (const label of svg.querySelectorAll('.ws-map-region-label'))
         label.setAttribute('font-size', String(unitsPerPixel * Number(label.dataset.labelPx ?? 12)));
+    for (const marker of svg.querySelectorAll('.ws-map-feature-marker'))
+        marker.setAttribute('r', String(featureMarkerWorldRadius(unitsPerPixel, Number(marker.dataset.markerRadiusPx ?? 3))));
 }
 export function installMapRenderer(root, store) {
     const svg = root.querySelector('#ws-map-svg');
@@ -198,12 +214,72 @@ export function installMapRenderer(root, store) {
     let draggedNodeId = null;
     let dragStartNode = null;
     let hoverWorld = null;
+    let hoverFocus = null;
+    let labelFocusAnimationFrame = null;
     let suppressClick = false;
     let observedWorld = store.getState().world;
     let observedGraph = store.getState().graph;
     let observedSelection = store.getState().selection;
     let observedCamera = store.getState().camera;
     let observedInteraction = store.getState().interaction;
+    const updateRegionLabelFocus = (planet, camera) => {
+        labelFocusAnimationFrame = null;
+        const labels = [...svg.querySelectorAll('.ws-map-region-label')];
+        if (!labels.length)
+            return;
+        const visible = viewportBounds(svg, planet, camera);
+        const focus = regionLabelFocusPoint(hoverFocus);
+        const focusX = focus.x;
+        const focusY = focus.y;
+        const selected = store.getState().selection;
+        const selectedRegionId = selected.type === 'region' ? selected.regionId : null;
+        const rect = svg.getBoundingClientRect();
+        const candidates = labels.map(label => {
+            const normalizedX = (Number(label.dataset.worldX) - visible.x) / visible.width;
+            const normalizedY = (Number(label.dataset.worldY) - visible.y) / visible.height;
+            const opacity = regionLabelOpacityAroundPointer(normalizedX, normalizedY, focusX, focusY);
+            return {
+                label,
+                normalizedX,
+                normalizedY,
+                opacity,
+                distance: Math.hypot(normalizedX - focusX, normalizedY - focusY),
+                selected: label.dataset.regionId === selectedRegionId,
+                features: Number(label.dataset.featureCount ?? 0),
+            };
+        }).sort((left, right) => Number(right.selected) - Number(left.selected) || left.distance - right.distance
+            || right.features - left.features || (left.label.dataset.regionId ?? '').localeCompare(right.label.dataset.regionId ?? ''));
+        for (const label of labels)
+            label.setAttribute('opacity', '0');
+        const accepted = [];
+        const budget = regionLabelBudgetForZoom(camera.zoom);
+        let count = 0;
+        for (const candidate of candidates) {
+            if (candidate.opacity <= 0 || count >= budget)
+                continue;
+            const pixelSize = Number(candidate.label.dataset.labelPx ?? 12);
+            const halfWidth = ((candidate.label.textContent?.length ?? 0) * pixelSize * 0.29) / Math.max(1, rect.width);
+            const halfHeight = (pixelSize * 0.65) / Math.max(1, rect.height);
+            const bounds = { left: candidate.normalizedX - halfWidth, right: candidate.normalizedX + halfWidth, top: candidate.normalizedY - halfHeight, bottom: candidate.normalizedY + halfHeight };
+            const collides = accepted.some(value => bounds.left < value.right && bounds.right > value.left && bounds.top < value.bottom && bounds.bottom > value.top);
+            if (collides && !candidate.selected)
+                continue;
+            accepted.push(bounds);
+            count += 1;
+            candidate.label.setAttribute('opacity', candidate.opacity.toFixed(3));
+        }
+    };
+    const scheduleRegionLabelFocus = () => {
+        if (labelFocusAnimationFrame !== null)
+            return;
+        labelFocusAnimationFrame = requestAnimationFrame(() => {
+            const planet = store.getState().world?.planet;
+            if (planet)
+                updateRegionLabelFocus(planet, displayCamera);
+            else
+                labelFocusAnimationFrame = null;
+        });
+    };
     const refreshGeographicViewport = (planet, camera) => {
         if (!spatialIndex || spatialIndex.planet !== planet)
             spatialIndex = worldSpatialIndexFor(planet);
@@ -226,28 +302,11 @@ export function installMapRenderer(root, store) {
             return;
         geographicRenderSignature = querySignature;
         const visibleRegions = showRegions ? spatialIndex.regionsIntersecting(bounds) : [];
-        const labelCandidates = showLabels ? visibleRegions.map(region => {
-            const normalizedX = (region.center.x - visibleBounds.x) / visibleBounds.width;
-            const normalizedY = (region.center.y - visibleBounds.y) / visibleBounds.height;
-            return { region, normalizedX, normalizedY, opacity: regionLabelOpacity(normalizedX, normalizedY), distance: Math.hypot(normalizedX - 0.5, normalizedY - 0.5) };
-        }).filter(candidate => candidate.opacity > 0).sort((left, right) => Number(right.region.id === selectedRegionId) - Number(left.region.id === selectedRegionId)
-            || left.distance - right.distance || right.region.resourceNodeIds.length - left.region.resourceNodeIds.length || left.region.id.localeCompare(right.region.id)) : [];
-        const occupied = new Set();
-        const labeledRegions = [];
-        for (const candidate of labelCandidates) {
-            const collisionKey = `${Math.floor(candidate.normalizedX / 0.12)}:${Math.floor(candidate.normalizedY / 0.07)}`;
-            if (occupied.has(collisionKey) && candidate.region.id !== selectedRegionId)
-                continue;
-            occupied.add(collisionKey);
-            labeledRegions.push(candidate);
-            if (labeledRegions.length >= regionLabelBudgetForZoom(camera.zoom))
-                break;
-        }
         const visibleResources = showFeatureMarkers || showResourceCards ? spatialIndex.resourceNodesIntersecting(viewportBounds(svg, planet, camera, 2)) : [];
         const regionLayer = svg.querySelector('.ws-map-region-layer');
         const labelLayer = svg.querySelector('.ws-map-region-label-layer');
         regionLayer?.replaceChildren(...visibleRegions.map(region => regionElement(region, renderOrigin, store)));
-        labelLayer?.replaceChildren(...labeledRegions.map(candidate => regionLabelElement(candidate.region, renderOrigin, candidate.opacity, regionLabelPixelSizeForZoom(camera.zoom))));
+        labelLayer?.replaceChildren(...(showLabels ? visibleRegions.map(region => regionLabelElement(region, renderOrigin, regionLabelPixelSizeForZoom(camera.zoom))) : []));
         const markerLayer = svg.querySelector('.ws-map-feature-marker-layer');
         markerLayer?.replaceWith(featureMarkerLayer(showFeatureMarkers ? visibleResources : [], renderOrigin, store));
         const resourceLayer = svg.querySelector('.ws-map-resource-node-layer');
@@ -255,6 +314,7 @@ export function installMapRenderer(root, store) {
         updateResourceRuntimePresentation(svg, planet, store.getState().runtime.snapshot);
         updateSelection(svg, store.getState().selection);
         updatePendingPort(svg, store.getState().interaction.pendingConnection);
+        scheduleRegionLabelFocus();
     };
     const refreshPreview = (state) => {
         const definition = state.interaction.placementDefinitionId ? apparatusDefinitionById(state.interaction.placementDefinitionId) : null;
@@ -297,6 +357,7 @@ export function installMapRenderer(root, store) {
         }
         refreshGeographicViewport(planet, displayCamera);
         updateZoomVisibility(svg, displayCamera.zoom);
+        scheduleRegionLabelFocus();
     };
     const publishCamera = (camera) => {
         internalCameraUpdate = true;
@@ -435,8 +496,10 @@ export function installMapRenderer(root, store) {
         else if (cameraChanged && !internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
             animateToCamera(state.camera);
         }
-        if (selectionChanged)
+        if (selectionChanged) {
             geographicRenderSignature = '';
+            scheduleRegionLabelFocus();
+        }
         if (worldNeedsRender || selectionChanged)
             updateSelection(svg, state.selection);
         if (worldNeedsRender || interactionChanged) {
@@ -575,7 +638,14 @@ export function installMapRenderer(root, store) {
         if (!planet)
             return;
         hoverWorld = screenToWorld(svg, planet, displayCamera, event.clientX, event.clientY);
+        const hoverRect = svg.getBoundingClientRect();
+        hoverFocus = {
+            normalizedX: clamp((event.clientX - hoverRect.left) / Math.max(1, hoverRect.width), 0, 1),
+            normalizedY: clamp((event.clientY - hoverRect.top) / Math.max(1, hoverRect.height), 0, 1),
+            worldPoint: hoverWorld,
+        };
         refreshPreview(store.getState());
+        scheduleRegionLabelFocus();
         if (pointerId !== event.pointerId || !pointerMode)
             return;
         const rect = svg.getBoundingClientRect();
@@ -623,12 +693,14 @@ export function installMapRenderer(root, store) {
     };
     svg.addEventListener('pointerup', finishPointer);
     svg.addEventListener('pointercancel', finishPointer);
-    svg.addEventListener('pointerleave', () => { hoverWorld = null; refreshPreview(store.getState()); });
+    svg.addEventListener('pointerleave', () => { hoverWorld = null; hoverFocus = null; refreshPreview(store.getState()); scheduleRegionLabelFocus(); });
     window.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
             store.clearInteraction();
             hoverWorld = null;
+            hoverFocus = null;
             refreshPreview(store.getState());
+            scheduleRegionLabelFocus();
         }
         if ((event.key === 'Delete' || event.key === 'Backspace') && store.getState().selection.type === 'mechanical' && !['INPUT', 'TEXTAREA'].includes(event.target?.tagName ?? '')) {
             const selected = store.getState().selection;

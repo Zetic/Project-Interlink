@@ -1,4 +1,5 @@
 import { createResourceSource } from '../../material/resourceSources.js';
+import { pointInPolygon } from '../geometry.js';
 import { createRng } from '../random.js';
 import { RESOURCE_DEFINITIONS, resourceDefinitionById } from '../resources.js';
 import { samplePlanetEnvironment, wrappedValueNoise } from './surfaceField.js';
@@ -20,14 +21,17 @@ export function resourceSuitability(region, resourceId) {
 }
 export function resourcePotentialAt(context, point, resourceId) {
     const environment = samplePlanetEnvironment(context, point);
+    return resourcePotentialForEnvironment(context, point, resourceId, environment);
+}
+function resourcePotentialForEnvironment(context, point, resourceId, environment) {
     if (environment.surfaceType !== 'land')
         return 0;
     const province = wrappedValueNoise(context.seed, `resource:province:${resourceId}`, point, 256);
     const local = wrappedValueNoise(context.seed, `resource:local:${resourceId}`, point, 64);
     return clamp01(environmentSuitability(environment, resourceId) * 0.67 + province * 0.25 + local * 0.08);
 }
-function weightedResource(rng, context, point) {
-    const weights = RESOURCE_DEFINITIONS.map(definition => resourcePotentialAt(context, point, definition.id) ** 1.8);
+function weightedResource(rng, potentials) {
+    const weights = potentials.map(potential => potential ** 1.8);
     let cursor = rng.range(0, weights.reduce((sum, weight) => sum + weight, 0));
     for (let index = 0; index < RESOURCE_DEFINITIONS.length; index += 1) {
         cursor -= weights[index];
@@ -38,8 +42,13 @@ function weightedResource(rng, context, point) {
 }
 function candidatePoint(seed, region, index) {
     const rng = createRng(seed, `${region.id}:resource-candidate:${index}`);
-    return { x: Number(rng.range(region.bounds.x + region.bounds.width * 0.12, region.bounds.x + region.bounds.width * 0.88).toFixed(6)),
-        y: Number(rng.range(region.bounds.y + region.bounds.height * 0.12, region.bounds.y + region.bounds.height * 0.88).toFixed(6)) };
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+        const point = { x: Number(rng.range(region.bounds.x, region.bounds.x + region.bounds.width).toFixed(6)),
+            y: Number(rng.range(region.bounds.y, region.bounds.y + region.bounds.height).toFixed(6)) };
+        if (pointInPolygon(point, region.polygon))
+            return point;
+    }
+    return region.center;
 }
 function createNode(seed, region, definition, point, index) {
     const id = `${region.id}-feature-${index}`;
@@ -51,9 +60,15 @@ export function generateResourceFeatures(seed, regions, context) {
     const iron = resourceDefinitionById('iron-ore');
     const landRegions = regions.filter(region => region.surfaceType === 'land');
     if (!iron || landRegions.length === 0)
-        throw new Error('Generator v3 requires land and an Iron Ore definition.');
-    const candidates = landRegions.flatMap(region => [0, 1].map(index => ({ region, point: candidatePoint(seed, region, index), index })));
-    const starting = candidates.reduce((best, candidate) => resourcePotentialAt(context, candidate.point, 'iron-ore') > resourcePotentialAt(context, best.point, 'iron-ore') ? candidate : best);
+        throw new Error('Generator v4 requires land and an Iron Ore definition.');
+    const candidates = landRegions.flatMap(region => [0, 1].map(index => {
+        const point = candidatePoint(seed, region, index);
+        const environment = samplePlanetEnvironment(context, point);
+        const potentials = RESOURCE_DEFINITIONS.map(definition => resourcePotentialForEnvironment(context, point, definition.id, environment));
+        return { region, point, index, potentials };
+    }));
+    const ironIndex = RESOURCE_DEFINITIONS.findIndex(definition => definition.id === 'iron-ore');
+    const starting = candidates.reduce((best, candidate) => candidate.potentials[ironIndex] > best.potentials[ironIndex] ? candidate : best);
     const nodes = [];
     const localCounts = new Map();
     const append = (region, definition, point) => {
@@ -68,8 +83,8 @@ export function generateResourceFeatures(seed, regions, context) {
         if (candidate === starting)
             continue;
         const rng = createRng(seed, `${candidate.region.id}:feature-choice:${candidate.index}`);
-        const definition = weightedResource(rng, context, candidate.point);
-        const potential = resourcePotentialAt(context, candidate.point, definition.id);
+        const definition = weightedResource(rng, candidate.potentials);
+        const potential = candidate.potentials[RESOURCE_DEFINITIONS.indexOf(definition)];
         if (potential > 0.54 && rng.next() < 0.025 + potential * 0.105)
             append(candidate.region, definition, candidate.point);
     }

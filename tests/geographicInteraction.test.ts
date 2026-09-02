@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-import { FEATURE_MARKER_SHOW_ZOOM, REGION_INTERACTION_MAX_ZOOM, REGION_LABEL_MAX_ZOOM, REGION_RENDER_MAX_ZOOM, regionLabelBudgetForZoom, regionLabelOpacity, regionLabelPixelSizeForZoom, regionsInteractiveAtZoom } from '../dist/map/mapRenderer.js';
+import { FEATURE_MARKER_SHOW_ZOOM, REGION_INTERACTION_MAX_ZOOM, REGION_LABEL_MAX_ZOOM, REGION_RENDER_MAX_ZOOM, featureMarkerWorldRadius, regionLabelBudgetForZoom, regionLabelFocusPoint, regionLabelOpacity, regionLabelOpacityAroundPointer, regionLabelPixelSizeForZoom, regionsInteractiveAtZoom } from '../dist/map/mapRenderer.js';
 import { AppStore } from '../dist/state/appState.js';
 import { generateWorld } from '../dist/world/generateWorld.js';
 import { geographicLocationAt, geographicLocationKey } from '../dist/world/geographyQueries.js';
@@ -15,7 +15,7 @@ test('Continent, Ocean, and Region focus use viewport-aware geographic framing',
   const continent = world.planet.continents[0]; const ocean = world.planet.oceans[0]; const region = world.planet.regions[0];
   store.focusSelection({ type: 'continent', continentId: continent.id }); assert.deepEqual(store.getState().selection, { type: 'continent', continentId: continent.id }); assert.ok(store.getState().camera.zoom >= 1);
   store.focusSelection({ type: 'ocean', oceanId: ocean.id }); assert.deepEqual(store.getState().selection, { type: 'ocean', oceanId: ocean.id }); assert.ok(store.getState().camera.zoom >= 1);
-  store.focusSelection({ type: 'region', regionId: region.id }); assert.ok(store.getState().camera.zoom > 6); assert.equal(store.getState().camera.centerX, region.bounds.x + region.bounds.width / 2);
+  store.focusSelection({ type: 'region', regionId: region.id }); assert.ok(store.getState().camera.zoom > 6); assert.equal(store.getState().camera.centerX, region.center.x);
 });
 
 test('Location context covers land and ocean while selection remains independent', () => {
@@ -44,6 +44,17 @@ test('geographic labels grow in budget, shrink in pixels, and fade radially', ()
   assert.equal(regionLabelOpacity(1, 1), 0);
 });
 
+test('pointer position controls label focus with a camera-center fallback', () => {
+  assert.deepEqual(regionLabelFocusPoint(null), { x: 0.5, y: 0.5 });
+  assert.deepEqual(regionLabelFocusPoint({ normalizedX: 0.8, normalizedY: 0.2, worldPoint: { x: 10, y: 20 } }), { x: 0.8, y: 0.2 });
+  assert.ok(regionLabelOpacityAroundPointer(0.8, 0.2, 0.8, 0.2) > regionLabelOpacityAroundPointer(0.5, 0.5, 0.8, 0.2));
+  assert.equal(regionLabelOpacityAroundPointer(0.1, 0.9, 0.8, 0.2), 0);
+});
+
+test('Feature markers retain a stable screen-space radius across zoom levels', () => {
+  for (const unitsPerPixel of [16, 8, 2, 0.25, 0.01]) assert.ok(Math.abs(featureMarkerWorldRadius(unitsPerPixel) / unitsPerPixel - 3) < 1e-9);
+});
+
 test('semantic LOD has no gap and Region interaction yields at 512x', () => {
   assert.equal(REGION_INTERACTION_MAX_ZOOM, 512);
   assert.equal(regionsInteractiveAtZoom(511), true); assert.equal(regionsInteractiveAtZoom(512), false);
@@ -55,4 +66,11 @@ test('coarse parents use multi-loop even-odd paths from canonical coastline trut
   const source = fs.readFileSync('src/map/mapRenderer.ts', 'utf8');
   assert.match(source, /path\.setAttribute\('fill-rule', 'evenodd'\)/);
   assert.match(source, /parent\.polygons\.map/);
+});
+
+test('pointer movement updates existing label emphasis without spatial requery', () => {
+  const source = fs.readFileSync('src/map/mapRenderer.ts', 'utf8');
+  const pointerHandler = source.slice(source.indexOf("svg.addEventListener('pointermove'"), source.indexOf('const finishPointer'));
+  assert.match(pointerHandler, /scheduleRegionLabelFocus/);
+  assert.doesNotMatch(pointerHandler, /regionsIntersecting|resourceNodesIntersecting|replaceChildren/);
 });
