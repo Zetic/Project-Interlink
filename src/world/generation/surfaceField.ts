@@ -2,7 +2,7 @@ import { deterministicUnit } from '../random.js';
 import { PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from '../scale.js';
 import type { Planet, PlateBoundaryType, Point, RegionEnvironment, SurfaceType, TectonicPlate } from '../types.js';
 import { wrappedValueNoise } from './generationNoise.js';
-import { sampleGeologicalHistory } from './geologicalHistory.js';
+import { geologicalHistoryFromPlateSample } from './geologicalHistory.js';
 import { samplePlateModel } from './tectonics.js';
 
 export interface PlanetEnvironmentContext {
@@ -50,7 +50,7 @@ function round(value: number, digits = 6): number { return Number(value.toFixed(
 
 export function rawSurfaceElevation(seed: string, plates: readonly TectonicPlate[], point: Point): number {
   const plate = samplePlateModel(plates, point);
-  const history = sampleGeologicalHistory(seed, plates, point);
+  const history = geologicalHistoryFromPlateSample(seed, point, plate);
   const macro = (wrappedValueNoise(seed, 'surface:macro', point, 1024) - 0.5) * 0.78;
   const meso = (wrappedValueNoise(seed, 'surface:meso', point, 512) - 0.5) * 0.36;
   const detail = (wrappedValueNoise(seed, 'surface:detail', point, 256) - 0.5) * 0.12;
@@ -128,7 +128,7 @@ export function samplePlanetEnvironment(context: PlanetEnvironmentContext, point
   const y = Math.max(0, Math.min(PLANET_MAP_HEIGHT, point.y));
   const normalizedPoint = { x, y };
   const plate = samplePlateModel(context.plates, normalizedPoint);
-  const history = sampleGeologicalHistory(context.seed, context.plates, normalizedPoint);
+  const history = geologicalHistoryFromPlateSample(context.seed, normalizedPoint, plate);
   const rawElevation = context.surfaceField
     ? sampleSurfaceFieldRaw(context.surfaceField, normalizedPoint)
     : rawSurfaceElevation(context.seed, context.plates, normalizedPoint);
