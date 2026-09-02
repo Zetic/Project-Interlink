@@ -503,6 +503,8 @@ A Region is a bundle of local physical and environmental properties, not merely 
 
 Continents and Oceans classify the continuous surface above Regions. This nesting is geographic only: it must not create recursive engineering workspaces, separate runtime graphs, or duplicate coordinate systems.
 
+Player-facing Regions should be irregular geographic territories with meaningful variation in area, shape, orientation, perimeter, and neighbors. Terrain samples, contour grids, and spatial-index chunks are technical representations only. They must not appear as square Regions or determine one Region apiece. Coastal Region boundaries should reuse the canonical parent coastline so geographic truth does not shift with zoom level.
+
 Useful regional properties include:
 
 - area

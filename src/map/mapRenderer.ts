@@ -42,6 +42,7 @@ export function regionsInteractiveAtZoom(zoom: number): boolean { return zoom < 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 type PointerMode = 'pan' | 'node-drag' | null;
+export interface MapHoverFocus { normalizedX: number; normalizedY: number; worldPoint: Point }
 
 function svgElement<K extends keyof SVGElementTagNameMap>(tagName: K): SVGElementTagNameMap[K] { return document.createElementNS(SVG_NS, tagName); }
 
@@ -110,14 +111,18 @@ function regionElement(region: Region, renderOrigin: RenderOriginState, store: A
   return polygon;
 }
 
-function regionLabelElement(region: Region, renderOrigin: RenderOriginState, opacity: number, pixelSize: number): SVGTextElement {
+function regionLabelElement(region: Region, renderOrigin: RenderOriginState, pixelSize: number): SVGTextElement {
   const center = worldToRenderPoint(region.center, renderOrigin);
   const label = svgElement('text');
   label.setAttribute('x', center.x.toFixed(6));
   label.setAttribute('y', center.y.toFixed(6));
   label.setAttribute('class', 'ws-map-region-label');
-  label.setAttribute('opacity', opacity.toFixed(3));
+  label.setAttribute('opacity', '0');
   label.setAttribute('data-label-px', pixelSize.toFixed(2));
+  label.setAttribute('data-world-x', region.center.x.toFixed(6));
+  label.setAttribute('data-world-y', region.center.y.toFixed(6));
+  label.setAttribute('data-region-id', region.id);
+  label.setAttribute('data-feature-count', String(region.resourceNodeIds.length));
   label.textContent = region.name;
   return label;
 }
@@ -133,18 +138,31 @@ export function regionLabelPixelSizeForZoom(zoom: number): number {
   return 15 - progress * 5;
 }
 
-export function regionLabelOpacity(normalizedX: number, normalizedY: number): number {
-  const radius = Math.hypot((normalizedX - 0.5) * 2, (normalizedY - 0.5) * 2);
+export function regionLabelOpacityAroundPointer(normalizedX: number, normalizedY: number, focusX: number, focusY: number): number {
+  const radius = Math.hypot((normalizedX - focusX) * 2, (normalizedY - focusY) * 2);
   if (radius >= 0.95) return 0;
   if (radius <= 0.45) return 1;
   return 1 - (radius - 0.45) / 0.5;
+}
+
+export function regionLabelOpacity(normalizedX: number, normalizedY: number): number {
+  return regionLabelOpacityAroundPointer(normalizedX, normalizedY, 0.5, 0.5);
+}
+
+export function regionLabelFocusPoint(hoverFocus: MapHoverFocus | null): { x: number; y: number } {
+  return hoverFocus ? { x: hoverFocus.normalizedX, y: hoverFocus.normalizedY } : { x: 0.5, y: 0.5 };
+}
+
+export function featureMarkerWorldRadius(unitsPerPixel: number, desiredPixelRadius = 3): number {
+  return Math.max(0, unitsPerPixel) * desiredPixelRadius;
 }
 
 function featureMarkerLayer(resources: readonly ResourceNode[], renderOrigin: RenderOriginState, store: AppStore): SVGGElement {
   const layer = svgElement('g'); layer.setAttribute('class', 'ws-map-feature-marker-layer');
   for (const resource of resources) {
     const local = worldToRenderPoint(resource.position, renderOrigin);
-    const marker = svgElement('circle'); marker.setAttribute('cx', String(local.x)); marker.setAttribute('cy', String(local.y)); marker.setAttribute('r', '2.5');
+    const marker = svgElement('circle'); marker.setAttribute('cx', String(local.x)); marker.setAttribute('cy', String(local.y)); marker.setAttribute('r', '1');
+    marker.setAttribute('data-marker-radius-px', '3');
     marker.setAttribute('class', 'ws-map-feature-marker'); marker.setAttribute('data-map-kind', 'resource'); marker.setAttribute('data-resource-id', resource.id);
     marker.addEventListener('click', event => { event.stopPropagation(); store.setSelection({ type: 'resource', resourceNodeId: resource.id }); });
     layer.appendChild(marker);
@@ -198,6 +216,7 @@ function updateZoomVisibility(svg: SVGSVGElement, zoom: number): void {
   const rect = svg.getBoundingClientRect(); const viewBox = svg.viewBox.baseVal;
   const unitsPerPixel = rect.width > 0 && viewBox.width > 0 ? viewBox.width / rect.width : 1;
   for (const label of svg.querySelectorAll<SVGTextElement>('.ws-map-region-label')) label.setAttribute('font-size', String(unitsPerPixel * Number(label.dataset.labelPx ?? 12)));
+  for (const marker of svg.querySelectorAll<SVGCircleElement>('.ws-map-feature-marker')) marker.setAttribute('r', String(featureMarkerWorldRadius(unitsPerPixel, Number(marker.dataset.markerRadiusPx ?? 3))));
 }
 
 export function installMapRenderer(root: HTMLElement, store: AppStore): void {
@@ -226,6 +245,8 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   let draggedNodeId: string | null = null;
   let dragStartNode: Point | null = null;
   let hoverWorld: Point | null = null;
+  let hoverFocus: MapHoverFocus | null = null;
+  let labelFocusAnimationFrame: number | null = null;
   let suppressClick = false;
 
   let observedWorld: WorldState | null = store.getState().world;
@@ -233,6 +254,58 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   let observedSelection: MapSelection = store.getState().selection;
   let observedCamera: MapCameraState = store.getState().camera;
   let observedInteraction: GraphInteractionState = store.getState().interaction;
+
+  const updateRegionLabelFocus = (planet: Planet, camera: MapCameraState): void => {
+    labelFocusAnimationFrame = null;
+    const labels = [...svg.querySelectorAll<SVGTextElement>('.ws-map-region-label')];
+    if (!labels.length) return;
+    const visible = viewportBounds(svg, planet, camera);
+    const focus = regionLabelFocusPoint(hoverFocus);
+    const focusX = focus.x;
+    const focusY = focus.y;
+    const selected = store.getState().selection;
+    const selectedRegionId = selected.type === 'region' ? selected.regionId : null;
+    const rect = svg.getBoundingClientRect();
+    const candidates = labels.map(label => {
+      const normalizedX = (Number(label.dataset.worldX) - visible.x) / visible.width;
+      const normalizedY = (Number(label.dataset.worldY) - visible.y) / visible.height;
+      const opacity = regionLabelOpacityAroundPointer(normalizedX, normalizedY, focusX, focusY);
+      return {
+        label,
+        normalizedX,
+        normalizedY,
+        opacity,
+        distance: Math.hypot(normalizedX - focusX, normalizedY - focusY),
+        selected: label.dataset.regionId === selectedRegionId,
+        features: Number(label.dataset.featureCount ?? 0),
+      };
+    }).sort((left, right) => Number(right.selected) - Number(left.selected) || left.distance - right.distance
+      || right.features - left.features || (left.label.dataset.regionId ?? '').localeCompare(right.label.dataset.regionId ?? ''));
+    for (const label of labels) label.setAttribute('opacity', '0');
+    const accepted: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+    const budget = regionLabelBudgetForZoom(camera.zoom);
+    let count = 0;
+    for (const candidate of candidates) {
+      if (candidate.opacity <= 0 || count >= budget) continue;
+      const pixelSize = Number(candidate.label.dataset.labelPx ?? 12);
+      const halfWidth = ((candidate.label.textContent?.length ?? 0) * pixelSize * 0.29) / Math.max(1, rect.width);
+      const halfHeight = (pixelSize * 0.65) / Math.max(1, rect.height);
+      const bounds = { left: candidate.normalizedX - halfWidth, right: candidate.normalizedX + halfWidth, top: candidate.normalizedY - halfHeight, bottom: candidate.normalizedY + halfHeight };
+      const collides = accepted.some(value => bounds.left < value.right && bounds.right > value.left && bounds.top < value.bottom && bounds.bottom > value.top);
+      if (collides && !candidate.selected) continue;
+      accepted.push(bounds); count += 1;
+      candidate.label.setAttribute('opacity', candidate.opacity.toFixed(3));
+    }
+  };
+
+  const scheduleRegionLabelFocus = (): void => {
+    if (labelFocusAnimationFrame !== null) return;
+    labelFocusAnimationFrame = requestAnimationFrame(() => {
+      const planet = store.getState().world?.planet;
+      if (planet) updateRegionLabelFocus(planet, displayCamera);
+      else labelFocusAnimationFrame = null;
+    });
+  };
 
   const refreshGeographicViewport = (planet: Planet, camera: MapCameraState): void => {
     if (!spatialIndex || spatialIndex.planet !== planet) spatialIndex = worldSpatialIndexFor(planet);
@@ -254,26 +327,12 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
     if (querySignature === geographicRenderSignature) return;
     geographicRenderSignature = querySignature;
     const visibleRegions = showRegions ? spatialIndex.regionsIntersecting(bounds) : [];
-    const labelCandidates = showLabels ? visibleRegions.map(region => {
-      const normalizedX = (region.center.x - visibleBounds.x) / visibleBounds.width;
-      const normalizedY = (region.center.y - visibleBounds.y) / visibleBounds.height;
-      return { region, normalizedX, normalizedY, opacity: regionLabelOpacity(normalizedX, normalizedY), distance: Math.hypot(normalizedX - 0.5, normalizedY - 0.5) };
-    }).filter(candidate => candidate.opacity > 0).sort((left, right) => Number(right.region.id === selectedRegionId) - Number(left.region.id === selectedRegionId)
-      || left.distance - right.distance || right.region.resourceNodeIds.length - left.region.resourceNodeIds.length || left.region.id.localeCompare(right.region.id)) : [];
-    const occupied = new Set<string>();
-    const labeledRegions: typeof labelCandidates = [];
-    for (const candidate of labelCandidates) {
-      const collisionKey = `${Math.floor(candidate.normalizedX / 0.12)}:${Math.floor(candidate.normalizedY / 0.07)}`;
-      if (occupied.has(collisionKey) && candidate.region.id !== selectedRegionId) continue;
-      occupied.add(collisionKey); labeledRegions.push(candidate);
-      if (labeledRegions.length >= regionLabelBudgetForZoom(camera.zoom)) break;
-    }
     const visibleResources: ResourceNode[] = showFeatureMarkers || showResourceCards ? spatialIndex.resourceNodesIntersecting(viewportBounds(svg, planet, camera, 2)) : [];
 
     const regionLayer = svg.querySelector<SVGGElement>('.ws-map-region-layer');
     const labelLayer = svg.querySelector<SVGGElement>('.ws-map-region-label-layer');
     regionLayer?.replaceChildren(...visibleRegions.map(region => regionElement(region, renderOrigin, store)));
-    labelLayer?.replaceChildren(...labeledRegions.map(candidate => regionLabelElement(candidate.region, renderOrigin, candidate.opacity, regionLabelPixelSizeForZoom(camera.zoom))));
+    labelLayer?.replaceChildren(...(showLabels ? visibleRegions.map(region => regionLabelElement(region, renderOrigin, regionLabelPixelSizeForZoom(camera.zoom))) : []));
     const markerLayer = svg.querySelector<SVGGElement>('.ws-map-feature-marker-layer');
     markerLayer?.replaceWith(featureMarkerLayer(showFeatureMarkers ? visibleResources : [], renderOrigin, store));
     const resourceLayer = svg.querySelector<SVGGElement>('.ws-map-resource-node-layer');
@@ -286,6 +345,7 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
     updateResourceRuntimePresentation(svg, planet, store.getState().runtime.snapshot);
     updateSelection(svg, store.getState().selection);
     updatePendingPort(svg, store.getState().interaction.pendingConnection);
+    scheduleRegionLabelFocus();
   };
 
   const refreshPreview = (state: Readonly<AppState>): void => {
@@ -330,6 +390,7 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
     }
     refreshGeographicViewport(planet, displayCamera);
     updateZoomVisibility(svg, displayCamera.zoom);
+    scheduleRegionLabelFocus();
   };
 
   const publishCamera = (camera: MapCameraState): void => {
@@ -450,7 +511,7 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
     } else if (cameraChanged && !internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
       animateToCamera(state.camera);
     }
-    if (selectionChanged) geographicRenderSignature = '';
+    if (selectionChanged) { geographicRenderSignature = ''; scheduleRegionLabelFocus(); }
     if (worldNeedsRender || selectionChanged) updateSelection(svg, state.selection);
     if (worldNeedsRender || interactionChanged) {
       updatePendingPort(svg, state.interaction.pendingConnection);
@@ -542,7 +603,14 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   svg.addEventListener('pointermove', event => {
     const planet = store.getState().world?.planet;
     if (!planet) return;
-    hoverWorld = screenToWorld(svg, planet, displayCamera, event.clientX, event.clientY); refreshPreview(store.getState());
+    hoverWorld = screenToWorld(svg, planet, displayCamera, event.clientX, event.clientY);
+    const hoverRect = svg.getBoundingClientRect();
+    hoverFocus = {
+      normalizedX: clamp((event.clientX - hoverRect.left) / Math.max(1, hoverRect.width), 0, 1),
+      normalizedY: clamp((event.clientY - hoverRect.top) / Math.max(1, hoverRect.height), 0, 1),
+      worldPoint: hoverWorld,
+    };
+    refreshPreview(store.getState()); scheduleRegionLabelFocus();
     if (pointerId !== event.pointerId || !pointerMode) return;
     const rect = svg.getBoundingClientRect(); if (rect.width <= 0 || rect.height <= 0) return;
     const dx = event.clientX - panStartClient.x; const dy = event.clientY - panStartClient.y;
@@ -579,10 +647,10 @@ export function installMapRenderer(root: HTMLElement, store: AppStore): void {
   };
   svg.addEventListener('pointerup', finishPointer);
   svg.addEventListener('pointercancel', finishPointer);
-  svg.addEventListener('pointerleave', () => { hoverWorld = null; refreshPreview(store.getState()); });
+  svg.addEventListener('pointerleave', () => { hoverWorld = null; hoverFocus = null; refreshPreview(store.getState()); scheduleRegionLabelFocus(); });
 
   window.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { store.clearInteraction(); hoverWorld = null; refreshPreview(store.getState()); }
+    if (event.key === 'Escape') { store.clearInteraction(); hoverWorld = null; hoverFocus = null; refreshPreview(store.getState()); scheduleRegionLabelFocus(); }
     if ((event.key === 'Delete' || event.key === 'Backspace') && store.getState().selection.type === 'mechanical' && !['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement | null)?.tagName ?? '')) {
       const selected = store.getState().selection;
       if (selected.type === 'mechanical') {

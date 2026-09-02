@@ -1,5 +1,6 @@
 import type { RuntimeSnapshot } from '../../runtime/presentation.js';
 import { resourceDefinitionById } from '../../world/resources.js';
+import { worldSpatialIndexFor } from '../../world/spatialIndex.js';
 import type { Point, Planet, ResourceNode } from '../../world/types.js';
 import {
   applyEngineeringNodeVisibility,
@@ -102,9 +103,9 @@ export function updateResourceRuntimePresentation(
   planet: Planet,
   snapshot: RuntimeSnapshot | null,
 ): void {
-  const resourcesById = new Map(planet.resourceNodes.map(resource => [resource.id, resource]));
+  const spatialIndex = worldSpatialIndexFor(planet);
   for (const text of svg.querySelectorAll<SVGTextElement>('[data-runtime-resource-text]')) {
-    const resource = resourcesById.get(text.dataset.runtimeResourceText ?? '');
+    const resource = spatialIndex.featureById(text.dataset.runtimeResourceText ?? '');
     if (resource) text.textContent = formatResourceRuntime(resource, snapshot);
   }
 }

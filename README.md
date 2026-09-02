@@ -44,7 +44,7 @@ Planet
     └── natural resource FEATURE nodes
 ```
 
-World generation is deterministic by generator version plus seed. Generator v3 creates 12–24 deterministic tectonic plates, derives one continuous elevation/geology field and sea level, classifies every surface point as land or ocean, and derives Continents, Ocean basins, and roughly 8,000 Regions from that same truth. Coastlines therefore remain identical when the map changes level of detail. Resource FEATURE candidates sample resource-specific local geology and cluster into deterministic provinces rather than using Region averages alone. Natural sources currently include:
+World generation is deterministic by generator version plus seed. Generator v4 creates 12–24 deterministic tectonic plates, caches a profiled 176 × 88 scalar elevation field, extracts the sea-level contour with interpolated triangle clipping, and builds Continents/Ocean basins before independently partitioning the surface into roughly 4,000–10,000 irregular Regions. Technical samples and spatial chunks are invisible implementation details rather than player-facing Regions. Parent and coastal Region edges use the same canonical contour, so land does not move across map detail levels. Resource FEATURE candidates sample each exact point once, then evaluate resource-specific geology and deterministic province fields. Natural sources currently include:
 
 - Iron Ore
 - Copper Ore
@@ -56,7 +56,7 @@ World generation is deterministic by generator version plus seed. Generator v3 c
 
 A resource FEATURE exposes a `resource-access` relationship. That relationship authorizes/selects a source but carries no matter; physical material flow begins at an Extractor material output.
 
-The map remains one continuous SVG coordinate space from whole-planet geography through engineering zoom. A shared technical chunk index supplies candidate-only visible/nearby Region and Feature queries, so world record count is independent from SVG/DOM count. Whole-planet zoom renders clickable Continents and Oceans; regional zoom renders only viewport Regions with camera-centered label budgets; a lightweight Feature-marker level bridges geography to deep engineering cards and nodes.
+The map remains one continuous SVG coordinate space from whole-planet geography through engineering zoom. A shared technical chunk index supplies candidate-only visible/nearby Region and Feature queries, so world record count is independent from SVG/DOM count. Whole-planet zoom renders clickable Continents and Oceans; regional zoom renders only viewport Regions. While the pointer is over the map, existing Region labels are prioritized and faded around it without spatial requery or DOM reconstruction; camera center is the fallback outside the map. Screen-sized Feature markers bridge geography to deep engineering cards without expanding in world space while zooming.
 
 NAV is camera-aware, contextual, and searchable rather than a complete Planet → every Continent/Ocean → every Region → every Feature tree. Its normal view follows camera location while the Inspector keeps deliberate selection and camera Location in separate tabs. Global search supports all geographic and engineering entity types while remaining bounded to 60 rendered results.
 

@@ -9,10 +9,11 @@ import { environmentContextForPlanet, samplePlanetEnvironment } from '../dist/wo
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, EARTH_SCALE_PHYSICAL_HEIGHT_METERS, EARTH_SCALE_PHYSICAL_WIDTH_METERS, metersToWorldUnits, worldUnitsToMeters } from '../dist/world/scale.js';
 import { createWorldSpatialIndex, worldSpatialIndexFor } from '../dist/world/spatialIndex.js';
 
-test('generator v3 creates canonical land and ocean Regions at Earth scale', () => {
+test('generator v4 creates independent land and ocean Regions at Earth scale', () => {
   const planet = generateWorld('phase-ten-one-world').planet;
   assert.equal(planet.generatorVersion, WORLD_GENERATOR_VERSION);
-  assert.equal(WORLD_GENERATOR_VERSION, 3);
+  assert.equal(WORLD_GENERATOR_VERSION, 4);
+  assert.equal(planet.surfaceResolution.columns * planet.surfaceResolution.rows === planet.regions.length, false);
   assert.ok(planet.tectonicPlates.length >= 12 && planet.tectonicPlates.length <= 24);
   assert.ok(planet.continents.length >= 3 && planet.continents.length <= 8);
   assert.ok(planet.oceans.length >= 3 && planet.oceans.length <= 8);
@@ -23,17 +24,15 @@ test('generator v3 creates canonical land and ocean Regions at Earth scale', () 
   assert.equal(new Set(planet.regions.map(region => region.name)).size, planet.regions.length);
 });
 
-test('geographic parents and Regions form one complete canonical surface', () => {
-  const planet = generateWorld('bounded-geography-v3').planet;
+test('geographic parents and irregular Regions form one complete canonical surface', () => {
+  const planet = generateWorld('bounded-geography-v4').planet;
   const environmentContext = environmentContextForPlanet(planet);
   const parents = new Map([...planet.continents, ...planet.oceans].map(parent => [parent.id, parent]));
   let totalArea = 0;
-  let coastalRegions = 0;
   for (const region of planet.regions) {
-    assert.ok(region.polygon.length >= 4);
+    assert.ok(region.polygon.length >= 3);
     assert.ok(polygonArea(region.polygon) > 0);
     totalArea += polygonArea(region.polygon);
-    if (region.polygon.length > 4) coastalRegions += 1;
     const parent = parents.get(region.parentId);
     assert.ok(parent, `${region.id} parent resolves`);
     assert.equal(parent.kind, region.parentKind);
@@ -42,14 +41,11 @@ test('geographic parents and Regions form one complete canonical surface', () =>
     assert.ok(region.environment.meanElevationMeters >= 0 === (region.surfaceType === 'land'));
     for (const point of region.polygon) assert.ok(point.x >= 0 && point.x <= PLANET_MAP_WIDTH && point.y >= 0 && point.y <= PLANET_MAP_HEIGHT);
   }
-  assert.equal(totalArea, PLANET_MAP_WIDTH * PLANET_MAP_HEIGHT, 'Regions tile the complete surface without gaps');
-  assert.ok(coastalRegions > 0, 'coastal Regions carry variable polygon complexity');
+  assert.ok(Math.abs(totalArea - PLANET_MAP_WIDTH * PLANET_MAP_HEIGHT) < 0.01, 'Regions tile the complete surface without gaps');
   for (const parent of parents.values()) for (const id of parent.regionIds) assert.ok(planet.regions.some(region => region.id === id));
   for (let index = 0; index < planet.regions.length; index += 113) {
     const region = planet.regions[index];
-    for (const point of [region.center, { x: region.bounds.x + 1, y: region.bounds.y + 1 }, { x: region.bounds.x + region.bounds.width - 1, y: region.bounds.y + region.bounds.height - 1 }]) {
-      assert.equal(samplePlanetEnvironment(environmentContext, point).surfaceType, region.surfaceType, `${region.id} point sampling matches Region ownership`);
-    }
+    assert.equal(samplePlanetEnvironment(environmentContext, region.center).surfaceType, region.surfaceType, `${region.id} center sampling matches Region ownership`);
   }
 });
 
@@ -64,7 +60,7 @@ test('planet logical coordinates retain an Earth-scale physical interpretation',
 });
 
 test('point-sampled resources remain land Features and preserve guaranteed Iron Ore', () => {
-  const planet = generateWorld('resource-suitability-v3').planet;
+  const planet = generateWorld('resource-suitability-v4').planet;
   const regions = new Map(planet.regions.map(region => [region.id, region]));
   assert.equal(planet.resourceNodes[0].resourceId, 'iron-ore');
   for (const node of planet.resourceNodes) {
@@ -82,7 +78,7 @@ test('point-sampled resources remain land Features and preserve guaranteed Iron 
 });
 
 test('the shared chunk index resolves candidate-only geographic and Feature queries', () => {
-  const planet = generateWorld('spatial-query-world-v3').planet;
+  const planet = generateWorld('spatial-query-world-v4').planet;
   const index = createWorldSpatialIndex(planet);
   assert.equal(worldSpatialIndexFor(planet), worldSpatialIndexFor(planet));
   const feature = planet.resourceNodes[Math.floor(planet.resourceNodes.length / 2)];
@@ -96,17 +92,17 @@ test('the shared chunk index resolves candidate-only geographic and Feature quer
 });
 
 test('seed plus generator version deterministically identifies tectonic world truth', () => {
-  const first = generateWorld('repeatable-v3');
-  const second = generateWorld('repeatable-v3');
-  const different = generateWorld('different-v3');
+  const first = generateWorld('repeatable-v4');
+  const second = generateWorld('repeatable-v4');
+  const different = generateWorld('different-v4');
   assert.deepEqual(second, first);
   assert.notDeepEqual(different.planet.tectonicPlates, first.planet.tectonicPlates);
   assert.notDeepEqual(different.planet.continents, first.planet.continents);
 });
 
 test('generation stays split and does not restore retired geographic/workspace models', () => {
-  const serialized = JSON.stringify(generateWorld('flat-world-model-v3'));
+  const serialized = JSON.stringify(generateWorld('flat-world-model-v4'));
   for (const retiredField of ['landmasses', 'landmassId', 'siteIds', 'childWorkspaceId', 'systemNodes']) assert.equal(serialized.includes(retiredField), false);
   const orchestrator = fs.readFileSync('src/world/generateWorld.ts', 'utf8');
-  assert.match(orchestrator, /generateTectonicPlates/); assert.match(orchestrator, /chooseSeaLevel/); assert.match(orchestrator, /generateGeography/); assert.match(orchestrator, /generateRegions/); assert.match(orchestrator, /generateResourceFeatures/);
+  assert.match(orchestrator, /generateTectonicPlates/); assert.match(orchestrator, /generateSurfaceField/); assert.match(orchestrator, /generateGeography/); assert.match(orchestrator, /generateRegions/); assert.match(orchestrator, /generateResourceFeatures/);
 });

@@ -7,6 +7,7 @@ export interface PlanetEnvironmentContext {
   seed: string;
   plates: readonly TectonicPlate[];
   seaLevelRaw: number;
+  surfaceField?: GenerationSurfaceField;
 }
 
 export interface PlanetEnvironmentSample extends RegionEnvironment {
@@ -15,11 +16,31 @@ export interface PlanetEnvironmentSample extends RegionEnvironment {
   rawElevation: number;
 }
 
-export const CANONICAL_SURFACE_COLUMNS = 128;
-export const CANONICAL_SURFACE_ROWS = 64;
+export interface GenerationSurfaceField {
+  columns: number;
+  rows: number;
+  cellWidth: number;
+  cellHeight: number;
+  rawElevations: Float64Array;
+  seaLevelRaw: number;
+}
+
+export const CANONICAL_SURFACE_COLUMNS = 176;
+export const CANONICAL_SURFACE_ROWS = 88;
+
+const PLANET_SURFACE_FIELDS = new WeakMap<Planet, GenerationSurfaceField>();
 
 export function environmentContextForPlanet(planet: Planet): PlanetEnvironmentContext {
-  return { seed: planet.seed, plates: planet.tectonicPlates, seaLevelRaw: planet.seaLevelRaw };
+  let surfaceField = PLANET_SURFACE_FIELDS.get(planet);
+  if (!surfaceField) {
+    surfaceField = generateSurfaceField(planet.seed, planet.tectonicPlates, planet.seaLevelRaw);
+    PLANET_SURFACE_FIELDS.set(planet, surfaceField);
+  }
+  return { seed: planet.seed, plates: planet.tectonicPlates, seaLevelRaw: planet.seaLevelRaw, surfaceField };
+}
+
+export function registerPlanetSurfaceField(planet: Planet, surfaceField: GenerationSurfaceField): void {
+  PLANET_SURFACE_FIELDS.set(planet, surfaceField);
 }
 
 function clamp01(value: number): number { return Math.max(0, Math.min(1, value)); }
@@ -49,27 +70,65 @@ export function rawSurfaceElevation(seed: string, plates: readonly TectonicPlate
   const macro = (wrappedValueNoise(seed, 'surface:macro', point, 1024) - 0.5) * 0.84;
   const meso = (wrappedValueNoise(seed, 'surface:meso', point, 512) - 0.5) * 0.42;
   const detail = (wrappedValueNoise(seed, 'surface:detail', point, 256) - 0.5) * 0.16;
+  const divergentEffect = plate.plate.crustType === 'oceanic' ? 0.18 : -0.16;
   const boundaryEffect = plate.boundaryType === 'convergent' ? 0.34 * plate.boundaryProximity
-    : plate.boundaryType === 'divergent' ? -0.22 * plate.boundaryProximity
+    : plate.boundaryType === 'divergent' ? divergentEffect * plate.boundaryProximity
       : 0;
   return plate.plate.crustBias + macro + meso + detail + boundaryEffect;
 }
 
-export function chooseSeaLevel(seed: string, plates: readonly TectonicPlate[]): number {
-  const samples: number[] = [];
+function fieldIndex(field: GenerationSurfaceField, column: number, row: number): number {
+  return row * (field.columns + 1) + column;
+}
+
+export function surfaceFieldRawAtVertex(field: GenerationSurfaceField, column: number, row: number): number {
+  return field.rawElevations[fieldIndex(field, column, row)]!;
+}
+
+export function sampleSurfaceFieldRaw(field: GenerationSurfaceField, point: Point): number {
+  const x = ((point.x % PLANET_MAP_WIDTH) + PLANET_MAP_WIDTH) % PLANET_MAP_WIDTH;
+  const y = Math.max(0, Math.min(PLANET_MAP_HEIGHT, point.y));
+  const column = Math.min(field.columns - 1, Math.floor(x / field.cellWidth));
+  const row = Math.min(field.rows - 1, Math.floor(y / field.cellHeight));
+  const tx = (x - column * field.cellWidth) / field.cellWidth;
+  const ty = (y - row * field.cellHeight) / field.cellHeight;
+  const northWest = surfaceFieldRawAtVertex(field, column, row);
+  const northEast = surfaceFieldRawAtVertex(field, column + 1, row);
+  const southEast = surfaceFieldRawAtVertex(field, column + 1, row + 1);
+  const southWest = surfaceFieldRawAtVertex(field, column, row + 1);
+  if ((row + column) % 2 === 0) {
+    return ty <= tx
+      ? (1 - tx) * northWest + (tx - ty) * northEast + ty * southEast
+      : (1 - ty) * northWest + tx * southEast + (ty - tx) * southWest;
+  }
+  return tx + ty <= 1
+    ? (1 - tx - ty) * northWest + tx * northEast + ty * southWest
+    : (1 - ty) * northEast + (tx + ty - 1) * southEast + (1 - tx) * southWest;
+}
+
+export function generateSurfaceField(seed: string, plates: readonly TectonicPlate[], fixedSeaLevelRaw?: number): GenerationSurfaceField {
   const columns = CANONICAL_SURFACE_COLUMNS;
   const rows = CANONICAL_SURFACE_ROWS;
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      samples.push(rawSurfaceElevation(seed, plates, {
-        x: (column + 0.5) * PLANET_MAP_WIDTH / columns,
-        y: (row + 0.5) * PLANET_MAP_HEIGHT / rows,
-      }));
+  const cellWidth = PLANET_MAP_WIDTH / columns;
+  const cellHeight = PLANET_MAP_HEIGHT / rows;
+  const rawElevations = new Float64Array((columns + 1) * (rows + 1));
+  const samples: number[] = [];
+  const provisional: GenerationSurfaceField = { columns, rows, cellWidth, cellHeight, rawElevations, seaLevelRaw: fixedSeaLevelRaw ?? 0 };
+  for (let row = 0; row <= rows; row += 1) {
+    for (let column = 0; column <= columns; column += 1) {
+      const raw = rawSurfaceElevation(seed, plates, { x: column * cellWidth, y: row * cellHeight });
+      rawElevations[fieldIndex(provisional, column, row)] = raw;
+      if (column < columns && row < rows) samples.push(raw);
     }
   }
-  samples.sort((left, right) => left - right);
   const landFraction = 0.3 + deterministicUnit(seed, 'surface:land-fraction') * 0.14;
-  return round(samples[Math.floor(samples.length * (1 - landFraction))] ?? 0);
+  samples.sort((left, right) => left - right);
+  provisional.seaLevelRaw = fixedSeaLevelRaw ?? round(samples[Math.floor(samples.length * (1 - landFraction))] ?? 0);
+  return provisional;
+}
+
+export function chooseSeaLevel(seed: string, plates: readonly TectonicPlate[]): number {
+  return generateSurfaceField(seed, plates).seaLevelRaw;
 }
 
 function boundaryActivity(type: PlateBoundaryType, proximity: number): number {
@@ -82,19 +141,13 @@ export function samplePlanetEnvironment(context: PlanetEnvironmentContext, point
   const y = Math.max(0, Math.min(PLANET_MAP_HEIGHT, point.y));
   const normalizedPoint = { x, y };
   const plate = samplePlateModel(context.plates, normalizedPoint);
-  // Surface ownership is sampled on the same canonical 128 × 64 field used to
-  // derive parent coastlines and Regions. Other environmental fields remain
-  // continuous within a Region, but land/ocean truth cannot disagree by LOD.
-  const surfaceCellWidth = PLANET_MAP_WIDTH / CANONICAL_SURFACE_COLUMNS;
-  const surfaceCellHeight = PLANET_MAP_HEIGHT / CANONICAL_SURFACE_ROWS;
-  const surfacePoint = {
-    x: (Math.floor(x / surfaceCellWidth) + 0.5) * surfaceCellWidth,
-    y: (Math.min(CANONICAL_SURFACE_ROWS - 1, Math.floor(y / surfaceCellHeight)) + 0.5) * surfaceCellHeight,
-  };
-  const rawElevation = rawSurfaceElevation(context.seed, context.plates, surfacePoint);
+  const rawElevation = context.surfaceField
+    ? sampleSurfaceFieldRaw(context.surfaceField, normalizedPoint)
+    : rawSurfaceElevation(context.seed, context.plates, normalizedPoint);
   const signedElevation = rawElevation - context.seaLevelRaw;
-  const surfaceElevationMeters = Math.round(Math.max(-7_500, Math.min(5_800, signedElevation * 7_200)));
-  const surfaceType: SurfaceType = surfaceElevationMeters >= 0 ? 'land' : 'ocean';
+  const roundedElevation = Math.round(Math.max(-7_500, Math.min(5_800, signedElevation * 7_200)));
+  const surfaceElevationMeters = signedElevation < 0 ? Math.min(-1, roundedElevation) : Math.max(0, roundedElevation);
+  const surfaceType: SurfaceType = signedElevation >= 0 ? 'land' : 'ocean';
   const latitudeDeg = 90 - (y / PLANET_MAP_HEIGHT) * 180;
   const latitudeWarmth = 1 - Math.abs(latitudeDeg) / 90;
   const tectonicActivity = clamp01(0.08 + boundaryActivity(plate.boundaryType, plate.boundaryProximity) * 0.9);

@@ -1,4 +1,5 @@
 import { resourceDefinitionById } from '../../world/resources.js';
+import { worldSpatialIndexFor } from '../../world/spatialIndex.js';
 import { applyEngineeringNodeVisibility, ENGINEERING_NODE_HIDE_ZOOM, ENGINEERING_NODE_INTERACTIVE_ZOOM, ENGINEERING_NODE_SHOW_ZOOM, } from './engineeringNodeVisibility.js';
 import { localCardTransform, NODE_CARD_LOCAL_BODY_FONT_SIZE, NODE_CARD_LOCAL_CATEGORY_FONT_SIZE, NODE_CARD_LOCAL_HALF_HEIGHT, NODE_CARD_LOCAL_HALF_WIDTH, NODE_CARD_LOCAL_HEADER_HEIGHT, NODE_CARD_LOCAL_HEIGHT, NODE_CARD_LOCAL_PORT_RADIUS, NODE_CARD_LOCAL_WIDTH, NODE_CARD_PHYSICAL_HEIGHT_METERS, NODE_CARD_PHYSICAL_WIDTH_METERS, NODE_CARD_WORLD_HEIGHT, NODE_CARD_WORLD_WIDTH, } from './nodeCardGeometry.js';
 import { worldToRenderPoint } from './renderOrigin.js';
@@ -87,9 +88,9 @@ function formatResourceRuntime(resource, snapshot) {
     return `${runtime.remainingMassKg.toFixed(1)} kg remaining`;
 }
 export function updateResourceRuntimePresentation(svg, planet, snapshot) {
-    const resourcesById = new Map(planet.resourceNodes.map(resource => [resource.id, resource]));
+    const spatialIndex = worldSpatialIndexFor(planet);
     for (const text of svg.querySelectorAll('[data-runtime-resource-text]')) {
-        const resource = resourcesById.get(text.dataset.runtimeResourceText ?? '');
+        const resource = spatialIndex.featureById(text.dataset.runtimeResourceText ?? '');
         if (resource)
             text.textContent = formatResourceRuntime(resource, snapshot);
     }

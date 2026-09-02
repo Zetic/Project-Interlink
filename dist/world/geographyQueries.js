@@ -11,7 +11,8 @@ export function geographicLocationAt(planet, point, index = worldSpatialIndexFor
 }
 export function geographicLocationKey(planet, point, cellSize = 16) {
     const context = geographicLocationAt(planet, point);
+    const worldKey = `${planet.seed}:v${planet.generatorVersion}`;
     if (!context)
-        return `none:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
-    return `${context.parent.id}:${context.region.id}:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
+        return `${worldKey}:none:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
+    return `${worldKey}:${context.parent.id}:${context.region.id}:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
 }

@@ -1,175 +1,293 @@
-import { polygonBounds } from '../geometry.js';
+import { polygonArea, polygonBounds, polygonCentroid, removeCollinearVertices } from '../geometry.js';
 import { createRng } from '../random.js';
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from '../scale.js';
-import { CANONICAL_SURFACE_COLUMNS, CANONICAL_SURFACE_ROWS, samplePlanetEnvironment } from './surfaceField.js';
+import { sampleSurfaceFieldRaw, surfaceFieldRawAtVertex, } from './surfaceField.js';
 import { wrappedDistanceSquared } from './tectonics.js';
-export const GEOGRAPHY_COLUMNS = CANONICAL_SURFACE_COLUMNS;
-export const GEOGRAPHY_ROWS = CANONICAL_SURFACE_ROWS;
-export const GEOGRAPHY_CELL_WIDTH = PLANET_MAP_WIDTH / GEOGRAPHY_COLUMNS;
-export const GEOGRAPHY_CELL_HEIGHT = PLANET_MAP_HEIGHT / GEOGRAPHY_ROWS;
 const CONTINENT_NAMES = ['Avaria', 'Ceryth', 'Damaris', 'Elyon', 'Kestrel', 'Orinth', 'Sereva', 'Talora'];
 const OCEAN_NAMES = ['Pelagic', 'Boreal', 'Sapphire', 'Vesper', 'Meridian', 'Abyssal', 'Austral', 'Thalassic'];
-function cellIndex(column, row) { return row * GEOGRAPHY_COLUMNS + column; }
-function pointKey(point) { return `${point.x}:${point.y}`; }
+function roundPoint(point) { return { x: Number(point.x.toFixed(6)), y: Number(point.y.toFixed(6)) }; }
+function pointKey(point) { return `${point.x.toFixed(6)}:${point.y.toFixed(6)}`; }
+function edgeKey(start, end) { const a = pointKey(start); const b = pointKey(end); return a < b ? `${a}|${b}` : `${b}|${a}`; }
 function boundsForPolygons(polygons) { return polygonBounds(polygons.flat()); }
-function createBaseCells(context) {
-    const cells = [];
-    for (let row = 0; row < GEOGRAPHY_ROWS; row += 1) {
-        for (let column = 0; column < GEOGRAPHY_COLUMNS; column += 1) {
-            const center = { x: (column + 0.5) * GEOGRAPHY_CELL_WIDTH, y: (row + 0.5) * GEOGRAPHY_CELL_HEIGHT };
-            const sample = samplePlanetEnvironment(context, center);
-            cells.push({ column, row, id: `region-${row}-${column}`, center, surfaceType: sample.surfaceType, environment: sample,
-                parentKind: sample.surfaceType === 'land' ? 'continent' : 'ocean', parentId: '' });
+function wrappedFocusBounds(polygons, center) {
+    const flat = polygons.flat();
+    const ordinary = polygonBounds(flat);
+    const xs = [...new Set(flat.map(point => Number(point.x.toFixed(6))))].sort((left, right) => left - right);
+    if (xs.length < 2)
+        return ordinary;
+    let largestGap = xs[0] + PLANET_MAP_WIDTH - xs[xs.length - 1];
+    for (let index = 1; index < xs.length; index += 1)
+        largestGap = Math.max(largestGap, xs[index] - xs[index - 1]);
+    const wrappedWidth = Math.min(ordinary.width, PLANET_MAP_WIDTH - largestGap);
+    return { x: center.x - wrappedWidth / 2, y: ordinary.y, width: wrappedWidth, height: ordinary.height };
+}
+function clippedTriangle(vertices, keepLand) {
+    const output = [];
+    const inside = (value) => keepLand ? value >= 0 : value <= 0;
+    for (let index = 0; index < vertices.length; index += 1) {
+        const current = vertices[index];
+        const next = vertices[(index + 1) % vertices.length];
+        const currentInside = inside(current.signed);
+        const nextInside = inside(next.signed);
+        if (currentInside)
+            output.push(current);
+        if (currentInside !== nextInside) {
+            const denominator = current.signed - next.signed;
+            const t = Math.abs(denominator) < 1e-12 ? 0.5 : current.signed / denominator;
+            output.push({
+                point: roundPoint({ x: current.point.x + (next.point.x - current.point.x) * t, y: current.point.y + (next.point.y - current.point.y) * t }),
+                signed: 0,
+            });
         }
     }
-    return cells;
+    return removeCollinearVertices(output.map(vertex => roundPoint(vertex.point)));
 }
-function surfaceComponents(cells, surfaceType) {
-    const visited = new Set();
-    const components = [];
-    for (let start = 0; start < cells.length; start += 1) {
-        if (visited.has(start) || cells[start].surfaceType !== surfaceType)
-            continue;
-        const component = [];
-        const queue = [start];
-        visited.add(start);
-        while (queue.length) {
-            const currentIndex = queue.pop();
-            const cell = cells[currentIndex];
-            component.push(currentIndex);
-            const neighbors = [[((cell.column - 1) + GEOGRAPHY_COLUMNS) % GEOGRAPHY_COLUMNS, cell.row], [(cell.column + 1) % GEOGRAPHY_COLUMNS, cell.row], [cell.column, cell.row - 1], [cell.column, cell.row + 1]];
-            for (const [column, row] of neighbors) {
-                if (row < 0 || row >= GEOGRAPHY_ROWS)
-                    continue;
-                const index = cellIndex(column, row);
-                if (!visited.has(index) && cells[index].surfaceType === surfaceType) {
-                    visited.add(index);
-                    queue.push(index);
+function createSurfacePatches(field) {
+    const patches = [];
+    for (let row = 0; row < field.rows; row += 1) {
+        for (let column = 0; column < field.columns; column += 1) {
+            const x0 = column * field.cellWidth;
+            const x1 = x0 + field.cellWidth;
+            const y0 = row * field.cellHeight;
+            const y1 = y0 + field.cellHeight;
+            const corners = [
+                { point: { x: x0, y: y0 }, signed: surfaceFieldRawAtVertex(field, column, row) - field.seaLevelRaw },
+                { point: { x: x1, y: y0 }, signed: surfaceFieldRawAtVertex(field, column + 1, row) - field.seaLevelRaw },
+                { point: { x: x1, y: y1 }, signed: surfaceFieldRawAtVertex(field, column + 1, row + 1) - field.seaLevelRaw },
+                { point: { x: x0, y: y1 }, signed: surfaceFieldRawAtVertex(field, column, row + 1) - field.seaLevelRaw },
+            ];
+            const triangles = (row + column) % 2 === 0
+                ? [[corners[0], corners[1], corners[2]], [corners[0], corners[2], corners[3]]]
+                : [[corners[0], corners[1], corners[3]], [corners[1], corners[2], corners[3]]];
+            for (let triangleIndex = 0; triangleIndex < triangles.length; triangleIndex += 1) {
+                for (const surfaceType of ['land', 'ocean']) {
+                    const polygon = clippedTriangle(triangles[triangleIndex], surfaceType === 'land');
+                    if (polygon.length < 3 || polygonArea(polygon) < 1e-7)
+                        continue;
+                    patches.push({
+                        id: `patch-${row}-${column}-${triangleIndex}-${surfaceType}`,
+                        polygon,
+                        center: roundPoint(polygonCentroid(polygon)),
+                        surfaceType,
+                        parentKind: surfaceType === 'land' ? 'continent' : 'ocean',
+                        parentId: '',
+                    });
                 }
             }
         }
-        components.push(component);
+    }
+    return patches;
+}
+function cellSurface(field, column, row) {
+    const raw = sampleSurfaceFieldRaw(field, { x: (column + 0.5) * field.cellWidth, y: (row + 0.5) * field.cellHeight });
+    return raw >= field.seaLevelRaw ? 'land' : 'ocean';
+}
+function surfaceComponents(field, surfaceType) {
+    const visited = new Uint8Array(field.columns * field.rows);
+    const components = [];
+    const indexOf = (column, row) => row * field.columns + column;
+    for (let row = 0; row < field.rows; row += 1) {
+        for (let column = 0; column < field.columns; column += 1) {
+            const start = indexOf(column, row);
+            if (visited[start] || cellSurface(field, column, row) !== surfaceType)
+                continue;
+            const component = [];
+            const queue = [start];
+            visited[start] = 1;
+            while (queue.length) {
+                const current = queue.pop();
+                component.push(current);
+                const currentColumn = current % field.columns;
+                const currentRow = Math.floor(current / field.columns);
+                const neighbors = [
+                    [((currentColumn - 1) + field.columns) % field.columns, currentRow],
+                    [(currentColumn + 1) % field.columns, currentRow],
+                    [currentColumn, currentRow - 1],
+                    [currentColumn, currentRow + 1],
+                ];
+                for (const [nextColumn, nextRow] of neighbors) {
+                    if (nextRow < 0 || nextRow >= field.rows)
+                        continue;
+                    const next = indexOf(nextColumn, nextRow);
+                    if (!visited[next] && cellSurface(field, nextColumn, nextRow) === surfaceType) {
+                        visited[next] = 1;
+                        queue.push(next);
+                    }
+                }
+            }
+            components.push(component);
+        }
     }
     return components.sort((left, right) => right.length - left.length || left[0] - right[0]);
 }
-function componentCenter(cells, indexes) {
-    const total = indexes.reduce((sum, index) => ({ x: sum.x + cells[index].center.x, y: sum.y + cells[index].center.y }), { x: 0, y: 0 });
-    return { x: total.x / Math.max(1, indexes.length), y: total.y / Math.max(1, indexes.length) };
+function componentCenter(field, indexes) {
+    let sinX = 0;
+    let cosX = 0;
+    let y = 0;
+    for (const index of indexes) {
+        const column = index % field.columns;
+        const angle = ((column + 0.5) / field.columns) * Math.PI * 2;
+        sinX += Math.sin(angle);
+        cosX += Math.cos(angle);
+        y += (Math.floor(index / field.columns) + 0.5) * field.cellHeight;
+    }
+    const angle = (Math.atan2(sinX, cosX) + Math.PI * 2) % (Math.PI * 2);
+    return { x: angle / (Math.PI * 2) * PLANET_MAP_WIDTH, y: y / Math.max(1, indexes.length) };
 }
-function farthestSurfaceAnchors(cells, surfaceType, target, initial) {
-    const available = cells.filter(cell => cell.surfaceType === surfaceType).map(cell => cell.center);
+function farthestAnchors(field, surfaceType, target, initial) {
+    const available = [];
+    for (let row = 0; row < field.rows; row += 2)
+        for (let column = 0; column < field.columns; column += 2) {
+            if (cellSurface(field, column, row) === surfaceType)
+                available.push({ x: (column + 0.5) * field.cellWidth, y: (row + 0.5) * field.cellHeight });
+        }
     if (!available.length)
         return [];
     const first = initial ? available.reduce((best, point) => wrappedDistanceSquared(point, initial) < wrappedDistanceSquared(best, initial) ? point : best) : available[0];
     const anchors = [first];
     while (anchors.length < Math.min(target, available.length)) {
-        const next = available.reduce((best, point) => {
-            const distance = Math.min(...anchors.map(anchor => wrappedDistanceSquared(point, anchor)));
-            const bestDistance = Math.min(...anchors.map(anchor => wrappedDistanceSquared(best, anchor)));
-            return distance > bestDistance ? point : best;
-        });
+        let next = available[0];
+        let nextDistance = -1;
+        for (const point of available) {
+            let nearest = Infinity;
+            for (const anchor of anchors)
+                nearest = Math.min(nearest, wrappedDistanceSquared(point, anchor));
+            if (nearest > nextDistance) {
+                next = point;
+                nextDistance = nearest;
+            }
+        }
         anchors.push(next);
     }
     return anchors;
 }
-function assignContinents(cells, plates) {
-    const components = surfaceComponents(cells, 'land');
-    const substantial = components.filter(component => component.length >= 12).slice(0, 7);
+function createAnchors(field, plates) {
+    const landComponents = surfaceComponents(field, 'land');
+    const substantial = landComponents.filter(component => component.length >= 48).slice(0, 7);
     const continentalPlates = plates.filter(plate => plate.crustType === 'continental');
-    const anchors = substantial.length >= 3 ? substantial.map(component => componentCenter(cells, component))
-        : farthestSurfaceAnchors(cells, 'land', Math.max(3, Math.min(6, continentalPlates.length)), continentalPlates[0]?.seedPoint);
-    if (!anchors.length)
-        throw new Error('Generator v3 requires continental anchors derived from tectonic truth.');
-    const ids = anchors.map((_, index) => `continent-${index}`);
-    for (const cell of cells) {
-        if (cell.surfaceType !== 'land')
-            continue;
-        let best = 0;
-        for (let index = 1; index < anchors.length; index += 1)
-            if (wrappedDistanceSquared(cell.center, anchors[index]) < wrappedDistanceSquared(cell.center, anchors[best]))
-                best = index;
-        cell.parentId = ids[best];
-    }
-    return ids.filter(id => cells.some(cell => cell.parentId === id));
+    const land = substantial.length >= 3
+        ? substantial.map(component => componentCenter(field, component))
+        : farthestAnchors(field, 'land', Math.max(3, Math.min(7, Math.round(continentalPlates.length / 2))), continentalPlates[0]?.seedPoint);
+    const oceanicPlates = plates.filter(plate => plate.crustType === 'oceanic');
+    const ocean = farthestAnchors(field, 'ocean', Math.max(3, Math.min(8, Math.round(oceanicPlates.length / 2))), (oceanicPlates[0] ?? plates[0])?.seedPoint);
+    if (!land.length || !ocean.length)
+        throw new Error('Generator v4 requires both land and ocean parent anchors.');
+    return [
+        ...land.map((point, index) => ({ id: `continent-${index}`, kind: 'continent', point: roundPoint(point) })),
+        ...ocean.map((point, index) => ({ id: `ocean-${index}`, kind: 'ocean', point: roundPoint(point) })),
+    ];
 }
-function assignOceans(cells, plates) {
-    const oceanic = plates.filter(plate => plate.crustType === 'oceanic');
-    const target = Math.max(3, Math.min(8, Math.round(oceanic.length / 2)));
-    const anchors = farthestSurfaceAnchors(cells, 'ocean', target, (oceanic[0] ?? plates[0])?.seedPoint);
-    const ids = anchors.map((_, index) => `ocean-${index}`);
-    for (const cell of cells) {
-        if (cell.surfaceType !== 'ocean')
-            continue;
-        let best = 0;
-        for (let index = 1; index < anchors.length; index += 1)
-            if (wrappedDistanceSquared(cell.center, anchors[index]) < wrappedDistanceSquared(cell.center, anchors[best]))
-                best = index;
-        cell.parentId = ids[best];
-    }
-    return ids.filter(id => cells.some(cell => cell.parentId === id));
-}
-function polygonsForParent(cells, parentId) {
-    const owned = new Set(cells.filter(cell => cell.parentId === parentId).map(cell => cellIndex(cell.column, cell.row)));
-    const edges = [];
-    const isOwned = (column, row) => row >= 0 && row < GEOGRAPHY_ROWS && column >= 0 && column < GEOGRAPHY_COLUMNS && owned.has(cellIndex(column, row));
-    for (const index of owned) {
-        const cell = cells[index];
-        const x0 = cell.column * GEOGRAPHY_CELL_WIDTH;
-        const x1 = x0 + GEOGRAPHY_CELL_WIDTH;
-        const y0 = cell.row * GEOGRAPHY_CELL_HEIGHT;
-        const y1 = y0 + GEOGRAPHY_CELL_HEIGHT;
-        if (!isOwned(cell.column, cell.row - 1))
-            edges.push([{ x: x0, y: y0 }, { x: x1, y: y0 }]);
-        if (!isOwned(cell.column + 1, cell.row))
-            edges.push([{ x: x1, y: y0 }, { x: x1, y: y1 }]);
-        if (!isOwned(cell.column, cell.row + 1))
-            edges.push([{ x: x1, y: y1 }, { x: x0, y: y1 }]);
-        if (!isOwned(cell.column - 1, cell.row))
-            edges.push([{ x: x0, y: y1 }, { x: x0, y: y0 }]);
-    }
-    const outgoing = new Map();
-    for (const edge of edges) {
-        const list = outgoing.get(pointKey(edge[0])) ?? [];
-        list.push(edge);
-        outgoing.set(pointKey(edge[0]), list);
-    }
-    const remaining = new Set(edges);
-    const polygons = [];
-    while (remaining.size) {
-        const first = remaining.values().next().value;
-        const polygon = [first[0]];
-        let edge = first;
-        while (edge && remaining.has(edge)) {
-            remaining.delete(edge);
-            const end = edge[1];
-            if (pointKey(end) === pointKey(polygon[0]))
-                break;
-            polygon.push(end);
-            edge = (outgoing.get(pointKey(end)) ?? []).find(candidate => remaining.has(candidate));
+export function parentIdAtPoint(anchors, surfaceType, point) {
+    const kind = surfaceType === 'land' ? 'continent' : 'ocean';
+    const available = anchors.filter(anchor => anchor.kind === kind);
+    if (!available.length)
+        throw new Error(`No ${kind} anchor exists.`);
+    let best = available[0];
+    let distance = wrappedDistanceSquared(point, best.point);
+    for (let index = 1; index < available.length; index += 1) {
+        const candidateDistance = wrappedDistanceSquared(point, available[index].point);
+        if (candidateDistance < distance) {
+            best = available[index];
+            distance = candidateDistance;
         }
-        if (polygon.length >= 3)
-            polygons.push(polygon);
     }
-    return polygons.sort((left, right) => right.length - left.length);
+    return best.id;
 }
-function parentAreaSquareKm(cells, parentId) {
-    const flatCellArea = GEOGRAPHY_CELL_WIDTH * GEOGRAPHY_CELL_HEIGHT * EARTH_SCALE_METERS_PER_WORLD_UNIT ** 2;
-    return cells.filter(cell => cell.parentId === parentId).reduce((sum, cell) => sum + flatCellArea * Math.max(0.12, Math.cos(cell.environment.latitudeDeg * Math.PI / 180)) / 1_000_000, 0);
+export function tracePatchBoundaries(patches) {
+    const boundary = new Map();
+    for (const patch of patches) {
+        for (let index = 0; index < patch.polygon.length; index += 1) {
+            const start = roundPoint(patch.polygon[index]);
+            const end = roundPoint(patch.polygon[(index + 1) % patch.polygon.length]);
+            const key = edgeKey(start, end);
+            if (boundary.has(key))
+                boundary.delete(key);
+            else
+                boundary.set(key, { start, end, startKey: pointKey(start), endKey: pointKey(end) });
+        }
+    }
+    const edges = [...boundary.values()].sort((left, right) => left.startKey.localeCompare(right.startKey) || left.endKey.localeCompare(right.endKey));
+    const outgoing = new Map();
+    edges.forEach((edge, index) => { const values = outgoing.get(edge.startKey) ?? []; values.push(index); outgoing.set(edge.startKey, values); });
+    const used = new Uint8Array(edges.length);
+    const loops = [];
+    for (let startIndex = 0; startIndex < edges.length; startIndex += 1) {
+        if (used[startIndex])
+            continue;
+        const first = edges[startIndex];
+        const loop = [first.start];
+        let currentIndex = startIndex;
+        while (!used[currentIndex]) {
+            used[currentIndex] = 1;
+            const current = edges[currentIndex];
+            if (current.endKey === first.startKey)
+                break;
+            loop.push(current.end);
+            const candidates = (outgoing.get(current.endKey) ?? []).filter(index => !used[index]);
+            if (!candidates.length)
+                break;
+            if (candidates.length === 1)
+                currentIndex = candidates[0];
+            else {
+                const incomingAngle = Math.atan2(current.end.y - current.start.y, current.end.x - current.start.x);
+                currentIndex = candidates.reduce((best, candidate) => {
+                    const edge = edges[candidate];
+                    const bestEdge = edges[best];
+                    const turn = (Math.atan2(edge.end.y - edge.start.y, edge.end.x - edge.start.x) - incomingAngle + Math.PI * 2) % (Math.PI * 2);
+                    const bestTurn = (Math.atan2(bestEdge.end.y - bestEdge.start.y, bestEdge.end.x - bestEdge.start.x) - incomingAngle + Math.PI * 2) % (Math.PI * 2);
+                    return turn < bestTurn ? candidate : best;
+                });
+            }
+        }
+        const clean = removeCollinearVertices(loop);
+        if (clean.length >= 3 && polygonArea(clean) > 1e-6)
+            loops.push(clean);
+    }
+    return loops.sort((left, right) => polygonArea(right) - polygonArea(left) || pointKey(left[0]).localeCompare(pointKey(right[0])));
 }
-function createParents(cells, ids, kind, names, seed) {
-    const available = names.map((name, index) => ({ name, order: createRng(seed, `geography:${kind}:name:${index}`).next() })).sort((left, right) => left.order - right.order).map(entry => entry.name);
-    return ids.map((id, index) => {
-        const owned = cells.filter(cell => cell.parentId === id);
-        const polygons = polygonsForParent(cells, id);
-        const center = componentCenter(cells, owned.map(cell => cellIndex(cell.column, cell.row)));
-        const mean = owned.reduce((sum, cell) => sum + cell.environment.meanElevationMeters, 0) / Math.max(1, owned.length);
-        return { id, name: `${available[index % available.length] ?? `${kind}-${index + 1}`}${kind === 'ocean' ? ' Ocean' : ''}`, kind, polygons,
-            bounds: boundsForPolygons(polygons), center, approximateAreaSquareKm: Number(parentAreaSquareKm(cells, id).toFixed(1)), regionIds: owned.map(cell => cell.id), meanSurfaceElevationMeters: Math.round(mean) };
+function approximateAreaSquareKm(polygons) {
+    let squareMeters = 0;
+    for (const polygon of polygons) {
+        const center = polygonCentroid(polygon);
+        const latitude = 90 - center.y / PLANET_MAP_HEIGHT * 180;
+        squareMeters += polygonArea(polygon) * EARTH_SCALE_METERS_PER_WORLD_UNIT ** 2 * Math.max(0.12, Math.cos(latitude * Math.PI / 180));
+    }
+    return Number((squareMeters / 1_000_000).toFixed(1));
+}
+function createParents(context, patches, anchors, kind, names) {
+    const availableNames = names.map((name, index) => ({ name, order: createRng(context.seed, `geography:${kind}:name:${index}`).next() }))
+        .sort((left, right) => left.order - right.order).map(entry => entry.name);
+    return anchors.filter(anchor => anchor.kind === kind).map((anchor, index) => {
+        const owned = patches.filter(patch => patch.parentId === anchor.id);
+        const polygons = tracePatchBoundaries(owned);
+        const meanElevation = owned.reduce((sum, patch) => sum + (sampleSurfaceFieldRaw(context.surfaceField, patch.center) - context.seaLevelRaw) * 7_200, 0) / Math.max(1, owned.length);
+        const bounds = boundsForPolygons(polygons);
+        return {
+            id: anchor.id,
+            name: `${availableNames[index % availableNames.length] ?? `${kind}-${index + 1}`}${kind === 'ocean' ? ' Ocean' : ''}`,
+            kind,
+            polygons,
+            bounds,
+            focusBounds: wrappedFocusBounds(polygons, anchor.point),
+            center: anchor.point,
+            approximateAreaSquareKm: approximateAreaSquareKm(polygons),
+            regionIds: [],
+            meanSurfaceElevationMeters: Math.round(meanElevation),
+        };
     });
 }
 export function generateGeography(context) {
-    const cells = createBaseCells(context);
-    const continentIds = assignContinents(cells, context.plates);
-    const oceanIds = assignOceans(cells, context.plates);
-    return { cells, continents: createParents(cells, continentIds, 'continent', CONTINENT_NAMES, context.seed), oceans: createParents(cells, oceanIds, 'ocean', OCEAN_NAMES, context.seed) };
+    if (!context.surfaceField)
+        throw new Error('Generator v4 geography requires a cached surface field.');
+    const patches = createSurfacePatches(context.surfaceField);
+    const anchors = createAnchors(context.surfaceField, context.plates);
+    for (const patch of patches)
+        patch.parentId = parentIdAtPoint(anchors, patch.surfaceType, patch.center);
+    return {
+        patches,
+        anchors,
+        continents: createParents(context, patches, anchors, 'continent', CONTINENT_NAMES),
+        oceans: createParents(context, patches, anchors, 'ocean', OCEAN_NAMES),
+        surfaceField: context.surfaceField,
+    };
 }

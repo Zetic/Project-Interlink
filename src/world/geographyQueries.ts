@@ -18,6 +18,7 @@ export function geographicLocationAt(planet: Planet, point: Point, index: WorldS
 
 export function geographicLocationKey(planet: Planet, point: Point, cellSize = 16): string {
   const context = geographicLocationAt(planet, point);
-  if (!context) return `none:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
-  return `${context.parent.id}:${context.region.id}:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
+  const worldKey = `${planet.seed}:v${planet.generatorVersion}`;
+  if (!context) return `${worldKey}:none:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
+  return `${worldKey}:${context.parent.id}:${context.region.id}:${Math.floor(point.x / cellSize)}:${Math.floor(point.y / cellSize)}`;
 }
