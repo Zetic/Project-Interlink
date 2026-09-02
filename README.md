@@ -38,11 +38,13 @@ The active browser world is a continuous Earth-scale map rather than a recursive
 
 ```text
 Planet
-└── Regions
-    └── resource FEATURE nodes
+├── ocean
+├── Landmasses
+└── thousands of geographic Regions
+    └── natural resource FEATURE nodes
 ```
 
-World generation is deterministic by seed. The current flat world produces five irregular geographic Regions and resource FEATURE nodes positioned within those polygons. Natural sources currently include:
+World generation is deterministic by generator version plus seed. Generator v2 creates seeded continent/coastline polygons, meaningful ocean area, a shared jittered geographic lattice containing roughly thousands of land Regions, Region environmental/geologic tendencies, and geography-weighted resource FEATURE placement. Region count emerges from generated land area rather than a fixed constant. Natural sources currently include:
 
 - Iron Ore
 - Copper Ore
@@ -53,6 +55,10 @@ World generation is deterministic by seed. The current flat world produces five 
 - Water Ice
 
 A resource FEATURE exposes a `resource-access` relationship. That relationship authorizes/selects a source but carries no matter; physical material flow begins at an Extractor material output.
+
+The map remains one continuous SVG coordinate space from whole-planet geography through engineering zoom. A fixed technical chunk index supplies visible/nearby Region and Feature queries, so world record count is independent from SVG/DOM count. Whole-planet zoom renders ocean and coarse Landmasses; continental and regional zooms render only viewport Regions with a bounded label budget; deep zoom renders only nearby Features and engineering nodes.
+
+NAV is camera-aware, contextual, and searchable rather than a complete Planet → every Region → every Feature tree. Its normal view shows current geographic context, nearby Regions, relevant Features, and a separate selected entity. Global search is bounded to 60 rendered results.
 
 The older Site/child-workspace hierarchy is not part of the active browser model.
 
@@ -166,7 +172,7 @@ Do not edit generated `dist/` or wasm-bindgen JavaScript as source. Browser feat
 Install browser/test dependencies and run the regression suite with:
 
 ```bash
-npm ci
+npm install
 npm test
 ```
 
@@ -174,4 +180,4 @@ The CI workflow also runs Rust workspace tests, compiles the browser WASM target
 
 ## Near-term expansion areas
 
-The mature processing vertical slice is reconnected. Remaining expansion is primarily broader world/content parity and new gameplay systems rather than restoring the removed JavaScript runtime. Candidate areas include richer planet/Region properties, additional resource and Feature types, player knowledge/discovery, broader liquid/gas source authoring, and additional industrial processes implemented through the existing TypeScript → Worker → Rust/WASM boundary.
+The mature processing vertical slice is reconnected and the Earth-scale geography foundation is active. Near-term expansion can build a generic Feature model and player knowledge/surveying layer on top of world truth, followed by a first industrial objective loop. Fluids, power, logistics, automation, and recursive blueprints remain later systems implemented through the existing TypeScript → Worker → Rust/WASM boundary.

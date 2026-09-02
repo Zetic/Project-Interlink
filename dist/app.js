@@ -47,7 +47,7 @@ function enterPlayerWorkspace() {
         return;
     landing?.remove();
     playerView.style.removeProperty('display');
-    const root = renderWorkspaceShell(main, { title: `${world.planet.name} · Planet Map`, subtitle: `Seed ${world.planet.seed} · ${world.planet.regions.length} regions · ${world.planet.resourceNodes.length} resource nodes` });
+    const root = renderWorkspaceShell(main, { title: `${world.planet.name} · Planet Map`, subtitle: `Seed ${world.planet.seed} · Generator v${world.planet.generatorVersion} · ${world.planet.regions.length.toLocaleString()} regions · ${world.planet.resourceNodes.length.toLocaleString()} natural Features` });
     const runtime = installRuntimeController(store);
     installNavigationPanel(root, store);
     installNodeCatalogPanel(root, store);

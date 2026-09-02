@@ -108,9 +108,14 @@ export function updateResourceRuntimePresentation(
   }
 }
 
-export function renderResourceLayer(planet: Planet, renderOrigin: RenderOriginState, onSelect: (resourceId: string) => void): SVGGElement {
+export function renderResourceLayer(
+  planet: Planet,
+  renderOrigin: RenderOriginState,
+  onSelect: (resourceId: string) => void,
+  resources: readonly ResourceNode[] = planet.resourceNodes,
+): SVGGElement {
   const layer = svgElement('g'); layer.setAttribute('class', 'ws-map-resource-node-layer');
-  for (const resource of planet.resourceNodes) {
+  for (const resource of resources) {
     const position = worldToRenderPoint(resource.position, renderOrigin);
     const node = svgElement('g');
     node.setAttribute('transform', localCardTransform(position.x, position.y));

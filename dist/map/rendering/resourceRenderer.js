@@ -93,10 +93,10 @@ export function updateResourceRuntimePresentation(svg, planet, snapshot) {
             text.textContent = formatResourceRuntime(resource, snapshot);
     }
 }
-export function renderResourceLayer(planet, renderOrigin, onSelect) {
+export function renderResourceLayer(planet, renderOrigin, onSelect, resources = planet.resourceNodes) {
     const layer = svgElement('g');
     layer.setAttribute('class', 'ws-map-resource-node-layer');
-    for (const resource of planet.resourceNodes) {
+    for (const resource of resources) {
         const position = worldToRenderPoint(resource.position, renderOrigin);
         const node = svgElement('g');
         node.setAttribute('transform', localCardTransform(position.x, position.y));

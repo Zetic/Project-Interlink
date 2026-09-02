@@ -15,13 +15,22 @@
 }
 
 .ws-map-background {
-  fill: #101720;
+  fill: #0d2233;
   cursor: default;
+}
+
+.ws-map-landmass {
+  fill: #263d34;
+  stroke: #6f8d86;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 .ws-map-region {
   stroke: #738896;
-  stroke-width: 2;
+  stroke-width: 1;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
   cursor: pointer;

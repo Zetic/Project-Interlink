@@ -2,7 +2,7 @@
 
 `DESIGN.md` describes what Project Interlink is intended to become.
 
-It is the long-term design reference for the game. `README.md` describes the current implementation state. `ARCHITECTURE.md` describes current code organization and responsibility boundaries. `.github/copilot-instructions.md` describes how coding agents should safely develop toward this design.
+It is the long-term design reference for the game. `README.md` describes the current implementation state. `ARCHITECTURE.md` describes current code organization and responsibility boundaries.
 
 Implementation should remain incremental. A design concept appearing here does **not** mean it should be implemented immediately.
 

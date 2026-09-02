@@ -40,7 +40,7 @@ src/
 ├── runtime/       runtime plan, Worker setup, protocol, controller, Worker
 ├── state/         application state and domain-selective subscriptions
 ├── ui/            workspace shell, NAV, NODE, Inspector, DEBUG
-├── world/         flat world model, deterministic generation, geometry/scale
+├── world/         geography, deterministic generation, spatial queries, geometry/scale
 └── wasm/          generated wasm-bindgen browser package
 
 dist/             generated JavaScript emitted from TypeScript
@@ -58,7 +58,7 @@ The active application separates:
 
 ```text
 Authored world state
-  deterministic Planet / Region / resource FEATURE data
+  versioned deterministic Planet / Landmass / Region / resource FEATURE data
 
 Mechanical graph state
   player-authored apparatus, containers, ports, connections, parameters
@@ -80,7 +80,8 @@ The browser world is deliberately flat at engineering scale:
 
 ```text
 Planet
-└── Regions
+├── ocean and coarse Landmasses
+└── geographic Regions
     └── resource FEATURE nodes
 ```
 
@@ -88,7 +89,9 @@ A resource FEATURE is a natural source node with a `resource-access` output. `re
 
 The current browser architecture does not use nested Site workspaces, child workspaces, boundary-transfer terminals, or recursive system ownership. Do not restore those concepts as compatibility infrastructure unless a future design change explicitly requires them.
 
-World generation is deterministic and seeded. Current generation uses one continuous Earth-scale logical map, irregular Region polygons, and flat resource FEATURE placement. `src/world/` owns the canonical world contracts and generation algorithms.
+World generation is deterministic by `generatorVersion + seed`. Generator v2 creates compact Landmass/coastline polygons, derives land Regions from a shared jittered lattice, assigns latitude and bounded environmental/geologic tendencies, and places a manageable number of resource FEATURE nodes through resource-specific suitability weights. Region count emerges from generated land area rather than an exact fixed invariant. The current model generates all lightweight Region metadata at world creation; lazy world truth is not required yet.
+
+`WorldSpatialIndex` divides the 4096 × 2048 logical map into invisible fixed technical chunks. It provides containing, viewport, Feature, and nearby queries to rendering and NAV. Technical chunks are not player-facing entities and do not own engineering systems.
 
 ## 5. Apparatus and graph authoring
 
@@ -163,6 +166,10 @@ Routine runtime responses are compact snapshots. Rich Hopper, Furnace, and Exhau
 - debug Create Factory builds a normal graph fixture beside an explicitly selected resource FEATURE and then uses the same production runtime path.
 
 The map uses one continuous Earth-scale coordinate space with deep engineering zoom and a floating render origin. Engineering cards use a fixed visual grammar independent of apparatus physical footprint metadata.
+
+SVG remains the active renderer. Whole-planet presentation uses ocean plus coarse Landmass polygons. Region and Feature layers query `WorldSpatialIndex` from camera viewport bounds, update only when their visible ID sets change, and enforce semantic zoom/label budgets. Camera animation still updates the SVG `viewBox`; it does not rebuild the entire world DOM every frame.
+
+NAV is a bounded camera-context/search projection rather than an eager world hierarchy. Normal presentation derives the current Region from camera center, lists limited nearby Regions and Features, and displays selection separately. Global Region/Feature/engineering search scans authored metadata but renders at most its explicit result budget.
 
 ## 9. JavaScript and generated-file policy
 

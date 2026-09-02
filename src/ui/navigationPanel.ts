@@ -1,22 +1,35 @@
+import type { GraphState, MechanicalNode } from '../graph/types.js';
 import type { AppStore } from '../state/appState.js';
-import type { MapSelection, Planet, Region, ResourceNode } from '../world/types.js';
+import { createWorldSpatialIndex, type WorldSpatialIndex } from '../world/spatialIndex.js';
+import type { MapCameraState, MapSelection, Planet, Region, ResourceNode } from '../world/types.js';
 
-type NavigationCategory = 'planet' | 'region' | 'feature';
+export type NavigationCategory = 'planet' | 'region' | 'feature' | 'engineering';
 
-interface NavigationRow {
+export interface NavigationResult {
   key: string;
   label: string;
-  depth: number;
+  detail: string;
   category: NavigationCategory;
-  expandable: boolean;
-  parentKey: string | null;
   selection: MapSelection;
 }
 
+export interface NavigationContext {
+  currentRegion: Region | null;
+  nearbyRegions: Region[];
+  nearbyFeatures: ResourceNode[];
+}
+
+export interface NavigationSearchResults {
+  results: NavigationResult[];
+  totalMatches: number;
+}
+
+export const NAV_SEARCH_RESULT_LIMIT = 60;
+export const NAV_NEARBY_REGION_LIMIT = 8;
+export const NAV_NEARBY_FEATURE_LIMIT = 12;
+
 const CATEGORY_LABELS: Record<NavigationCategory, string> = {
-  planet: 'Planet',
-  region: 'Region',
-  feature: 'Feature',
+  planet: 'Planet', region: 'Regions', feature: 'Features', engineering: 'Engineering',
 };
 
 function selectionKey(selection: MapSelection): string {
@@ -26,92 +39,107 @@ function selectionKey(selection: MapSelection): string {
   return `mechanical:${selection.mechanicalNodeId}`;
 }
 
-function resourceNodesForRegion(planet: Planet, region: Region): ResourceNode[] {
-  const ids = new Set(region.resourceNodeIds);
-  return planet.resourceNodes.filter(node => ids.has(node.id));
+function resultForRegion(region: Region, planet: Planet): NavigationResult {
+  const landmass = planet.landmasses.find(candidate => candidate.id === region.landmassId);
+  return {
+    key: `region:${region.id}`, label: region.name, detail: landmass?.name ?? 'Land region', category: 'region',
+    selection: { type: 'region', regionId: region.id },
+  };
 }
 
-function buildRows(planet: Planet): NavigationRow[] {
-  const rows: NavigationRow[] = [{
-    key: 'planet', label: planet.name, depth: 0, category: 'planet', expandable: true,
-    parentKey: null, selection: { type: 'planet' },
-  }];
-  for (const region of planet.regions) {
-    const regionKey = `region:${region.id}`;
-    rows.push({
-      key: regionKey, label: region.name, depth: 1, category: 'region',
-      expandable: region.resourceNodeIds.length > 0, parentKey: 'planet',
-      selection: { type: 'region', regionId: region.id },
-    });
-    for (const resource of resourceNodesForRegion(planet, region)) {
-      rows.push({
-        key: `resource:${resource.id}`, label: resource.name, depth: 2, category: 'feature',
-        expandable: false, parentKey: regionKey,
-        selection: { type: 'resource', resourceNodeId: resource.id },
-      });
-    }
+function resultForFeature(feature: ResourceNode, planet: Planet): NavigationResult {
+  const region = planet.regions.find(candidate => candidate.id === feature.regionId);
+  return {
+    key: `resource:${feature.id}`, label: feature.name, detail: region?.name ?? feature.regionId, category: 'feature',
+    selection: { type: 'resource', resourceNodeId: feature.id },
+  };
+}
+
+function resultForMechanical(node: MechanicalNode): NavigationResult {
+  return {
+    key: `mechanical:${node.id}`, label: node.label, detail: node.category === 'apparatus' ? 'Apparatus' : 'Storage', category: 'engineering',
+    selection: { type: 'mechanical', mechanicalNodeId: node.id },
+  };
+}
+
+export function navigationContext(planet: Planet, camera: MapCameraState, index = createWorldSpatialIndex(planet)): NavigationContext {
+  const point = { x: camera.centerX, y: camera.centerY };
+  const currentRegion = index.regionContaining(point);
+  const nearbyRegions = index.nearbyRegions(point, NAV_NEARBY_REGION_LIMIT + 1)
+    .filter(region => region.id !== currentRegion?.id)
+    .slice(0, NAV_NEARBY_REGION_LIMIT);
+  const currentFeatureIds = new Set(currentRegion?.resourceNodeIds ?? []);
+  const regionalFeatures = currentRegion
+    ? index.resourceNodesIntersecting(currentRegion.bounds)
+      .filter(feature => currentFeatureIds.has(feature.id))
+      .sort((left, right) => Math.hypot(left.position.x - point.x, left.position.y - point.y) - Math.hypot(right.position.x - point.x, right.position.y - point.y))
+    : index.nearbyFeatures(point, NAV_NEARBY_FEATURE_LIMIT);
+  return { currentRegion, nearbyRegions, nearbyFeatures: regionalFeatures.slice(0, NAV_NEARBY_FEATURE_LIMIT) };
+}
+
+export function searchWorldNavigation(
+  planet: Planet,
+  graph: GraphState,
+  queryInput: string,
+  categories: ReadonlySet<NavigationCategory>,
+  limit = NAV_SEARCH_RESULT_LIMIT,
+): NavigationSearchResults {
+  const query = queryInput.trim().toLocaleLowerCase();
+  if (!query) return { results: [], totalMatches: 0 };
+  const all: NavigationResult[] = [];
+  if (categories.has('planet') && planet.name.toLocaleLowerCase().includes(query)) {
+    all.push({ key: 'planet', label: planet.name, detail: 'Planet', category: 'planet', selection: { type: 'planet' } });
   }
-  return rows;
-}
-
-function rowIsVisible(row: NavigationRow, expandedKeys: Set<string>): boolean {
-  if (!row.parentKey) return true;
-  if (!expandedKeys.has(row.parentKey)) return false;
-  if (row.depth < 2) return true;
-  return expandedKeys.has('planet');
-}
-
-function createNavigationRow(
-  row: NavigationRow,
-  selectedKey: string,
-  expandedKeys: Set<string>,
-  matchKeys: Set<string>,
-  contextKeys: Set<string>,
-  onExpand: (key: string) => void,
-  onSelect: (selection: MapSelection) => void,
-): HTMLElement {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'ws-navigation-row-wrap';
-  const element = document.createElement('div');
-  element.className = 'ws-navigation-row';
-  if (row.key === selectedKey) element.classList.add('ws-navigation-row--active');
-  if (matchKeys.has(row.key)) element.classList.add('ws-navigation-row--match');
-  else if (contextKeys.has(row.key)) element.classList.add('ws-navigation-row--context');
-  element.style.setProperty('--ws-navigation-depth', String(row.depth));
-
-  if (row.expandable) {
-    const expand = document.createElement('button');
-    expand.className = 'ws-navigation-expand';
-    expand.type = 'button';
-    expand.textContent = expandedKeys.has(row.key) ? '▾' : '▸';
-    expand.setAttribute('aria-label', `${expandedKeys.has(row.key) ? 'Collapse' : 'Expand'} ${row.label}`);
-    expand.addEventListener('click', event => { event.stopPropagation(); onExpand(row.key); });
-    element.appendChild(expand);
-  } else {
-    const spacer = document.createElement('span');
-    spacer.className = 'ws-navigation-expand-spacer';
-    element.appendChild(spacer);
+  if (categories.has('region')) {
+    for (const region of planet.regions) if (region.name.toLocaleLowerCase().includes(query)) all.push(resultForRegion(region, planet));
   }
+  if (categories.has('feature')) {
+    for (const feature of planet.resourceNodes) if (feature.name.toLocaleLowerCase().includes(query)) all.push(resultForFeature(feature, planet));
+  }
+  if (categories.has('engineering')) {
+    for (const node of graph.nodes) if (node.label.toLocaleLowerCase().includes(query)) all.push(resultForMechanical(node));
+  }
+  all.sort((left, right) => left.label.localeCompare(right.label) || left.key.localeCompare(right.key));
+  return { results: all.slice(0, Math.max(0, limit)), totalMatches: all.length };
+}
 
-  const entry = document.createElement('button');
-  entry.className = 'ws-navigation-entry';
-  entry.type = 'button';
+function createSection(label: string, detail?: string): HTMLElement {
+  const section = document.createElement('div');
+  section.className = 'ws-navigation-section-title';
+  section.textContent = label;
+  if (detail) {
+    const value = document.createElement('span'); value.textContent = detail; section.appendChild(value);
+  }
+  return section;
+}
+
+function createNavigationRow(row: NavigationResult, selectedKey: string, onSelect: (selection: MapSelection) => void): HTMLElement {
+  const element = document.createElement('button');
+  element.className = 'ws-navigation-context-row';
+  element.type = 'button';
+  if (row.key === selectedKey) element.classList.add('ws-navigation-context-row--active');
   const category = document.createElement('span');
   category.className = `ws-navigation-category ws-navigation-category--${row.category}`;
-  const label = document.createElement('span');
-  label.className = 'ws-navigation-label';
-  label.textContent = row.label;
-  entry.append(category, label);
-  if (matchKeys.has(row.key) || contextKeys.has(row.key)) {
-    const state = document.createElement('span');
-    state.className = 'ws-navigation-state';
-    state.textContent = matchKeys.has(row.key) ? 'MATCH' : 'CONTEXT';
-    entry.appendChild(state);
+  const content = document.createElement('span'); content.className = 'ws-navigation-context-copy';
+  const label = document.createElement('span'); label.className = 'ws-navigation-label'; label.textContent = row.label;
+  const detail = document.createElement('span'); detail.className = 'ws-navigation-context-detail'; detail.textContent = row.detail;
+  content.append(label, detail); element.append(category, content);
+  element.addEventListener('click', () => onSelect(row.selection));
+  return element;
+}
+
+function selectedResult(planet: Planet, graph: GraphState, selection: MapSelection): NavigationResult | null {
+  if (selection.type === 'planet') return null;
+  if (selection.type === 'region') {
+    const region = planet.regions.find(candidate => candidate.id === selection.regionId);
+    return region ? resultForRegion(region, planet) : null;
   }
-  entry.addEventListener('click', () => onSelect(row.selection));
-  element.appendChild(entry);
-  wrapper.appendChild(element);
-  return wrapper;
+  if (selection.type === 'resource') {
+    const feature = planet.resourceNodes.find(candidate => candidate.id === selection.resourceNodeId);
+    return feature ? resultForFeature(feature, planet) : null;
+  }
+  const node = graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId);
+  return node ? resultForMechanical(node) : null;
 }
 
 export function installNavigationPanel(root: HTMLElement, store: AppStore): void {
@@ -119,72 +147,68 @@ export function installNavigationPanel(root: HTMLElement, store: AppStore): void
   const search = root.querySelector<HTMLInputElement>('#ws-navigation-search');
   const count = root.querySelector<HTMLElement>('#ws-navigation-match-count');
   const filters = root.querySelector<HTMLElement>('#ws-navigation-filters .ws-navigation-filters');
-  const expandAll = root.querySelector<HTMLButtonElement>('#ws-navigation-expand-all');
-  const collapseAll = root.querySelector<HTMLButtonElement>('#ws-navigation-collapse-all');
-  if (!tree || !search || !count || !filters || !expandAll || !collapseAll) return;
+  if (!tree || !search || !count || !filters) return;
 
-  const expandedKeys = new Set<string>(['planet']);
-  const visibleCategories = new Set<NavigationCategory>(['planet', 'region', 'feature']);
-
-  for (const category of ['planet', 'region', 'feature'] as const) {
+  const visibleCategories = new Set<NavigationCategory>(['planet', 'region', 'feature', 'engineering']);
+  let indexedPlanet: Planet | null = null;
+  let spatialIndex: WorldSpatialIndex | null = null;
+  for (const category of ['planet', 'region', 'feature', 'engineering'] as const) {
     const label = document.createElement('label');
-    const input = document.createElement('input');
-    input.type = 'checkbox'; input.checked = true; input.value = category;
-    input.addEventListener('change', () => {
-      if (input.checked) visibleCategories.add(category); else visibleCategories.delete(category);
-      render();
-    });
-    label.append(input, document.createTextNode(` ${CATEGORY_LABELS[category]}`));
-    filters.appendChild(label);
+    const input = document.createElement('input'); input.type = 'checkbox'; input.checked = true; input.value = category;
+    input.addEventListener('change', () => { if (input.checked) visibleCategories.add(category); else visibleCategories.delete(category); render(); });
+    label.append(input, document.createTextNode(` ${CATEGORY_LABELS[category]}`)); filters.appendChild(label);
   }
+
+  const renderRows = (rows: readonly NavigationResult[], selectedKey: string): DocumentFragment => {
+    const fragment = document.createDocumentFragment();
+    for (const row of rows) fragment.appendChild(createNavigationRow(row, selectedKey, selection => store.focusSelection(selection)));
+    return fragment;
+  };
 
   const render = (): void => {
     const state = store.getState();
     if (!state.world) { tree.textContent = 'No world generated.'; count.textContent = ''; return; }
     const planet = state.world.planet;
-    const query = search.value.trim().toLowerCase();
-    const rows = buildRows(planet);
-    const directMatches = query
-      ? rows.filter(row => visibleCategories.has(row.category) && row.label.toLowerCase().includes(query))
-      : [];
-    const matchKeys = new Set(directMatches.map(row => row.key));
-    const contextKeys = new Set<string>();
-    if (query) {
-      for (const match of directMatches) {
-        if (match.parentKey) contextKeys.add(match.parentKey);
-        if (match.depth >= 2) contextKeys.add('planet');
-      }
-    }
+    if (indexedPlanet !== planet || !spatialIndex) { indexedPlanet = planet; spatialIndex = createWorldSpatialIndex(planet); }
     const selectedKey = selectionKey(state.selection);
-    const effectiveExpanded = query
-      ? new Set(['planet', ...planet.regions.map(region => `region:${region.id}`)])
-      : expandedKeys;
-    const visibleRows = rows.filter(row => {
-      if (query) return matchKeys.has(row.key) || contextKeys.has(row.key);
-      return visibleCategories.has(row.category) && rowIsVisible(row, effectiveExpanded);
-    });
-    tree.replaceChildren(...visibleRows.map(row => createNavigationRow(
-      row, selectedKey, effectiveExpanded, matchKeys, contextKeys,
-      key => { if (expandedKeys.has(key)) expandedKeys.delete(key); else expandedKeys.add(key); render(); },
-      selection => store.focusSelection(selection),
-    )));
-    count.textContent = query ? `${directMatches.length} match${directMatches.length === 1 ? '' : 'es'}` : '';
+    const query = search.value.trim();
+    if (query) {
+      const matches = searchWorldNavigation(planet, state.graph, query, visibleCategories);
+      tree.replaceChildren(createSection('Search results'), renderRows(matches.results, selectedKey));
+      count.textContent = matches.totalMatches > matches.results.length
+        ? `Showing ${matches.results.length} of ${matches.totalMatches} matches`
+        : `${matches.totalMatches} match${matches.totalMatches === 1 ? '' : 'es'}`;
+      return;
+    }
+
+    const context = navigationContext(planet, state.camera, spatialIndex);
+    const landmass = context.currentRegion ? planet.landmasses.find(candidate => candidate.id === context.currentRegion?.landmassId) : null;
+    const currentRows: NavigationResult[] = context.currentRegion
+      ? [resultForRegion(context.currentRegion, planet)]
+      : [{ key: 'planet', label: planet.name, detail: 'Ocean / planetary view', category: 'planet', selection: { type: 'planet' } }];
+    const selected = selectedResult(planet, state.graph, state.selection);
+    const children: Node[] = [
+      createSection('Current view', landmass?.name), renderRows(currentRows, selectedKey),
+    ];
+    if (selected && selected.key !== currentRows[0]?.key) children.push(createSection('Selected'), renderRows([selected], selectedKey));
+    if (visibleCategories.has('region')) children.push(createSection('Nearby regions'), renderRows(context.nearbyRegions.map(region => resultForRegion(region, planet)), selectedKey));
+    if (visibleCategories.has('feature')) children.push(createSection('Features'), renderRows(context.nearbyFeatures.map(feature => resultForFeature(feature, planet)), selectedKey));
+    tree.replaceChildren(...children);
+    count.textContent = `${planet.regions.length.toLocaleString()} regions · ${planet.resourceNodes.length.toLocaleString()} features`;
   };
 
   search.addEventListener('input', render);
-  expandAll.addEventListener('click', () => {
-    const planet = store.getState().world?.planet; if (!planet) return;
-    expandedKeys.add('planet');
-    for (const region of planet.regions) expandedKeys.add(`region:${region.id}`);
-    render();
-  });
-  collapseAll.addEventListener('click', () => { expandedKeys.clear(); render(); });
   let lastWorld = store.getState().world;
+  let lastGraph = store.getState().graph;
   let lastSelection = selectionKey(store.getState().selection);
-  store.subscribeDomains(['world', 'selection'], state => {
+  let lastContextRegionId: string | null = null;
+  store.subscribeDomains(['world', 'graph', 'selection', 'camera'], state => {
+    const planet = state.world?.planet;
+    if (planet && (indexedPlanet !== planet || !spatialIndex)) { indexedPlanet = planet; spatialIndex = createWorldSpatialIndex(planet); }
+    const contextRegionId = planet && spatialIndex ? spatialIndex.regionContaining({ x: state.camera.centerX, y: state.camera.centerY })?.id ?? null : null;
     const nextSelection = selectionKey(state.selection);
-    if (state.world === lastWorld && nextSelection === lastSelection) return;
-    lastWorld = state.world; lastSelection = nextSelection; render();
+    if (state.world === lastWorld && state.graph === lastGraph && nextSelection === lastSelection && contextRegionId === lastContextRegionId) return;
+    lastWorld = state.world; lastGraph = state.graph; lastSelection = nextSelection; lastContextRegionId = contextRegionId; render();
   });
   render();
 }
