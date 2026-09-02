@@ -51,23 +51,36 @@ test('the only JavaScript under src is generated wasm-bindgen glue', () => {
   const javascript = filesUnder('src', '.js')
     .map(file => path.relative(repoRoot, file).replaceAll('\\', '/'))
     .sort();
-  assert.deepEqual(javascript, ['src/wasm/interlink_wasm.js']);
+  assert.deepEqual(javascript, [
+    'src/wasm-worldgen/interlink_worldgen_wasm.js',
+    'src/wasm/interlink_wasm.js',
+  ]);
+
   assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm_bg.wasm')), true);
   assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm.d.ts')), true);
   assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm_bg.wasm.d.ts')), false);
+
+  assert.equal(existsSync(path.join(repoRoot, 'src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm')), true);
+  assert.equal(existsSync(path.join(repoRoot, 'src/wasm-worldgen/interlink_worldgen_wasm.d.ts')), true);
+  assert.equal(existsSync(path.join(repoRoot, 'src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm.d.ts')), true);
 });
 
 test('all repository JavaScript belongs to an active generated role', () => {
   const javascript = filesUnder('.', '.js')
     .map(file => path.relative(repoRoot, file).replaceAll('\\', '/'))
     .sort();
+  const generatedWasmGlue = new Set([
+    'src/wasm/interlink_wasm.js',
+    'src/wasm-worldgen/interlink_worldgen_wasm.js',
+  ]);
   const unexpected = javascript.filter(relative => !(
     relative.startsWith('dist/')
-    || relative === 'src/wasm/interlink_wasm.js'
+    || generatedWasmGlue.has(relative)
   ));
   assert.deepEqual(unexpected, []);
   assert.ok(javascript.includes('dist/app.js'));
   assert.ok(javascript.includes('src/wasm/interlink_wasm.js'));
+  assert.ok(javascript.includes('src/wasm-worldgen/interlink_worldgen_wasm.js'));
   assert.equal(javascript.some(relative => relative.startsWith('tests/')), false);
 });
 
@@ -100,6 +113,7 @@ test('generated outputs are excluded from GitHub language statistics', () => {
   const attributes = readFileSync(path.join(repoRoot, '.gitattributes'), 'utf8');
   assert.match(attributes, /^dist\/\*\* linguist-generated$/m);
   assert.match(attributes, /^src\/wasm\/\*\* linguist-generated$/m);
+  assert.match(attributes, /^src\/wasm-worldgen\/\*\* linguist-generated$/m);
 });
 
 test('project documentation and styles stay grouped outside the repository root', () => {
