@@ -102,6 +102,49 @@ test('generated outputs are excluded from GitHub language statistics', () => {
   assert.match(attributes, /^src\/wasm\/\*\* linguist-generated$/m);
 });
 
+test('project documentation and styles stay grouped outside the repository root', () => {
+  for (const relativePath of [
+    'docs/ARCHITECTURE.md',
+    'docs/ARCHITECTURE_PERFORMANCE.md',
+    'docs/DESIGN.md',
+    'docs/MATERIAL_REACTION_SYSTEM.md',
+    'styles/base.css',
+    'styles/workspace.css',
+    'styles/map.css',
+    'styles/debug.css',
+  ]) assert.equal(existsSync(path.join(repoRoot, relativePath)), true, `${relativePath} should exist`);
+
+  for (const retiredRootPath of [
+    'ARCHITECTURE.md',
+    'ARCHITECTURE_PERFORMANCE.md',
+    'DESIGN.md',
+    'MATERIAL_REACTION_SYSTEM.md',
+    'styles.css',
+    'workspace-overrides.css',
+    'map.css',
+    'debug-overlay.css',
+  ]) assert.equal(existsSync(path.join(repoRoot, retiredRootPath)), false, `${retiredRootPath} should not return to root`);
+
+  const index = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  for (const stylesheet of ['base.css', 'workspace.css', 'map.css', 'debug.css']) {
+    assert.match(index, new RegExp(`href=["']styles/${stylesheet.replace('.', '\\.')}["']`));
+  }
+});
+
+test('workspace stylesheet contains only the flat active workspace vocabulary', () => {
+  const css = readFileSync(path.join(repoRoot, 'styles/workspace.css'), 'utf8');
+  for (const stale of [
+    'ws-system-node',
+    'ws-system-connection',
+    'ws-node-category--site',
+    'ws-node-category--facility',
+    'ws-node--crusher',
+    'ws-node--magSep',
+    'ws-world-controls',
+    'ws-player-seed',
+  ]) assert.doesNotMatch(css, new RegExp(stale));
+});
+
 test('active runtime path is TypeScript controller to full Worker to one WASM world runtime', () => {
   const controller = readFileSync(path.join(repoRoot, 'src/runtime/runtimeController.ts'), 'utf8');
   const worker = readFileSync(path.join(repoRoot, 'src/runtime/fullRuntimeWorker.ts'), 'utf8');
@@ -115,7 +158,7 @@ test('active runtime path is TypeScript controller to full Worker to one WASM wo
 });
 
 test('active documentation does not point contributors at retired source roots', () => {
-  const files = ['ARCHITECTURE.md', 'README.md', '.github/copilot-instructions.md'];
+  const files = ['docs/ARCHITECTURE.md', 'README.md'];
   const combined = files.map(file => readFileSync(path.join(repoRoot, file), 'utf8')).join('\n');
   for (const stale of ['src/app.js', 'src/content/', 'src/core/', 'src/generator/', 'src/simulation/', 'src/workspace/']) {
     assert.doesNotMatch(combined, new RegExp(stale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -124,12 +167,11 @@ test('active documentation does not point contributors at retired source roots',
 
 test('active architecture documentation describes the single Rust Worker production authority', () => {
   const files = [
-    'ARCHITECTURE.md',
-    'ARCHITECTURE_PERFORMANCE.md',
+    'docs/ARCHITECTURE.md',
+    'docs/ARCHITECTURE_PERFORMANCE.md',
     'README.md',
     'rust/README.md',
     'rust/interlink-runtime/README.md',
-    '.github/copilot-instructions.md',
   ];
   const combined = files.map(file => readFileSync(path.join(repoRoot, file), 'utf8')).join('\n');
   for (const stale of [
