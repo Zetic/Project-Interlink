@@ -27,6 +27,7 @@ function typeLabel(container, value) { const type = document.createElement('div'
 function sectionTitle(container, value) { const title = document.createElement('div'); title.className = 'ws-ins-section-title'; title.textContent = value; container.appendChild(title); }
 function speciesLabel(speciesId) { return speciesId.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/(^|[- ])\w/g, value => value.toUpperCase()).replaceAll('-', ' '); }
 function descriptorLabel(id) { return id.replaceAll('-', ' '); }
+function geographicLabel(id) { return id.replaceAll('-', ' ').replace(/(^| )\w/g, value => value.toUpperCase()); }
 function formatMass(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg`; }
 function formatRate(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kg/s`; }
 function formatTemperature(value) { return value == null || !Number.isFinite(value) ? 'Unavailable' : `${value.toFixed(2)} K`; }
@@ -68,6 +69,8 @@ function renderRegion(container, planet, region) {
     addRow(container, 'Surface', region.surfaceType);
     addRow(container, 'Planet', planet.name);
     sectionTitle(container, 'Geography');
+    addRow(container, 'Geographic type', geographicLabel(region.geographicType));
+    addRow(container, 'Traits', region.geographicTraits.length ? region.geographicTraits.map(geographicLabel).join(' · ') : 'None');
     addRow(container, 'Latitude', formatLatitude(environment.latitudeDeg));
     addRow(container, 'Approx. area', `${region.approximateAreaSquareKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km²`);
     addRow(container, 'Approx. extent', `${formatPhysicalDistance(worldUnitsToMeters(region.bounds.width))} × ${formatPhysicalDistance(worldUnitsToMeters(region.bounds.height))}`);
@@ -116,6 +119,8 @@ function renderLocation(container, planet, point) {
     addRow(container, 'Planet', planet.name);
     addRow(container, context.parent.kind === 'continent' ? 'Continent' : 'Ocean', context.parent.name);
     addRow(container, 'Region', context.region.name);
+    addRow(container, 'Geographic type', geographicLabel(context.region.geographicType));
+    addRow(container, 'Traits', context.region.geographicTraits.length ? context.region.geographicTraits.map(geographicLabel).join(' · ') : 'None');
     addRow(container, 'Coordinates', `${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
     sectionTitle(container, 'Surface');
     addRow(container, 'Type', context.environment.surfaceType);

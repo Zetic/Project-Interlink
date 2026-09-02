@@ -1,5 +1,5 @@
 import { createResourceSource } from '../../material/resourceSources.js';
-import { pointInPolygon } from '../geometry.js';
+import { pointInPolygon, polygonArea } from '../geometry.js';
 import { createRng } from '../random.js';
 import { RESOURCE_DEFINITIONS, resourceDefinitionById } from '../resources.js';
 import { samplePlanetEnvironment, wrappedValueNoise } from './surfaceField.js';
@@ -42,13 +42,17 @@ function weightedResource(rng, potentials) {
 }
 function candidatePoint(seed, region, index) {
     const rng = createRng(seed, `${region.id}:resource-candidate:${index}`);
-    for (let attempt = 0; attempt < 32; attempt += 1) {
+    for (let attempt = 0; attempt < 48; attempt += 1) {
         const point = { x: Number(rng.range(region.bounds.x, region.bounds.x + region.bounds.width).toFixed(6)),
             y: Number(rng.range(region.bounds.y, region.bounds.y + region.bounds.height).toFixed(6)) };
         if (pointInPolygon(point, region.polygon))
             return point;
     }
     return region.center;
+}
+function candidateCountForRegion(region) {
+    const worldArea = polygonArea(region.polygon);
+    return Math.max(2, Math.min(96, Math.ceil(worldArea / 650)));
 }
 function createNode(seed, region, definition, point, index) {
     const id = `${region.id}-feature-${index}`;
@@ -60,8 +64,8 @@ export function generateResourceFeatures(seed, regions, context) {
     const iron = resourceDefinitionById('iron-ore');
     const landRegions = regions.filter(region => region.surfaceType === 'land');
     if (!iron || landRegions.length === 0)
-        throw new Error('Generator v4 requires land and an Iron Ore definition.');
-    const candidates = landRegions.flatMap(region => [0, 1].map(index => {
+        throw new Error('Generator v6 requires land and an Iron Ore definition.');
+    const candidates = landRegions.flatMap(region => Array.from({ length: candidateCountForRegion(region) }, (_, index) => {
         const point = candidatePoint(seed, region, index);
         const environment = samplePlanetEnvironment(context, point);
         const potentials = RESOURCE_DEFINITIONS.map(definition => resourcePotentialForEnvironment(context, point, definition.id, environment));
