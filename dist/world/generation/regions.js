@@ -10,8 +10,8 @@ export const REGION_SEED_ROWS = 50;
 export const TARGET_REGION_SPACING_WORLD_UNITS = PLANET_MAP_WIDTH / REGION_SEED_COLUMNS;
 const REGION_SEED_BIN_SIZE = 64;
 const REGION_WARP_SCALE_CELLS = 2.15;
-const REGION_WARP_AMPLITUDE = 0.34;
-const REGION_WARP_DETAIL = 0.035;
+const REGION_WARP_AMPLITUDE = 0.14;
+const REGION_WARP_DETAIL = 0.01;
 const NAME_STARTS = ['Aer', 'Ald', 'Ar', 'Bel', 'Cal', 'Cer', 'Cor', 'Dar', 'Del', 'Eir', 'El', 'Fal', 'Gal', 'Hal', 'Ith', 'Kar', 'Kel', 'Kor', 'Lor', 'Mar', 'Nor', 'Or', 'Ser', 'Tal'];
 const NAME_MIDDLES = ['a', 'ae', 'al', 'an', 'ar', 'el', 'en', 'er', 'eth', 'ia', 'il', 'in', 'ir', 'or', 'os', 'ra', 're', 'ro', 'ul', 'un', 'ur', 'va', 've', 'yr'];
 const NAME_ENDS = ['d', 'l', 'm', 'n', 'r', 's', 'th', 'v', 'x', 'ya', 'en', 'is', 'on', 'or', 'um', 'ys'];
@@ -216,9 +216,19 @@ function warpRegionPatches(seed, geography) {
     const frozen = frozenParentBoundaryVertices(geography.patches);
     const cellWidth = geography.surfaceField.cellWidth;
     const cellHeight = geography.surfaceField.cellHeight;
+    const pointCache = new Map();
+    const warpedPoint = (point) => {
+        const key = pointKey(point);
+        const cached = pointCache.get(key);
+        if (cached)
+            return cached;
+        const transformed = warpedRegionPoint(seed, point, frozen, cellWidth, cellHeight);
+        pointCache.set(key, transformed);
+        return transformed;
+    };
     const warped = new Map();
     for (const patch of geography.patches) {
-        const polygon = patch.polygon.map(point => warpedRegionPoint(seed, point, frozen, cellWidth, cellHeight));
+        const polygon = patch.polygon.map(warpedPoint);
         warped.set(patch.id, { ...patch, polygon, center: roundPoint(polygonCentroid(polygon)) });
     }
     return warped;
