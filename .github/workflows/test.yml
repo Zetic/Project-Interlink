@@ -27,11 +27,11 @@ jobs:
       - name: Build TypeScript browser modules
         run: npm run build
 
-      - name: Verify generated browser modules are committed
-        run: git diff --exit-code -- dist
-
       - name: Run TypeScript regression tests
         run: npm run test:ts
+
+      - name: Verify generated browser modules are committed
+        run: git diff --exit-code -- dist
 
   rust:
     name: Rust core and WASM browser package
