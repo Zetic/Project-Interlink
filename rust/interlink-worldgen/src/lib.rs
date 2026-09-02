@@ -31,8 +31,9 @@ pub use lithosphere::{
 pub use parameters::PlanetPhysicalParameters;
 pub use random::derive_stage_seed;
 pub use refinement::{
-    build_refinement_map, refine_categorical_u16, refine_categorical_u8, refine_scalar_f32,
-    refine_scalar_f64, refine_vector3_f64, RefinementMap, RefinementMetrics, MULTIRES_STAGE_ID,
+    build_refinement_map, inherit_physical_state, refine_categorical_u16, refine_categorical_u8,
+    refine_scalar_f32, refine_scalar_f32_with_domains, refine_scalar_f64, refine_vector3_f64,
+    InheritedPhysicalState, RefinementMap, RefinementMetrics, MULTIRES_STAGE_ID,
     MULTIRES_STAGE_VERSION,
 };
 pub use tectonics::{

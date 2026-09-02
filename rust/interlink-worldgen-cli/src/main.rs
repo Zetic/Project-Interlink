@@ -371,6 +371,101 @@ fn lithosphere(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
+fn inheritance(options: &Options) -> Result<(), String> {
+    if options.coarse_level > options.level {
+        return Err("--coarse-level cannot exceed --level".to_owned());
+    }
+    let started = Instant::now();
+    let coarse = build_icosphere(options.coarse_level).map_err(|error| error.to_string())?;
+    let fine = build_icosphere(options.level).map_err(|error| error.to_string())?;
+    let parameters = PlanetPhysicalParameters::earthlike_reference();
+    let tectonics = generate_tectonics(
+        &coarse,
+        &TectonicsRequest::new(options.seed.as_str(), options.plates),
+        parameters,
+    )
+    .map_err(|error| error.to_string())?;
+    let geology = generate_crust_and_history(
+        &coarse,
+        &tectonics,
+        &GeologyRequest::new(options.seed.as_str()),
+        parameters,
+    )
+    .map_err(|error| error.to_string())?;
+    let lithosphere = generate_lithosphere(
+        &coarse,
+        &tectonics,
+        &geology,
+        &LithosphereRequest::new(options.seed.as_str()),
+    )
+    .map_err(|error| error.to_string())?;
+    let inherited = inherit_physical_state(
+        &fine,
+        options.coarse_level,
+        &tectonics,
+        &geology,
+        &lithosphere,
+        parameters,
+    )
+    .map_err(|error| error.to_string())?;
+    println!("Project Interlink Planet Engine WG-3.75 multiresolution inheritance");
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("stage=foundation:multires-inheritance@1");
+    println!("seed={} macro_plates={}", options.seed, options.plates);
+    println!(
+        "levels coarse={} fine={}",
+        options.coarse_level, options.level
+    );
+    println!(
+        "samples coarse={} fine={} added={}",
+        inherited.map.metrics.coarse_sample_count,
+        inherited.map.metrics.fine_sample_count,
+        inherited.map.metrics.added_sample_count
+    );
+    println!(
+        "provenance_hash={} parameter_hash={} inheritance_hash={}",
+        inherited.map.metrics.provenance_hash_hex(),
+        inherited.parameter_hash_hex(),
+        inherited.inheritance_hash_hex()
+    );
+    println!(
+        "upstream tectonic_hash={} geology_hash={} lithosphere_hash={}",
+        tectonics.metrics.tectonic_hash_hex(),
+        geology.metrics.geology_hash_hex(),
+        lithosphere.metrics.lithosphere_hash_hex()
+    );
+    println!(
+        "earthlike equivalent_global_water_depth_m={:.3}",
+        parameters.equivalent_global_water_depth_m()
+    );
+    println!(
+        "elapsed_ms={:.3}",
+        started.elapsed().as_secs_f64() * 1_000.0
+    );
+    Ok(())
+}
+
+fn profile(_options: &Options) -> Result<(), String> {
+    let parameters = PlanetPhysicalParameters::earthlike_reference();
+    parameters.validate().map_err(str::to_owned)?;
+    println!("Project Interlink Planet Engine physical profile");
+    println!(
+        "profile=earthlike-default hash={}",
+        parameters.parameter_hash_hex()
+    );
+    println!(
+        "radius_m={:.3} gravity_m_s2={:.6} mass_kg={:.6e} mean_bulk_density_kg_m3={:.3}",
+        parameters.radius_m,
+        parameters.surface_gravity_m_s2,
+        parameters.mass_kg(),
+        parameters.mean_bulk_density_kg_per_m3()
+    );
+    println!("rotation_period_s={:.4} axial_tilt_deg={:.6} orbital_period_s={:.3} stellar_flux_w_m2={:.3}", parameters.rotation_period_s, parameters.axial_tilt_rad.to_degrees(), parameters.orbital_period_s, parameters.stellar_flux_w_m2);
+    println!("surface_pressure_pa={:.3} surface_water_mass_kg={:.6e} ocean_density_kg_m3={:.3} equivalent_global_water_depth_m={:.3}", parameters.reference_surface_pressure_pa, parameters.surface_water_mass_kg, parameters.ocean_water_density_kg_per_m3, parameters.equivalent_global_water_depth_m());
+    println!("isostatic_mantle_density_kg_m3={:.3} internal_heat_flux_w_m2={:.6} mantle_thermal_expansivity_per_k={:.8}", parameters.isostatic_mantle_density_kg_per_m3, parameters.internal_heat_flux_w_per_m2, parameters.mantle_thermal_expansivity_per_k);
+    Ok(())
+}
+
 fn main() {
     let options = match parse_options() {
         Ok(options) => options,
@@ -385,6 +480,8 @@ fn main() {
         "tectonics" => tectonics(&options),
         "geology" => geology(&options),
         "lithosphere" => lithosphere(&options),
+        "inheritance" => inheritance(&options),
+        "profile" => profile(&options),
         _ => generate_once(&options),
     };
     if let Err(message) = result {
