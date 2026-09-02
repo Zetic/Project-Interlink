@@ -18,8 +18,8 @@ export const REGION_SEED_ROWS = 50;
 export const TARGET_REGION_SPACING_WORLD_UNITS = PLANET_MAP_WIDTH / REGION_SEED_COLUMNS;
 const REGION_SEED_BIN_SIZE = 64;
 const REGION_WARP_SCALE_CELLS = 2.15;
-const REGION_WARP_AMPLITUDE = 0.34;
-const REGION_WARP_DETAIL = 0.035;
+const REGION_WARP_AMPLITUDE = 0.14;
+const REGION_WARP_DETAIL = 0.01;
 
 interface RegionSeed {
   id: string;
@@ -209,9 +209,18 @@ function warpRegionPatches(seed: string, geography: GeneratedGeography): Map<str
   const frozen = frozenParentBoundaryVertices(geography.patches);
   const cellWidth = geography.surfaceField.cellWidth;
   const cellHeight = geography.surfaceField.cellHeight;
+  const pointCache = new Map<string, Point>();
+  const warpedPoint = (point: Point): Point => {
+    const key = pointKey(point);
+    const cached = pointCache.get(key);
+    if (cached) return cached;
+    const transformed = warpedRegionPoint(seed, point, frozen, cellWidth, cellHeight);
+    pointCache.set(key, transformed);
+    return transformed;
+  };
   const warped = new Map<string, GeographyPatch>();
   for (const patch of geography.patches) {
-    const polygon = patch.polygon.map(point => warpedRegionPoint(seed, point, frozen, cellWidth, cellHeight));
+    const polygon = patch.polygon.map(warpedPoint);
     warped.set(patch.id, { ...patch, polygon, center: roundPoint(polygonCentroid(polygon)) });
   }
   return warped;
