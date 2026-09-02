@@ -1,5 +1,5 @@
 import { createWorldgenClient } from '../worldgenClient.js';
-import { WORLDGEN_BOUNDARY_CONVERGENT, WORLDGEN_BOUNDARY_DIVERGENT, WORLDGEN_BOUNDARY_TRANSFORM, WORLDGEN_CRUST_CONTINENTAL, WORLDGEN_CRUST_OCEANIC, WORLDGEN_CRUST_TRANSITIONAL, WORLDGEN_GEOLOGY_CONTINENTAL_COLLISION, WORLDGEN_GEOLOGY_CONTINENTAL_RIFT, WORLDGEN_GEOLOGY_OCEANIC_RIDGE, WORLDGEN_GEOLOGY_OCEANIC_SUBDUCTION, WORLDGEN_GEOLOGY_OCEAN_CONTINENT_SUBDUCTION, WORLDGEN_GEOLOGY_TRANSFORM, WORLDGEN_GEOLOGY_TRANSITIONAL_DIVERGENCE, WORLDGEN_PLATE_INTERMEDIATE, WORLDGEN_PLATE_MAJOR, WORLDGEN_PLATE_MINOR, } from '../protocol.js';
+import { WORLDGEN_BOUNDARY_CONVERGENT, WORLDGEN_BOUNDARY_DIVERGENT, WORLDGEN_BOUNDARY_TRANSFORM, WORLDGEN_CRUST_CONTINENTAL, WORLDGEN_CRUST_OCEANIC, WORLDGEN_CRUST_TRANSITIONAL, WORLDGEN_FRAGMENT_MICROPLATE, WORLDGEN_FRAGMENT_TERRANE, WORLDGEN_GEOLOGY_CONTINENTAL_COLLISION, WORLDGEN_GEOLOGY_CONTINENTAL_RIFT, WORLDGEN_GEOLOGY_OCEANIC_RIDGE, WORLDGEN_GEOLOGY_OCEANIC_SUBDUCTION, WORLDGEN_GEOLOGY_OCEAN_CONTINENT_SUBDUCTION, WORLDGEN_GEOLOGY_TRANSFORM, WORLDGEN_GEOLOGY_TRANSITIONAL_DIVERGENCE, WORLDGEN_STRUCTURE_CONTINENTAL_MARGIN, WORLDGEN_STRUCTURE_NONE, WORLDGEN_STRUCTURE_RIFT, WORLDGEN_STRUCTURE_SUTURE, WORLDGEN_STRUCTURE_TRANSFORM, } from '../protocol.js';
 function element(id) { const target = document.getElementById(id); if (!target)
     throw new Error(`Worldgen Lab is missing #${id}.`); return target; }
 function metric(container, label, value) { const item = document.createElement('div'); const key = document.createElement('strong'); key.textContent = label; const detail = document.createElement('span'); detail.textContent = value; item.append(key, detail); container.appendChild(item); }
@@ -35,31 +35,73 @@ function crustColor(kind) { if (kind === WORLDGEN_CRUST_CONTINENTAL)
     return '#b79a72'; if (kind === WORLDGEN_CRUST_TRANSITIONAL)
     return '#9aab87'; if (kind === WORLDGEN_CRUST_OCEANIC)
     return '#477aa3'; return '#d7e2ef'; }
+function structuralColor(kind) {
+    if (kind === WORLDGEN_STRUCTURE_SUTURE)
+        return '#ff7466';
+    if (kind === WORLDGEN_STRUCTURE_RIFT)
+        return '#ffb45d';
+    if (kind === WORLDGEN_STRUCTURE_TRANSFORM)
+        return '#c690ff';
+    if (kind === WORLDGEN_STRUCTURE_CONTINENTAL_MARGIN)
+        return '#65d7ac';
+    if (kind === WORLDGEN_STRUCTURE_NONE)
+        return '#425362';
+    return '#d7e2ef';
+}
+function fragmentColor(result, sample) {
+    const fragmentId = result.fragmentIds[sample];
+    if (fragmentId === 0)
+        return '#263541';
+    const kind = result.fragmentKinds[fragmentId - 1];
+    const hue = (fragmentId * 137.507764 + (kind === WORLDGEN_FRAGMENT_MICROPLATE ? 350 : 55)) % 360;
+    const saturation = kind === WORLDGEN_FRAGMENT_MICROPLATE ? 78 : 55;
+    const lightness = kind === WORLDGEN_FRAGMENT_TERRANE ? 48 : 58;
+    return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}
 function scalarColor(value, minimum, maximum, lowHue, highHue) {
     const span = Math.max(1e-12, maximum - minimum);
     const t = Math.max(0, Math.min(1, (value - minimum) / span));
     const hue = lowHue + (highHue - lowHue) * t;
     return `hsl(${hue} 68% ${38 + t * 22}%)`;
 }
-function scalarField(result, mode) {
+function geologyScalar(result, geology, mode) {
     switch (mode) {
-        case 'crust-age': return { values: result.crustAgeMyr, minimum: 0, maximum: 3500, lowHue: 205, highHue: 24 };
-        case 'crust-thickness': return { values: result.crustThicknessKm, minimum: 5, maximum: 56, lowHue: 205, highHue: 350 };
-        case 'crust-density': return { values: result.crustDensityKgPerM3, minimum: 2670, maximum: 3010, lowHue: 48, highHue: 258 };
-        case 'buoyancy': return { values: result.buoyancyIndex, minimum: -1, maximum: 1, lowHue: 250, highHue: 42 };
         case 'orogeny': return { values: result.orogenicHistory, minimum: 0, maximum: 1, lowHue: 50, highHue: 350 };
         case 'rift': return { values: result.riftHistory, minimum: 0, maximum: 1, lowHue: 210, highHue: 26 };
         case 'ridge': return { values: result.ridgeHistory, minimum: 0, maximum: 1, lowHue: 225, highHue: 170 };
         case 'subduction': return { values: result.subductionHistory, minimum: 0, maximum: 1, lowHue: 210, highHue: 285 };
-        case 'trench': return { values: result.trenchHistory, minimum: 0, maximum: 1, lowHue: 200, highHue: 260 };
-        case 'arc': return { values: result.volcanicArcHistory, minimum: 0, maximum: 1, lowHue: 50, highHue: 8 };
         case 'transform-history': return { values: result.transformHistory, minimum: 0, maximum: 1, lowHue: 210, highHue: 300 };
-        case 'subsidence': return { values: result.subsidenceHistory, minimum: 0, maximum: 1, lowHue: 45, highHue: 230 };
-        case 'basin': return { values: result.basinPotential, minimum: 0, maximum: 1, lowHue: 220, highHue: 90 };
         case 'strain': return { values: result.crustalStrain, minimum: 0, maximum: 1, lowHue: 210, highHue: 0 };
     }
+    if (!geology)
+        return null;
+    switch (mode) {
+        case 'crust-age': return { values: geology.crustAgeMyr, minimum: 0, maximum: 3500, lowHue: 205, highHue: 24 };
+        case 'crust-thickness': return { values: geology.crustThicknessKm, minimum: 5, maximum: 56, lowHue: 205, highHue: 350 };
+        case 'crust-density': return { values: geology.crustDensityKgPerM3, minimum: 2670, maximum: 3010, lowHue: 48, highHue: 258 };
+        case 'buoyancy': return { values: geology.buoyancyIndex, minimum: -1, maximum: 1, lowHue: 250, highHue: 42 };
+        case 'trench': return { values: geology.trenchHistory, minimum: 0, maximum: 1, lowHue: 200, highHue: 260 };
+        case 'arc': return { values: geology.volcanicArcHistory, minimum: 0, maximum: 1, lowHue: 50, highHue: 8 };
+        case 'subsidence': return { values: geology.subsidenceHistory, minimum: 0, maximum: 1, lowHue: 45, highHue: 230 };
+        case 'basin': return { values: geology.basinPotential, minimum: 0, maximum: 1, lowHue: 220, highHue: 90 };
+        default: return null;
+    }
 }
-function renderGeology(canvas, result, tectonics, projection, mode, yaw, pitch) {
+function lithosphereScalar(result, mode) {
+    switch (mode) {
+        case 'strength': return { values: result.strengthIndex, minimum: 0, maximum: 1, lowHue: 0, highHue: 135 };
+        case 'weakness': return { values: result.weaknessIndex, minimum: 0, maximum: 1, lowHue: 205, highHue: 15 };
+        case 'elastic-thickness': return { values: result.effectiveElasticThicknessKm, minimum: 4, maximum: 86, lowHue: 205, highHue: 35 };
+        case 'thermal-anomaly': return { values: result.thermalAnomalyIndex, minimum: -1, maximum: 1, lowHue: 225, highHue: 8 };
+        case 'mantle-upwelling': return { values: result.mantleUpwellingIndex, minimum: 0, maximum: 1, lowHue: 230, highHue: 350 };
+        case 'dynamic-support': return { values: result.mantleDynamicSupportIndex, minimum: -1, maximum: 1, lowHue: 245, highHue: 25 };
+        case 'compensated-buoyancy': return { values: result.compensatedBuoyancyIndex, minimum: -1, maximum: 1, lowHue: 250, highHue: 42 };
+        case 'structural-fabric': return { values: result.structuralFabricStrength, minimum: 0, maximum: 1, lowHue: 210, highHue: 330 };
+        case 'fragmentation': return { values: result.fragmentationPropensity, minimum: 0, maximum: 1, lowHue: 210, highHue: 0 };
+        default: return null;
+    }
+}
+function renderPlanet(canvas, result, geology, tectonics, projection, mode, yaw, pitch) {
     const width = 1100;
     const height = projection === 'map' ? 550 : 760;
     canvas.width = width;
@@ -111,7 +153,7 @@ function renderGeology(canvas, result, tectonics, projection, mode, yaw, pitch) 
     }
     const pointRadius = result.metrics.sampleCount > 30_000 ? 1.15 : result.metrics.sampleCount > 5_000 ? 2.05 : 3.0;
     const categoricalBoundaryMode = mode === 'tectonic-boundaries' || mode === 'geological-boundaries';
-    const scalar = !['plates', 'crust-type', 'tectonic-boundaries', 'geological-boundaries', 'motion'].includes(mode) ? scalarField(result, mode) : null;
+    const scalar = lithosphereScalar(result, mode) ?? geologyScalar(result, geology, mode);
     context.globalAlpha = categoricalBoundaryMode || mode === 'motion' ? 0.30 : 0.94;
     for (let sample = 0; sample < result.metrics.sampleCount; sample += 1) {
         const [x, y, visible] = projectSample(sample);
@@ -119,8 +161,14 @@ function renderGeology(canvas, result, tectonics, projection, mode, yaw, pitch) 
             continue;
         if (mode === 'plates' || mode === 'motion' || mode === 'tectonic-boundaries')
             context.fillStyle = plateColor(result.plateIds[sample]);
+        else if (mode === 'kinematic-domains')
+            context.fillStyle = plateColor(result.kinematicDomainIds[sample]);
+        else if (mode === 'fragments')
+            context.fillStyle = fragmentColor(result, sample);
         else if (mode === 'crust-type' || mode === 'geological-boundaries')
             context.fillStyle = crustColor(result.crustKind[sample]);
+        else if (mode === 'structural-zones')
+            context.fillStyle = structuralColor(result.structuralZoneKind[sample]);
         else if (scalar)
             context.fillStyle = scalarColor(scalar.values[sample], scalar.minimum, scalar.maximum, scalar.lowHue, scalar.highHue);
         else
@@ -177,23 +225,22 @@ function renderGeology(canvas, result, tectonics, projection, mode, yaw, pitch) 
 }
 function renderMetrics(container, result) {
     container.replaceChildren();
-    const major = result.plateScaleClasses.reduce((count, value) => count + (value === WORLDGEN_PLATE_MAJOR ? 1 : 0), 0);
-    const intermediate = result.plateScaleClasses.reduce((count, value) => count + (value === WORLDGEN_PLATE_INTERMEDIATE ? 1 : 0), 0);
-    const minor = result.plateScaleClasses.reduce((count, value) => count + (value === WORLDGEN_PLATE_MINOR ? 1 : 0), 0);
     metric(container, 'Engine / stage', `v${result.engineVersion} · ${result.stage.id}@${result.stage.version}`);
     metric(container, 'Topology', `icosphere L${result.level} · ${result.metrics.sampleCount.toLocaleString()} samples`);
-    metric(container, 'Crust area', `${(result.metrics.continentalAreaFraction * 100).toFixed(1)}% continental · ${(result.metrics.transitionalAreaFraction * 100).toFixed(1)}% transitional · ${(result.metrics.oceanicAreaFraction * 100).toFixed(1)}% oceanic`);
-    metric(container, 'Mean crust age', `${result.metrics.meanContinentalAgeMyr.toFixed(0)} Myr continental · ${result.metrics.meanOceanicAgeMyr.toFixed(1)} Myr oceanic`);
-    metric(container, 'Mean thickness', `${result.metrics.meanContinentalThicknessKm.toFixed(1)} km continental · ${result.metrics.meanOceanicThicknessKm.toFixed(1)} km oceanic`);
-    metric(container, 'Plate scale classes', `${major} major · ${intermediate} intermediate · ${minor} minor`);
-    metric(container, 'Subduction / collision', `${result.metrics.oceanicSubductionEdges.toLocaleString()} oceanic · ${result.metrics.oceanContinentSubductionEdges.toLocaleString()} ocean-continent · ${result.metrics.continentalCollisionEdges.toLocaleString()} collision`);
-    metric(container, 'Ridge / rift / transition', `${result.metrics.oceanicRidgeEdges.toLocaleString()} / ${result.metrics.continentalRiftEdges.toLocaleString()} / ${result.metrics.transitionalDivergenceEdges.toLocaleString()}`);
-    metric(container, 'Transform edges', result.metrics.transformEdges.toLocaleString());
+    metric(container, 'Macro plates', result.plateCount.toLocaleString());
+    metric(container, 'Strength / weakness', `${result.metrics.meanStrengthIndex.toFixed(3)} / ${result.metrics.meanWeaknessIndex.toFixed(3)}`);
+    metric(container, 'Mean elastic thickness', `${result.metrics.meanEffectiveElasticThicknessKm.toFixed(1)} km`);
+    metric(container, 'Mantle upwelling / support', `${result.metrics.meanMantleUpwellingIndex.toFixed(3)} / ${result.metrics.meanDynamicSupportIndex.toFixed(3)}`);
+    metric(container, 'Structural samples', `${result.metrics.sutureSampleCount.toLocaleString()} suture · ${result.metrics.riftZoneSampleCount.toLocaleString()} rift · ${result.metrics.transformZoneSampleCount.toLocaleString()} transform · ${result.metrics.continentalMarginSampleCount.toLocaleString()} margin`);
+    metric(container, 'Tectonic refinement', `${result.metrics.microplateCount} microplates · ${result.metrics.terraneCount} terranes`);
+    metric(container, 'Fragmented area', `${(result.metrics.fragmentedAreaFraction * 100).toFixed(2)}%`);
     metric(container, 'Topology hash', result.topologyHash);
     metric(container, 'Tectonic hash', result.metrics.tectonicHash);
     metric(container, 'Geology hash', result.metrics.geologyHash);
+    metric(container, 'Lithosphere hash', result.metrics.lithosphereHash);
     metric(container, 'Rust + WASM', `${result.stage.durationMs.toFixed(2)} ms`);
 }
+const GEOLOGY_ONLY_MODES = new Set(['crust-age', 'crust-thickness', 'crust-density', 'buoyancy', 'trench', 'arc', 'subsidence', 'basin']);
 function install() {
     const seed = element('worldgen-seed');
     const level = element('worldgen-level');
@@ -206,39 +253,49 @@ function install() {
     const canvas = element('worldgen-field');
     const client = createWorldgenClient();
     let current = null;
+    let currentGeology = null;
     let currentTectonics = null;
     let currentIdentity = '';
     let yaw = 0.0, pitch = 0.15, dragging = false, lastX = 0, lastY = 0;
     function identity() { return `${seed.value}\u0000${level.value}\u0000${plates.value}`; }
     function redraw() { if (current)
-        renderGeology(canvas, current, currentTectonics, projection.value, visualization.value, yaw, pitch); }
-    async function ensureMotionData() {
-        if (!current || visualization.value !== 'motion' || currentIdentity !== identity())
+        renderPlanet(canvas, current, currentGeology, currentTectonics, projection.value, visualization.value, yaw, pitch); }
+    async function ensureAuxiliaryData() {
+        if (!current || currentIdentity !== identity())
             return;
-        if (currentTectonics) {
-            redraw();
-            return;
+        const requestedIdentity = currentIdentity;
+        const request = { seed: seed.value, level: Number(level.value), plateCount: Number(plates.value) };
+        if (visualization.value === 'motion' && !currentTectonics) {
+            const loaded = await client.generateTectonics(request);
+            if (requestedIdentity === currentIdentity && requestedIdentity === identity())
+                currentTectonics = loaded;
         }
-        const requestedIdentity = identity();
-        currentTectonics = await client.generateTectonics({ seed: seed.value, level: Number(level.value), plateCount: Number(plates.value) });
-        if (requestedIdentity === identity() && currentIdentity === requestedIdentity) {
-            redraw();
+        if (GEOLOGY_ONLY_MODES.has(visualization.value) && !currentGeology) {
+            const loaded = await client.generateGeology(request);
+            if (requestedIdentity === currentIdentity && requestedIdentity === identity())
+                currentGeology = loaded;
         }
+        if (requestedIdentity === currentIdentity && requestedIdentity === identity())
+            redraw();
     }
     async function run() {
         generate.disabled = true;
         status.className = 'worldgen-lab-status';
-        status.textContent = 'Building crustal provinces and inferred geological history in Rust/WASM…';
+        status.textContent = 'Building lithospheric mechanics, structural fabric, mantle support, and tectonic refinement in Rust/WASM…';
         try {
-            current = await client.generateGeology({ seed: seed.value, level: Number(level.value), plateCount: Number(plates.value) });
+            const requestedIdentity = identity();
+            const loaded = await client.generateLithosphere({ seed: seed.value, level: Number(level.value), plateCount: Number(plates.value) });
+            if (requestedIdentity !== identity())
+                return;
+            current = loaded;
+            currentGeology = null;
             currentTectonics = null;
-            currentIdentity = identity();
+            currentIdentity = requestedIdentity;
             renderMetrics(metrics, current);
             redraw();
-            if (visualization.value === 'motion')
-                await ensureMotionData();
+            await ensureAuxiliaryData();
             status.className = 'worldgen-lab-status worldgen-lab-status--ok';
-            status.textContent = 'WG-3 physical crust and geological history active. Projection and diagnostic modes do not alter generated truth.';
+            status.textContent = 'WG-3.5 lithospheric mechanics and selective tectonic refinement active. No topography is generated.';
         }
         catch (error) {
             status.className = 'worldgen-lab-status worldgen-lab-status--error';
@@ -253,7 +310,7 @@ function install() {
         input.addEventListener('keydown', event => { if (event.key === 'Enter')
             void run(); });
     projection.addEventListener('change', redraw);
-    visualization.addEventListener('change', () => { redraw(); void ensureMotionData(); });
+    visualization.addEventListener('change', () => { redraw(); void ensureAuxiliaryData(); });
     canvas.addEventListener('pointerdown', event => { if (projection.value !== 'globe')
         return; dragging = true; lastX = event.clientX; lastY = event.clientY; canvas.setPointerCapture(event.pointerId); });
     canvas.addEventListener('pointermove', event => { if (!dragging || projection.value !== 'globe')

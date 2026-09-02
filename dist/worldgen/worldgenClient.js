@@ -1,4 +1,4 @@
-import { WORLDGEN_PROTOCOL_VERSION, validateGeologyRequest, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, worldgenGeologyCommand, worldgenSyntheticCommand, worldgenTectonicsCommand, worldgenTopologyCommand } from './protocol.js';
+import { WORLDGEN_PROTOCOL_VERSION, validateGeologyRequest, validateLithosphereRequest, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, worldgenGeologyCommand, worldgenLithosphereCommand, worldgenSyntheticCommand, worldgenTectonicsCommand, worldgenTopologyCommand } from './protocol.js';
 export function createWorldgenClient() {
     const worker = new Worker(new URL('./worldgenWorker.js', import.meta.url), { type: 'module' });
     const pending = new Map();
@@ -30,6 +30,7 @@ export function createWorldgenClient() {
         generateTopology(input) { validateTopologyRequest(input); return request(worldgenTopologyCommand(nextRequestId++, input)); },
         generateTectonics(input) { validateTectonicsRequest(input); return request(worldgenTectonicsCommand(nextRequestId++, input)); },
         generateGeology(input) { validateGeologyRequest(input); return request(worldgenGeologyCommand(nextRequestId++, input)); },
+        generateLithosphere(input) { validateLithosphereRequest(input); return request(worldgenLithosphereCommand(nextRequestId++, input)); },
         dispose() { if (disposed)
             return; disposed = true; worker.terminate(); rejectAll('Planet Engine client was disposed.'); },
     };

@@ -56,6 +56,7 @@ jobs:
           cargo run -p interlink-worldgen-cli -- topology --level 4
           cargo run -p interlink-worldgen-cli -- tectonics --seed ci-wg2 --level 5 --plates 18
           cargo run -p interlink-worldgen-cli -- geology --seed ci-wg3 --level 5 --plates 18
+          cargo run -p interlink-worldgen-cli -- lithosphere --seed ci-wg3-5 --level 5 --plates 18
 
       - name: Compile browser WASM targets
         run: |

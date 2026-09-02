@@ -92,6 +92,31 @@ WG-3 is accepted only if dense crustal state remains physically distinct and cau
 
 The native `geology` CLI reports crust fractions, continental/oceanic age and thickness separation, derived plate scale-class counts, geological boundary regimes, deterministic tectonic/geology identities, and elapsed generation time.
 
+## WG-3.5 lithosphere and tectonic-refinement gates
+
+WG-3.5 is accepted only if it adds mechanically useful downstream state without replacing accepted topology, macro tectonics, or crust/history identity.
+
+- same seed + accepted WG-1/WG-2/WG-3 inputs produces identical lithosphere hash and ordered dense fields;
+- changing the seed materially changes WG-3.5 identity;
+- every lithosphere field has exactly one finite value per topology sample;
+- normalized mechanical/structural fields remain in `[0,1]` and signed thermal/support/buoyancy fields remain in `[-1,1]`;
+- effective elastic thickness remains finite and within the documented 4–86 km first-model bounds;
+- old, low-strain continental crust is stronger on average than highly strained crust across a multi-seed ensemble;
+- inherited rift/transform/suture/margin categories arise from continuous structural fabric rather than arbitrary global tessellation;
+- mantle upwelling and dynamic support remain broad support fields rather than high-frequency terrain noise;
+- every derived terrane/microplate is a connected subset of exactly one WG-2 parent macro plate;
+- fragment IDs never replace or mutate upstream macro plate IDs;
+- refined kinematic-domain IDs are deterministic and distinguish derived fragments from unfragmented macro interiors;
+- terranes inherit parent macro motion while microplates receive only bounded deterministic motion refinement;
+- total fragmented area remains selective and is currently capped at approximately 22% of the sphere;
+- the global fragment count remains bounded;
+- a multi-seed regression exercises actual microplate generation rather than accepting a permanently empty refinement system;
+- WG-2 tectonic and WG-3 geology hashes remain unchanged when WG-3.5 is generated;
+- WASM/Worker sample and fragment-summary arrays preserve one-to-one indexing;
+- WG-3.5 adds no elevation, bathymetry, terrain geometry, climate, hydrology, detailed lithology, resources, or gameplay state.
+
+The native `lithosphere` CLI reports mean strength/weakness, effective elastic thickness, mantle upwelling/support, structural-zone populations, terrane/microplate counts, fragmented area, representative fragment properties, all upstream hashes, lithosphere hash, and elapsed generation time.
+
 ## Later physical gates
 
 Later stages add validation for hypsometry and isostatic response, lithologic distributions, climate zonation, drainage acyclicity, water routing, erosion/sediment conservation, and glacial/coastal morphology.

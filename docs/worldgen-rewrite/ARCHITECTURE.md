@@ -42,15 +42,36 @@ The Worker lazy-loads the separate generated worldgen WASM package and keeps num
 The protocol grows cumulatively by physical stage:
 
 ```text
-WG-0  synthetic transport proof
-WG-1  packed topology arrays
-WG-2  packed plate ownership / kinematics / boundaries
-WG-3  dense crust fields / geological-history fields / boundary regimes / plate summaries
+WG-0    synthetic transport proof
+WG-1    packed topology arrays
+WG-2    packed macro-plate ownership / kinematics / boundaries
+WG-3    dense crust fields / geological-history fields / boundary regimes / plate summaries
+WG-3.5  lithospheric mechanics / structural fabric / mantle support / derived tectonic refinement
 ```
 
-Topology uses packed positions, faces, CSR adjacency, finite-volume geometry, and refinement provenance. WG-2/WG-3 extend that model with sample-aligned typed arrays and boundary/plate-aligned arrays rather than serializing one JavaScript object per cell. WG-3 transfers crust type/province, age, thickness, density, buoyancy, geological-history fields, geological boundary regimes/polarity, and derived plate summaries as transferable buffers.
+Topology uses packed positions, faces, CSR adjacency, finite-volume geometry, and refinement provenance. Later physical stages extend that model with sample-aligned typed arrays and boundary/plate/fragment-aligned arrays rather than serializing one JavaScript object per cell. WG-3.5 transports strength, weakness, effective elastic thickness, thermal/mantle-support fields, structural zones, fragmentation propensity, refined kinematic-domain IDs, and compact fragment summaries.
 
 The diagnostic lab is a consumer of those arrays. It does not own physical generation logic and changing globe/map projection does not change world truth.
+
+## Upstream identity and derived refinement
+
+The physical-stage dependency is directional:
+
+```text
+PlanetTopology
+      ↓
+WG-2 macro tectonics
+      ↓
+WG-3 crust / geological history
+      ↓
+WG-3.5 lithosphere / derived refinement
+      ↓
+future WG-4 topography
+```
+
+WG-3.5 does not rewrite WG-2 macro plate IDs or WG-3 crust/history. A microplate or terrane is a downstream mechanically distinct domain with a parent macro plate. `kinematicDomainId` may therefore be finer than `plateId`, while `plateId` remains the stable upstream tectonic identity.
+
+This is the intended pattern for inserting richer causal layers without destabilizing accepted upstream stages.
 
 ## Generated WASM asset contract
 
@@ -70,7 +91,7 @@ The production industrial runtime remains a separate WASM package under `src/was
 
 Physical world-generation stages consume the narrow Rust `PlanetTopology` contract rather than icosphere construction details. The contract exposes unit positions, physical control-area weights, neighbors, center-to-center geodesic distances, and shared dual-interface lengths. This supports conservative finite-volume algorithms while allowing storage and refinement strategy to evolve internally.
 
-WG-2 and WG-3 consume only this topology contract plus accepted upstream physical-stage outputs. Crustal state is not embedded in `PlanetTopology`, and geological history does not alter WG-2 plate ownership or motion.
+WG-2, WG-3, and WG-3.5 consume this topology contract plus accepted upstream physical-stage outputs. Crustal state is not embedded in `PlanetTopology`; geological history does not alter WG-2 plate ownership or motion; lithospheric refinement does not alter either upstream identity.
 
 ## Rewrite isolation rule
 

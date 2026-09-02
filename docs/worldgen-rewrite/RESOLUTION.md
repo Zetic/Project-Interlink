@@ -26,6 +26,7 @@ A likely early investigation is:
 ```text
 plates / macro crust        L5–L6
 geological history          L6–L7
+lithosphere / structures    L6–L7
 initial terrain             L7
 climate                     L7–L8
 hydrology / global erosion  L8 initially
@@ -36,8 +37,24 @@ Fine detail must refine coarse physical truth rather than independently regenera
 
 ## Current staged implementation
 
-WG-1 makes the hierarchical topology and stable sample ancestry available before physical process resolutions are permanently assigned. WG-2 and the initial WG-3 implementation accept an explicit topology level and presently evaluate their dense fields at that same requested level. This is an implementation checkpoint, not a declaration that tectonics, crust, history, terrain, and climate must share one permanent resolution.
+WG-1 makes the hierarchical topology and stable sample ancestry available before physical process resolutions are permanently assigned. WG-2, WG-3, and WG-3.5 currently accept an explicit topology level and evaluate their dense fields at that same requested level. This is an implementation checkpoint, not a declaration that tectonics, crust, lithosphere, terrain, and climate must share one permanent resolution.
 
-The important contract is already separated by stage: WG-2 owns plate identity/kinematics, while WG-3 owns crust/history. A later refinement pass may therefore evaluate accepted coarse plate truth onto a finer geological topology without changing plate identity or rerandomizing tectonics. Resolution changes must preserve upstream physical structure through explicit interpolation/refinement/provenance.
+The stage identities are already separated: WG-2 owns macro plate identity/kinematics, WG-3 owns crust/history, and WG-3.5 owns mechanical/structural state plus derived tectonic refinement. A later implementation may therefore evaluate accepted coarse tectonic truth onto a finer geology/lithosphere topology without changing macro plate identity or rerandomizing upstream stages. Resolution changes must preserve upstream physical structure through explicit interpolation/refinement/provenance.
 
-Before increasing canonical process levels, profiling must report generation time, memory, transfer size, and numerical quality. A finer grid is not useful if it only samples the same broad fields more densely; later terrain/lithology stages must introduce process-appropriate structural detail constrained by the accepted coarse truth.
+## Tectonic refinement is not topology refinement
+
+WG-3.5 introduces microplates/terranes as **semantic/kinematic refinement on the existing requested topology**. A fragment receives a new kinematic-domain identity, but the canonical sample mesh is not recursively subdivided merely because a fragment exists.
+
+```text
+canonical topology samples
+        ↓
+WG-2 macro plate ownership
+        ↓
+WG-3.5 selected sample subsets
+        ↓
+terrane / microplate domains
+```
+
+This distinction prevents the number of tectonic domains from being confused with physical sampling density. Future higher-resolution structural passes can refine fragment boundaries using WG-1 ancestry while preserving their parent macro-plate and fragment provenance.
+
+Before increasing canonical process levels, profiling must report generation time, memory, transfer size, and numerical quality. A finer grid is not useful if it only samples the same broad fields more densely; later terrain/lithology stages must introduce process-appropriate structural detail constrained by accepted coarse truth.
