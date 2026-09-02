@@ -1,53 +1,25 @@
-use interlink_worldgen::{generate_synthetic, SyntheticDiagnostic, SyntheticRequest, WORLDGEN_ENGINE_VERSION};
+use interlink_worldgen::{build_icosphere, generate_synthetic, GeodesicTopology, SyntheticDiagnostic, SyntheticRequest, WORLDGEN_ENGINE_VERSION};
 use wasm_bindgen::prelude::*;
 
-pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 1;
+pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 2;
+#[wasm_bindgen] pub fn worldgen_protocol_version() -> u32 { WORLDGEN_WASM_PROTOCOL_VERSION }
+#[wasm_bindgen] pub fn worldgen_engine_version() -> u32 { WORLDGEN_ENGINE_VERSION }
 
-#[wasm_bindgen]
-pub fn worldgen_protocol_version() -> u32 {
-    WORLDGEN_WASM_PROTOCOL_VERSION
-}
-
-#[wasm_bindgen]
-pub fn worldgen_engine_version() -> u32 {
-    WORLDGEN_ENGINE_VERSION
-}
-
-#[wasm_bindgen]
-pub struct WasmWorldgenDiagnostic {
-    inner: SyntheticDiagnostic,
-}
-
+#[wasm_bindgen] pub struct WasmWorldgenDiagnostic { inner: SyntheticDiagnostic }
 #[wasm_bindgen]
 impl WasmWorldgenDiagnostic {
-    #[wasm_bindgen(constructor)]
-    pub fn new(seed: String, width: u32, height: u32) -> Result<WasmWorldgenDiagnostic, JsValue> {
-        let request = SyntheticRequest::new(seed, width, height);
-        let inner = generate_synthetic(&request).map_err(|error| JsValue::from_str(&error.to_string()))?;
-        Ok(Self { inner })
-    }
-
-    pub fn generator_version(&self) -> u32 { self.inner.generator_version }
-    pub fn stage_id(&self) -> String { self.inner.stage.id.to_owned() }
-    pub fn stage_version(&self) -> u32 { self.inner.stage.version }
-    pub fn stage_seed_hex(&self) -> String { format!("{:016x}", self.inner.stage.derived_seed) }
-    pub fn width(&self) -> u32 { self.inner.field.width() }
-    pub fn height(&self) -> u32 { self.inner.field.height() }
-    pub fn sample_count(&self) -> u64 { self.inner.statistics.sample_count }
-    pub fn minimum(&self) -> u16 { self.inner.statistics.minimum }
-    pub fn maximum(&self) -> u16 { self.inner.statistics.maximum }
-    pub fn mean(&self) -> f64 { self.inner.statistics.mean }
-    pub fn field_hash_hex(&self) -> String { self.inner.statistics.hash_hex() }
-    pub fn values(&self) -> Vec<u16> { self.inner.field.values().to_vec() }
+    #[wasm_bindgen(constructor)] pub fn new(seed: String, width: u32, height: u32) -> Result<WasmWorldgenDiagnostic, JsValue> { let inner = generate_synthetic(&SyntheticRequest::new(seed, width, height)).map_err(|error| JsValue::from_str(&error.to_string()))?; Ok(Self { inner }) }
+    pub fn generator_version(&self) -> u32 { self.inner.generator_version } pub fn stage_id(&self) -> String { self.inner.stage.id.to_owned() } pub fn stage_version(&self) -> u32 { self.inner.stage.version } pub fn stage_seed_hex(&self) -> String { format!("{:016x}", self.inner.stage.derived_seed) } pub fn width(&self) -> u32 { self.inner.field.width() } pub fn height(&self) -> u32 { self.inner.field.height() } pub fn sample_count(&self) -> u64 { self.inner.statistics.sample_count } pub fn minimum(&self) -> u16 { self.inner.statistics.minimum } pub fn maximum(&self) -> u16 { self.inner.statistics.maximum } pub fn mean(&self) -> f64 { self.inner.statistics.mean } pub fn field_hash_hex(&self) -> String { self.inner.statistics.hash_hex() } pub fn values(&self) -> Vec<u16> { self.inner.field.values().to_vec() }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn wasm_protocol_and_engine_versions_are_explicit() {
-        assert_eq!(worldgen_protocol_version(), 1);
-        assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION);
-    }
+#[wasm_bindgen] pub struct WasmWorldgenTopology { inner: GeodesicTopology }
+#[wasm_bindgen]
+impl WasmWorldgenTopology {
+    #[wasm_bindgen(constructor)] pub fn new(level: u8) -> Result<WasmWorldgenTopology, JsValue> { Ok(Self { inner: build_icosphere(level).map_err(|error| JsValue::from_str(&error.to_string()))? }) }
+    pub fn generator_version(&self) -> u32 { WORLDGEN_ENGINE_VERSION } pub fn level(&self) -> u8 { self.inner.level() } pub fn sample_count(&self) -> u32 { self.inner.metrics().sample_count } pub fn edge_count(&self) -> u32 { self.inner.metrics().edge_count } pub fn face_count(&self) -> u32 { self.inner.metrics().face_count } pub fn five_neighbor_count(&self) -> u32 { self.inner.metrics().five_neighbor_count } pub fn six_neighbor_count(&self) -> u32 { self.inner.metrics().six_neighbor_count }
+    pub fn total_area_steradians(&self) -> f64 { self.inner.metrics().total_area_steradians } pub fn minimum_area_steradians(&self) -> f64 { self.inner.metrics().minimum_area_steradians } pub fn maximum_area_steradians(&self) -> f64 { self.inner.metrics().maximum_area_steradians } pub fn mean_area_steradians(&self) -> f64 { self.inner.metrics().mean_area_steradians } pub fn area_coefficient_of_variation(&self) -> f64 { self.inner.metrics().area_coefficient_of_variation }
+    pub fn minimum_edge_arc_radians(&self) -> f64 { self.inner.metrics().minimum_edge_arc_radians } pub fn maximum_edge_arc_radians(&self) -> f64 { self.inner.metrics().maximum_edge_arc_radians } pub fn mean_edge_arc_radians(&self) -> f64 { self.inner.metrics().mean_edge_arc_radians } pub fn edge_coefficient_of_variation(&self) -> f64 { self.inner.metrics().edge_coefficient_of_variation } pub fn topology_hash_hex(&self) -> String { self.inner.metrics().topology_hash_hex() }
+    pub fn positions(&self) -> Vec<f64> { self.inner.flattened_positions() } pub fn faces(&self) -> Vec<u32> { self.inner.flattened_faces() } pub fn neighbor_offsets(&self) -> Vec<u32> { self.inner.neighbor_offsets().to_vec() } pub fn neighbors(&self) -> Vec<u32> { self.inner.neighbors().to_vec() } pub fn area_steradians(&self) -> Vec<f64> { self.inner.dual_area_steradians().to_vec() } pub fn birth_levels(&self) -> Vec<u8> { self.inner.birth_levels().to_vec() } pub fn parent_edges(&self) -> Vec<u32> { self.inner.flattened_parent_edges() }
 }
+
+#[cfg(test)] mod tests { use super::*; #[test] fn wasm_protocol_and_engine_versions_are_explicit() { assert_eq!(worldgen_protocol_version(), 2); assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION); } #[test] fn topology_bridge_exposes_canonical_counts() { let topology = WasmWorldgenTopology::new(2).unwrap(); assert_eq!(topology.sample_count(), 162); assert_eq!(topology.five_neighbor_count(), 12); assert_eq!(topology.faces().len(), 320 * 3); } }
