@@ -19,6 +19,8 @@
     "worldgen:generate": "cargo run -p interlink-worldgen-cli -- generate",
     "worldgen:benchmark": "cargo run -p interlink-worldgen-cli -- benchmark",
     "worldgen:topology": "cargo run -p interlink-worldgen-cli -- topology --level 4",
+    "worldgen:tectonics": "cargo run -p interlink-worldgen-cli -- tectonics --level 5 --plates 16",
+    "worldgen:geology": "cargo run -p interlink-worldgen-cli -- geology --level 5 --plates 16",
     "check:runtime": "npm run build && npm run test:ts && npm run test:rust && npm run check:wasm && npm run check:worldgen-wasm"
   },
   "devDependencies": {
