@@ -1,10 +1,107 @@
-use interlink_worldgen::{build_icosphere, generate_synthetic, SyntheticRequest, WORLDGEN_ENGINE_VERSION};
+use interlink_worldgen::{build_icosphere, generate_synthetic, generate_tectonics, PlanetPhysicalParameters, SyntheticRequest, TectonicsRequest, WORLDGEN_ENGINE_VERSION};
 use std::{env, process, time::Instant};
-#[derive(Debug)] struct Options { command: String, seed: String, width: u32, height: u32, iterations: u32, level: u8 }
-fn usage() -> &'static str { "interlink-worldgen-cli <generate|benchmark|topology> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N]" }
+
+#[derive(Debug)]
+struct Options { command: String, seed: String, width: u32, height: u32, iterations: u32, level: u8, plates: u16 }
+
+fn usage() -> &'static str { "interlink-worldgen-cli <generate|benchmark|topology|tectonics> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N] [--plates N]" }
 fn parse_u32(name: &str, value: Option<String>) -> Result<u32, String> { value.ok_or_else(|| format!("{name} requires a value"))?.parse::<u32>().map_err(|_| format!("{name} requires an unsigned integer")) }
-fn parse_options() -> Result<Options, String> { let mut args = env::args().skip(1); let command = args.next().ok_or_else(|| usage().to_owned())?; if command != "generate" && command != "benchmark" && command != "topology" { return Err(format!("unsupported command '{command}'\n{}", usage())); } let mut options = Options { command, seed: "wg0-cli".to_owned(), width: 512, height: 256, iterations: 5, level: 5 }; while let Some(flag) = args.next() { match flag.as_str() { "--seed" => options.seed = args.next().ok_or_else(|| "--seed requires a value".to_owned())?, "--width" => options.width = parse_u32("--width", args.next())?, "--height" => options.height = parse_u32("--height", args.next())?, "--iterations" => options.iterations = parse_u32("--iterations", args.next())?, "--level" => options.level = u8::try_from(parse_u32("--level", args.next())?).map_err(|_| "--level exceeds u8 range".to_owned())?, _ => return Err(format!("unsupported option '{flag}'\n{}", usage())), } } if options.iterations == 0 { return Err("--iterations must be at least 1".to_owned()); } Ok(options) }
-fn generate_once(options: &Options) -> Result<(), String> { let started = Instant::now(); let result = generate_synthetic(&SyntheticRequest::new(options.seed.as_str(), options.width, options.height)).map_err(|error| error.to_string())?; let elapsed = started.elapsed(); println!("Project Interlink Planet Engine WG-0 transport diagnostic"); println!("engine_version={}", WORLDGEN_ENGINE_VERSION); println!("stage={}@{}", result.stage.id, result.stage.version); println!("seed={}", options.seed); println!("field={}x{} samples={}", result.field.width(), result.field.height(), result.statistics.sample_count); println!("min={} max={} mean={:.3}", result.statistics.minimum, result.statistics.maximum, result.statistics.mean); println!("field_hash={}", result.statistics.hash_hex()); println!("stage_seed={:016x}", result.stage.derived_seed); println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0); Ok(()) }
-fn benchmark(options: &Options) -> Result<(), String> { let mut elapsed_ms = 0.0; let mut hash = String::new(); for _ in 0..options.iterations { let started = Instant::now(); let result = generate_synthetic(&SyntheticRequest::new(options.seed.as_str(), options.width, options.height)).map_err(|error| error.to_string())?; elapsed_ms += started.elapsed().as_secs_f64() * 1_000.0; if hash.is_empty() { hash = result.statistics.hash_hex(); } else if hash != result.statistics.hash_hex() { return Err("determinism failure during benchmark".to_owned()); } } println!("engine_version={}", WORLDGEN_ENGINE_VERSION); println!("iterations={}", options.iterations); println!("field={}x{}", options.width, options.height); println!("field_hash={hash}"); println!("mean_elapsed_ms={:.3}", elapsed_ms / f64::from(options.iterations)); Ok(()) }
-fn topology(options: &Options) -> Result<(), String> { let started = Instant::now(); let topology = build_icosphere(options.level).map_err(|error| error.to_string())?; let elapsed = started.elapsed(); let metrics = topology.metrics(); println!("Project Interlink Planet Engine WG-1 topology"); println!("engine_version={}", WORLDGEN_ENGINE_VERSION); println!("level={}", topology.level()); println!("samples={} edges={} faces={}", metrics.sample_count, metrics.edge_count, metrics.face_count); println!("pentavalent={} hexavalent={}", metrics.five_neighbor_count, metrics.six_neighbor_count); println!("area_sum_sr={:.15}", metrics.total_area_steradians); println!("area_min_sr={:.15} area_max_sr={:.15} area_cv={:.9}", metrics.minimum_area_steradians, metrics.maximum_area_steradians, metrics.area_coefficient_of_variation); println!("edge_min_rad={:.15} edge_max_rad={:.15} edge_cv={:.9}", metrics.minimum_edge_arc_radians, metrics.maximum_edge_arc_radians, metrics.edge_coefficient_of_variation); println!("interface_min_rad={:.15} interface_max_rad={:.15} interface_cv={:.9}", metrics.minimum_interface_arc_radians, metrics.maximum_interface_arc_radians, metrics.interface_coefficient_of_variation); println!("topology_hash={}", metrics.topology_hash_hex()); println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0); Ok(()) }
-fn main() { let options = match parse_options() { Ok(options) => options, Err(message) => { eprintln!("{message}"); process::exit(2); } }; let result = match options.command.as_str() { "benchmark" => benchmark(&options), "topology" => topology(&options), _ => generate_once(&options) }; if let Err(message) = result { eprintln!("worldgen error: {message}"); process::exit(1); } }
+
+fn parse_options() -> Result<Options, String> {
+    let mut args = env::args().skip(1);
+    let command = args.next().ok_or_else(|| usage().to_owned())?;
+    if !matches!(command.as_str(), "generate" | "benchmark" | "topology" | "tectonics") { return Err(format!("unsupported command '{command}'\n{}", usage())); }
+    let mut options = Options { command, seed: "worldgen-cli".to_owned(), width: 512, height: 256, iterations: 5, level: 5, plates: 16 };
+    while let Some(flag) = args.next() {
+        match flag.as_str() {
+            "--seed" => options.seed = args.next().ok_or_else(|| "--seed requires a value".to_owned())?,
+            "--width" => options.width = parse_u32("--width", args.next())?,
+            "--height" => options.height = parse_u32("--height", args.next())?,
+            "--iterations" => options.iterations = parse_u32("--iterations", args.next())?,
+            "--level" => options.level = u8::try_from(parse_u32("--level", args.next())?).map_err(|_| "--level exceeds u8 range".to_owned())?,
+            "--plates" => options.plates = u16::try_from(parse_u32("--plates", args.next())?).map_err(|_| "--plates exceeds u16 range".to_owned())?,
+            _ => return Err(format!("unsupported option '{flag}'\n{}", usage())),
+        }
+    }
+    if options.iterations == 0 { return Err("--iterations must be at least 1".to_owned()); }
+    Ok(options)
+}
+
+fn generate_once(options: &Options) -> Result<(), String> {
+    let started = Instant::now();
+    let result = generate_synthetic(&SyntheticRequest::new(options.seed.as_str(), options.width, options.height)).map_err(|error| error.to_string())?;
+    let elapsed = started.elapsed();
+    println!("Project Interlink Planet Engine WG-0 transport diagnostic");
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("stage={}@{}", result.stage.id, result.stage.version);
+    println!("seed={}", options.seed);
+    println!("field={}x{} samples={}", result.field.width(), result.field.height(), result.statistics.sample_count);
+    println!("min={} max={} mean={:.3}", result.statistics.minimum, result.statistics.maximum, result.statistics.mean);
+    println!("field_hash={}", result.statistics.hash_hex());
+    println!("stage_seed={:016x}", result.stage.derived_seed);
+    println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0);
+    Ok(())
+}
+
+fn benchmark(options: &Options) -> Result<(), String> {
+    let mut elapsed_ms = 0.0;
+    let mut hash = String::new();
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let result = generate_synthetic(&SyntheticRequest::new(options.seed.as_str(), options.width, options.height)).map_err(|error| error.to_string())?;
+        elapsed_ms += started.elapsed().as_secs_f64() * 1_000.0;
+        if hash.is_empty() { hash = result.statistics.hash_hex(); } else if hash != result.statistics.hash_hex() { return Err("determinism failure during benchmark".to_owned()); }
+    }
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("iterations={}", options.iterations);
+    println!("field={}x{}", options.width, options.height);
+    println!("field_hash={hash}");
+    println!("mean_elapsed_ms={:.3}", elapsed_ms / f64::from(options.iterations));
+    Ok(())
+}
+
+fn topology(options: &Options) -> Result<(), String> {
+    let started = Instant::now();
+    let topology = build_icosphere(options.level).map_err(|error| error.to_string())?;
+    let elapsed = started.elapsed();
+    let metrics = topology.metrics();
+    println!("Project Interlink Planet Engine WG-1 topology");
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("level={}", topology.level());
+    println!("samples={} edges={} faces={}", metrics.sample_count, metrics.edge_count, metrics.face_count);
+    println!("pentavalent={} hexavalent={}", metrics.five_neighbor_count, metrics.six_neighbor_count);
+    println!("area_sum_sr={:.15}", metrics.total_area_steradians);
+    println!("area_min_sr={:.15} area_max_sr={:.15} area_cv={:.9}", metrics.minimum_area_steradians, metrics.maximum_area_steradians, metrics.area_coefficient_of_variation);
+    println!("edge_min_rad={:.15} edge_max_rad={:.15} edge_cv={:.9}", metrics.minimum_edge_arc_radians, metrics.maximum_edge_arc_radians, metrics.edge_coefficient_of_variation);
+    println!("interface_min_rad={:.15} interface_max_rad={:.15} interface_cv={:.9}", metrics.minimum_interface_arc_radians, metrics.maximum_interface_arc_radians, metrics.interface_coefficient_of_variation);
+    println!("topology_hash={}", metrics.topology_hash_hex());
+    println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0);
+    Ok(())
+}
+
+fn tectonics(options: &Options) -> Result<(), String> {
+    let started = Instant::now();
+    let topology = build_icosphere(options.level).map_err(|error| error.to_string())?;
+    let parameters = PlanetPhysicalParameters::earthlike_reference();
+    let model = generate_tectonics(&topology, &TectonicsRequest::new(options.seed.as_str(), options.plates), parameters).map_err(|error| error.to_string())?;
+    let elapsed = started.elapsed();
+    let metrics = &model.metrics;
+    println!("Project Interlink Planet Engine WG-2 spherical plate tectonics");
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("stage={}@{}", model.stage.id, model.stage.version);
+    println!("seed={} stage_seed={:016x}", options.seed, model.stage.derived_seed);
+    println!("topology_level={} samples={} plates={}", options.level, metrics.sample_count, metrics.plate_count);
+    println!("boundaries={} convergent={} divergent={} transform={}", metrics.boundary_edge_count, metrics.convergent_edge_count, metrics.divergent_edge_count, metrics.transform_edge_count);
+    println!("plate_area_fraction_min={:.6} mean={:.6} max={:.6}", metrics.minimum_plate_area_fraction, metrics.mean_plate_area_fraction, metrics.maximum_plate_area_fraction);
+    println!("minimum_seed_separation_deg={:.3}", metrics.minimum_seed_separation_rad.to_degrees());
+    println!("mean_reference_speed_mm_per_year={:.3}", metrics.mean_reference_speed_mm_per_year);
+    println!("tectonic_hash={}", metrics.tectonic_hash_hex());
+    println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0);
+    Ok(())
+}
+
+fn main() {
+    let options = match parse_options() { Ok(options) => options, Err(message) => { eprintln!("{message}"); process::exit(2); } };
+    let result = match options.command.as_str() { "benchmark" => benchmark(&options), "topology" => topology(&options), "tectonics" => tectonics(&options), _ => generate_once(&options) };
+    if let Err(message) = result { eprintln!("worldgen error: {message}"); process::exit(1); }
+}
