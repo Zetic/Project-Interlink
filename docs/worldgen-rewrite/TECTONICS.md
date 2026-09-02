@@ -24,7 +24,9 @@ The output is a kinematic tectonic substrate for later geological-history and cr
 
 ## Plate partition
 
-WG-2 chooses deterministic seed samples on the canonical topology using a seeded farthest-point process. The first seed is stage-random; later seeds favor samples far from existing seeds with a bounded deterministic jitter so worlds do not collapse into the same maximally symmetric plate arrangement.
+WG-2 chooses deterministic seed samples on the canonical topology with a seeded stochastic minimum-separation process. The first seed is stage-random. Later seeds are drawn from deterministic pseudo-random candidates and accepted once they satisfy a deliberately modest exclusion radius; a deterministic best-separated fallback exists for densely requested configurations.
+
+The exclusion radius prevents pathological seed clusters without forcing a blue-noise or near-equal-area tessellation. Major and minor macro plates must be able to coexist. A fixed five-seed L5/18-plate regression therefore checks that the partition retains meaningful area variance rather than converging toward equal Voronoi territories.
 
 Plate ownership is then solved as a multi-source shortest-path Voronoi partition over the `PlanetTopology` neighbor graph using canonical geodesic center distances. This gives every sample exactly one plate owner while preserving graph connectivity back to its seed.
 
@@ -35,7 +37,8 @@ Acceptance requires:
 - every plate owns its seed sample;
 - every plate is one connected component on the topology graph;
 - all plate control-area weights close to `4π` steradians;
-- seed spacing and plate-area distributions remain macro scale rather than degenerating into tiny fragments.
+- seed spacing remains macro scale rather than degenerating into pathological clusters;
+- multi-seed plate-area statistics preserve both larger and smaller macro plates rather than a near-equal tessellation.
 
 WG-2 supports 4–48 plates. Browser diagnostics are bounded to topology level 6; higher-resolution geological stages may later consume a coarse tectonic field through explicit refinement/interpolation rather than rerunning unrelated plate truth.
 
