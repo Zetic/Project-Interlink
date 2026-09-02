@@ -19,14 +19,18 @@
   cursor: default;
 }
 
-.ws-map-landmass {
-  fill: #263d34;
+.ws-map-parent {
   stroke: #6f8d86;
   stroke-width: 2;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-  pointer-events: none;
+  cursor: pointer;
 }
+
+.ws-map-continent { fill: #263d34; }
+.ws-map-ocean { fill: #102b42; stroke: #31506a; }
+.ws-map-parent:hover { filter: brightness(1.14); }
+.ws-map-parent.ws-map-selected { stroke: #f0c65b; stroke-width: 3; }
 
 .ws-map-region {
   stroke: #738896;
@@ -40,11 +44,16 @@
   filter: brightness(1.1);
 }
 
-.ws-map-region--0 { fill: #243b35; }
-.ws-map-region--1 { fill: #304038; }
-.ws-map-region--2 { fill: #3b3c31; }
-.ws-map-region--3 { fill: #303a3e; }
-.ws-map-region--4 { fill: #2e3744; }
+.ws-map-region--land.ws-map-region--0 { fill: #243b35; }
+.ws-map-region--land.ws-map-region--1 { fill: #304038; }
+.ws-map-region--land.ws-map-region--2 { fill: #3b3c31; }
+.ws-map-region--land.ws-map-region--3 { fill: #303a3e; }
+.ws-map-region--land.ws-map-region--4 { fill: #2e3744; }
+.ws-map-region--ocean.ws-map-region--0 { fill: #102b42; }
+.ws-map-region--ocean.ws-map-region--1 { fill: #12304a; }
+.ws-map-region--ocean.ws-map-region--2 { fill: #152d43; }
+.ws-map-region--ocean.ws-map-region--3 { fill: #18354e; }
+.ws-map-region--ocean.ws-map-region--4 { fill: #12283d; }
 
 .ws-map-region.ws-map-selected {
   stroke: #f0c65b;
@@ -64,6 +73,16 @@
   pointer-events: none;
   user-select: none;
 }
+
+.ws-map-feature-marker {
+  fill: #b5d98a;
+  stroke: #101720;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+}
+.ws-map-feature-marker:hover,
+.ws-map-feature-marker.ws-map-selected { fill: #ffcc44; stroke: #f8e7a0; }
 
 /* Resource FEATURE cards use a stable 160x100 local SVG coordinate system. */
 .ws-map-resource-node {

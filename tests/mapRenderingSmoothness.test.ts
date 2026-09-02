@@ -95,7 +95,7 @@ test('camera updates no longer force unrelated panels to rebuild every frame', (
   const debug = fs.readFileSync('src/ui/debugPanel.ts', 'utf8');
   const renderer = fs.readFileSync('src/map/mapRenderer.ts', 'utf8');
   assert.match(nav, /state\.world === lastWorld/);
-  assert.match(inspector, /state\.world !== lastWorld \|\| state\.graph !== lastGraph \|\| selectionKey !== lastSelectionKey/);
+  assert.match(inspector, /state\.world !== lastWorld \|\| state\.graph !== lastGraph \|\| nextSelectionKey !== lastSelectionKey/);
   assert.doesNotMatch(debug, /if \(!drawer\.hidden\) render\(\);/);
   assert.match(renderer, /wheelAnchor/);
   assert.match(renderer, /cameraForAnchor/);
@@ -109,11 +109,11 @@ test('runtime-only store updates cannot interrupt an in-progress local camera ge
   assert.doesNotMatch(renderer, /else if \(!internalCameraUpdate && !camerasEqual\(displayCamera, state\.camera\)\)/);
 });
 
-test('region hover interaction stops at 10x and camera panning is middle-mouse only', () => {
+test('region interaction stops at geographic 512x and camera panning is middle-mouse only', () => {
   const renderer = fs.readFileSync('src/map/mapRenderer.ts', 'utf8');
   const css = fs.readFileSync('styles/map.css', 'utf8');
-  assert.match(renderer, /REGION_INTERACTION_MAX_ZOOM = 10/);
-  assert.match(renderer, /regions\.style\.pointerEvents = zoom >= REGION_INTERACTION_MAX_ZOOM \? 'none' : 'auto'/);
+  assert.match(renderer, /REGION_INTERACTION_MAX_ZOOM = 2 \*\* 9/);
+  assert.match(renderer, /regions\.style\.pointerEvents = regionsInteractiveAtZoom\(zoom\) \? 'auto' : 'none'/);
   assert.match(renderer, /if \(event\.button === 1\)/);
   assert.match(renderer, /pointerMode = 'pan'/);
   assert.match(renderer, /if \(event\.button !== 0 \|\| target\.closest\('\[data-port-id\]'\)\) return/);

@@ -87,9 +87,10 @@ function formatResourceRuntime(resource, snapshot) {
     return `${runtime.remainingMassKg.toFixed(1)} kg remaining`;
 }
 export function updateResourceRuntimePresentation(svg, planet, snapshot) {
-    for (const resource of planet.resourceNodes) {
-        const text = svg.querySelector(`[data-runtime-resource-text="${CSS.escape(resource.id)}"]`);
-        if (text)
+    const resourcesById = new Map(planet.resourceNodes.map(resource => [resource.id, resource]));
+    for (const text of svg.querySelectorAll('[data-runtime-resource-text]')) {
+        const resource = resourcesById.get(text.dataset.runtimeResourceText ?? '');
+        if (resource)
             text.textContent = formatResourceRuntime(resource, snapshot);
     }
 }

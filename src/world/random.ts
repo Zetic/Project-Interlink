@@ -5,13 +5,17 @@ export interface RandomSource {
   pick<T>(values: readonly T[]): T;
 }
 
-function hashString(value: string): number {
+export function hashString(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+export function deterministicUnit(seed: string, namespace: string): number {
+  return hashString(`${seed}::${namespace}`) / 4294967296;
 }
 
 function mulberry32(seed: number): () => number {

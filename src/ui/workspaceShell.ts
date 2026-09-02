@@ -107,7 +107,7 @@ export function workspaceShellMarkup(options: WorkspaceShellOptions = {}): strin
       <aside id="ws-navigation-drawer" class="ws-navigation-drawer" aria-label="World navigation" aria-hidden="true" hidden>
         <div class="ws-navigation-header"><strong>NAVIGATION</strong><div class="ws-navigation-actions"><button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close world navigation" title="Close">×</button></div></div>
         <label class="ws-navigation-search-label" for="ws-navigation-search">Search world</label>
-        <input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search regions, features, engineering…" autocomplete="off">
+        <input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search geography, features, engineering…" autocomplete="off">
         <details id="ws-navigation-filters" class="ws-navigation-filters-panel"><summary>Show filters</summary><div class="ws-navigation-filters"></div></details>
         <div id="ws-navigation-match-count" class="ws-navigation-match-count" aria-live="polite"></div>
         <div id="ws-navigation-tree" class="ws-navigation-tree" role="navigation" aria-label="World locations"></div>

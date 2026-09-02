@@ -74,9 +74,9 @@ test('player-facing runtime presentation is live while profiling remains opt-in'
   assert.match(resources, /data-runtime-resource-text/);
   assert.match(resources, /remainingMassKg/);
 
-  assert.match(inspector, /subscribeDomains\(\['world', 'graph', 'selection', 'runtime'\]/);
+  assert.match(inspector, /subscribeDomains\(\['world', 'graph', 'selection', 'camera', 'runtime'\]/);
   assert.doesNotMatch(inspector, /Refresh Material Detail/);
-  assert.doesNotMatch(inspector, /\['camera'/);
+  assert.match(inspector, /geographicLocationKey/);
 
   assert.match(debug, /setProfiling/);
   assert.match(debug, /#ws-debug-deep-profiling/);

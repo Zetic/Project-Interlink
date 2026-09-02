@@ -53,12 +53,33 @@ export interface ResourceNode {
   ports: NodePort[];
 }
 
-export interface Landmass {
+export type PlateCrustType = 'continental' | 'oceanic';
+export type PlateBoundaryType = 'interior' | 'convergent' | 'divergent' | 'transform';
+export type GeographicParentKind = 'continent' | 'ocean';
+export type SurfaceType = 'land' | 'ocean';
+
+export interface TectonicPlate {
+  id: string;
+  seedPoint: Point;
+  motion: Point;
+  crustType: PlateCrustType;
+  crustBias: number;
+}
+
+export interface GeographicParent {
   id: string;
   name: string;
-  polygon: Point[];
+  kind: GeographicParentKind;
+  polygons: Point[][];
   bounds: Bounds;
+  center: Point;
+  approximateAreaSquareKm: number;
+  regionIds: string[];
+  meanSurfaceElevationMeters: number;
 }
+
+export type Continent = GeographicParent & { kind: 'continent' };
+export type Ocean = GeographicParent & { kind: 'ocean' };
 
 export interface RegionEnvironment {
   latitudeDeg: number;
@@ -69,12 +90,17 @@ export interface RegionEnvironment {
   tectonicActivity: number;
   volcanicActivity: number;
   sedimentaryBasinFactor: number;
+  plateId: string;
+  boundaryType: PlateBoundaryType;
+  boundaryProximity: number;
 }
 
 export interface Region {
   id: string;
   name: string;
-  landmassId: string;
+  parentKind: GeographicParentKind;
+  parentId: string;
+  surfaceType: SurfaceType;
   bounds: Bounds;
   polygon: Point[];
   center: Point;
@@ -92,7 +118,10 @@ export interface Planet {
   height: number;
   physicalWidthMeters: number;
   physicalHeightMeters: number;
-  landmasses: Landmass[];
+  seaLevelRaw: number;
+  tectonicPlates: TectonicPlate[];
+  continents: Continent[];
+  oceans: Ocean[];
   regions: Region[];
   resourceNodes: ResourceNode[];
 }
@@ -103,6 +132,8 @@ export interface WorldState {
 
 export type MapSelection =
   | { type: 'planet' }
+  | { type: 'continent'; continentId: string }
+  | { type: 'ocean'; oceanId: string }
   | { type: 'region'; regionId: string }
   | { type: 'resource'; resourceNodeId: string }
   | { type: 'mechanical'; mechanicalNodeId: string };

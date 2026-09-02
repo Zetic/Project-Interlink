@@ -102,9 +102,10 @@ export function updateResourceRuntimePresentation(
   planet: Planet,
   snapshot: RuntimeSnapshot | null,
 ): void {
-  for (const resource of planet.resourceNodes) {
-    const text = svg.querySelector<SVGTextElement>(`[data-runtime-resource-text="${CSS.escape(resource.id)}"]`);
-    if (text) text.textContent = formatResourceRuntime(resource, snapshot);
+  const resourcesById = new Map(planet.resourceNodes.map(resource => [resource.id, resource]));
+  for (const text of svg.querySelectorAll<SVGTextElement>('[data-runtime-resource-text]')) {
+    const resource = resourcesById.get(text.dataset.runtimeResourceText ?? '');
+    if (resource) text.textContent = formatResourceRuntime(resource, snapshot);
   }
 }
 

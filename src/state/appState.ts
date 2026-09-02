@@ -1,7 +1,7 @@
 import { createEmptyGraphState } from '../graph/graphCommands.js';
 import type { GraphState, PortEndpoint } from '../graph/types.js';
 import { createDisconnectedRuntimeState, type RuntimePresentationState } from '../runtime/presentation.js';
-import type { MapCameraState, MapSelection, Region, WorldState } from '../world/types.js';
+import type { Bounds, MapCameraState, MapSelection, WorldState } from '../world/types.js';
 
 export interface GraphInteractionState {
   placementDefinitionId: string | null;
@@ -31,10 +31,10 @@ const STRUCTURAL_APP_DOMAINS: readonly AppStateDomain[] = ['world', 'graph', 'se
 export const RESOURCE_FOCUS_ZOOM = 2 ** 19;
 export const MECHANICAL_FOCUS_ZOOM = 2 ** 20;
 
-function regionFocusZoom(world: WorldState, region: Region): number {
-  const widthZoom = world.planet.width / Math.max(1, region.bounds.width * 1.35);
-  const heightZoom = world.planet.height / Math.max(1, region.bounds.height * 1.35);
-  return Math.min(6, Math.max(2, Math.min(widthZoom, heightZoom)));
+export function geographicFocusZoom(world: WorldState, bounds: Bounds): number {
+  const widthZoom = world.planet.width / Math.max(1, bounds.width * 1.3);
+  const heightZoom = world.planet.height / Math.max(1, bounds.height * 1.3);
+  return Math.max(1, Math.min(2 ** 13, Math.min(widthZoom, heightZoom)));
 }
 
 const emptyInteraction = (): GraphInteractionState => ({ placementDefinitionId: null, pendingConnection: null, notice: null });
@@ -136,19 +136,25 @@ export class AppStore {
     let camera: MapCameraState = this.state.camera;
     if (selection.type === 'planet') {
       camera = { centerX: world.planet.width / 2, centerY: world.planet.height / 2, zoom: 1 };
+    } else if (selection.type === 'continent') {
+      const continent = world.planet.continents.find(candidate => candidate.id === selection.continentId);
+      if (continent) camera = { centerX: continent.bounds.x + continent.bounds.width / 2, centerY: continent.bounds.y + continent.bounds.height / 2, zoom: geographicFocusZoom(world, continent.bounds) };
+    } else if (selection.type === 'ocean') {
+      const ocean = world.planet.oceans.find(candidate => candidate.id === selection.oceanId);
+      if (ocean) camera = { centerX: ocean.bounds.x + ocean.bounds.width / 2, centerY: ocean.bounds.y + ocean.bounds.height / 2, zoom: geographicFocusZoom(world, ocean.bounds) };
     } else if (selection.type === 'region') {
       const region = world.planet.regions.find(candidate => candidate.id === selection.regionId);
       if (region) {
         camera = {
           centerX: region.bounds.x + region.bounds.width / 2,
           centerY: region.bounds.y + region.bounds.height / 2,
-          zoom: regionFocusZoom(world, region),
+          zoom: geographicFocusZoom(world, region.bounds),
         };
       }
     } else if (selection.type === 'resource') {
       const resource = world.planet.resourceNodes.find(candidate => candidate.id === selection.resourceNodeId);
       if (resource) camera = { centerX: resource.position.x, centerY: resource.position.y, zoom: RESOURCE_FOCUS_ZOOM };
-    } else {
+    } else if (selection.type === 'mechanical') {
       const node = this.state.graph.nodes.find(candidate => candidate.id === selection.mechanicalNodeId);
       if (node) camera = { centerX: node.position.x, centerY: node.position.y, zoom: MECHANICAL_FOCUS_ZOOM };
     }
