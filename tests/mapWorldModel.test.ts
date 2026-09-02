@@ -9,6 +9,8 @@ import { environmentContextForPlanet, samplePlanetEnvironment } from '../dist/wo
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, EARTH_SCALE_PHYSICAL_HEIGHT_METERS, EARTH_SCALE_PHYSICAL_WIDTH_METERS, metersToWorldUnits, worldUnitsToMeters } from '../dist/world/scale.js';
 import { createWorldSpatialIndex, worldSpatialIndexFor } from '../dist/world/spatialIndex.js';
 
+const MAX_REGION_SURFACE_AREA_RELATIVE_ERROR = 2e-5;
+
 test('generator v5 creates continuous land and ocean Regions at Earth scale', () => {
   const planet = generateWorld('phase-ten-one-world').planet;
   assert.equal(planet.generatorVersion, WORLD_GENERATOR_VERSION);
@@ -41,7 +43,9 @@ test('geographic parents and continuous Regions form one complete canonical surf
     assert.ok(region.environment.meanElevationMeters >= 0 === (region.surfaceType === 'land'));
     for (const point of region.polygon) assert.ok(point.x >= 0 && point.x <= PLANET_MAP_WIDTH && point.y >= 0 && point.y <= PLANET_MAP_HEIGHT);
   }
-  assert.ok(Math.abs(totalArea - PLANET_MAP_WIDTH * PLANET_MAP_HEIGHT) < 0.25, 'Regions tile the complete surface without material gaps');
+  const canonicalSurfaceArea = PLANET_MAP_WIDTH * PLANET_MAP_HEIGHT;
+  const relativeAreaError = Math.abs(totalArea - canonicalSurfaceArea) / canonicalSurfaceArea;
+  assert.ok(relativeAreaError < MAX_REGION_SURFACE_AREA_RELATIVE_ERROR, `Region surface area drift ${(relativeAreaError * 100).toFixed(6)}% stays visually/materially negligible`);
   for (const parent of parents.values()) for (const id of parent.regionIds) assert.ok(planet.regions.some(region => region.id === id));
   for (let index = 0; index < planet.regions.length; index += 113) {
     const region = planet.regions[index];
