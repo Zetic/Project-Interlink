@@ -101,13 +101,13 @@ test('generation profiling exposes stage costs without contaminating determinist
   }
 });
 
-test('Region generation deforms only internal technical geometry while preserving canonical parent edges', () => {
+test('Region generation deforms only resolved internal boundaries while preserving canonical parent edges', () => {
   const regions = fs.readFileSync('src/world/generation/regions.ts', 'utf8');
   assert.match(regions, /assignPatchesToSeeds/);
   assert.match(regions, /frozenParentBoundaryVertices/);
   assert.match(regions, /smoothWarpUnit/);
-  assert.match(regions, /warpRegionPatches/);
-  assert.doesNotMatch(regions, /powerCellForSeed|clipPolygonToConvex|piecesForPowerCell/);
+  assert.match(regions, /createRegionBoundaryWarper/);
+  assert.doesNotMatch(regions, /powerCellForSeed|clipPolygonToConvex|piecesForPowerCell|warpRegionPatches/);
 
   const tectonics = fs.readFileSync('src/world/generation/tectonics.ts', 'utf8');
   const sampler = tectonics.slice(tectonics.indexOf('export function samplePlateModel'));
