@@ -11,12 +11,10 @@ jobs:
     name: Browser and TypeScript tests
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -29,17 +27,8 @@ jobs:
       - name: Build TypeScript browser modules
         run: npm run build
 
-      - name: Commit exact generated browser modules
-        run: |
-          if git diff --quiet -- dist; then
-            echo "Generated browser modules already match source."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add dist
-            git commit -m "Sync generated overlay browser modules"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
+      - name: Verify generated browser modules are committed
+        run: git diff --exit-code -- dist
 
       - name: Run TypeScript regression tests
         run: npm run test:ts
