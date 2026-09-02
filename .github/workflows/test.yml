@@ -81,6 +81,8 @@ jobs:
           test -s src/wasm-worldgen/interlink_worldgen_wasm.js
           test -s src/wasm-worldgen/interlink_worldgen_wasm.d.ts
           test -s src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm
+          test -s src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm.d.ts
           cmp target/worldgen-wasm-package/interlink_worldgen_wasm.js src/wasm-worldgen/interlink_worldgen_wasm.js
           cmp target/worldgen-wasm-package/interlink_worldgen_wasm.d.ts src/wasm-worldgen/interlink_worldgen_wasm.d.ts
           cmp target/worldgen-wasm-package/interlink_worldgen_wasm_bg.wasm src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm
+          cmp target/worldgen-wasm-package/interlink_worldgen_wasm_bg.wasm.d.ts src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm.d.ts
