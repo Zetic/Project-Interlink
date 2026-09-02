@@ -102,6 +102,10 @@ export interface TectonicPlate {
   motion: Point;
   crustType: PlateCrustType;
   crustBias: number;
+  /** Background crustal age before local spreading/rifting reworking. */
+  baseCrustAgeMyr: number;
+  /** Background crustal thickness before local shortening/rifting. */
+  baseCrustThicknessKm: number;
 }
 
 export interface GeographicParent {
@@ -132,6 +136,16 @@ export interface RegionEnvironment {
   plateId: string;
   boundaryType: PlateBoundaryType;
   boundaryProximity: number;
+  /** Geological-history fields used by terrain and semantic geography. */
+  crustAgeMyr: number;
+  crustThicknessKm: number;
+  upliftIndex: number;
+  subsidenceIndex: number;
+  orogenicInfluence: number;
+  riftInfluence: number;
+  ridgeInfluence: number;
+  trenchInfluence: number;
+  basinInfluence: number;
 }
 
 export interface Region {
