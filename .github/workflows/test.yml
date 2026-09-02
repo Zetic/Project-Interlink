@@ -8,7 +8,7 @@ on:
 
 jobs:
   javascript:
-    name: Browser and JavaScript tests
+    name: Browser and TypeScript tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,8 +30,8 @@ jobs:
       - name: Verify generated browser modules are committed
         run: git diff --exit-code -- dist
 
-      - name: Run JavaScript regression tests
-        run: npm run test:js
+      - name: Run TypeScript regression tests
+        run: npm run test:ts
 
   rust:
     name: Rust core and WASM browser package
@@ -66,4 +66,3 @@ jobs:
           cmp target/wasm-package/interlink_wasm.js src/wasm/interlink_wasm.js
           cmp target/wasm-package/interlink_wasm.d.ts src/wasm/interlink_wasm.d.ts
           cmp target/wasm-package/interlink_wasm_bg.wasm src/wasm/interlink_wasm_bg.wasm
-          cmp target/wasm-package/interlink_wasm_bg.wasm.d.ts src/wasm/interlink_wasm_bg.wasm.d.ts

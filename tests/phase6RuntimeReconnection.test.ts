@@ -107,7 +107,7 @@ test('simple parameter edits use live reconfiguration while topology edits requi
 });
 
 test('Phase 6 runtime boundary does not restore the recursive browser simulation architecture', () => {
-  const worker = fs.readFileSync('src/runtime/flatRuntimeWorker.ts', 'utf8');
+  const worker = fs.readFileSync('src/runtime/fullRuntimeWorker.ts', 'utf8');
   const controller = fs.readFileSync('src/runtime/runtimeController.ts', 'utf8');
   const setup = fs.readFileSync('src/runtime/workerSetup.ts', 'utf8');
   const debug = fs.readFileSync('src/ui/debugPanel.ts', 'utf8');
