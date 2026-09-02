@@ -14,7 +14,9 @@ export interface WorldgenClient {
 }
 
 export function createWorldgenClient(): WorldgenClient {
-  const worker = new Worker(new URL('./worldgenWorker.js', import.meta.url), { type: 'module' });
+  const workerUrl = new URL('./worldgenWorker.js', import.meta.url);
+  workerUrl.searchParams.set('v', String(WORLDGEN_PROTOCOL_VERSION));
+  const worker = new Worker(workerUrl, { type: 'module' });
   const pending = new Map<number, PendingRequest>();
   let nextRequestId = 1;
   let disposed = false;

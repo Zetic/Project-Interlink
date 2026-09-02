@@ -1,6 +1,8 @@
 import { WORLDGEN_PROTOCOL_VERSION, validateGeologyRequest, validateLithosphereRequest, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, worldgenGeologyCommand, worldgenLithosphereCommand, worldgenSyntheticCommand, worldgenTectonicsCommand, worldgenTopologyCommand } from './protocol.js';
 export function createWorldgenClient() {
-    const worker = new Worker(new URL('./worldgenWorker.js', import.meta.url), { type: 'module' });
+    const workerUrl = new URL('./worldgenWorker.js', import.meta.url);
+    workerUrl.searchParams.set('v', String(WORLDGEN_PROTOCOL_VERSION));
+    const worker = new Worker(workerUrl, { type: 'module' });
     const pending = new Map();
     let nextRequestId = 1;
     let disposed = false;
