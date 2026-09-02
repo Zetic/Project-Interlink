@@ -207,17 +207,16 @@ function warpedRegionPoint(seed, point, frozen, cellWidth, cellHeight) {
     });
 }
 /**
- * Deform the invisible technical patch mesh only inside a geographic parent.
- * All patches share one vertex mapping, so the deformed mesh remains a closed
- * tessellation while interior Region edges gain free angles. Parent/coastline
- * vertices remain untouched and therefore stay canonical across LOD levels.
+ * Create one shared transform for resolved Region boundary vertices. Region
+ * topology is traced from the canonical patches first, then only presentation
+ * geometry is deformed. Parent/coastline vertices remain untouched.
  */
-function warpRegionPatches(seed, geography) {
+function createRegionBoundaryWarper(seed, geography) {
     const frozen = frozenParentBoundaryVertices(geography.patches);
     const cellWidth = geography.surfaceField.cellWidth;
     const cellHeight = geography.surfaceField.cellHeight;
     const pointCache = new Map();
-    const warpedPoint = (point) => {
+    return (point) => {
         const key = pointKey(point);
         const cached = pointCache.get(key);
         if (cached)
@@ -226,12 +225,6 @@ function warpRegionPatches(seed, geography) {
         pointCache.set(key, transformed);
         return transformed;
     };
-    const warped = new Map();
-    for (const patch of geography.patches) {
-        const polygon = patch.polygon.map(warpedPoint);
-        warped.set(patch.id, { ...patch, polygon, center: roundPoint(polygonCentroid(polygon)) });
-    }
-    return warped;
 }
 function centerInsidePolygon(polygon, patches) {
     const centroid = polygonCentroid(polygon);
@@ -279,15 +272,14 @@ export function generateRegions(seed, geography, context) {
     const seeds = createRegionSeeds(seed, geography, context);
     const seedsById = new Map(seeds.map(regionSeed => [regionSeed.id, regionSeed]));
     const patchesBySeed = assignPatchesToSeeds(geography.patches, seeds);
-    const warpedById = warpRegionPatches(seed, geography);
+    const warpBoundaryPoint = createRegionBoundaryWarper(seed, geography);
     const usedNames = new Set();
     const regions = [];
-    for (const [seedId, sourcePatches] of [...patchesBySeed.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    for (const [seedId, patches] of [...patchesBySeed.entries()].sort(([left], [right]) => left.localeCompare(right))) {
         const regionSeed = seedsById.get(seedId);
-        const patches = sourcePatches.map(patch => warpedById.get(patch.id));
         const loops = tracePatchBoundaries(patches).filter(polygon => polygonSignedArea(polygon) > 0);
         for (let component = 0; component < loops.length; component += 1) {
-            const polygon = loops[component];
+            const polygon = loops[component].map(warpBoundaryPoint);
             const center = centerInsidePolygon(polygon, patches);
             const environment = createRegionEnvironment(context, center);
             const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
