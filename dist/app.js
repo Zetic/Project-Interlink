@@ -1,4 +1,5 @@
 import { installMapRenderer } from './map/mapRenderer.js';
+import { installMapOverlayRenderer } from './map/mapOverlayRenderer.js';
 import { installMapRuntimePresentation } from './map/mapRuntimePresentation.js';
 import { installRuntimeController } from './runtime/runtimeController.js';
 import { AppStore } from './state/appState.js';
@@ -59,6 +60,7 @@ function enterPlayerWorkspace() {
     installInspectorPanel(root, store);
     installDebugPanel(root, store, runtime);
     installMapRenderer(root, store);
+    installMapOverlayRenderer(root, store);
     installMapRuntimePresentation(root, store);
     store.subscribeDomains(['world', 'graph', 'selection'], renderBreadcrumbs);
     store.setWorld(world);
