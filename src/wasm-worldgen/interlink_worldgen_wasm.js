@@ -223,6 +223,13 @@ export class WasmWorldgenTopology {
     /**
      * @returns {number}
      */
+    interface_coefficient_of_variation() {
+        const ret = wasm.wasmworldgentopology_interface_coefficient_of_variation(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
     level() {
         const ret = wasm.wasmworldgentopology_level(this.__wbg_ptr);
         return ret;
@@ -244,6 +251,13 @@ export class WasmWorldgenTopology {
     /**
      * @returns {number}
      */
+    maximum_interface_arc_radians() {
+        const ret = wasm.wasmworldgentopology_maximum_interface_arc_radians(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
     mean_area_steradians() {
         const ret = wasm.wasmworldgentopology_mean_area_steradians(this.__wbg_ptr);
         return ret;
@@ -253,6 +267,13 @@ export class WasmWorldgenTopology {
      */
     mean_edge_arc_radians() {
         const ret = wasm.wasmworldgentopology_mean_edge_arc_radians(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    mean_interface_arc_radians() {
+        const ret = wasm.wasmworldgentopology_mean_interface_arc_radians(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -268,6 +289,31 @@ export class WasmWorldgenTopology {
     minimum_edge_arc_radians() {
         const ret = wasm.wasmworldgentopology_minimum_edge_arc_radians(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    minimum_interface_arc_radians() {
+        const ret = wasm.wasmworldgentopology_minimum_interface_arc_radians(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    neighbor_arc_lengths_rad() {
+        const ret = wasm.wasmworldgentopology_neighbor_arc_lengths_rad(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    neighbor_interface_arc_lengths_rad() {
+        const ret = wasm.wasmworldgentopology_neighbor_interface_arc_lengths_rad(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
     }
     /**
      * @returns {Uint32Array}
