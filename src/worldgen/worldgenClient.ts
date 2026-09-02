@@ -1,13 +1,14 @@
-import { WORLDGEN_PROTOCOL_VERSION, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, worldgenSyntheticCommand, worldgenTectonicsCommand, worldgenTopologyCommand, type WorldgenEvent, type WorldgenSyntheticRequest, type WorldgenSyntheticResult, type WorldgenTectonicsRequest, type WorldgenTectonicsResult, type WorldgenTopologyRequest, type WorldgenTopologyResult } from './protocol.js';
+import { WORLDGEN_PROTOCOL_VERSION, validateGeologyRequest, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, worldgenGeologyCommand, worldgenSyntheticCommand, worldgenTectonicsCommand, worldgenTopologyCommand, type WorldgenEvent, type WorldgenGeologyRequest, type WorldgenGeologyResult, type WorldgenSyntheticRequest, type WorldgenSyntheticResult, type WorldgenTectonicsRequest, type WorldgenTectonicsResult, type WorldgenTopologyRequest, type WorldgenTopologyResult } from './protocol.js';
 
-type WorldgenResult = WorldgenSyntheticResult | WorldgenTopologyResult | WorldgenTectonicsResult;
-type WorldgenRequestCommand = ReturnType<typeof worldgenSyntheticCommand> | ReturnType<typeof worldgenTopologyCommand> | ReturnType<typeof worldgenTectonicsCommand>;
+type WorldgenResult = WorldgenSyntheticResult | WorldgenTopologyResult | WorldgenTectonicsResult | WorldgenGeologyResult;
+type WorldgenRequestCommand = ReturnType<typeof worldgenSyntheticCommand> | ReturnType<typeof worldgenTopologyCommand> | ReturnType<typeof worldgenTectonicsCommand> | ReturnType<typeof worldgenGeologyCommand>;
 interface PendingRequest { resolve: (result: WorldgenResult) => void; reject: (error: Error) => void; }
 
 export interface WorldgenClient {
   generateSynthetic(request: WorldgenSyntheticRequest): Promise<WorldgenSyntheticResult>;
   generateTopology(request: WorldgenTopologyRequest): Promise<WorldgenTopologyResult>;
   generateTectonics(request: WorldgenTectonicsRequest): Promise<WorldgenTectonicsResult>;
+  generateGeology(request: WorldgenGeologyRequest): Promise<WorldgenGeologyResult>;
   dispose(): void;
 }
 
@@ -37,6 +38,7 @@ export function createWorldgenClient(): WorldgenClient {
     generateSynthetic(input) { validateSyntheticRequest(input); return request<WorldgenSyntheticResult>(worldgenSyntheticCommand(nextRequestId++, input)); },
     generateTopology(input) { validateTopologyRequest(input); return request<WorldgenTopologyResult>(worldgenTopologyCommand(nextRequestId++, input)); },
     generateTectonics(input) { validateTectonicsRequest(input); return request<WorldgenTectonicsResult>(worldgenTectonicsCommand(nextRequestId++, input)); },
+    generateGeology(input) { validateGeologyRequest(input); return request<WorldgenGeologyResult>(worldgenGeologyCommand(nextRequestId++, input)); },
     dispose() { if (disposed) return; disposed = true; worker.terminate(); rejectAll('Planet Engine client was disposed.'); },
   };
 }

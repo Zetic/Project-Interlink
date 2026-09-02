@@ -33,3 +33,11 @@ local refinement            separate chunked system later
 ```
 
 Fine detail must refine coarse physical truth rather than independently regenerate it. Meter-scale detail is never materialized globally.
+
+## Current staged implementation
+
+WG-1 makes the hierarchical topology and stable sample ancestry available before physical process resolutions are permanently assigned. WG-2 and the initial WG-3 implementation accept an explicit topology level and presently evaluate their dense fields at that same requested level. This is an implementation checkpoint, not a declaration that tectonics, crust, history, terrain, and climate must share one permanent resolution.
+
+The important contract is already separated by stage: WG-2 owns plate identity/kinematics, while WG-3 owns crust/history. A later refinement pass may therefore evaluate accepted coarse plate truth onto a finer geological topology without changing plate identity or rerandomizing tectonics. Resolution changes must preserve upstream physical structure through explicit interpolation/refinement/provenance.
+
+Before increasing canonical process levels, profiling must report generation time, memory, transfer size, and numerical quality. A finer grid is not useful if it only samples the same broad fields more densely; later terrain/lithology stages must introduce process-appropriate structural detail constrained by the accepted coarse truth.

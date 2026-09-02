@@ -37,7 +37,20 @@ src/worldgen/worldgenWorker.ts
 src/worldgen/diagnostics/
 ```
 
-The Worker lazy-loads the separate generated worldgen WASM package. WG-0 uses a transferable `Uint16Array` to prove dense-field transport without routing generation through the application store. WG-1 extends the same versioned protocol with packed transferable arrays for canonical topology: positions, faces, CSR adjacency, center distances, dual-interface lengths, dual-cell areas, and refinement provenance.
+The Worker lazy-loads the separate generated worldgen WASM package and keeps numerical generation off the main thread.
+
+The protocol grows cumulatively by physical stage:
+
+```text
+WG-0  synthetic transport proof
+WG-1  packed topology arrays
+WG-2  packed plate ownership / kinematics / boundaries
+WG-3  dense crust fields / geological-history fields / boundary regimes / plate summaries
+```
+
+Topology uses packed positions, faces, CSR adjacency, finite-volume geometry, and refinement provenance. WG-2/WG-3 extend that model with sample-aligned typed arrays and boundary/plate-aligned arrays rather than serializing one JavaScript object per cell. WG-3 transfers crust type/province, age, thickness, density, buoyancy, geological-history fields, geological boundary regimes/polarity, and derived plate summaries as transferable buffers.
+
+The diagnostic lab is a consumer of those arrays. It does not own physical generation logic and changing globe/map projection does not change world truth.
 
 ## Generated WASM asset contract
 
@@ -56,6 +69,8 @@ The production industrial runtime remains a separate WASM package under `src/was
 ## Topology algorithm boundary
 
 Physical world-generation stages consume the narrow Rust `PlanetTopology` contract rather than icosphere construction details. The contract exposes unit positions, physical control-area weights, neighbors, center-to-center geodesic distances, and shared dual-interface lengths. This supports conservative finite-volume algorithms while allowing storage and refinement strategy to evolve internally.
+
+WG-2 and WG-3 consume only this topology contract plus accepted upstream physical-stage outputs. Crustal state is not embedded in `PlanetTopology`, and geological history does not alter WG-2 plate ownership or motion.
 
 ## Rewrite isolation rule
 

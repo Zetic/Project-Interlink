@@ -1,6 +1,7 @@
 mod coordinates;
 mod diagnostics;
 mod fields;
+mod geology;
 mod parameters;
 mod random;
 mod tectonics;
@@ -11,19 +12,38 @@ use std::fmt;
 pub use coordinates::{anchor_origin_cartesian, cartesian_to_local_enu, great_circle_distance_m, lat_lon_degrees_from_unit_vector, local_enu_to_cartesian, tangent_basis, unit_vector_from_lat_lon_degrees, LocalEnuPosition, SurfaceAnchor, TangentBasis};
 pub use diagnostics::{FieldStatistics, StageIdentity};
 pub use fields::{DenseU16Field, MAX_SYNTHETIC_SAMPLES};
+pub use geology::{generate_crust_and_history, CrustKind, CrustalModel, GeologicalBoundary, GeologicalBoundaryRegime, GeologyMetrics, GeologyRequest, PlateScaleClass, PlateSummary, SubductionPolarity, GEOLOGY_STAGE_ID, GEOLOGY_STAGE_VERSION};
 pub use parameters::PlanetPhysicalParameters;
 pub use random::derive_stage_seed;
 pub use tectonics::{generate_tectonics, PlateBoundaryEdge, PlateBoundaryKind, TectonicMetrics, TectonicModel, TectonicPlate, TectonicsRequest, MAX_TECTONIC_PLATES, MIN_TECTONIC_PLATES, TECTONICS_STAGE_ID, TECTONICS_STAGE_VERSION};
 pub use topology::{build_icosphere, expected_edge_count, expected_face_count, expected_sample_count, GeodesicTopology, PlanetTopology, TopologyMetrics, INVALID_SAMPLE_ID, MAX_TOPOLOGY_LEVEL};
 
-pub const WORLDGEN_ENGINE_VERSION: u32 = 3;
+pub const WORLDGEN_ENGINE_VERSION: u32 = 4;
 pub const SYNTHETIC_STAGE_ID: &str = "foundation:synthetic";
 pub const SYNTHETIC_STAGE_VERSION: u32 = 1;
 const SYNTHETIC_NAMESPACE: &str = "worldgen:foundation:synthetic:v1";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum WorldgenError { InvalidDimensions(&'static str), InvalidParameters(&'static str), InvalidTopology(&'static str), InvalidCoordinate(&'static str), InvalidTectonics(&'static str) }
-impl fmt::Display for WorldgenError { fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { match self { Self::InvalidDimensions(message) | Self::InvalidParameters(message) | Self::InvalidTopology(message) | Self::InvalidCoordinate(message) | Self::InvalidTectonics(message) => formatter.write_str(message) } } }
+pub enum WorldgenError {
+    InvalidDimensions(&'static str),
+    InvalidParameters(&'static str),
+    InvalidTopology(&'static str),
+    InvalidCoordinate(&'static str),
+    InvalidTectonics(&'static str),
+    InvalidGeology(&'static str),
+}
+impl fmt::Display for WorldgenError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidDimensions(message)
+            | Self::InvalidParameters(message)
+            | Self::InvalidTopology(message)
+            | Self::InvalidCoordinate(message)
+            | Self::InvalidTectonics(message)
+            | Self::InvalidGeology(message) => formatter.write_str(message),
+        }
+    }
+}
 impl std::error::Error for WorldgenError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
