@@ -15,6 +15,7 @@ const retiredSourcePaths = [
   'src/simulation',
   'src/workspace',
   'src/debug/fixtures',
+  'src/runtime/flatRuntimeWorker.ts',
 ];
 
 function filesUnder(relativeDirectory, extension) {
@@ -40,7 +41,7 @@ function relativeModuleSpecifiers(source) {
   return specifiers;
 }
 
-test('retired handwritten JavaScript implementation stays removed', () => {
+test('retired implementation paths stay removed', () => {
   for (const relativePath of retiredSourcePaths) {
     assert.equal(existsSync(path.join(repoRoot, relativePath)), false, `${relativePath} should not return`);
   }
@@ -53,33 +54,36 @@ test('the only JavaScript under src is generated wasm-bindgen glue', () => {
   assert.deepEqual(javascript, ['src/wasm/interlink_wasm.js']);
   assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm_bg.wasm')), true);
   assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm.d.ts')), true);
+  assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm_bg.wasm.d.ts')), false);
 });
 
-test('all repository JavaScript belongs to an active generated or test role', () => {
+test('all repository JavaScript belongs to an active generated role', () => {
   const javascript = filesUnder('.', '.js')
     .map(file => path.relative(repoRoot, file).replaceAll('\\', '/'))
     .sort();
   const unexpected = javascript.filter(relative => !(
     relative.startsWith('dist/')
-    || relative.startsWith('tests/')
     || relative === 'src/wasm/interlink_wasm.js'
   ));
   assert.deepEqual(unexpected, []);
   assert.ok(javascript.includes('dist/app.js'));
   assert.ok(javascript.includes('src/wasm/interlink_wasm.js'));
-  assert.ok(javascript.some(relative => relative.startsWith('tests/') && relative.endsWith('.test.js')));
+  assert.equal(javascript.some(relative => relative.startsWith('tests/')), false);
 });
 
-test('active browser source is TypeScript and compiles to committed dist output', () => {
+test('active browser and regression source is TypeScript', () => {
   assert.equal(existsSync(path.join(repoRoot, 'src/app.ts')), true);
   assert.equal(existsSync(path.join(repoRoot, 'dist/app.js')), true);
   const tsconfig = readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8');
   assert.match(tsconfig, /src\/\*\*\/\*\.ts/);
   assert.match(tsconfig, /"outDir"\s*:\s*"dist"/);
+  const tests = filesUnder('tests', '.test.ts');
+  assert.ok(tests.length > 0);
+  assert.equal(filesUnder('tests', '.test.js').length, 0);
 });
 
-test('remaining source and test JavaScript module references resolve', () => {
-  const files = [...filesUnder('src', '.js'), ...filesUnder('tests', '.js')];
+test('generated JavaScript and TypeScript test module references resolve', () => {
+  const files = [...filesUnder('src', '.js'), ...filesUnder('tests', '.ts')];
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
     for (const specifier of relativeModuleSpecifiers(source)) {
@@ -90,6 +94,12 @@ test('remaining source and test JavaScript module references resolve', () => {
       assert.ok(candidates.some(candidate => existsSync(candidate)), `${path.relative(repoRoot, file)} references missing module ${specifier}`);
     }
   }
+});
+
+test('generated outputs are excluded from GitHub language statistics', () => {
+  const attributes = readFileSync(path.join(repoRoot, '.gitattributes'), 'utf8');
+  assert.match(attributes, /^dist\/\*\* linguist-generated$/m);
+  assert.match(attributes, /^src\/wasm\/\*\* linguist-generated$/m);
 });
 
 test('active runtime path is TypeScript controller to full Worker to one WASM world runtime', () => {

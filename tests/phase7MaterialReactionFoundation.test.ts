@@ -161,7 +161,7 @@ test('material contracts are form-specific and keep ore-only descriptors out of 
 });
 
 test('Worker and Inspector expose rich Rust-owned material detail without player-triggered refresh', () => {
-  const worker = fs.readFileSync('src/runtime/flatRuntimeWorker.ts', 'utf8');
+  const worker = fs.readFileSync('src/runtime/fullRuntimeWorker.ts', 'utf8');
   const presentation = fs.readFileSync('src/runtime/presentation.ts', 'utf8');
   const inspector = fs.readFileSync('src/ui/inspectorPanel.ts', 'utf8');
 

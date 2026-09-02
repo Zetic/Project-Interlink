@@ -42,13 +42,13 @@ src/
 └── wasm/          generated wasm-bindgen browser package
 
 dist/              generated JavaScript emitted from TypeScript
-tests/             active Node regression harness
+tests/             active TypeScript Node regression harness
 rust/              authoritative physical runtime and domain crates
 ```
 
-Handwritten browser JavaScript source is intentionally absent. JavaScript under `dist/` is generated TypeScript output. `src/wasm/interlink_wasm.js` is generated wasm-bindgen glue. JavaScript regression tests remain executable test code and are not production implementation.
+Handwritten browser JavaScript source is intentionally absent. JavaScript under `dist/` is generated TypeScript output. `src/wasm/interlink_wasm.js` is generated wasm-bindgen glue. Active regression tests are TypeScript. Generated `dist/**` and `src/wasm/**` paths are marked `linguist-generated` so GitHub language statistics reflect authored source rather than committed build products.
 
-Do not add a parallel handwritten JavaScript implementation or compatibility tree. New browser source belongs in TypeScript.
+Do not add a parallel handwritten JavaScript implementation or compatibility tree. New browser and regression source belongs in TypeScript.
 
 ## 3. State domains
 
@@ -162,15 +162,18 @@ Routine runtime responses are compact snapshots. Rich Hopper, Furnace, and Exhau
 
 The map uses one continuous Earth-scale coordinate space with deep engineering zoom and a floating render origin. Engineering cards use a fixed visual grammar independent of apparatus physical footprint metadata.
 
-## 9. JavaScript policy
+## 9. JavaScript and generated-file policy
 
-Remaining JavaScript has three allowed roles:
+Tracked JavaScript has two allowed production/build roles:
 
-1. `dist/**/*.js` — generated TypeScript browser output and therefore required by the static-hosting build.
+1. `dist/**/*.js` — generated TypeScript browser output required by the current static-hosting build.
 2. `src/wasm/interlink_wasm.js` — generated wasm-bindgen glue required by the Worker.
-3. `tests/**/*.test.js` — active Node regression harness.
 
-Do not add handwritten production `.js` modules under `src`. Do not edit `dist/` manually; regenerate it from TypeScript and commit matching output. Do not hand-edit generated wasm-bindgen glue.
+Active Node regressions are `tests/**/*.test.ts`. Do not add handwritten `.js` implementation or test modules. Do not edit `dist/` manually; `npm run build` removes the previous `dist/` tree before compiling so deleted TypeScript cannot leave orphaned generated modules. Commit the resulting generated output exactly. Do not hand-edit generated wasm-bindgen glue.
+
+`.gitattributes` marks `dist/**` and `src/wasm/**` as `linguist-generated`. This keeps required generated artifacts in Git while excluding them from GitHub repository language statistics and collapsing them by default in diffs.
+
+The raw wasm-bindgen export declaration `interlink_wasm_bg.wasm.d.ts` is not committed because application TypeScript consumes the high-level `interlink_wasm.d.ts` API instead. The build may generate the raw declaration locally, and `.gitignore` excludes it.
 
 ## 10. Extension rules
 
