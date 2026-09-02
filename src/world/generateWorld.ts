@@ -13,7 +13,7 @@ import {
 import type { Planet, WorldState } from './types.js';
 
 export { PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from './scale.js';
-export const WORLD_GENERATOR_VERSION = 4;
+export const WORLD_GENERATOR_VERSION = 5;
 const PLANET_NAMES = ['Aethon', 'Boras', 'Caldris', 'Draven', 'Eryndor', 'Feraxis', 'Galneth', 'Havar'];
 
 export interface WorldGenerationTimings {
