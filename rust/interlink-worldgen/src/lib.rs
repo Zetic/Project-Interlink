@@ -1,3 +1,4 @@
+mod boundary_refinement;
 mod coordinates;
 mod diagnostics;
 mod fields;
@@ -11,6 +12,9 @@ mod topology;
 
 use std::fmt;
 
+pub use boundary_refinement::{
+    inherit_boundary_interfaces, InheritedBoundaryEdge, InheritedBoundarySet,
+};
 pub use coordinates::{
     anchor_origin_cartesian, cartesian_to_local_enu, great_circle_distance_m,
     lat_lon_degrees_from_unit_vector, local_enu_to_cartesian, tangent_basis,
