@@ -11,6 +11,9 @@ members = [
   "rust/interlink-roasting",
   "rust/interlink-runtime",
   "rust/interlink-wasm",
+  "rust/interlink-worldgen",
+  "rust/interlink-worldgen-wasm",
+  "rust/interlink-worldgen-cli",
 ]
 resolver = "2"
 

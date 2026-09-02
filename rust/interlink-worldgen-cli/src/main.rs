@@ -1,0 +1,95 @@
+use interlink_worldgen::{generate_synthetic, SyntheticRequest, WORLDGEN_ENGINE_VERSION};
+use std::{env, process, time::Instant};
+
+#[derive(Debug)]
+struct Options {
+    command: String,
+    seed: String,
+    width: u32,
+    height: u32,
+    iterations: u32,
+}
+
+fn usage() -> &'static str {
+    "interlink-worldgen-cli <generate|benchmark> [--seed TEXT] [--width N] [--height N] [--iterations N]"
+}
+
+fn parse_u32(name: &str, value: Option<String>) -> Result<u32, String> {
+    value.ok_or_else(|| format!("{name} requires a value"))?
+        .parse::<u32>()
+        .map_err(|_| format!("{name} requires an unsigned integer"))
+}
+
+fn parse_options() -> Result<Options, String> {
+    let mut args = env::args().skip(1);
+    let command = args.next().ok_or_else(|| usage().to_owned())?;
+    if command != "generate" && command != "benchmark" {
+        return Err(format!("unsupported command '{command}'\n{}", usage()));
+    }
+    let mut options = Options {
+        command,
+        seed: "wg0-cli".to_owned(),
+        width: 512,
+        height: 256,
+        iterations: 5,
+    };
+    while let Some(flag) = args.next() {
+        match flag.as_str() {
+            "--seed" => options.seed = args.next().ok_or_else(|| "--seed requires a value".to_owned())?,
+            "--width" => options.width = parse_u32("--width", args.next())?,
+            "--height" => options.height = parse_u32("--height", args.next())?,
+            "--iterations" => options.iterations = parse_u32("--iterations", args.next())?,
+            _ => return Err(format!("unsupported option '{flag}'\n{}", usage())),
+        }
+    }
+    if options.iterations == 0 { return Err("--iterations must be at least 1".to_owned()); }
+    Ok(options)
+}
+
+fn generate_once(options: &Options) -> Result<(), String> {
+    let started = Instant::now();
+    let result = generate_synthetic(&SyntheticRequest::new(options.seed.as_str(), options.width, options.height))
+        .map_err(|error| error.to_string())?;
+    let elapsed = started.elapsed();
+    println!("Project Interlink Planet Engine WG-0");
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("stage={}@{}", result.stage.id, result.stage.version);
+    println!("seed={}", options.seed);
+    println!("field={}x{} samples={}", result.field.width(), result.field.height(), result.statistics.sample_count);
+    println!("min={} max={} mean={:.3}", result.statistics.minimum, result.statistics.maximum, result.statistics.mean);
+    println!("field_hash={}", result.statistics.hash_hex());
+    println!("stage_seed={:016x}", result.stage.derived_seed);
+    println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0);
+    Ok(())
+}
+
+fn benchmark(options: &Options) -> Result<(), String> {
+    let mut elapsed_ms = 0.0;
+    let mut hash = String::new();
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let result = generate_synthetic(&SyntheticRequest::new(options.seed.as_str(), options.width, options.height))
+            .map_err(|error| error.to_string())?;
+        elapsed_ms += started.elapsed().as_secs_f64() * 1_000.0;
+        if hash.is_empty() { hash = result.statistics.hash_hex(); }
+        else if hash != result.statistics.hash_hex() { return Err("determinism failure during benchmark".to_owned()); }
+    }
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("iterations={}", options.iterations);
+    println!("field={}x{}", options.width, options.height);
+    println!("field_hash={hash}");
+    println!("mean_elapsed_ms={:.3}", elapsed_ms / f64::from(options.iterations));
+    Ok(())
+}
+
+fn main() {
+    let options = match parse_options() {
+        Ok(options) => options,
+        Err(message) => { eprintln!("{message}"); process::exit(2); }
+    };
+    let result = if options.command == "benchmark" { benchmark(&options) } else { generate_once(&options) };
+    if let Err(message) = result {
+        eprintln!("worldgen error: {message}");
+        process::exit(1);
+    }
+}
