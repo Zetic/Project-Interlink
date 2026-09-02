@@ -101,13 +101,13 @@ test('generation profiling exposes stage costs without contaminating determinist
   }
 });
 
-test('continuous Region generation clips weighted power cells against canonical parent patches', () => {
+test('Region generation deforms only internal technical geometry while preserving canonical parent edges', () => {
   const regions = fs.readFileSync('src/world/generation/regions.ts', 'utf8');
-  assert.match(regions, /powerCellForSeed/);
-  assert.match(regions, /halfPlaneForSeeds/);
-  assert.match(regions, /clipPolygonToConvex/);
-  assert.match(regions, /piecesForPowerCell/);
-  assert.doesNotMatch(regions, /assignPatchesToSeeds/);
+  assert.match(regions, /assignPatchesToSeeds/);
+  assert.match(regions, /frozenParentBoundaryVertices/);
+  assert.match(regions, /smoothWarpUnit/);
+  assert.match(regions, /warpRegionPatches/);
+  assert.doesNotMatch(regions, /powerCellForSeed|clipPolygonToConvex|piecesForPowerCell/);
 
   const tectonics = fs.readFileSync('src/world/generation/tectonics.ts', 'utf8');
   const sampler = tectonics.slice(tectonics.indexOf('export function samplePlateModel'));
