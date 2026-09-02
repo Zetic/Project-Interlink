@@ -6,53 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const removedCompatibilityPaths = [
-  'src/core/materials/liberationClasses.js',
-  'src/core/materials/materialSpecies.js',
-  'src/core/materials/particleSizeBins.js',
-  'src/core/materials/solidMaterialState.js',
-  'src/core/materials/sampleAcquisition.js',
-  'src/core/materials/species/elementalComposition.js',
-  'src/core/materials/species/speciesRegistry.js',
-  'src/core/processes/processDefinitions.js',
-  'src/core/processes/conservation/conservation.js',
-  'src/core/processes/conservation/elementalConservation.js',
-  'src/core/processes/conservation/speciesConservation.js',
-  'src/core/systems/systemValidation.js',
-  'src/core/world/worldState.js',
-  'src/core/world/model/worldState.js',
-  'src/core/world/model/feature.js',
-  'src/core/world/model/planet.js',
-  'src/core/world/model/region.js',
-  'src/core/world/model/resourceOccurrence.js',
-  'src/core/world/model/site.js',
-  'src/core/world/validation/index.js',
-  'src/data/occurrence-families.js',
-  'src/data/raw-resources.js',
-  'src/data/resourceDefinitions.js',
-  'src/generator/features/generateFeatures.js',
-  'src/generator/planet/generatePlanet.js',
-  'src/generator/regions/generateRegions.js',
-  'src/generator/resources/generateResources.js',
-  'src/generator/sites/generateSites.js',
-  'src/simulation/apparatus/extractor.js',
-  'src/simulation/apparatusDefinitions.js',
-  'src/simulation/systemNode.js',
-  'src/simulation/telemetry/apparatusProfiling.js',
-  'src/workspace/apparatusControlUI.js',
-  'src/workspace/inspectionViewModel.js',
-  'src/workspace/inspector/inspectorUI.js',
-  'src/workspace/navigationProjection.js',
-  'src/workspace/nodeCatalog.js',
-  'src/workspace/nodePlacement.js',
-  'src/workspace/nodePresentation.js',
-  'src/workspace/nodeRemoval.js',
-  'src/workspace/viewport.js',
-  'src/workspace/workspaceGraph.js',
-  'src/workspace/workspaceUI.js',
+const retiredSourcePaths = [
+  'src/app.js',
+  'src/content',
+  'src/core',
+  'src/generator',
+  'src/simulation',
+  'src/workspace',
+  'src/debug/fixtures',
 ];
 
-function javascriptFilesUnder(relativeDirectory) {
+function filesUnder(relativeDirectory, extension) {
   const root = path.join(repoRoot, relativeDirectory);
   const files = [];
   const visit = directory => {
@@ -60,7 +24,7 @@ function javascriptFilesUnder(relativeDirectory) {
     for (const entry of readdirSync(directory)) {
       const absolute = path.join(directory, entry);
       if (statSync(absolute).isDirectory()) visit(absolute);
-      else if (entry.endsWith('.js')) files.push(absolute);
+      else if (entry.endsWith(extension)) files.push(absolute);
     }
   };
   visit(root);
@@ -74,26 +38,31 @@ function relativeModuleSpecifiers(source) {
   return specifiers;
 }
 
-function forwardingOnlyModule(source) {
-  const withoutComments = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '')
-    .trim();
-  if (!withoutComments) return false;
-  const statements = withoutComments.split(/;\s*(?:\n|$)/).map(value => value.trim()).filter(Boolean);
-  return statements.length > 0 && statements.every(statement => (
-    /^export\s+(?:\*|\{[\s\S]*\})\s+from\s+['"][^'"]+['"]$/.test(statement)
-  ));
-}
-
-test('deprecated compatibility and unused lookup modules stay removed', () => {
-  for (const relativePath of removedCompatibilityPaths) {
+test('retired handwritten JavaScript implementation stays removed', () => {
+  for (const relativePath of retiredSourcePaths) {
     assert.equal(existsSync(path.join(repoRoot, relativePath)), false, `${relativePath} should not return`);
   }
 });
 
-test('source and test relative JavaScript module references resolve', () => {
-  const files = [...javascriptFilesUnder('src'), ...javascriptFilesUnder('tests')];
+test('the only JavaScript under src is generated wasm-bindgen glue', () => {
+  const javascript = filesUnder('src', '.js')
+    .map(file => path.relative(repoRoot, file).replaceAll('\\', '/'))
+    .sort();
+  assert.deepEqual(javascript, ['src/wasm/interlink_wasm.js']);
+  assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm_bg.wasm')), true);
+  assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm.d.ts')), true);
+});
+
+test('active browser source is TypeScript and compiles to committed dist output', () => {
+  assert.equal(existsSync(path.join(repoRoot, 'src/app.ts')), true);
+  assert.equal(existsSync(path.join(repoRoot, 'dist/app.js')), true);
+  const tsconfig = readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8');
+  assert.match(tsconfig, /src\/\*\*\/\*\.ts/);
+  assert.match(tsconfig, /"outDir"\s*:\s*"dist"/);
+});
+
+test('remaining source and test JavaScript module references resolve', () => {
+  const files = [...filesUnder('src', '.js'), ...filesUnder('tests', '.js')];
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
     for (const specifier of relativeModuleSpecifiers(source)) {
@@ -106,38 +75,16 @@ test('source and test relative JavaScript module references resolve', () => {
   }
 });
 
-test('forwarding-only compatibility shims are not present in source', () => {
-  for (const file of javascriptFilesUnder('src')) {
-    const relative = path.relative(repoRoot, file).replaceAll('\\', '/');
-    assert.equal(forwardingOnlyModule(readFileSync(file, 'utf8')), false, `${relative} is a forwarding-only compatibility module`);
+test('active runtime path is TypeScript controller to full Worker to one WASM world runtime', () => {
+  const controller = readFileSync(path.join(repoRoot, 'src/runtime/runtimeController.ts'), 'utf8');
+  const worker = readFileSync(path.join(repoRoot, 'src/runtime/fullRuntimeWorker.ts'), 'utf8');
+  assert.match(controller, /new Worker\(new URL\('\.\/fullRuntimeWorker\.js'/);
+  assert.match(worker, /WasmPackedWorldRuntime/);
+  assert.match(worker, /runtime_protocol_version as runtimeProtocolVersion/);
+  for (const stale of ['worldSimulationTick', 'simulationTick', 'simulationAdvance', 'main-thread-compiled']) {
+    assert.doesNotMatch(controller, new RegExp(stale));
+    assert.doesNotMatch(worker, new RegExp(stale));
   }
-});
-
-test('standalone per-apparatus WASM browser adapters stay removed', () => {
-  const forbidden = [
-    'populateWasmComminutionTables',
-    'populateWasmResourceOccurrence',
-    'populateWasmSeparationTables',
-    'populateWasmPackedGasBody',
-    'populateWasmThermalGasTable',
-    'populateWasmGoethiteReactionTables',
-    'wasmGoethiteReactionConstructorArgs',
-    'wasmRoastingFurnaceConstructorArgs',
-  ];
-  const combined = javascriptFilesUnder('src/simulation').map(file => readFileSync(file, 'utf8')).join('\n');
-  for (const name of forbidden) assert.doesNotMatch(combined, new RegExp(name));
-  assert.match(combined, /populateWasmPackedWorldRuntimeFromWorkerSetup/);
-});
-
-test('browser apparatus authoring code does not use physics-runtime terminology', () => {
-  const registry = readFileSync(path.join(repoRoot, 'src/simulation/apparatus/registry.js'), 'utf8');
-  const simulationEngine = readFileSync(path.join(repoRoot, 'src/simulation/simulationEngine.js'), 'utf8');
-  for (const stale of ['APPARATUS_RUNTIME_REGISTRY', 'apparatusRuntimeFor', 'createApparatusRuntime', 'Unknown apparatus runtime']) {
-    assert.doesNotMatch(registry, new RegExp(stale));
-    assert.doesNotMatch(simulationEngine, new RegExp(stale));
-  }
-  assert.match(registry, /APPARATUS_NODE_FACTORY_REGISTRY/);
-  assert.match(simulationEngine, /createApparatusNode/);
 });
 
 test('active architecture documentation describes the single Rust Worker production authority', () => {
