@@ -20,6 +20,23 @@ jobs:
         with:
           ref: worldgen-rewrite-wg2-tectonics
           fetch-depth: 0
+      - name: Apply macro-plate variance tuning
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('rust/interlink-worldgen/src/tectonics.rs')
+          text = path.read_text()
+          old = '(expected_spacing_rad * 0.40).clamp(0.10, 0.55)'
+          new = '(expected_spacing_rad * 0.20).clamp(0.07, 0.32)'
+          if old in text:
+              text = text.replace(old, new, 1)
+              path.write_text(text)
+              print('Applied broader deterministic macro-plate seed spacing.')
+          elif new in text:
+              print('Macro-plate variance tuning already applied.')
+          else:
+              raise SystemExit('Expected plate-seed spacing expression was not found.')
+          PY
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -36,20 +53,22 @@ jobs:
       - name: Validate Planet Engine core and WG-2 CLI
         run: |
           cargo test --workspace
-          cargo run -p interlink-worldgen-cli -- tectonics --seed ci-wg2 --level 5 --plates 18
+          for seed in ci-wg2 ci-wg2-b ci-wg2-c ci-wg2-d ci-wg2-e; do
+            cargo run -q -p interlink-worldgen-cli -- tectonics --seed "$seed" --level 5 --plates 18
+          done
           cargo check -p interlink-worldgen-wasm --target wasm32-unknown-unknown
       - name: Install pinned wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
       - name: Build committed Planet Engine WASM package
         run: bash scripts/build-worldgen-wasm.sh src/wasm-worldgen
-      - name: Commit generated browser assets
+      - name: Commit validated WG-2 source and generated assets
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist src/wasm-worldgen
+          git add rust/interlink-worldgen/src/tectonics.rs dist src/wasm-worldgen
           if git diff --cached --quiet; then
-            echo "Generated assets already synchronized."
+            echo "WG-2 source and generated assets already synchronized."
             exit 0
           fi
-          git commit -m "WG-2: sync generated browser assets"
+          git commit -m "WG-2: widen macro plate size distribution"
           git push origin HEAD:worldgen-rewrite-wg2-tectonics
