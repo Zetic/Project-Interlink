@@ -58,6 +58,44 @@ export type PlateBoundaryType = 'interior' | 'convergent' | 'divergent' | 'trans
 export type GeographicParentKind = 'continent' | 'ocean';
 export type SurfaceType = 'land' | 'ocean';
 
+/**
+ * Player-facing Region identity is semantic geography, not a tessellation type.
+ * These categories are derived from tectonics, topography, coast proximity, and
+ * environmental fields before Region ownership is assembled.
+ */
+export type GeographicRegionType =
+  | 'mountain-range'
+  | 'volcanic-arc'
+  | 'rift-zone'
+  | 'plateau'
+  | 'highlands'
+  | 'sedimentary-basin'
+  | 'coastal-plain'
+  | 'coastal-highlands'
+  | 'lowlands'
+  | 'interior-plain'
+  | 'oceanic-trench'
+  | 'mid-ocean-ridge'
+  | 'continental-shelf'
+  | 'continental-slope'
+  | 'ocean-plateau'
+  | 'abyssal-plain'
+  | 'ocean-basin';
+
+export type GeographicTrait =
+  | 'coastal'
+  | 'orogenic'
+  | 'volcanic'
+  | 'rift'
+  | 'sedimentary'
+  | 'high-relief'
+  | 'elevated'
+  | 'shelf'
+  | 'slope'
+  | 'ridge'
+  | 'trench'
+  | 'abyssal';
+
 export interface TectonicPlate {
   id: string;
   seedPoint: Point;
@@ -102,6 +140,8 @@ export interface Region {
   parentKind: GeographicParentKind;
   parentId: string;
   surfaceType: SurfaceType;
+  geographicType: GeographicRegionType;
+  geographicTraits: GeographicTrait[];
   bounds: Bounds;
   polygon: Point[];
   center: Point;
