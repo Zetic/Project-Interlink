@@ -7,7 +7,7 @@ import {
   overlayColorForEnvironment,
   overlayLegendFor,
 } from '../dist/map/mapOverlayRenderer.js';
-import type { PlanetEnvironmentSample } from '../src/world/generation/surfaceField.js';
+import type { PlanetEnvironmentSample } from '../src/world/generation/surfaceField.ts';
 
 function sample(overrides: Partial<PlanetEnvironmentSample> = {}): PlanetEnvironmentSample {
   return {
