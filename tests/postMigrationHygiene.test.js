@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ignoredTraversalDirectories = new Set(['.git', 'node_modules']);
 
 const retiredSourcePaths = [
   'src/app.js',
@@ -23,8 +24,9 @@ function filesUnder(relativeDirectory, extension) {
     if (!existsSync(directory)) return;
     for (const entry of readdirSync(directory)) {
       const absolute = path.join(directory, entry);
-      if (statSync(absolute).isDirectory()) visit(absolute);
-      else if (entry.endsWith(extension)) files.push(absolute);
+      if (statSync(absolute).isDirectory()) {
+        if (!ignoredTraversalDirectories.has(entry)) visit(absolute);
+      } else if (entry.endsWith(extension)) files.push(absolute);
     }
   };
   visit(root);
@@ -51,6 +53,21 @@ test('the only JavaScript under src is generated wasm-bindgen glue', () => {
   assert.deepEqual(javascript, ['src/wasm/interlink_wasm.js']);
   assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm_bg.wasm')), true);
   assert.equal(existsSync(path.join(repoRoot, 'src/wasm/interlink_wasm.d.ts')), true);
+});
+
+test('all repository JavaScript belongs to an active generated or test role', () => {
+  const javascript = filesUnder('.', '.js')
+    .map(file => path.relative(repoRoot, file).replaceAll('\\', '/'))
+    .sort();
+  const unexpected = javascript.filter(relative => !(
+    relative.startsWith('dist/')
+    || relative.startsWith('tests/')
+    || relative === 'src/wasm/interlink_wasm.js'
+  ));
+  assert.deepEqual(unexpected, []);
+  assert.ok(javascript.includes('dist/app.js'));
+  assert.ok(javascript.includes('src/wasm/interlink_wasm.js'));
+  assert.ok(javascript.some(relative => relative.startsWith('tests/') && relative.endsWith('.test.js')));
 });
 
 test('active browser source is TypeScript and compiles to committed dist output', () => {
