@@ -79,7 +79,7 @@ test('Phase 4 TypeScript architecture keeps UI parity modules separated', () => 
   const renderer = fs.readFileSync('src/map/mapRenderer.ts', 'utf8');
   assert.match(renderer, /camera\/mapCamera/); assert.match(renderer, /rendering\/mechanicalRenderer/); assert.doesNotMatch(renderer, /APPARATUS_DEFINITIONS\s*=|workspaceController/);
   const navigation = fs.readFileSync('src/ui/navigationPanel.ts', 'utf8');
-  assert.match(navigation, /ws-navigation-entry/); assert.match(navigation, /ws-navigation-state/);
+  assert.match(navigation, /ws-navigation-context-row/); assert.match(navigation, /Current view/);
   const catalog = fs.readFileSync('src/ui/nodeCatalogPanel.ts', 'utf8');
   assert.match(catalog, /ws-node-catalog-entry/); assert.doesNotMatch(catalog, /ws-node-catalog-item/);
   const app = fs.readFileSync('src/app.ts', 'utf8'); assert.match(app, /installNodeCatalogPanel/); assert.match(app, /installDebugPanel/); assert.doesNotMatch(app, /workspaceController\.js/);

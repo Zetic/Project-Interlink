@@ -256,6 +256,38 @@
   overflow-x: hidden;
   overflow-y: auto;
 }
+.ws-navigation-section-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 7px 4px;
+  padding-top: 7px;
+  border-top: 1px solid #1e3042;
+  color: #7890a6;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ws-navigation-section-title:first-child { margin-top: 2px; border-top: 0; }
+.ws-navigation-section-title span { overflow: hidden; color: #a9bfd2; text-overflow: ellipsis; white-space: nowrap; }
+.ws-navigation-context-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  margin: 1px 0;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #c3d2df;
+  text-align: left;
+}
+.ws-navigation-context-row:hover { background: #12253a; border-color: #284a69; }
+.ws-navigation-context-row--active { background: #17304a; border-color: #4c79a3; }
+.ws-navigation-context-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.ws-navigation-context-detail { overflow: hidden; color: #72889b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.ws-navigation-category--engineering { background: #8b6532; }
 .ws-navigation-row-wrap { min-width: 0; }
 .ws-navigation-row {
   display: flex;

@@ -100,17 +100,17 @@ export function workspaceShellMarkup(options: WorkspaceShellOptions = {}): strin
     </div>
     <div class="ws-layout">
       <div class="ws-panel-rail">
-        <button id="ws-navigation-toggle" class="ws-navigation-tab" type="button" aria-controls="ws-navigation-drawer" aria-expanded="false"><span aria-hidden="true">N<br>A<br>V</span><span class="ws-visually-hidden">Open hierarchy navigation</span></button>
+        <button id="ws-navigation-toggle" class="ws-navigation-tab" type="button" aria-controls="ws-navigation-drawer" aria-expanded="false"><span aria-hidden="true">N<br>A<br>V</span><span class="ws-visually-hidden">Open world navigation</span></button>
         <button id="ws-node-catalog-toggle" class="ws-navigation-tab ws-node-catalog-tab" type="button" aria-controls="ws-node-catalog-drawer" aria-expanded="false"><span aria-hidden="true">N<br>O<br>D<br>E</span><span class="ws-visually-hidden">Open node catalog</span></button>
         <button id="ws-debug-toggle" class="ws-navigation-tab ws-debug-tab" type="button" aria-controls="ws-debug-drawer" aria-expanded="false"><span aria-hidden="true">D<br>E<br>B<br>U<br>G</span><span class="ws-visually-hidden">Open debug and performance tools</span></button>
       </div>
-      <aside id="ws-navigation-drawer" class="ws-navigation-drawer" aria-label="Hierarchy navigation" aria-hidden="true" hidden>
-        <div class="ws-navigation-header"><strong>NAVIGATION</strong><div class="ws-navigation-actions"><button id="ws-navigation-collapse-all" class="ws-navigation-action" type="button" aria-label="Collapse all hierarchy entries" title="Collapse all">−</button><button id="ws-navigation-expand-all" class="ws-navigation-action" type="button" aria-label="Expand all hierarchy entries" title="Expand all">+</button><button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close hierarchy navigation" title="Close">×</button></div></div>
-        <label class="ws-navigation-search-label" for="ws-navigation-search">Search hierarchy</label>
-        <input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search hierarchy…" autocomplete="off">
+      <aside id="ws-navigation-drawer" class="ws-navigation-drawer" aria-label="World navigation" aria-hidden="true" hidden>
+        <div class="ws-navigation-header"><strong>NAVIGATION</strong><div class="ws-navigation-actions"><button id="ws-navigation-close" class="ws-navigation-close" type="button" aria-label="Close world navigation" title="Close">×</button></div></div>
+        <label class="ws-navigation-search-label" for="ws-navigation-search">Search world</label>
+        <input id="ws-navigation-search" class="ws-navigation-search" type="search" placeholder="Search regions, features, engineering…" autocomplete="off">
         <details id="ws-navigation-filters" class="ws-navigation-filters-panel"><summary>Show filters</summary><div class="ws-navigation-filters"></div></details>
         <div id="ws-navigation-match-count" class="ws-navigation-match-count" aria-live="polite"></div>
-        <div id="ws-navigation-tree" class="ws-navigation-tree" role="tree" aria-label="World hierarchy"></div>
+        <div id="ws-navigation-tree" class="ws-navigation-tree" role="navigation" aria-label="World locations"></div>
       </aside>
       <aside id="ws-node-catalog-drawer" class="ws-node-catalog-drawer" aria-label="Node catalog" aria-hidden="true" hidden>
         <div class="ws-navigation-header"><strong>NODE</strong><div class="ws-navigation-actions"><button id="ws-node-catalog-close" class="ws-navigation-close" type="button" aria-label="Close node catalog" title="Close">×</button></div></div>

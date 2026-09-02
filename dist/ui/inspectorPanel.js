@@ -31,6 +31,11 @@ function formatRate(value) { return value == null || !Number.isFinite(value) ? '
 function formatTemperature(value) { return value == null || !Number.isFinite(value) ? 'Unavailable' : `${value.toFixed(2)} K`; }
 function formatEnergy(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} J`; }
 function formatPower(value) { return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(2)} kW`; }
+function formatLatitude(value) { return `${Math.abs(value).toFixed(1)}° ${value >= 0 ? 'N' : 'S'}`; }
+function formatIndex(value) {
+    const label = value < 0.25 ? 'Low' : value < 0.5 ? 'Moderate' : value < 0.75 ? 'High' : 'Very high';
+    return `${label} · ${Math.round(value * 100)}%`;
+}
 function runtimeStatus(state) {
     const runtime = state.runtime;
     if (runtime.status === 'ready') {
@@ -46,17 +51,32 @@ function renderPlanet(container, planet) {
     addRow(container, 'Map', `${planet.width} × ${planet.height}`);
     addRow(container, 'Physical scale', `${formatPhysicalDistance(planet.physicalWidthMeters)} × ${formatPhysicalDistance(planet.physicalHeightMeters)}`);
     addRow(container, 'World unit', `≈ ${formatPhysicalDistance(EARTH_SCALE_METERS_PER_WORLD_UNIT)}`);
-    addRow(container, 'Regions', String(planet.regions.length));
-    addRow(container, 'Resource nodes', String(planet.resourceNodes.length));
+    addRow(container, 'Generator version', String(planet.generatorVersion));
+    addRow(container, 'Landmasses', String(planet.landmasses.length));
+    addRow(container, 'Regions', planet.regions.length.toLocaleString());
+    addRow(container, 'Natural Features', planet.resourceNodes.length.toLocaleString());
 }
 function renderRegion(container, planet, region) {
+    const landmass = planet.landmasses.find(candidate => candidate.id === region.landmassId);
+    const environment = region.environment;
     typeLabel(container, 'REGION');
     addRow(container, 'Name', region.name);
-    addRow(container, 'ID', region.id);
-    addRow(container, 'Bounds', `${region.bounds.x.toFixed(0)}, ${region.bounds.y.toFixed(0)} · ${region.bounds.width.toFixed(0)} × ${region.bounds.height.toFixed(0)}`);
-    addRow(container, 'Approx. extent', `${formatPhysicalDistance(worldUnitsToMeters(region.bounds.width))} × ${formatPhysicalDistance(worldUnitsToMeters(region.bounds.height))}`);
-    addRow(container, 'Resource nodes', String(region.resourceNodeIds.length));
+    addRow(container, 'Landmass', landmass?.name ?? region.landmassId);
     addRow(container, 'Planet', planet.name);
+    sectionTitle(container, 'Geography');
+    addRow(container, 'Latitude', formatLatitude(environment.latitudeDeg));
+    addRow(container, 'Approx. area', `${region.approximateAreaSquareKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km²`);
+    addRow(container, 'Approx. extent', `${formatPhysicalDistance(worldUnitsToMeters(region.bounds.width))} × ${formatPhysicalDistance(worldUnitsToMeters(region.bounds.height))}`);
+    addRow(container, 'Mean elevation', `≈ ${environment.meanElevationMeters.toLocaleString()} m`);
+    addRow(container, 'Relief', `≈ ${environment.reliefMeters.toLocaleString()} m`);
+    sectionTitle(container, 'Environmental tendencies');
+    addRow(container, 'Thermal', formatIndex(environment.thermalIndex));
+    addRow(container, 'Moisture', formatIndex(environment.moistureIndex));
+    addRow(container, 'Tectonic activity', formatIndex(environment.tectonicActivity));
+    addRow(container, 'Volcanic activity', formatIndex(environment.volcanicActivity));
+    addRow(container, 'Sedimentary basin', formatIndex(environment.sedimentaryBasinFactor));
+    sectionTitle(container, 'Natural Features');
+    addRow(container, 'Known deposits', String(region.resourceNodeIds.length));
 }
 function renderResource(container, planet, resource) {
     const definition = resourceDefinitionById(resource.resourceId);

@@ -23,7 +23,7 @@ function renderBreadcrumbs(state: Readonly<AppState>): void {
 
 function enterPlayerWorkspace(): void {
   const seed = resolveSeed(); const world = generateWorld(seed); const landing = elementById<HTMLElement>('landing-screen'); const playerView = elementById<HTMLElement>('player-view'); const main = elementById<HTMLElement>('ws-main'); if (!playerView || !main) return;
-  landing?.remove(); playerView.style.removeProperty('display'); const root = renderWorkspaceShell(main, { title: `${world.planet.name} · Planet Map`, subtitle: `Seed ${world.planet.seed} · ${world.planet.regions.length} regions · ${world.planet.resourceNodes.length} resource nodes` });
+  landing?.remove(); playerView.style.removeProperty('display'); const root = renderWorkspaceShell(main, { title: `${world.planet.name} · Planet Map`, subtitle: `Seed ${world.planet.seed} · Generator v${world.planet.generatorVersion} · ${world.planet.regions.length.toLocaleString()} regions · ${world.planet.resourceNodes.length.toLocaleString()} natural Features` });
   const runtime = installRuntimeController(store);
   installNavigationPanel(root, store); installNodeCatalogPanel(root, store); installInspectorPanel(root, store); installDebugPanel(root, store, runtime); installMapRenderer(root, store); installMapRuntimePresentation(root, store); store.subscribeDomains(['world', 'graph', 'selection'], renderBreadcrumbs); store.setWorld(world);
 }

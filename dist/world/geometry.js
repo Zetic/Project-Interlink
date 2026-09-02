@@ -35,6 +35,23 @@ export function polygonCentroid(points) {
     const scale = 1 / (6 * signedArea);
     return { x: centroidX * scale, y: centroidY * scale };
 }
+export function polygonArea(points) {
+    let twiceArea = 0;
+    for (let index = 0; index < points.length; index += 1) {
+        const current = points[index];
+        const next = points[(index + 1) % points.length];
+        twiceArea += current.x * next.y - next.x * current.y;
+    }
+    return Math.abs(twiceArea) / 2;
+}
+export function boundsIntersect(left, right) {
+    return left.x <= right.x + right.width && left.x + left.width >= right.x
+        && left.y <= right.y + right.height && left.y + left.height >= right.y;
+}
+export function pointInBounds(point, bounds) {
+    return point.x >= bounds.x && point.x <= bounds.x + bounds.width
+        && point.y >= bounds.y && point.y <= bounds.y + bounds.height;
+}
 export function pointInPolygon(point, polygon) {
     let inside = false;
     for (let currentIndex = 0, previousIndex = polygon.length - 1; currentIndex < polygon.length; previousIndex = currentIndex, currentIndex += 1) {
