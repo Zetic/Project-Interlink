@@ -1,0 +1,26 @@
+name: WG-2 Core Validation
+
+on:
+  push:
+    branches: [worldgen-rewrite-wg2-tectonics]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wg2-core-validation
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run Planet Engine workspace tests
+        run: cargo test --workspace
+      - name: Run native WG-2 tectonics diagnostic
+        run: cargo run -p interlink-worldgen-cli -- tectonics --seed ci-wg2 --level 5 --plates 18
