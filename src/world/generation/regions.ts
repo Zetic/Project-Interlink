@@ -4,6 +4,7 @@ import { EARTH_SCALE_METERS_PER_WORLD_UNIT, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH 
 import type { GeographicParent, Point, Region, RegionEnvironment, SurfaceType } from '../types.js';
 import {
   parentIdAtPoint,
+  tracePatchBoundaries,
   type GeneratedGeography,
   type GeographyPatch,
 } from './geography.js';
@@ -17,11 +18,11 @@ export const REGION_SEED_ROWS = 50;
 export const TARGET_REGION_SPACING_WORLD_UNITS = PLANET_MAP_WIDTH / REGION_SEED_COLUMNS;
 const REGION_SEED_BIN_SIZE = 64;
 const REGION_WARP_SCALE_CELLS = 2.15;
-const REGION_WARP_AMPLITUDE = 0.08;
-const REGION_WARP_DETAIL = 0.004;
+const REGION_WARP_AMPLITUDE = 0.11;
+const REGION_WARP_DETAIL = 0.006;
 
 interface RegionSeed { id: string; point: Point; surfaceType: SurfaceType; parentId: string; powerBias: number }
-interface RegionBoundaryEdge { start: Point; end: Point; startKey: string; endKey: string }
+interface RegionBoundaryEdge { start: Point; end: Point }
 
 const NAME_STARTS = ['Aer', 'Ald', 'Ar', 'Bel', 'Cal', 'Cer', 'Cor', 'Dar', 'Del', 'Eir', 'El', 'Fal', 'Gal', 'Hal', 'Ith', 'Kar', 'Kel', 'Kor', 'Lor', 'Mar', 'Nor', 'Or', 'Ser', 'Tal'];
 const NAME_MIDDLES = ['a', 'ae', 'al', 'an', 'ar', 'el', 'en', 'er', 'eth', 'ia', 'il', 'in', 'ir', 'or', 'os', 'ra', 're', 'ro', 'ul', 'un', 'ur', 'va', 've', 'yr'];
@@ -122,40 +123,40 @@ function roundPoint(point: Point): Point { return { x: Number(point.x.toFixed(6)
 function pointKey(point: Point): string { return `${point.x.toFixed(6)}:${point.y.toFixed(6)}`; }
 function edgeKey(start: Point, end: Point): string { const a = pointKey(start); const b = pointKey(end); return a < b ? `${a}|${b}` : `${b}|${a}`; }
 
-/** Trace canonical Region topology while retaining every shared technical boundary vertex. */
-function traceRegionBoundaryTopology(patches: readonly GeographyPatch[]): Point[][] {
+/** Exposed technical vertices are reinserted only after v4 has resolved loop topology. */
+function exposedBoundaryVertices(patches: readonly GeographyPatch[]): Point[] {
   const boundary = new Map<string, RegionBoundaryEdge>();
   for (const patch of patches) for (let index = 0; index < patch.polygon.length; index += 1) {
     const start = roundPoint(patch.polygon[index]!); const end = roundPoint(patch.polygon[(index + 1) % patch.polygon.length]!); const key = edgeKey(start, end);
-    if (boundary.has(key)) boundary.delete(key); else boundary.set(key, { start, end, startKey: pointKey(start), endKey: pointKey(end) });
+    if (boundary.has(key)) boundary.delete(key); else boundary.set(key, { start, end });
   }
-  const edges = [...boundary.values()].sort((left, right) => left.startKey.localeCompare(right.startKey) || left.endKey.localeCompare(right.endKey));
-  const outgoing = new Map<string, number[]>();
-  edges.forEach((edge, index) => { const values = outgoing.get(edge.startKey) ?? []; values.push(index); outgoing.set(edge.startKey, values); });
-  const used = new Uint8Array(edges.length); const loops: Point[][] = [];
-  for (let startIndex = 0; startIndex < edges.length; startIndex += 1) {
-    if (used[startIndex]) continue;
-    const first = edges[startIndex]!; const loop: Point[] = [first.start]; let currentIndex = startIndex;
-    while (!used[currentIndex]) {
-      used[currentIndex] = 1; const current = edges[currentIndex]!;
-      if (current.endKey === first.startKey) break;
-      loop.push(current.end);
-      const candidates = (outgoing.get(current.endKey) ?? []).filter(index => !used[index]);
-      if (!candidates.length) break;
-      if (candidates.length === 1) currentIndex = candidates[0]!;
-      else {
-        const incomingAngle = Math.atan2(current.end.y - current.start.y, current.end.x - current.start.x);
-        currentIndex = candidates.reduce((best, candidate) => {
-          const edge = edges[candidate]!; const bestEdge = edges[best]!;
-          const turn = (Math.atan2(edge.end.y - edge.start.y, edge.end.x - edge.start.x) - incomingAngle + Math.PI * 2) % (Math.PI * 2);
-          const bestTurn = (Math.atan2(bestEdge.end.y - bestEdge.start.y, bestEdge.end.x - bestEdge.start.x) - incomingAngle + Math.PI * 2) % (Math.PI * 2);
-          return turn < bestTurn ? candidate : best;
-        });
-      }
+  const vertices = new Map<string, Point>();
+  for (const edge of boundary.values()) { vertices.set(pointKey(edge.start), edge.start); vertices.set(pointKey(edge.end), edge.end); }
+  return [...vertices.values()];
+}
+
+function interiorSegmentPosition(point: Point, start: Point, end: Point): number | null {
+  const dx = end.x - start.x; const dy = end.y - start.y; const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-12) return null;
+  const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared;
+  if (t <= 1e-8 || t >= 1 - 1e-8) return null;
+  const distance = Math.hypot(point.x - (start.x + dx * t), point.y - (start.y + dy * t));
+  return distance <= 2e-6 ? t : null;
+}
+
+function densifyResolvedLoop(loop: readonly Point[], boundaryVertices: readonly Point[]): Point[] {
+  const dense: Point[] = [];
+  for (let index = 0; index < loop.length; index += 1) {
+    const start = roundPoint(loop[index]!); const end = roundPoint(loop[(index + 1) % loop.length]!); dense.push(start);
+    const intermediate: { point: Point; t: number }[] = [];
+    for (const point of boundaryVertices) {
+      const t = interiorSegmentPosition(point, start, end);
+      if (t !== null) intermediate.push({ point, t });
     }
-    if (loop.length >= 3 && polygonArea(loop) > 1e-6) loops.push(loop);
+    intermediate.sort((left, right) => left.t - right.t || pointKey(left.point).localeCompare(pointKey(right.point)));
+    for (const value of intermediate) dense.push(value.point);
   }
-  return loops.sort((left, right) => polygonArea(right) - polygonArea(left) || pointKey(left[0]!).localeCompare(pointKey(right[0]!)));
+  return dense;
 }
 
 /** Parent/coastline vertices remain immutable so LOD levels share canonical geography. */
@@ -226,9 +227,9 @@ export function generateRegions(seed: string, geography: GeneratedGeography, con
   const seeds = createRegionSeeds(seed, geography, context); const seedsById = new Map(seeds.map(regionSeed => [regionSeed.id, regionSeed]));
   const patchesBySeed = assignPatchesToSeeds(geography.patches, seeds); const warpBoundaryPoint = createRegionBoundaryWarper(seed, geography); const usedNames = new Set<string>(); const regions: Region[] = [];
   for (const [seedId, patches] of [...patchesBySeed.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-    const regionSeed = seedsById.get(seedId)!; const loops = traceRegionBoundaryTopology(patches).filter(polygon => polygonSignedArea(polygon) > 0);
+    const regionSeed = seedsById.get(seedId)!; const loops = tracePatchBoundaries(patches).filter(polygon => polygonSignedArea(polygon) > 0); const boundaryVertices = exposedBoundaryVertices(patches);
     for (let component = 0; component < loops.length; component += 1) {
-      const polygon = removeCollinearVertices(loops[component]!.map(warpBoundaryPoint)); const center = centerInsidePolygon(polygon, patches, context, regionSeed.surfaceType); const environment = createRegionEnvironment(context, center); const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
+      const denseLoop = densifyResolvedLoop(loops[component]!, boundaryVertices); const polygon = removeCollinearVertices(denseLoop.map(warpBoundaryPoint)); const center = centerInsidePolygon(polygon, patches, context, regionSeed.surfaceType); const environment = createRegionEnvironment(context, center); const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
       regions.push({ id, name: createUniqueName(seed, id, environment, regionSeed.surfaceType === 'ocean', usedNames), parentKind: regionSeed.surfaceType === 'land' ? 'continent' : 'ocean', parentId: regionSeed.parentId, surfaceType: regionSeed.surfaceType, bounds: polygonBounds(polygon), polygon, center, approximateAreaSquareKm: approximateAreaSquareKm(polygon, environment.latitudeDeg), environment, resourceNodeIds: [], neighborRegionIds: [] });
     }
   }
