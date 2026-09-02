@@ -1,2 +1,3 @@
 dist/** linguist-generated
 src/wasm/** linguist-generated
+src/wasm-worldgen/** linguist-generated
