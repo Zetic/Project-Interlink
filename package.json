@@ -18,6 +18,7 @@
     "check:worldgen-wasm-package": "bash scripts/build-worldgen-wasm.sh target/worldgen-wasm-package",
     "worldgen:generate": "cargo run -p interlink-worldgen-cli -- generate",
     "worldgen:benchmark": "cargo run -p interlink-worldgen-cli -- benchmark",
+    "worldgen:topology": "cargo run -p interlink-worldgen-cli -- topology --level 4",
     "check:runtime": "npm run build && npm run test:ts && npm run test:rust && npm run check:wasm && npm run check:worldgen-wasm"
   },
   "devDependencies": {

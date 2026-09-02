@@ -2,5 +2,4 @@
 /pkg/
 /node_modules/
 /src/wasm/interlink_wasm_bg.wasm.d.ts
-/src/wasm-worldgen/
 .DS_Store
