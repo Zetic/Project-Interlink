@@ -60,13 +60,40 @@ Plate tectonics is accepted as a spherical kinematic partition, not by whether a
 - convergent + divergent + transform counts exactly equal total boundary count;
 - boundary classification follows the documented relative-motion rule rather than geographic labels;
 - WASM/Worker arrays preserve one-to-one sample, plate, and boundary indexing;
-- WG-2 source remains independent from legacy Region/Feature/NAV/gameplay contracts;
-- no continental/oceanic crust, terrain, or geological-history fields are introduced into the WG-2 model.
+- WG-2 source remains independent from legacy Region/Feature/NAV/gameplay contracts.
 
 The native `tectonics` CLI reports plate-area range, seed spacing, plate speed, boundary-type counts, and deterministic tectonic identity. Multi-seed regression tests are preferred over tuning a single visually attractive world.
 
+## WG-3 crust and geological-history gates
+
+WG-3 is accepted only if dense crustal state remains physically distinct and causally linked to accepted WG-2 kinematics.
+
+- same seed + accepted topology/tectonics produces identical geology hash and ordered dense fields;
+- all crust/history arrays have exactly one value per topology sample, are finite, and remain within documented physical/index bounds;
+- continental + transitional + oceanic control areas close to total spherical area;
+- continental crust is substantially older, thicker, and less dense/more buoyant than oceanic crust in ensemble statistics;
+- oceanic ages remain within the supported young-oceanic range and the youngest oceanic samples preferentially occur near active spreading systems;
+- oceanic crust age increases statistically with geodesic distance from spreading systems rather than being independent random texture;
+- each WG-2 boundary edge is preserved exactly once by WG-3 geological interpretation;
+- transform boundaries remain transform regimes;
+- divergent boundaries resolve only to oceanic ridge, continental rift, or transitional divergence;
+- convergent boundaries resolve only to oceanic subduction, ocean-continent subduction, or continental collision;
+- subduction regimes carry a non-null polarity and preferentially select the lower-buoyancy/oceanic side according to the documented rule;
+- trench and volcanic-arc histories appear on opposite sides of polarized subduction systems;
+- continental collision and overriding-margin histories raise orogenic influence and can thicken continental/transitional crust;
+- continental rifting raises extension history and can thin continental/transitional crust;
+- all bounded history fields remain in `[0,1]`;
+- plate crust fractions sum to one and are area-weighted rather than sample-count weighted;
+- `Major` / `Intermediate` / `Minor` labels are derived from continuous plate area and never replace that physical quantity;
+- representative worlds include mixed-crust plates, demonstrating that plate identity is not synonymous with crust type;
+- multi-seed validation checks distributions across several planets instead of tuning one showcase seed;
+- WASM/Worker sample, boundary, and plate-summary arrays preserve one-to-one indexing;
+- WG-3 adds no elevation, bathymetry, terrain, lithology, climate, hydrology, resources, Regions, or gameplay state.
+
+The native `geology` CLI reports crust fractions, continental/oceanic age and thickness separation, derived plate scale-class counts, geological boundary regimes, deterministic tectonic/geology identities, and elapsed generation time.
+
 ## Later physical gates
 
-Later stages add physical/statistical validation for crust distributions, geological-history/boundary relationships, hypsometry, climate zonation, drainage acyclicity, water routing, and sediment conservation.
+Later stages add validation for hypsometry and isostatic response, lithologic distributions, climate zonation, drainage acyclicity, water routing, erosion/sediment conservation, and glacial/coastal morphology.
 
 Earth datasets are validation targets for distributions and morphology, not required generated outputs.
