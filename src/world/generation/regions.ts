@@ -1,4 +1,4 @@
-import { pointInPolygon, polygonArea, polygonBounds, polygonCentroid, polygonSignedArea, removeCollinearVertices } from '../geometry.js';
+import { pointInPolygon, polygonArea, polygonBounds, polygonCentroid, polygonSignedArea } from '../geometry.js';
 import { createRng, deterministicUnit } from '../random.js';
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from '../scale.js';
 import type { GeographicParent, Point, Region, RegionEnvironment, SurfaceType } from '../types.js';
@@ -229,7 +229,7 @@ export function generateRegions(seed: string, geography: GeneratedGeography, con
   for (const [seedId, patches] of [...patchesBySeed.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     const regionSeed = seedsById.get(seedId)!; const loops = tracePatchBoundaries(patches).filter(polygon => polygonSignedArea(polygon) > 0); const boundaryVertices = exposedBoundaryVertices(patches);
     for (let component = 0; component < loops.length; component += 1) {
-      const denseLoop = densifyResolvedLoop(loops[component]!, boundaryVertices); const polygon = removeCollinearVertices(denseLoop.map(warpBoundaryPoint)); const center = centerInsidePolygon(polygon, patches, context, regionSeed.surfaceType); const environment = createRegionEnvironment(context, center); const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
+      const denseLoop = densifyResolvedLoop(loops[component]!, boundaryVertices); const polygon = denseLoop.map(warpBoundaryPoint); const center = centerInsidePolygon(polygon, patches, context, regionSeed.surfaceType); const environment = createRegionEnvironment(context, center); const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
       regions.push({ id, name: createUniqueName(seed, id, environment, regionSeed.surfaceType === 'ocean', usedNames), parentKind: regionSeed.surfaceType === 'land' ? 'continent' : 'ocean', parentId: regionSeed.parentId, surfaceType: regionSeed.surfaceType, bounds: polygonBounds(polygon), polygon, center, approximateAreaSquareKm: approximateAreaSquareKm(polygon, environment.latitudeDeg), environment, resourceNodeIds: [], neighborRegionIds: [] });
     }
   }
