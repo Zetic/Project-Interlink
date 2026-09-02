@@ -3,6 +3,7 @@ mod diagnostics;
 mod fields;
 mod parameters;
 mod random;
+mod tectonics;
 mod topology;
 
 use std::fmt;
@@ -12,16 +13,17 @@ pub use diagnostics::{FieldStatistics, StageIdentity};
 pub use fields::{DenseU16Field, MAX_SYNTHETIC_SAMPLES};
 pub use parameters::PlanetPhysicalParameters;
 pub use random::derive_stage_seed;
+pub use tectonics::{generate_tectonics, PlateBoundaryEdge, PlateBoundaryKind, TectonicMetrics, TectonicModel, TectonicPlate, TectonicsRequest, MAX_TECTONIC_PLATES, MIN_TECTONIC_PLATES, TECTONICS_STAGE_ID, TECTONICS_STAGE_VERSION};
 pub use topology::{build_icosphere, expected_edge_count, expected_face_count, expected_sample_count, GeodesicTopology, PlanetTopology, TopologyMetrics, INVALID_SAMPLE_ID, MAX_TOPOLOGY_LEVEL};
 
-pub const WORLDGEN_ENGINE_VERSION: u32 = 2;
+pub const WORLDGEN_ENGINE_VERSION: u32 = 3;
 pub const SYNTHETIC_STAGE_ID: &str = "foundation:synthetic";
 pub const SYNTHETIC_STAGE_VERSION: u32 = 1;
 const SYNTHETIC_NAMESPACE: &str = "worldgen:foundation:synthetic:v1";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum WorldgenError { InvalidDimensions(&'static str), InvalidParameters(&'static str), InvalidTopology(&'static str), InvalidCoordinate(&'static str) }
-impl fmt::Display for WorldgenError { fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { match self { Self::InvalidDimensions(message) | Self::InvalidParameters(message) | Self::InvalidTopology(message) | Self::InvalidCoordinate(message) => formatter.write_str(message) } } }
+pub enum WorldgenError { InvalidDimensions(&'static str), InvalidParameters(&'static str), InvalidTopology(&'static str), InvalidCoordinate(&'static str), InvalidTectonics(&'static str) }
+impl fmt::Display for WorldgenError { fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { match self { Self::InvalidDimensions(message) | Self::InvalidParameters(message) | Self::InvalidTopology(message) | Self::InvalidCoordinate(message) | Self::InvalidTectonics(message) => formatter.write_str(message) } } }
 impl std::error::Error for WorldgenError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,7 +34,7 @@ pub struct SyntheticDiagnostic { pub generator_version: u32, pub stage: StageIde
 
 fn triangular_wave(index: u32, period: u32) -> u32 { if period <= 1 { return 0; } let doubled = u64::from(index) * 2 * u64::from(u16::MAX); let scaled = (doubled / u64::from(period - 1)) as u32; if scaled <= u32::from(u16::MAX) { scaled } else { 2 * u32::from(u16::MAX) - scaled } }
 
-/// WG-0 proof field. This is intentionally not terrain. It remains available as a transport/determinism regression while WG-1 introduces real planetary topology.
+/// WG-0 proof field. This is intentionally not terrain. It remains available as a transport/determinism regression while later stages introduce physical planetary state.
 pub fn generate_synthetic(request: &SyntheticRequest) -> Result<SyntheticDiagnostic, WorldgenError> {
     let parameters = PlanetPhysicalParameters::earthlike_reference(); parameters.validate().map_err(WorldgenError::InvalidParameters)?;
     let count = fields::checked_sample_count(request.width, request.height)?; let stage_seed = random::derive_stage_seed(&request.seed, SYNTHETIC_NAMESPACE); let mut values = Vec::with_capacity(count);

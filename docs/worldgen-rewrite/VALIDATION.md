@@ -40,8 +40,33 @@ The canonical spherical substrate is not accepted from visual inspection alone.
 
 The topology CLI reports cell-area, center-edge, and dual-interface distributions so changes to geometric quality are visible before downstream physics is added.
 
+## WG-2 tectonic gates
+
+Plate tectonics is accepted as a spherical kinematic partition, not by whether a diagnostic screenshot resembles Earth.
+
+- identical seed + plate count + topology produces identical plate ownership, kinematics, boundaries, and tectonic hash;
+- changing the stage seed changes tectonic identity;
+- every topology sample has exactly one valid plate owner;
+- every requested plate is non-empty and owns its deterministic seed sample;
+- every plate forms one connected component on the canonical neighbor graph;
+- summed plate control areas close to `4π` steradians;
+- representative worlds keep plate areas and plate-seed spacing at macro scale rather than producing degenerate fragments;
+- a fixed five-seed L5/18-plate regression requires at least four worlds to contain both a plate larger than `1.5×` mean area and a plate smaller than `0.65×` mean area, preventing regression toward near-equal tessellation;
+- every rigid plate velocity is tangent to the spherical surface (`r·v ≈ 0`);
+- plate reference speeds remain finite and within the intended tectonic-scale diagnostic range;
+- every boundary joins samples owned by different plates;
+- each inter-plate canonical neighbor edge is represented once in the undirected boundary set;
+- boundary normal/shear rates are finite;
+- convergent + divergent + transform counts exactly equal total boundary count;
+- boundary classification follows the documented relative-motion rule rather than geographic labels;
+- WASM/Worker arrays preserve one-to-one sample, plate, and boundary indexing;
+- WG-2 source remains independent from legacy Region/Feature/NAV/gameplay contracts;
+- no continental/oceanic crust, terrain, or geological-history fields are introduced into the WG-2 model.
+
+The native `tectonics` CLI reports plate-area range, seed spacing, plate speed, boundary-type counts, and deterministic tectonic identity. Multi-seed regression tests are preferred over tuning a single visually attractive world.
+
 ## Later physical gates
 
-Later stages add physical/statistical validation for crust distributions, boundary relationships, hypsometry, climate zonation, drainage acyclicity, water routing, and sediment conservation.
+Later stages add physical/statistical validation for crust distributions, geological-history/boundary relationships, hypsometry, climate zonation, drainage acyclicity, water routing, and sediment conservation.
 
 Earth datasets are validation targets for distributions and morphology, not required generated outputs.

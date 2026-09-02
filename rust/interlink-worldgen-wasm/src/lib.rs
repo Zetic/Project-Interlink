@@ -1,7 +1,7 @@
-use interlink_worldgen::{build_icosphere, generate_synthetic, GeodesicTopology, SyntheticDiagnostic, SyntheticRequest, WORLDGEN_ENGINE_VERSION};
+use interlink_worldgen::{build_icosphere, generate_synthetic, generate_tectonics, GeodesicTopology, PlanetPhysicalParameters, SyntheticDiagnostic, SyntheticRequest, TectonicModel, TectonicsRequest, WORLDGEN_ENGINE_VERSION};
 use wasm_bindgen::prelude::*;
 
-pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 2;
+pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 3;
 #[wasm_bindgen] pub fn worldgen_protocol_version() -> u32 { WORLDGEN_WASM_PROTOCOL_VERSION }
 #[wasm_bindgen] pub fn worldgen_engine_version() -> u32 { WORLDGEN_ENGINE_VERSION }
 
@@ -23,4 +23,54 @@ impl WasmWorldgenTopology {
     pub fn positions(&self) -> Vec<f64> { self.inner.flattened_positions() } pub fn faces(&self) -> Vec<u32> { self.inner.flattened_faces() } pub fn neighbor_offsets(&self) -> Vec<u32> { self.inner.neighbor_offsets().to_vec() } pub fn neighbors(&self) -> Vec<u32> { self.inner.neighbor_indices().to_vec() } pub fn neighbor_arc_lengths_rad(&self) -> Vec<f64> { self.inner.neighbor_center_arc_lengths_rad_values().to_vec() } pub fn neighbor_interface_arc_lengths_rad(&self) -> Vec<f64> { self.inner.neighbor_interface_arc_lengths_rad_values().to_vec() } pub fn area_steradians(&self) -> Vec<f64> { self.inner.dual_area_steradians().to_vec() } pub fn birth_levels(&self) -> Vec<u8> { self.inner.birth_levels().to_vec() } pub fn parent_edges(&self) -> Vec<u32> { self.inner.flattened_parent_edges() }
 }
 
-#[cfg(test)] mod tests { use super::*; #[test] fn wasm_protocol_and_engine_versions_are_explicit() { assert_eq!(worldgen_protocol_version(), 2); assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION); } #[test] fn topology_bridge_exposes_canonical_counts_and_flux_geometry() { let topology = WasmWorldgenTopology::new(2).unwrap(); assert_eq!(topology.sample_count(), 162); assert_eq!(topology.five_neighbor_count(), 12); assert_eq!(topology.faces().len(), 320 * 3); assert_eq!(topology.neighbors().len(), topology.neighbor_arc_lengths_rad().len()); assert_eq!(topology.neighbors().len(), topology.neighbor_interface_arc_lengths_rad().len()); } }
+#[wasm_bindgen]
+pub struct WasmWorldgenTectonics { topology: GeodesicTopology, inner: TectonicModel }
+#[wasm_bindgen]
+impl WasmWorldgenTectonics {
+    #[wasm_bindgen(constructor)]
+    pub fn new(seed: String, level: u8, plate_count: u16) -> Result<WasmWorldgenTectonics, JsValue> {
+        let topology = build_icosphere(level).map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let inner = generate_tectonics(&topology, &TectonicsRequest::new(seed, plate_count), PlanetPhysicalParameters::earthlike_reference()).map_err(|error| JsValue::from_str(&error.to_string()))?;
+        Ok(Self { topology, inner })
+    }
+    pub fn generator_version(&self) -> u32 { WORLDGEN_ENGINE_VERSION }
+    pub fn stage_id(&self) -> String { self.inner.stage.id.to_owned() }
+    pub fn stage_version(&self) -> u32 { self.inner.stage.version }
+    pub fn stage_seed_hex(&self) -> String { format!("{:016x}", self.inner.stage.derived_seed) }
+    pub fn level(&self) -> u8 { self.topology.level() }
+    pub fn sample_count(&self) -> u32 { self.inner.metrics.sample_count }
+    pub fn plate_count(&self) -> u16 { self.inner.metrics.plate_count }
+    pub fn boundary_edge_count(&self) -> u32 { self.inner.metrics.boundary_edge_count }
+    pub fn convergent_edge_count(&self) -> u32 { self.inner.metrics.convergent_edge_count }
+    pub fn divergent_edge_count(&self) -> u32 { self.inner.metrics.divergent_edge_count }
+    pub fn transform_edge_count(&self) -> u32 { self.inner.metrics.transform_edge_count }
+    pub fn minimum_plate_area_fraction(&self) -> f64 { self.inner.metrics.minimum_plate_area_fraction }
+    pub fn maximum_plate_area_fraction(&self) -> f64 { self.inner.metrics.maximum_plate_area_fraction }
+    pub fn mean_plate_area_fraction(&self) -> f64 { self.inner.metrics.mean_plate_area_fraction }
+    pub fn minimum_seed_separation_rad(&self) -> f64 { self.inner.metrics.minimum_seed_separation_rad }
+    pub fn mean_reference_speed_mm_per_year(&self) -> f64 { self.inner.metrics.mean_reference_speed_mm_per_year }
+    pub fn tectonic_hash_hex(&self) -> String { self.inner.metrics.tectonic_hash_hex() }
+    pub fn topology_hash_hex(&self) -> String { self.topology.metrics().topology_hash_hex() }
+    pub fn positions(&self) -> Vec<f64> { self.topology.flattened_positions() }
+    pub fn faces(&self) -> Vec<u32> { self.topology.flattened_faces() }
+    pub fn neighbor_offsets(&self) -> Vec<u32> { self.topology.neighbor_offsets().to_vec() }
+    pub fn neighbors(&self) -> Vec<u32> { self.topology.neighbor_indices().to_vec() }
+    pub fn plate_ids(&self) -> Vec<u16> { self.inner.plate_ids.clone() }
+    pub fn plate_seed_samples(&self) -> Vec<u32> { self.inner.plate_seed_samples() }
+    pub fn plate_euler_poles(&self) -> Vec<f64> { self.inner.flattened_euler_poles() }
+    pub fn plate_angular_velocities_rad_per_myr(&self) -> Vec<f64> { self.inner.flattened_angular_velocities_rad_per_myr() }
+    pub fn plate_area_steradians(&self) -> Vec<f64> { self.inner.plate_area_steradians() }
+    pub fn boundary_samples(&self) -> Vec<u32> { self.inner.flattened_boundary_samples() }
+    pub fn boundary_plate_ids(&self) -> Vec<u16> { self.inner.flattened_boundary_plate_ids() }
+    pub fn boundary_kinds(&self) -> Vec<u8> { self.inner.boundary_kinds() }
+    pub fn boundary_normal_rates_m_per_year(&self) -> Vec<f64> { self.inner.boundary_normal_rates_m_per_year() }
+    pub fn boundary_shear_rates_m_per_year(&self) -> Vec<f64> { self.inner.boundary_shear_rates_m_per_year() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn wasm_protocol_and_engine_versions_are_explicit() { assert_eq!(worldgen_protocol_version(), 3); assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION); }
+    #[test] fn topology_bridge_exposes_canonical_counts_and_flux_geometry() { let topology = WasmWorldgenTopology::new(2).unwrap(); assert_eq!(topology.sample_count(), 162); assert_eq!(topology.five_neighbor_count(), 12); assert_eq!(topology.faces().len(), 320 * 3); assert_eq!(topology.neighbors().len(), topology.neighbor_arc_lengths_rad().len()); assert_eq!(topology.neighbors().len(), topology.neighbor_interface_arc_lengths_rad().len()); }
+    #[test] fn tectonics_bridge_exposes_complete_partition_and_boundaries() { let tectonics = WasmWorldgenTectonics::new("wasm-wg2".to_owned(), 3, 12).unwrap(); assert_eq!(tectonics.plate_ids().len(), tectonics.sample_count() as usize); assert_eq!(tectonics.plate_seed_samples().len(), 12); assert_eq!(tectonics.boundary_samples().len(), tectonics.boundary_edge_count() as usize * 2); assert_eq!(tectonics.boundary_kinds().len(), tectonics.boundary_edge_count() as usize); }
+}
