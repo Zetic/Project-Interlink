@@ -1,78 +1,52 @@
-import { WORLDGEN_PROTOCOL_VERSION, validateSyntheticRequest, } from './protocol.js';
+import { WORLDGEN_PROTOCOL_VERSION, validateSyntheticRequest, validateTopologyRequest } from './protocol.js';
 const workerScope = self;
 let wasmModulePromise = null;
-function nowMs() {
-    return globalThis.performance?.now?.() ?? Date.now();
+function nowMs() { return globalThis.performance?.now?.() ?? Date.now(); }
+async function loadWorldgenWasm() { if (wasmModulePromise)
+    return wasmModulePromise; wasmModulePromise = (async () => { const moduleUrl = new URL('../../src/wasm-worldgen/interlink_worldgen_wasm.js', import.meta.url).href; let module; try {
+    module = await import(moduleUrl);
 }
-async function loadWorldgenWasm() {
-    if (wasmModulePromise)
-        return wasmModulePromise;
-    wasmModulePromise = (async () => {
-        const moduleUrl = new URL('../../src/wasm-worldgen/interlink_worldgen_wasm.js', import.meta.url).href;
-        let module;
-        try {
-            module = await import(moduleUrl);
-        }
-        catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            throw new Error(`Planet Engine WASM package is not available. Run 'npm run build:worldgen-wasm' before opening worldgen-lab.html. ${detail}`);
-        }
-        await module.default();
-        const actual = module.worldgen_protocol_version();
-        if (actual !== WORLDGEN_PROTOCOL_VERSION) {
-            throw new Error(`Planet Engine WASM protocol ${actual} does not match browser protocol ${WORLDGEN_PROTOCOL_VERSION}.`);
-        }
-        return module;
-    })();
-    return wasmModulePromise;
+catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Planet Engine WASM package is not available. ${detail}`);
+} await module.default(); const actual = module.worldgen_protocol_version(); if (actual !== WORLDGEN_PROTOCOL_VERSION)
+    throw new Error(`Planet Engine WASM protocol ${actual} does not match browser protocol ${WORLDGEN_PROTOCOL_VERSION}.`); return module; })(); return wasmModulePromise; }
+async function generateSynthetic(command) { validateSyntheticRequest(command.payload); const module = await loadWorldgenWasm(); const startedAt = nowMs(); const output = new module.WasmWorldgenDiagnostic(command.payload.seed, command.payload.width, command.payload.height); try {
+    const values = output.values();
+    return { engineVersion: output.generator_version(), width: output.width(), height: output.height(), values, statistics: { sampleCount: Number(output.sample_count()), minimum: output.minimum(), maximum: output.maximum(), mean: output.mean(), fieldHash: output.field_hash_hex() }, stage: { id: output.stage_id(), version: output.stage_version(), stageSeed: output.stage_seed_hex(), durationMs: Math.max(0, nowMs() - startedAt) } };
 }
-function event(type, requestId, payload) {
-    return { protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId, type, payload };
+finally {
+    output.free();
+} }
+async function generateTopology(command) { validateTopologyRequest(command.payload); const module = await loadWorldgenWasm(); const startedAt = nowMs(); const output = new module.WasmWorldgenTopology(command.payload.level); try {
+    const positions = output.positions();
+    const faces = output.faces();
+    const neighborOffsets = output.neighbor_offsets();
+    const neighbors = output.neighbors();
+    const areaSteradians = output.area_steradians();
+    const birthLevels = output.birth_levels();
+    const parentEdges = output.parent_edges();
+    return { engineVersion: output.generator_version(), level: output.level(), durationMs: Math.max(0, nowMs() - startedAt), metrics: { sampleCount: output.sample_count(), edgeCount: output.edge_count(), faceCount: output.face_count(), fiveNeighborCount: output.five_neighbor_count(), sixNeighborCount: output.six_neighbor_count(), totalAreaSteradians: output.total_area_steradians(), minimumAreaSteradians: output.minimum_area_steradians(), maximumAreaSteradians: output.maximum_area_steradians(), meanAreaSteradians: output.mean_area_steradians(), areaCoefficientOfVariation: output.area_coefficient_of_variation(), minimumEdgeArcRadians: output.minimum_edge_arc_radians(), maximumEdgeArcRadians: output.maximum_edge_arc_radians(), meanEdgeArcRadians: output.mean_edge_arc_radians(), edgeCoefficientOfVariation: output.edge_coefficient_of_variation(), topologyHash: output.topology_hash_hex() }, positions, faces, neighborOffsets, neighbors, areaSteradians, birthLevels, parentEdges };
 }
-async function generate(command) {
-    if (command.protocolVersion !== WORLDGEN_PROTOCOL_VERSION) {
+finally {
+    output.free();
+} }
+workerScope.addEventListener('message', async (messageEvent) => { const command = messageEvent.data; try {
+    if (!command || command.protocolVersion !== WORLDGEN_PROTOCOL_VERSION)
         throw new Error(`Worldgen protocol must be ${WORLDGEN_PROTOCOL_VERSION}.`);
+    if (command.type === 'generate-synthetic') {
+        const result = await generateSynthetic(command);
+        workerScope.postMessage({ protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId: command.requestId, type: 'generated-synthetic', payload: result }, [result.values.buffer]);
+        return;
     }
-    validateSyntheticRequest(command.payload);
-    const module = await loadWorldgenWasm();
-    const startedAt = nowMs();
-    const output = new module.WasmWorldgenDiagnostic(command.payload.seed, command.payload.width, command.payload.height);
-    try {
-        const values = output.values();
-        return {
-            engineVersion: output.generator_version(),
-            width: output.width(),
-            height: output.height(),
-            values,
-            statistics: {
-                sampleCount: Number(output.sample_count()),
-                minimum: output.minimum(),
-                maximum: output.maximum(),
-                mean: output.mean(),
-                fieldHash: output.field_hash_hex(),
-            },
-            stage: {
-                id: output.stage_id(),
-                version: output.stage_version(),
-                stageSeed: output.stage_seed_hex(),
-                durationMs: Math.max(0, nowMs() - startedAt),
-            },
-        };
+    if (command.type === 'generate-topology') {
+        const result = await generateTopology(command);
+        workerScope.postMessage({ protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId: command.requestId, type: 'generated-topology', payload: result }, [result.positions.buffer, result.faces.buffer, result.neighborOffsets.buffer, result.neighbors.buffer, result.areaSteradians.buffer, result.birthLevels.buffer, result.parentEdges.buffer]);
+        return;
     }
-    finally {
-        output.free();
-    }
+    throw new Error(`Unsupported worldgen command '${String(command.type)}'.`);
 }
-workerScope.addEventListener('message', async (messageEvent) => {
-    const command = messageEvent.data;
-    try {
-        if (command.type !== 'generate-synthetic')
-            throw new Error(`Unsupported worldgen command '${String(command.type)}'.`);
-        const result = await generate(command);
-        workerScope.postMessage(event('generated', command.requestId, result), [result.values.buffer]);
-    }
-    catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        workerScope.postMessage(event('error', command?.requestId ?? -1, { message }));
-    }
-});
+catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    workerScope.postMessage({ protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId: command?.requestId ?? -1, type: 'error', payload: { message } });
+} });
