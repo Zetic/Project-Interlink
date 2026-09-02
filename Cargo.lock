@@ -121,6 +121,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "interlink-worldgen"
+version = "0.1.0"
+
+[[package]]
+name = "interlink-worldgen-cli"
+version = "0.1.0"
+dependencies = [
+ "interlink-worldgen",
+]
+
+[[package]]
+name = "interlink-worldgen-wasm"
+version = "0.1.0"
+dependencies = [
+ "interlink-worldgen",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"

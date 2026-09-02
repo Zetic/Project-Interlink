@@ -13,7 +13,12 @@
     "check:wasm": "cargo check -p interlink-wasm --target wasm32-unknown-unknown",
     "build:wasm": "bash scripts/build-wasm.sh",
     "check:wasm-package": "bash scripts/build-wasm.sh target/wasm-package",
-    "check:runtime": "npm run build && npm run test:ts && npm run test:rust && npm run check:wasm"
+    "check:worldgen-wasm": "cargo check -p interlink-worldgen-wasm --target wasm32-unknown-unknown",
+    "build:worldgen-wasm": "bash scripts/build-worldgen-wasm.sh",
+    "check:worldgen-wasm-package": "bash scripts/build-worldgen-wasm.sh target/worldgen-wasm-package",
+    "worldgen:generate": "cargo run -p interlink-worldgen-cli -- generate",
+    "worldgen:benchmark": "cargo run -p interlink-worldgen-cli -- benchmark",
+    "check:runtime": "npm run build && npm run test:ts && npm run test:rust && npm run check:wasm && npm run check:worldgen-wasm"
   },
   "devDependencies": {
     "tsx": "4.23.13",
