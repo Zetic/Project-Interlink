@@ -6,7 +6,7 @@ import { generateTectonicPlates } from './generation/tectonics.js';
 import { createRng } from './random.js';
 import { EARTH_SCALE_PHYSICAL_HEIGHT_METERS, EARTH_SCALE_PHYSICAL_WIDTH_METERS, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH, } from './scale.js';
 export { PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from './scale.js';
-export const WORLD_GENERATOR_VERSION = 4;
+export const WORLD_GENERATOR_VERSION = 5;
 const PLANET_NAMES = ['Aethon', 'Boras', 'Caldris', 'Draven', 'Eryndor', 'Feraxis', 'Galneth', 'Havar'];
 function clock() { return globalThis.performance?.now() ?? Date.now(); }
 function generateWorldInternal(seedInput) {

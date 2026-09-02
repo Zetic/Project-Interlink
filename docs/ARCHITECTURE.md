@@ -90,14 +90,15 @@ A resource FEATURE is a natural source node with a `resource-access` output. `re
 
 The current browser architecture does not use nested Site workspaces, child workspaces, boundary-transfer terminals, or recursive system ownership. Do not restore those concepts as compatibility infrastructure unless a future design change explicitly requires them.
 
-World generation is deterministic by `generatorVersion + seed`. Generator v4 follows one causal pipeline:
+World generation is deterministic by `generatorVersion + seed`. Generator v5 follows one causal pipeline:
 
 ```text
 Tectonic plates → cached high-resolution scalar surface → sea-level contour
-                → Continents/Oceans → independent irregular Regions → natural Features
+                → Continents/Oceans → irregular Region ownership
+                → topology-resolved interior boundary deformation → natural Features
 ```
 
-Plate crust and motion affect elevation, relief, boundary setting, volcanism, and sedimentary tendency. A cached 176 × 88 generation field was selected through controlled v3/v4 profiling to avoid trading substantially worse generation cost for fidelity. Sea-level crossings are interpolated while triangle patches are clipped, producing one canonical smooth coastline. Continents and Oceans own this geography before a jittered, additively weighted Region seed field partitions the shared patches. Coastal Regions therefore carry exact segments of the parent contour, while interior boundaries vary in area, aspect, orientation, compactness, and effective vertex count. Technical samples do not map one-to-one to Regions. The dense field and mesh remain generation-time details; compact plate, parent, Region, and Feature records are retained, with a per-Planet field cache available for canonical point sampling.
+Plate crust and motion affect elevation, relief, boundary setting, volcanism, and sedimentary tendency. A cached 176 × 88 generation field remains the canonical surface source selected through controlled profiling. Sea-level crossings are interpolated while triangle patches are clipped, producing one canonical coastline. Continents and Oceans own this geography before a jittered, additively weighted Region seed field assigns the shared patches. Generator v5 keeps that deterministic ownership topology, then restores the full shared boundary vertex chain and applies one cached deterministic deformation only to interior Region vertices. Parent/coastline vertices remain frozen, so coastal Regions still carry exact segments of the parent contour while interior borders no longer expose the 0°/45°/90°/135° technical-triangle signature as strongly. The deformation is intentionally small: global polygon-area drift is accepted only at a visually/materially negligible relative tolerance while canonical coastlines, Region parentage, resource ownership, and spatial indexing remain unchanged. Technical samples do not map one-to-one to Regions and remain generation-time details rather than player entities.
 
 Nearest-two plate lookup is single-pass and allocation-free. Resource candidate evaluation samples the environment once per point and reuses it across resource types. `profileWorldGeneration()` exposes stage timings for developer measurement without adding nondeterministic timing data to world truth.
 
