@@ -51,6 +51,7 @@ Plate tectonics is accepted as a spherical kinematic partition, not by whether a
 - every plate forms one connected component on the canonical neighbor graph;
 - summed plate control areas close to `4π` steradians;
 - representative worlds keep plate areas and plate-seed spacing at macro scale rather than producing degenerate fragments;
+- a fixed five-seed L5/18-plate regression requires at least four worlds to contain both a plate larger than `1.5×` mean area and a plate smaller than `0.65×` mean area, preventing regression toward near-equal tessellation;
 - every rigid plate velocity is tangent to the spherical surface (`r·v ≈ 0`);
 - plate reference speeds remain finite and within the intended tectonic-scale diagnostic range;
 - every boundary joins samples owned by different plates;
