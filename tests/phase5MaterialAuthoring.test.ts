@@ -117,7 +117,7 @@ test('engineering cards render with normal local SVG text sizes while retaining 
   assert.ok(NODE_CARD_LOCAL_BODY_FONT_SIZE >= 10);
   const resourceRenderer = fs.readFileSync('src/map/rendering/resourceRenderer.ts', 'utf8');
   const mechanicalRenderer = fs.readFileSync('src/map/rendering/mechanicalRenderer.ts', 'utf8');
-  const css = fs.readFileSync('map.css', 'utf8');
+  const css = fs.readFileSync('styles/map.css', 'utf8');
   assert.match(resourceRenderer, /localCardTransform/);
   assert.match(mechanicalRenderer, /localCardTransform/);
   assert.doesNotMatch(resourceRenderer, /metersToWorldUnits\([^)]*FONT/);
