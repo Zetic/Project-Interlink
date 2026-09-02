@@ -1,4 +1,4 @@
-import { pointInPolygon, polygonArea, polygonBounds, polygonCentroid, polygonSignedArea, removeCollinearVertices } from '../geometry.js';
+import { pointInPolygon, polygonArea, polygonBounds, polygonCentroid, polygonSignedArea } from '../geometry.js';
 import { createRng, deterministicUnit } from '../random.js';
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from '../scale.js';
 import { parentIdAtPoint, tracePatchBoundaries, } from './geography.js';
@@ -300,7 +300,7 @@ export function generateRegions(seed, geography, context) {
         const boundaryVertices = exposedBoundaryVertices(patches);
         for (let component = 0; component < loops.length; component += 1) {
             const denseLoop = densifyResolvedLoop(loops[component], boundaryVertices);
-            const polygon = removeCollinearVertices(denseLoop.map(warpBoundaryPoint));
+            const polygon = denseLoop.map(warpBoundaryPoint);
             const center = centerInsidePolygon(polygon, patches, context, regionSeed.surfaceType);
             const environment = createRegionEnvironment(context, center);
             const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
