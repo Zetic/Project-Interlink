@@ -87,6 +87,14 @@ test('active runtime path is TypeScript controller to full Worker to one WASM wo
   }
 });
 
+test('active documentation does not point contributors at retired source roots', () => {
+  const files = ['ARCHITECTURE.md', 'README.md', '.github/copilot-instructions.md'];
+  const combined = files.map(file => readFileSync(path.join(repoRoot, file), 'utf8')).join('\n');
+  for (const stale of ['src/app.js', 'src/content/', 'src/core/', 'src/generator/', 'src/simulation/', 'src/workspace/']) {
+    assert.doesNotMatch(combined, new RegExp(stale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
 test('active architecture documentation describes the single Rust Worker production authority', () => {
   const files = [
     'ARCHITECTURE.md',
@@ -108,6 +116,6 @@ test('active architecture documentation describes the single Rust Worker product
   ]) assert.doesNotMatch(combined, new RegExp(stale));
 
   assert.match(combined, /WasmPackedWorldRuntime/);
-  assert.match(combined, /Rust\/WASM owns physical time advancement|Rust\/WASM owns all physical time advancement/);
-  assert.match(combined, /no JavaScript physics fallback|JavaScript is not a fallback physics engine/);
+  assert.match(combined, /Rust\/WASM owns physical time advancement|Rust\/WASM owns all physical time advancement|Rust\/WASM owns all time-evolving physical state/);
+  assert.match(combined, /no JavaScript physics fallback|JavaScript is not a fallback physics engine|no browser-side fallback physics engine/i);
 });
