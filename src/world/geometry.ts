@@ -44,6 +44,26 @@ export function polygonCentroid(points: readonly Point[]): Point {
   return { x: centroidX * scale, y: centroidY * scale };
 }
 
+export function polygonArea(points: readonly Point[]): number {
+  let twiceArea = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index]!;
+    const next = points[(index + 1) % points.length]!;
+    twiceArea += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(twiceArea) / 2;
+}
+
+export function boundsIntersect(left: Bounds, right: Bounds): boolean {
+  return left.x <= right.x + right.width && left.x + left.width >= right.x
+    && left.y <= right.y + right.height && left.y + left.height >= right.y;
+}
+
+export function pointInBounds(point: Point, bounds: Bounds): boolean {
+  return point.x >= bounds.x && point.x <= bounds.x + bounds.width
+    && point.y >= bounds.y && point.y <= bounds.y + bounds.height;
+}
+
 export function pointInPolygon(point: Point, polygon: readonly Point[]): boolean {
   let inside = false;
 

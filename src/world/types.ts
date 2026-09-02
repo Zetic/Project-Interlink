@@ -53,22 +53,46 @@ export interface ResourceNode {
   ports: NodePort[];
 }
 
+export interface Landmass {
+  id: string;
+  name: string;
+  polygon: Point[];
+  bounds: Bounds;
+}
+
+export interface RegionEnvironment {
+  latitudeDeg: number;
+  meanElevationMeters: number;
+  reliefMeters: number;
+  thermalIndex: number;
+  moistureIndex: number;
+  tectonicActivity: number;
+  volcanicActivity: number;
+  sedimentaryBasinFactor: number;
+}
+
 export interface Region {
   id: string;
   name: string;
+  landmassId: string;
   bounds: Bounds;
   polygon: Point[];
+  center: Point;
+  approximateAreaSquareKm: number;
+  environment: RegionEnvironment;
   resourceNodeIds: string[];
 }
 
 export interface Planet {
   id: string;
   seed: string;
+  generatorVersion: number;
   name: string;
   width: number;
   height: number;
   physicalWidthMeters: number;
   physicalHeightMeters: number;
+  landmasses: Landmass[];
   regions: Region[];
   resourceNodes: ResourceNode[];
 }
