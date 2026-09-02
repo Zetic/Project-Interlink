@@ -17,8 +17,8 @@ export const REGION_SEED_ROWS = 50;
 export const TARGET_REGION_SPACING_WORLD_UNITS = PLANET_MAP_WIDTH / REGION_SEED_COLUMNS;
 const REGION_SEED_BIN_SIZE = 64;
 const REGION_WARP_SCALE_CELLS = 2.15;
-const REGION_WARP_AMPLITUDE = 0.14;
-const REGION_WARP_DETAIL = 0.01;
+const REGION_WARP_AMPLITUDE = 0.08;
+const REGION_WARP_DETAIL = 0.004;
 
 interface RegionSeed { id: string; point: Point; surfaceType: SurfaceType; parentId: string; powerBias: number }
 interface RegionBoundaryEdge { start: Point; end: Point; startKey: string; endKey: string }
@@ -197,10 +197,11 @@ function createRegionBoundaryWarper(seed: string, geography: GeneratedGeography)
   };
 }
 
-function centerInsidePolygon(polygon: readonly Point[], patches: readonly GeographyPatch[]): Point {
+function centerInsidePolygon(polygon: readonly Point[], patches: readonly GeographyPatch[], context: PlanetEnvironmentContext, expectedSurfaceType: SurfaceType): Point {
   const centroid = polygonCentroid(polygon);
-  if (pointInPolygon(centroid, polygon)) return roundPoint(centroid);
-  return patches.find(patch => pointInPolygon(patch.center, polygon))?.center ?? polygon[0]!;
+  if (pointInPolygon(centroid, polygon) && samplePlanetEnvironment(context, centroid).surfaceType === expectedSurfaceType) return roundPoint(centroid);
+  const owned = patches.find(patch => pointInPolygon(patch.center, polygon) && samplePlanetEnvironment(context, patch.center).surfaceType === expectedSurfaceType);
+  return roundPoint(owned?.center ?? patches[0]!.center);
 }
 function approximateAreaSquareKm(polygon: readonly Point[], latitudeDeg: number): number {
   const flatArea = polygonArea(polygon) * EARTH_SCALE_METERS_PER_WORLD_UNIT ** 2;
@@ -227,7 +228,7 @@ export function generateRegions(seed: string, geography: GeneratedGeography, con
   for (const [seedId, patches] of [...patchesBySeed.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     const regionSeed = seedsById.get(seedId)!; const loops = traceRegionBoundaryTopology(patches).filter(polygon => polygonSignedArea(polygon) > 0);
     for (let component = 0; component < loops.length; component += 1) {
-      const polygon = removeCollinearVertices(loops[component]!.map(warpBoundaryPoint)); const center = centerInsidePolygon(polygon, patches); const environment = createRegionEnvironment(context, center); const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
+      const polygon = removeCollinearVertices(loops[component]!.map(warpBoundaryPoint)); const center = centerInsidePolygon(polygon, patches, context, regionSeed.surfaceType); const environment = createRegionEnvironment(context, center); const id = `region-${seedId.replace(/^seed-/, '')}-${component}`;
       regions.push({ id, name: createUniqueName(seed, id, environment, regionSeed.surfaceType === 'ocean', usedNames), parentKind: regionSeed.surfaceType === 'land' ? 'continent' : 'ocean', parentId: regionSeed.parentId, surfaceType: regionSeed.surfaceType, bounds: polygonBounds(polygon), polygon, center, approximateAreaSquareKm: approximateAreaSquareKm(polygon, environment.latitudeDeg), environment, resourceNodeIds: [], neighborRegionIds: [] });
     }
   }
