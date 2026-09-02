@@ -1,16 +1,20 @@
-use interlink_worldgen::{build_icosphere, generate_synthetic, generate_tectonics, PlanetPhysicalParameters, SyntheticRequest, TectonicsRequest, WORLDGEN_ENGINE_VERSION};
+use interlink_worldgen::{
+    build_icosphere, generate_crust_and_history, generate_synthetic, generate_tectonics,
+    GeologyRequest, PlanetPhysicalParameters, PlateScaleClass, SyntheticRequest,
+    TectonicsRequest, WORLDGEN_ENGINE_VERSION,
+};
 use std::{env, process, time::Instant};
 
 #[derive(Debug)]
 struct Options { command: String, seed: String, width: u32, height: u32, iterations: u32, level: u8, plates: u16 }
 
-fn usage() -> &'static str { "interlink-worldgen-cli <generate|benchmark|topology|tectonics> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N] [--plates N]" }
+fn usage() -> &'static str { "interlink-worldgen-cli <generate|benchmark|topology|tectonics|geology> [--seed TEXT] [--width N] [--height N] [--iterations N] [--level N] [--plates N]" }
 fn parse_u32(name: &str, value: Option<String>) -> Result<u32, String> { value.ok_or_else(|| format!("{name} requires a value"))?.parse::<u32>().map_err(|_| format!("{name} requires an unsigned integer")) }
 
 fn parse_options() -> Result<Options, String> {
     let mut args = env::args().skip(1);
     let command = args.next().ok_or_else(|| usage().to_owned())?;
-    if !matches!(command.as_str(), "generate" | "benchmark" | "topology" | "tectonics") { return Err(format!("unsupported command '{command}'\n{}", usage())); }
+    if !matches!(command.as_str(), "generate" | "benchmark" | "topology" | "tectonics" | "geology") { return Err(format!("unsupported command '{command}'\n{}", usage())); }
     let mut options = Options { command, seed: "worldgen-cli".to_owned(), width: 512, height: 256, iterations: 5, level: 5, plates: 16 };
     while let Some(flag) = args.next() {
         match flag.as_str() {
@@ -100,8 +104,40 @@ fn tectonics(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
+fn geology(options: &Options) -> Result<(), String> {
+    let started = Instant::now();
+    let topology = build_icosphere(options.level).map_err(|error| error.to_string())?;
+    let parameters = PlanetPhysicalParameters::earthlike_reference();
+    let tectonics = generate_tectonics(&topology, &TectonicsRequest::new(options.seed.as_str(), options.plates), parameters).map_err(|error| error.to_string())?;
+    let geology = generate_crust_and_history(&topology, &tectonics, &GeologyRequest::new(options.seed.as_str()), parameters).map_err(|error| error.to_string())?;
+    let elapsed = started.elapsed();
+    let metrics = &geology.metrics;
+    let major = geology.plate_summaries.iter().filter(|plate| plate.scale_class == PlateScaleClass::Major).count();
+    let intermediate = geology.plate_summaries.iter().filter(|plate| plate.scale_class == PlateScaleClass::Intermediate).count();
+    let minor = geology.plate_summaries.iter().filter(|plate| plate.scale_class == PlateScaleClass::Minor).count();
+    println!("Project Interlink Planet Engine WG-3 crustal state and geological history");
+    println!("engine_version={}", WORLDGEN_ENGINE_VERSION);
+    println!("stage={}@{}", geology.stage.id, geology.stage.version);
+    println!("seed={} stage_seed={:016x} province_seed={:016x} property_seed={:016x} history_seed={:016x}", options.seed, geology.stage.derived_seed, geology.province_seed, geology.property_seed, geology.history_seed);
+    println!("topology_level={} samples={} plates={}", options.level, metrics.sample_count, options.plates);
+    println!("crust_area_fraction continental={:.6} transitional={:.6} oceanic={:.6}", metrics.continental_area_fraction, metrics.transitional_area_fraction, metrics.oceanic_area_fraction);
+    println!("mean_crust_age_myr continental={:.3} oceanic={:.3}", metrics.mean_continental_age_myr, metrics.mean_oceanic_age_myr);
+    println!("mean_crust_thickness_km continental={:.3} oceanic={:.3}", metrics.mean_continental_thickness_km, metrics.mean_oceanic_thickness_km);
+    println!("plate_scale_classes major={} intermediate={} minor={}", major, intermediate, minor);
+    println!("boundary_regimes oceanic_subduction={} ocean_continent_subduction={} continental_collision={} oceanic_ridge={} continental_rift={} transitional_divergence={} transform={}", metrics.oceanic_subduction_edges, metrics.ocean_continent_subduction_edges, metrics.continental_collision_edges, metrics.oceanic_ridge_edges, metrics.continental_rift_edges, metrics.transitional_divergence_edges, metrics.transform_edges);
+    println!("tectonic_hash={} geology_hash={}", tectonics.metrics.tectonic_hash_hex(), metrics.geology_hash_hex());
+    println!("elapsed_ms={:.3}", elapsed.as_secs_f64() * 1_000.0);
+    Ok(())
+}
+
 fn main() {
     let options = match parse_options() { Ok(options) => options, Err(message) => { eprintln!("{message}"); process::exit(2); } };
-    let result = match options.command.as_str() { "benchmark" => benchmark(&options), "topology" => topology(&options), "tectonics" => tectonics(&options), _ => generate_once(&options) };
+    let result = match options.command.as_str() {
+        "benchmark" => benchmark(&options),
+        "topology" => topology(&options),
+        "tectonics" => tectonics(&options),
+        "geology" => geology(&options),
+        _ => generate_once(&options),
+    };
     if let Err(message) = result { eprintln!("worldgen error: {message}"); process::exit(1); }
 }
