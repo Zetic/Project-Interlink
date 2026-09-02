@@ -1,10 +1,21 @@
-import { WORLDGEN_PROTOCOL_VERSION, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, type WorldgenCommand, type WorldgenErrorEvent, type WorldgenGeneratedSyntheticEvent, type WorldgenGeneratedTectonicsEvent, type WorldgenGeneratedTopologyEvent, type WorldgenSyntheticResult, type WorldgenTectonicsResult, type WorldgenTopologyResult } from './protocol.js';
+import { WORLDGEN_PROTOCOL_VERSION, validateGeologyRequest, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, type WorldgenCommand, type WorldgenErrorEvent, type WorldgenGeneratedGeologyEvent, type WorldgenGeneratedSyntheticEvent, type WorldgenGeneratedTectonicsEvent, type WorldgenGeneratedTopologyEvent, type WorldgenGeologyResult, type WorldgenSyntheticResult, type WorldgenTectonicsResult, type WorldgenTopologyResult } from './protocol.js';
 
 interface WasmDiagnostic { generator_version(): number; stage_id(): string; stage_version(): number; stage_seed_hex(): string; width(): number; height(): number; sample_count(): bigint; minimum(): number; maximum(): number; mean(): number; field_hash_hex(): string; values(): Uint16Array; free(): void; }
 interface WasmTopology { generator_version(): number; level(): number; sample_count(): number; edge_count(): number; face_count(): number; five_neighbor_count(): number; six_neighbor_count(): number; total_area_steradians(): number; minimum_area_steradians(): number; maximum_area_steradians(): number; mean_area_steradians(): number; area_coefficient_of_variation(): number; minimum_edge_arc_radians(): number; maximum_edge_arc_radians(): number; mean_edge_arc_radians(): number; edge_coefficient_of_variation(): number; minimum_interface_arc_radians(): number; maximum_interface_arc_radians(): number; mean_interface_arc_radians(): number; interface_coefficient_of_variation(): number; topology_hash_hex(): string; positions(): Float64Array; faces(): Uint32Array; neighbor_offsets(): Uint32Array; neighbors(): Uint32Array; neighbor_arc_lengths_rad(): Float64Array; neighbor_interface_arc_lengths_rad(): Float64Array; area_steradians(): Float64Array; birth_levels(): Uint8Array; parent_edges(): Uint32Array; free(): void; }
 interface WasmTectonics { generator_version(): number; stage_id(): string; stage_version(): number; stage_seed_hex(): string; level(): number; sample_count(): number; plate_count(): number; boundary_edge_count(): number; convergent_edge_count(): number; divergent_edge_count(): number; transform_edge_count(): number; minimum_plate_area_fraction(): number; maximum_plate_area_fraction(): number; mean_plate_area_fraction(): number; minimum_seed_separation_rad(): number; mean_reference_speed_mm_per_year(): number; tectonic_hash_hex(): string; topology_hash_hex(): string; positions(): Float64Array; faces(): Uint32Array; neighbor_offsets(): Uint32Array; neighbors(): Uint32Array; plate_ids(): Uint16Array; plate_seed_samples(): Uint32Array; plate_euler_poles(): Float64Array; plate_angular_velocities_rad_per_myr(): Float64Array; plate_area_steradians(): Float64Array; boundary_samples(): Uint32Array; boundary_plate_ids(): Uint16Array; boundary_kinds(): Uint8Array; boundary_normal_rates_m_per_year(): Float64Array; boundary_shear_rates_m_per_year(): Float64Array; free(): void; }
-interface WorldgenWasmModule { default(): Promise<unknown>; worldgen_protocol_version(): number; worldgen_engine_version(): number; WasmWorldgenDiagnostic: new (seed: string, width: number, height: number) => WasmDiagnostic; WasmWorldgenTopology: new (level: number) => WasmTopology; WasmWorldgenTectonics: new (seed: string, level: number, plateCount: number) => WasmTectonics; }
-interface WorldgenWorkerScope { addEventListener(type: 'message', listener: (event: MessageEvent<WorldgenCommand>) => void): void; postMessage(message: WorldgenGeneratedSyntheticEvent | WorldgenGeneratedTopologyEvent | WorldgenGeneratedTectonicsEvent | WorldgenErrorEvent, transfer?: Transferable[]): void; }
+interface WasmGeology {
+  generator_version(): number; stage_id(): string; stage_version(): number; stage_seed_hex(): string; province_seed_hex(): string; property_seed_hex(): string; history_seed_hex(): string;
+  level(): number; sample_count(): number; plate_count(): number; boundary_edge_count(): number; geology_hash_hex(): string; tectonic_hash_hex(): string; topology_hash_hex(): string;
+  continental_area_fraction(): number; transitional_area_fraction(): number; oceanic_area_fraction(): number; mean_continental_age_myr(): number; mean_oceanic_age_myr(): number; mean_continental_thickness_km(): number; mean_oceanic_thickness_km(): number;
+  oceanic_subduction_edges(): number; ocean_continent_subduction_edges(): number; continental_collision_edges(): number; oceanic_ridge_edges(): number; continental_rift_edges(): number; transitional_divergence_edges(): number; transform_edges(): number;
+  positions(): Float64Array; faces(): Uint32Array; neighbor_offsets(): Uint32Array; neighbors(): Uint32Array; plate_ids(): Uint16Array; boundary_samples(): Uint32Array; boundary_plate_ids(): Uint16Array; boundary_kinds(): Uint8Array;
+  crust_kind(): Uint8Array; crust_province_id(): Uint16Array; crust_age_myr(): Float32Array; crust_thickness_km(): Float32Array; crust_density_kg_per_m3(): Float32Array; buoyancy_index(): Float32Array;
+  orogenic_history(): Float32Array; rift_history(): Float32Array; ridge_history(): Float32Array; subduction_history(): Float32Array; trench_history(): Float32Array; volcanic_arc_history(): Float32Array; transform_history(): Float32Array; subsidence_history(): Float32Array; basin_potential(): Float32Array; crustal_strain(): Float32Array;
+  geological_boundary_regimes(): Uint8Array; subduction_polarities(): Uint8Array; plate_scale_classes(): Uint8Array; plate_continental_fractions(): Float64Array; plate_transitional_fractions(): Float64Array; plate_oceanic_fractions(): Float64Array; plate_mean_crust_age_myr(): Float64Array; plate_mean_crust_thickness_km(): Float64Array;
+  free(): void;
+}
+interface WorldgenWasmModule { default(): Promise<unknown>; worldgen_protocol_version(): number; worldgen_engine_version(): number; WasmWorldgenDiagnostic: new (seed: string, width: number, height: number) => WasmDiagnostic; WasmWorldgenTopology: new (level: number) => WasmTopology; WasmWorldgenTectonics: new (seed: string, level: number, plateCount: number) => WasmTectonics; WasmWorldgenGeology: new (seed: string, level: number, plateCount: number) => WasmGeology; }
+interface WorldgenWorkerScope { addEventListener(type: 'message', listener: (event: MessageEvent<WorldgenCommand>) => void): void; postMessage(message: WorldgenGeneratedSyntheticEvent | WorldgenGeneratedTopologyEvent | WorldgenGeneratedTectonicsEvent | WorldgenGeneratedGeologyEvent | WorldgenErrorEvent, transfer?: Transferable[]): void; }
 
 const workerScope = self as unknown as WorldgenWorkerScope;
 let wasmModulePromise: Promise<WorldgenWasmModule> | null = null;
@@ -77,6 +88,83 @@ async function generateTectonics(command: Extract<WorldgenCommand, { type: 'gene
   } finally { output.free(); }
 }
 
+async function generateGeology(command: Extract<WorldgenCommand, { type: 'generate-geology' }>): Promise<WorldgenGeologyResult> {
+  validateGeologyRequest(command.payload);
+  const module = await loadWorldgenWasm();
+  const startedAt = nowMs();
+  const output = new module.WasmWorldgenGeology(command.payload.seed, command.payload.level, command.payload.plateCount);
+  try {
+    const positions = output.positions();
+    const faces = output.faces();
+    const neighborOffsets = output.neighbor_offsets();
+    const neighbors = output.neighbors();
+    const plateIds = output.plate_ids();
+    const boundarySamples = output.boundary_samples();
+    const boundaryPlateIds = output.boundary_plate_ids();
+    const boundaryKinds = output.boundary_kinds();
+    const crustKind = output.crust_kind();
+    const crustProvinceId = output.crust_province_id();
+    const crustAgeMyr = output.crust_age_myr();
+    const crustThicknessKm = output.crust_thickness_km();
+    const crustDensityKgPerM3 = output.crust_density_kg_per_m3();
+    const buoyancyIndex = output.buoyancy_index();
+    const orogenicHistory = output.orogenic_history();
+    const riftHistory = output.rift_history();
+    const ridgeHistory = output.ridge_history();
+    const subductionHistory = output.subduction_history();
+    const trenchHistory = output.trench_history();
+    const volcanicArcHistory = output.volcanic_arc_history();
+    const transformHistory = output.transform_history();
+    const subsidenceHistory = output.subsidence_history();
+    const basinPotential = output.basin_potential();
+    const crustalStrain = output.crustal_strain();
+    const geologicalBoundaryRegimes = output.geological_boundary_regimes();
+    const subductionPolarities = output.subduction_polarities();
+    const plateScaleClasses = output.plate_scale_classes();
+    const plateContinentalFractions = output.plate_continental_fractions();
+    const plateTransitionalFractions = output.plate_transitional_fractions();
+    const plateOceanicFractions = output.plate_oceanic_fractions();
+    const plateMeanCrustAgeMyr = output.plate_mean_crust_age_myr();
+    const plateMeanCrustThicknessKm = output.plate_mean_crust_thickness_km();
+    return {
+      engineVersion: output.generator_version(),
+      level: output.level(),
+      topologyHash: output.topology_hash_hex(),
+      plateCount: output.plate_count(),
+      boundaryEdgeCount: output.boundary_edge_count(),
+      stage: { id: output.stage_id(), version: output.stage_version(), stageSeed: output.stage_seed_hex(), durationMs: Math.max(0, nowMs() - startedAt) },
+      provinceSeed: output.province_seed_hex(),
+      propertySeed: output.property_seed_hex(),
+      historySeed: output.history_seed_hex(),
+      metrics: {
+        sampleCount: output.sample_count(),
+        continentalAreaFraction: output.continental_area_fraction(),
+        transitionalAreaFraction: output.transitional_area_fraction(),
+        oceanicAreaFraction: output.oceanic_area_fraction(),
+        meanContinentalAgeMyr: output.mean_continental_age_myr(),
+        meanOceanicAgeMyr: output.mean_oceanic_age_myr(),
+        meanContinentalThicknessKm: output.mean_continental_thickness_km(),
+        meanOceanicThicknessKm: output.mean_oceanic_thickness_km(),
+        oceanicSubductionEdges: output.oceanic_subduction_edges(),
+        oceanContinentSubductionEdges: output.ocean_continent_subduction_edges(),
+        continentalCollisionEdges: output.continental_collision_edges(),
+        oceanicRidgeEdges: output.oceanic_ridge_edges(),
+        continentalRiftEdges: output.continental_rift_edges(),
+        transitionalDivergenceEdges: output.transitional_divergence_edges(),
+        transformEdges: output.transform_edges(),
+        geologyHash: output.geology_hash_hex(),
+        tectonicHash: output.tectonic_hash_hex(),
+      },
+      positions, faces, neighborOffsets, neighbors, plateIds, boundarySamples, boundaryPlateIds, boundaryKinds,
+      crustKind, crustProvinceId, crustAgeMyr, crustThicknessKm, crustDensityKgPerM3, buoyancyIndex,
+      orogenicHistory, riftHistory, ridgeHistory, subductionHistory, trenchHistory, volcanicArcHistory,
+      transformHistory, subsidenceHistory, basinPotential, crustalStrain, geologicalBoundaryRegimes,
+      subductionPolarities, plateScaleClasses, plateContinentalFractions, plateTransitionalFractions,
+      plateOceanicFractions, plateMeanCrustAgeMyr, plateMeanCrustThicknessKm,
+    };
+  } finally { output.free(); }
+}
+
 workerScope.addEventListener('message', async messageEvent => {
   const command = messageEvent.data;
   try {
@@ -94,6 +182,21 @@ workerScope.addEventListener('message', async messageEvent => {
     if (command.type === 'generate-tectonics') {
       const result = await generateTectonics(command);
       workerScope.postMessage({ protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId: command.requestId, type: 'generated-tectonics', payload: result }, [result.positions.buffer, result.faces.buffer, result.neighborOffsets.buffer, result.neighbors.buffer, result.plateIds.buffer, result.plateSeedSamples.buffer, result.plateEulerPoles.buffer, result.plateAngularVelocitiesRadPerMyr.buffer, result.plateAreaSteradians.buffer, result.boundarySamples.buffer, result.boundaryPlateIds.buffer, result.boundaryKinds.buffer, result.boundaryNormalRatesMPerYear.buffer, result.boundaryShearRatesMPerYear.buffer]);
+      return;
+    }
+    if (command.type === 'generate-geology') {
+      const result = await generateGeology(command);
+      workerScope.postMessage({ protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId: command.requestId, type: 'generated-geology', payload: result }, [
+        result.positions.buffer, result.faces.buffer, result.neighborOffsets.buffer, result.neighbors.buffer, result.plateIds.buffer,
+        result.boundarySamples.buffer, result.boundaryPlateIds.buffer, result.boundaryKinds.buffer, result.crustKind.buffer,
+        result.crustProvinceId.buffer, result.crustAgeMyr.buffer, result.crustThicknessKm.buffer, result.crustDensityKgPerM3.buffer,
+        result.buoyancyIndex.buffer, result.orogenicHistory.buffer, result.riftHistory.buffer, result.ridgeHistory.buffer,
+        result.subductionHistory.buffer, result.trenchHistory.buffer, result.volcanicArcHistory.buffer, result.transformHistory.buffer,
+        result.subsidenceHistory.buffer, result.basinPotential.buffer, result.crustalStrain.buffer, result.geologicalBoundaryRegimes.buffer,
+        result.subductionPolarities.buffer, result.plateScaleClasses.buffer, result.plateContinentalFractions.buffer,
+        result.plateTransitionalFractions.buffer, result.plateOceanicFractions.buffer, result.plateMeanCrustAgeMyr.buffer,
+        result.plateMeanCrustThicknessKm.buffer,
+      ]);
       return;
     }
     throw new Error(`Unsupported worldgen command '${String((command as { type?: unknown }).type)}'.`);
