@@ -6,9 +6,10 @@ This directory defines the greenfield Planet Engine rewrite that runs in paralle
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — Rust/WASM/Worker ownership and isolation.
 - [`TOPOLOGY.md`](TOPOLOGY.md) — canonical hierarchical geodesic sphere and finite-volume geometry.
 - [`TECTONICS.md`](TECTONICS.md) — deterministic spherical plate partitioning and rigid plate kinematics.
+- [`GEOLOGY.md`](GEOLOGY.md) — dense crustal state, geological boundary regimes, and inferred geological memory.
 - [`RESOLUTION.md`](RESOLUTION.md) — process-specific multiresolution policy.
 - [`DETERMINISM.md`](DETERMINISM.md) — generator/stage identity and random-stream isolation.
-- [`VALIDATION.md`](VALIDATION.md) — numerical, topology, and later physical acceptance gates.
+- [`VALIDATION.md`](VALIDATION.md) — numerical, topology, and physical acceptance gates.
 
 The complete rewrite blueprint from planning is reflected across these reviewable architecture documents.
 
@@ -36,7 +37,7 @@ WG-1 generates no tectonics or downstream geography. Its topology is the fixed p
 
 WG-2 adds deterministic plate-scale physical truth without yet creating crust or terrain:
 
-- seeded farthest-point plate origins on the canonical sphere;
+- seeded stochastic minimum-separation plate origins on the canonical sphere, permitting large and small macro plates rather than forcing near-equal territories;
 - connected graph-Voronoi plate ownership using canonical geodesic edge distances;
 - one rigid Euler pole/angular velocity per plate;
 - plate area accounting from canonical dual-cell areas;
@@ -45,4 +46,20 @@ WG-2 adds deterministic plate-scale physical truth without yet creating crust or
 - deterministic tectonic identity independent from later geology;
 - native, WASM, Worker, and browser plate diagnostics.
 
-WG-2 intentionally stops before continental/oceanic crust, geological history, uplift/subsidence, elevation, lithology, climate, hydrology, resources, Regions, or gameplay state. Those must derive from accepted plate truth rather than be embedded into the plate partition algorithm.
+WG-2 intentionally stops before crustal state or terrain. Those derive from accepted plate truth rather than being embedded into the plate partition algorithm.
+
+## WG-3 — crustal state and geological history
+
+WG-3 introduces dense geological state on the same canonical topology:
+
+- coherent continental, transitional, and oceanic crust independent from current plate borders;
+- physical crust age, thickness, density, and relative buoyancy;
+- oceanic crust age inferred from spreading-system distance and rate;
+- convergent boundaries resolved into oceanic subduction, ocean-continent subduction, or continental collision;
+- divergent boundaries resolved into oceanic ridges, continental rifts, or transitional divergence;
+- deterministic subduction polarity from local crustal state and buoyancy;
+- propagated orogenic, rift, ridge, subduction, trench, volcanic-arc, transform, subsidence, basin, and strain history fields;
+- derived plate summaries, including area-based major/intermediate/minor classes and mixed crust fractions;
+- native, WASM, Worker, and browser crust/history diagnostics.
+
+WG-3 still generates no elevation or bathymetry. Its physical crust/history output is intended to constrain WG-4 initial terrain through isostasy and tectonic structure rather than direct terrain noise.
