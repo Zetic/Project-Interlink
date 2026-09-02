@@ -2,19 +2,20 @@ import { apparatusDefinitionById } from '../apparatus/definitions.js';
 import { connectPorts, moveMechanicalNode, placeMechanicalNode, removeMechanicalNode } from '../graph/graphCommands.js';
 import { mechanicalNodeById, portForEndpoint } from '../graph/graphQueries.js';
 import { formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';
-import { createWorldSpatialIndex } from '../world/spatialIndex.js';
+import { worldSpatialIndexFor } from '../world/spatialIndex.js';
 import { cameraForAnchor, worldPointAtNormalizedScreen } from './camera/cameraAnchor.js';
 import { MAP_MAX_ZOOM, MAP_MIN_ZOOM, MECHANICAL_PLACEMENT_MIN_ZOOM, approachZoom, camerasEqual, clamp, clampCamera, formatZoomFactor, normalizeWheelDelta, smoothStep, visibleWorldSize, wheelSensitivityForZoom, wheelZoomAfterDelta, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, } from './camera/mapCamera.js';
 import { renderMechanicalLayer, updateMechanicalVisibility, updatePlacementPreview } from './rendering/mechanicalRenderer.js';
 import { renderResourceLayer, updateResourceRuntimePresentation, updateResourceVisibility, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_HIDE_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_SHOW_ZOOM, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, } from './rendering/resourceRenderer.js';
 import { initialRenderOrigin, renderOriginForCamera, sameRenderOrigin, worldToRenderPoint, } from './rendering/renderOrigin.js';
 export { MAP_MAX_ZOOM, MAP_MIN_ZOOM, RESOURCE_NODE_FADE_START_ZOOM, RESOURCE_NODE_FULL_OPACITY_ZOOM, RESOURCE_NODE_HIDE_ZOOM, RESOURCE_NODE_INTERACTIVE_ZOOM, RESOURCE_NODE_PHYSICAL_HEIGHT_METERS, RESOURCE_NODE_PHYSICAL_WIDTH_METERS, RESOURCE_NODE_SHOW_ZOOM, RESOURCE_NODE_WORLD_HEIGHT, RESOURCE_NODE_WORLD_WIDTH, WHEEL_ENGINEERING_BLEND_END_ZOOM, WHEEL_ENGINEERING_BLEND_START_ZOOM, WHEEL_ENGINEERING_SENSITIVITY, WHEEL_GEOGRAPHIC_SENSITIVITY, wheelSensitivityForZoom, wheelZoomAfterDelta, };
-export const REGION_INTERACTION_MAX_ZOOM = 10;
+export const REGION_INTERACTION_MAX_ZOOM = 2 ** 9;
 export const REGION_RENDER_MIN_ZOOM = 3;
-export const REGION_RENDER_MAX_ZOOM = 2 ** 14;
-export const REGION_LABEL_MIN_ZOOM = 7;
-export const REGION_LABEL_MAX_ZOOM = 512;
-export const MAX_VISIBLE_REGION_LABELS = 48;
+export const REGION_RENDER_MAX_ZOOM = 2 ** 10;
+export const REGION_LABEL_MIN_ZOOM = 2;
+export const REGION_LABEL_MAX_ZOOM = 2 ** 10;
+export const FEATURE_MARKER_SHOW_ZOOM = 2 ** 8;
+export function regionsInteractiveAtZoom(zoom) { return zoom < REGION_INTERACTION_MAX_ZOOM; }
 const SVG_NS = 'http://www.w3.org/2000/svg';
 function svgElement(tagName) { return document.createElementNS(SVG_NS, tagName); }
 function screenToWorld(svg, planet, camera, clientX, clientY) {
@@ -30,11 +31,15 @@ function selectionMatches(element, selection) {
     const kind = element.getAttribute('data-map-kind');
     if (selection.type === 'planet')
         return kind === 'planet';
+    if (selection.type === 'continent')
+        return kind === 'continent' && element.getAttribute('data-continent-id') === selection.continentId;
+    if (selection.type === 'ocean')
+        return kind === 'ocean' && element.getAttribute('data-ocean-id') === selection.oceanId;
     if (selection.type === 'region')
         return kind === 'region' && element.getAttribute('data-region-id') === selection.regionId;
     if (selection.type === 'resource')
         return kind === 'resource' && element.getAttribute('data-resource-id') === selection.resourceNodeId;
-    return kind === 'mechanical' && element.getAttribute('data-mechanical-id') === selection.mechanicalNodeId;
+    return selection.type === 'mechanical' && kind === 'mechanical' && element.getAttribute('data-mechanical-id') === selection.mechanicalNodeId;
 }
 function viewportBounds(svg, planet, camera, margin = 0) {
     const visible = visibleWorldSize(svg, planet, camera.zoom);
@@ -45,18 +50,22 @@ function viewportBounds(svg, planet, camera, margin = 0) {
         height: visible.height + margin * 2,
     };
 }
-function appendLandmassLayer(svg, planet, renderOrigin) {
+function appendParentLayer(svg, parents, renderOrigin, store) {
     const layer = svgElement('g');
-    layer.setAttribute('class', 'ws-map-landmass-layer');
-    for (const landmass of planet.landmasses) {
-        const polygon = svgElement('polygon');
-        polygon.setAttribute('points', landmass.polygon.map(point => {
-            const local = worldToRenderPoint(point, renderOrigin);
-            return `${local.x},${local.y}`;
-        }).join(' '));
-        polygon.setAttribute('class', 'ws-map-landmass');
-        polygon.setAttribute('data-landmass-id', landmass.id);
-        layer.appendChild(polygon);
+    const kind = parents[0]?.kind ?? 'continent';
+    layer.setAttribute('class', `ws-map-${kind}-layer`);
+    for (const parent of parents) {
+        const path = svgElement('path');
+        path.setAttribute('d', parent.polygons.map(points => points.map((point, index) => { const local = worldToRenderPoint(point, renderOrigin); return `${index === 0 ? 'M' : 'L'} ${local.x} ${local.y}`; }).join(' ') + ' Z').join(' '));
+        path.setAttribute('fill-rule', 'evenodd');
+        path.setAttribute('class', `ws-map-parent ws-map-${parent.kind}`);
+        path.setAttribute('data-map-kind', parent.kind);
+        path.setAttribute(`data-${parent.kind}-id`, parent.id);
+        path.addEventListener('click', event => {
+            event.stopPropagation();
+            store.setSelection(parent.kind === 'continent' ? { type: 'continent', continentId: parent.id } : { type: 'ocean', oceanId: parent.id });
+        });
+        layer.appendChild(path);
     }
     svg.appendChild(layer);
 }
@@ -66,22 +75,59 @@ function regionElement(region, renderOrigin, store) {
         const local = worldToRenderPoint(point, renderOrigin);
         return `${local.x},${local.y}`;
     }).join(' '));
-    const tone = Number(region.landmassId.split('-').at(-1) ?? 0) % 5;
-    polygon.setAttribute('class', `ws-map-region ws-map-region--${tone}`);
+    const tone = Number(region.parentId.split('-').at(-1) ?? 0) % 5;
+    polygon.setAttribute('class', `ws-map-region ws-map-region--${region.surfaceType} ws-map-region--${tone}`);
     polygon.setAttribute('data-map-kind', 'region');
     polygon.setAttribute('data-region-id', region.id);
-    polygon.setAttribute('data-landmass-id', region.landmassId);
+    polygon.setAttribute('data-parent-id', region.parentId);
     polygon.addEventListener('click', event => { event.stopPropagation(); store.setSelection({ type: 'region', regionId: region.id }); });
     return polygon;
 }
-function regionLabelElement(region, renderOrigin) {
+function regionLabelElement(region, renderOrigin, opacity, pixelSize) {
     const center = worldToRenderPoint(region.center, renderOrigin);
     const label = svgElement('text');
     label.setAttribute('x', center.x.toFixed(6));
     label.setAttribute('y', center.y.toFixed(6));
     label.setAttribute('class', 'ws-map-region-label');
+    label.setAttribute('opacity', opacity.toFixed(3));
+    label.setAttribute('data-label-px', pixelSize.toFixed(2));
     label.textContent = region.name;
     return label;
+}
+export function regionLabelBudgetForZoom(zoom) {
+    if (zoom >= REGION_LABEL_MAX_ZOOM)
+        return 0;
+    const progress = Math.max(0, Math.min(1, Math.log2(Math.max(REGION_LABEL_MIN_ZOOM, zoom) / REGION_LABEL_MIN_ZOOM) / 8));
+    return Math.round(16 + progress * 104);
+}
+export function regionLabelPixelSizeForZoom(zoom) {
+    const progress = Math.max(0, Math.min(1, Math.log2(Math.max(1, zoom)) / 10));
+    return 15 - progress * 5;
+}
+export function regionLabelOpacity(normalizedX, normalizedY) {
+    const radius = Math.hypot((normalizedX - 0.5) * 2, (normalizedY - 0.5) * 2);
+    if (radius >= 0.95)
+        return 0;
+    if (radius <= 0.45)
+        return 1;
+    return 1 - (radius - 0.45) / 0.5;
+}
+function featureMarkerLayer(resources, renderOrigin, store) {
+    const layer = svgElement('g');
+    layer.setAttribute('class', 'ws-map-feature-marker-layer');
+    for (const resource of resources) {
+        const local = worldToRenderPoint(resource.position, renderOrigin);
+        const marker = svgElement('circle');
+        marker.setAttribute('cx', String(local.x));
+        marker.setAttribute('cy', String(local.y));
+        marker.setAttribute('r', '2.5');
+        marker.setAttribute('class', 'ws-map-feature-marker');
+        marker.setAttribute('data-map-kind', 'resource');
+        marker.setAttribute('data-resource-id', resource.id);
+        marker.addEventListener('click', event => { event.stopPropagation(); store.setSelection({ type: 'resource', resourceNodeId: resource.id }); });
+        layer.appendChild(marker);
+    }
+    return layer;
 }
 function renderWorld(svg, planet, graph, store, renderOrigin) {
     svg.replaceChildren();
@@ -95,12 +141,13 @@ function renderWorld(svg, planet, graph, store, renderOrigin) {
     background.setAttribute('data-map-kind', 'planet');
     background.addEventListener('click', () => store.setSelection({ type: 'planet' }));
     svg.appendChild(background);
-    appendLandmassLayer(svg, planet, renderOrigin);
+    appendParentLayer(svg, planet.oceans, renderOrigin, store);
+    appendParentLayer(svg, planet.continents, renderOrigin, store);
     const regions = svgElement('g');
     regions.setAttribute('class', 'ws-map-region-layer');
     const labels = svgElement('g');
     labels.setAttribute('class', 'ws-map-region-label-layer');
-    svg.append(regions, labels, renderResourceLayer(planet, renderOrigin, resourceId => store.setSelection({ type: 'resource', resourceNodeId: resourceId }), []), renderMechanicalLayer(planet, graph, renderOrigin, nodeId => store.setSelection({ type: 'mechanical', mechanicalNodeId: nodeId })));
+    svg.append(regions, labels, featureMarkerLayer([], renderOrigin, store), renderResourceLayer(planet, renderOrigin, resourceId => store.setSelection({ type: 'resource', resourceNodeId: resourceId }), []), renderMechanicalLayer(planet, graph, renderOrigin, nodeId => store.setSelection({ type: 'mechanical', mechanicalNodeId: nodeId })));
 }
 function updateSelection(svg, selection) {
     for (const element of svg.querySelectorAll('[data-map-kind]'))
@@ -116,15 +163,14 @@ function updateZoomVisibility(svg, zoom) {
     updateMechanicalVisibility(svg, zoom);
     const regions = svg.querySelector('.ws-map-region-layer');
     if (regions)
-        regions.style.pointerEvents = zoom >= REGION_INTERACTION_MAX_ZOOM ? 'none' : 'auto';
-    const landmasses = svg.querySelector('.ws-map-landmass-layer');
-    if (landmasses)
-        landmasses.style.visibility = zoom >= REGION_RENDER_MIN_ZOOM ? 'hidden' : 'visible';
+        regions.style.pointerEvents = regionsInteractiveAtZoom(zoom) ? 'auto' : 'none';
+    for (const parents of svg.querySelectorAll('.ws-map-continent-layer, .ws-map-ocean-layer'))
+        parents.style.visibility = zoom >= REGION_RENDER_MIN_ZOOM ? 'hidden' : 'visible';
     const rect = svg.getBoundingClientRect();
     const viewBox = svg.viewBox.baseVal;
     const unitsPerPixel = rect.width > 0 && viewBox.width > 0 ? viewBox.width / rect.width : 1;
     for (const label of svg.querySelectorAll('.ws-map-region-label'))
-        label.setAttribute('font-size', String(Math.max(14, unitsPerPixel * 16)));
+        label.setAttribute('font-size', String(unitsPerPixel * Number(label.dataset.labelPx ?? 12)));
 }
 export function installMapRenderer(root, store) {
     const svg = root.querySelector('#ws-map-svg');
@@ -160,38 +206,52 @@ export function installMapRenderer(root, store) {
     let observedInteraction = store.getState().interaction;
     const refreshGeographicViewport = (planet, camera) => {
         if (!spatialIndex || spatialIndex.planet !== planet)
-            spatialIndex = createWorldSpatialIndex(planet);
+            spatialIndex = worldSpatialIndexFor(planet);
         const showRegions = camera.zoom >= REGION_RENDER_MIN_ZOOM && camera.zoom < REGION_RENDER_MAX_ZOOM;
-        const bounds = viewportBounds(svg, planet, camera, showRegions ? spatialIndex.chunkSize : 2);
-        const visibleRegions = showRegions ? spatialIndex.regionsIntersecting(bounds) : [];
         const showLabels = camera.zoom >= REGION_LABEL_MIN_ZOOM && camera.zoom < REGION_LABEL_MAX_ZOOM;
+        const showFeatureMarkers = camera.zoom >= FEATURE_MARKER_SHOW_ZOOM && camera.zoom < RESOURCE_NODE_SHOW_ZOOM;
+        const showResourceCards = camera.zoom >= RESOURCE_NODE_HIDE_ZOOM;
+        const visibleBounds = viewportBounds(svg, planet, camera);
+        const bounds = viewportBounds(svg, planet, camera, showRegions ? Math.min(spatialIndex.chunkSize, visibleBounds.width * 0.25) : 2);
         const selection = store.getState().selection;
         const selectedRegionId = selection.type === 'region' ? selection.regionId : null;
-        const labeledRegions = showLabels
-            ? [...visibleRegions]
-                .sort((left, right) => Number(right.id === selectedRegionId) - Number(left.id === selectedRegionId)
-                || right.resourceNodeIds.length - left.resourceNodeIds.length
-                || left.id.localeCompare(right.id))
-                .slice(0, MAX_VISIBLE_REGION_LABELS)
-            : [];
-        const visibleResources = camera.zoom >= RESOURCE_NODE_HIDE_ZOOM
-            ? spatialIndex.resourceNodesIntersecting(viewportBounds(svg, planet, camera, 2))
-            : [];
-        const signature = [
-            renderOrigin.origin.x, renderOrigin.origin.y,
-            visibleRegions.map(region => region.id).join(','),
-            labeledRegions.map(region => region.id).join(','),
-            visibleResources.map(resource => resource.id).join(','),
+        const querySignature = [
+            Math.floor(Math.log2(Math.max(1, camera.zoom)) * 4),
+            Math.floor(bounds.x / spatialIndex.chunkSize), Math.floor(bounds.y / spatialIndex.chunkSize),
+            Math.ceil((bounds.x + bounds.width) / spatialIndex.chunkSize), Math.ceil((bounds.y + bounds.height) / spatialIndex.chunkSize),
+            Math.floor(camera.centerX / Math.max(8, visibleBounds.width / 8)), Math.floor(camera.centerY / Math.max(8, visibleBounds.height / 8)),
+            renderOrigin.origin.x, renderOrigin.origin.y, selectedRegionId ?? '', showFeatureMarkers, showResourceCards,
         ].join('|');
-        if (signature === geographicRenderSignature)
+        if (querySignature === geographicRenderSignature)
             return;
-        geographicRenderSignature = signature;
+        geographicRenderSignature = querySignature;
+        const visibleRegions = showRegions ? spatialIndex.regionsIntersecting(bounds) : [];
+        const labelCandidates = showLabels ? visibleRegions.map(region => {
+            const normalizedX = (region.center.x - visibleBounds.x) / visibleBounds.width;
+            const normalizedY = (region.center.y - visibleBounds.y) / visibleBounds.height;
+            return { region, normalizedX, normalizedY, opacity: regionLabelOpacity(normalizedX, normalizedY), distance: Math.hypot(normalizedX - 0.5, normalizedY - 0.5) };
+        }).filter(candidate => candidate.opacity > 0).sort((left, right) => Number(right.region.id === selectedRegionId) - Number(left.region.id === selectedRegionId)
+            || left.distance - right.distance || right.region.resourceNodeIds.length - left.region.resourceNodeIds.length || left.region.id.localeCompare(right.region.id)) : [];
+        const occupied = new Set();
+        const labeledRegions = [];
+        for (const candidate of labelCandidates) {
+            const collisionKey = `${Math.floor(candidate.normalizedX / 0.12)}:${Math.floor(candidate.normalizedY / 0.07)}`;
+            if (occupied.has(collisionKey) && candidate.region.id !== selectedRegionId)
+                continue;
+            occupied.add(collisionKey);
+            labeledRegions.push(candidate);
+            if (labeledRegions.length >= regionLabelBudgetForZoom(camera.zoom))
+                break;
+        }
+        const visibleResources = showFeatureMarkers || showResourceCards ? spatialIndex.resourceNodesIntersecting(viewportBounds(svg, planet, camera, 2)) : [];
         const regionLayer = svg.querySelector('.ws-map-region-layer');
         const labelLayer = svg.querySelector('.ws-map-region-label-layer');
         regionLayer?.replaceChildren(...visibleRegions.map(region => regionElement(region, renderOrigin, store)));
-        labelLayer?.replaceChildren(...labeledRegions.map(region => regionLabelElement(region, renderOrigin)));
+        labelLayer?.replaceChildren(...labeledRegions.map(candidate => regionLabelElement(candidate.region, renderOrigin, candidate.opacity, regionLabelPixelSizeForZoom(camera.zoom))));
+        const markerLayer = svg.querySelector('.ws-map-feature-marker-layer');
+        markerLayer?.replaceWith(featureMarkerLayer(showFeatureMarkers ? visibleResources : [], renderOrigin, store));
         const resourceLayer = svg.querySelector('.ws-map-resource-node-layer');
-        resourceLayer?.replaceWith(renderResourceLayer(planet, renderOrigin, resourceId => store.setSelection({ type: 'resource', resourceNodeId: resourceId }), visibleResources));
+        resourceLayer?.replaceWith(renderResourceLayer(planet, renderOrigin, resourceId => store.setSelection({ type: 'resource', resourceNodeId: resourceId }), showResourceCards ? visibleResources : []));
         updateResourceRuntimePresentation(svg, planet, store.getState().runtime.snapshot);
         updateSelection(svg, store.getState().selection);
         updatePendingPort(svg, store.getState().interaction.pendingConnection);
@@ -208,7 +268,7 @@ export function installMapRenderer(root, store) {
         renderedPlanet = planet;
         renderedGraph = state.graph;
         if (!spatialIndex || spatialIndex.planet !== planet)
-            spatialIndex = createWorldSpatialIndex(planet);
+            spatialIndex = worldSpatialIndexFor(planet);
         geographicRenderSignature = '';
         renderWorld(svg, planet, state.graph, store, renderOrigin);
         updateSelection(svg, state.selection);
@@ -367,7 +427,7 @@ export function installMapRenderer(root, store) {
             renderedPlanet = planet;
             renderedGraph = state.graph;
             if (!spatialIndex || spatialIndex.planet !== planet)
-                spatialIndex = createWorldSpatialIndex(planet);
+                spatialIndex = worldSpatialIndexFor(planet);
             geographicRenderSignature = '';
             renderWorld(svg, planet, state.graph, store, renderOrigin);
             applyCamera(displayCamera.zoom === 1 && displayCamera.centerX === 0 ? state.camera : displayCamera);
@@ -375,6 +435,8 @@ export function installMapRenderer(root, store) {
         else if (cameraChanged && !internalCameraUpdate && !camerasEqual(displayCamera, state.camera)) {
             animateToCamera(state.camera);
         }
+        if (selectionChanged)
+            geographicRenderSignature = '';
         if (worldNeedsRender || selectionChanged)
             updateSelection(svg, state.selection);
         if (worldNeedsRender || interactionChanged) {

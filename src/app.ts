@@ -15,8 +15,11 @@ function resolveSeed(): string { const input = elementById<HTMLInputElement>('se
 
 function renderBreadcrumbs(state: Readonly<AppState>): void {
   const breadcrumbs = elementById<HTMLElement>('ws-breadcrumbs'); const planet = state.world?.planet; if (!breadcrumbs || !planet) return; const labels = [planet.name]; const selection = state.selection;
-  if (selection.type === 'region') labels.push(planet.regions.find(region => region.id === selection.regionId)?.name ?? selection.regionId);
-  else if (selection.type === 'resource') { const resource = planet.resourceNodes.find(node => node.id === selection.resourceNodeId); const region = resource ? planet.regions.find(candidate => candidate.id === resource.regionId) : null; if (region) labels.push(region.name); labels.push(resource?.name ?? selection.resourceNodeId); }
+  const appendRegion = (region: (typeof planet.regions)[number] | undefined): void => { if (!region) return; const parent = region.parentKind === 'continent' ? planet.continents.find(candidate => candidate.id === region.parentId) : planet.oceans.find(candidate => candidate.id === region.parentId); if (parent) labels.push(parent.name); labels.push(region.name); };
+  if (selection.type === 'continent') labels.push(planet.continents.find(continent => continent.id === selection.continentId)?.name ?? selection.continentId);
+  else if (selection.type === 'ocean') labels.push(planet.oceans.find(ocean => ocean.id === selection.oceanId)?.name ?? selection.oceanId);
+  else if (selection.type === 'region') appendRegion(planet.regions.find(region => region.id === selection.regionId));
+  else if (selection.type === 'resource') { const resource = planet.resourceNodes.find(node => node.id === selection.resourceNodeId); appendRegion(resource ? planet.regions.find(candidate => candidate.id === resource.regionId) : undefined); labels.push(resource?.name ?? selection.resourceNodeId); }
   else if (selection.type === 'mechanical') labels.push(state.graph.nodes.find(node => node.id === selection.mechanicalNodeId)?.label ?? selection.mechanicalNodeId);
   breadcrumbs.replaceChildren(); labels.forEach((label, index) => { if (index > 0) { const separator = document.createElement('span'); separator.className = 'ws-breadcrumb-sep'; separator.textContent = '›'; breadcrumbs.appendChild(separator); } const item = document.createElement('span'); item.className = index === labels.length - 1 ? 'ws-breadcrumb--active' : 'ws-breadcrumb'; item.textContent = label; breadcrumbs.appendChild(item); });
 }

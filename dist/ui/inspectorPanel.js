@@ -2,6 +2,7 @@ import { apparatusDefinitionById } from '../apparatus/definitions.js';
 import { disconnectConnection, removeMechanicalNode, setMechanicalNodeEnabled, setMechanicalNodeParameter, } from '../graph/graphCommands.js';
 import { connectionsForNode, mechanicalNodeById } from '../graph/graphQueries.js';
 import { resourceDefinitionById } from '../world/resources.js';
+import { geographicLocationAt, geographicLocationKey } from '../world/geographyQueries.js';
 import { EARTH_SCALE_METERS_PER_WORLD_UNIT, formatPhysicalDistance, worldUnitsToMeters } from '../world/scale.js';
 function addRow(container, label, value) {
     const row = document.createElement('div');
@@ -52,22 +53,25 @@ function renderPlanet(container, planet) {
     addRow(container, 'Physical scale', `${formatPhysicalDistance(planet.physicalWidthMeters)} × ${formatPhysicalDistance(planet.physicalHeightMeters)}`);
     addRow(container, 'World unit', `≈ ${formatPhysicalDistance(EARTH_SCALE_METERS_PER_WORLD_UNIT)}`);
     addRow(container, 'Generator version', String(planet.generatorVersion));
-    addRow(container, 'Landmasses', String(planet.landmasses.length));
+    addRow(container, 'Tectonic plates', String(planet.tectonicPlates.length));
+    addRow(container, 'Continents', String(planet.continents.length));
+    addRow(container, 'Oceans', String(planet.oceans.length));
     addRow(container, 'Regions', planet.regions.length.toLocaleString());
     addRow(container, 'Natural Features', planet.resourceNodes.length.toLocaleString());
 }
 function renderRegion(container, planet, region) {
-    const landmass = planet.landmasses.find(candidate => candidate.id === region.landmassId);
+    const parent = region.parentKind === 'continent' ? planet.continents.find(candidate => candidate.id === region.parentId) : planet.oceans.find(candidate => candidate.id === region.parentId);
     const environment = region.environment;
     typeLabel(container, 'REGION');
     addRow(container, 'Name', region.name);
-    addRow(container, 'Landmass', landmass?.name ?? region.landmassId);
+    addRow(container, region.parentKind === 'continent' ? 'Continent' : 'Ocean', parent?.name ?? region.parentId);
+    addRow(container, 'Surface', region.surfaceType);
     addRow(container, 'Planet', planet.name);
     sectionTitle(container, 'Geography');
     addRow(container, 'Latitude', formatLatitude(environment.latitudeDeg));
     addRow(container, 'Approx. area', `${region.approximateAreaSquareKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km²`);
     addRow(container, 'Approx. extent', `${formatPhysicalDistance(worldUnitsToMeters(region.bounds.width))} × ${formatPhysicalDistance(worldUnitsToMeters(region.bounds.height))}`);
-    addRow(container, 'Mean elevation', `≈ ${environment.meanElevationMeters.toLocaleString()} m`);
+    addRow(container, environment.meanElevationMeters >= 0 ? 'Mean elevation' : 'Mean depth', `≈ ${Math.abs(environment.meanElevationMeters).toLocaleString()} m`);
     addRow(container, 'Relief', `≈ ${environment.reliefMeters.toLocaleString()} m`);
     sectionTitle(container, 'Environmental tendencies');
     addRow(container, 'Thermal', formatIndex(environment.thermalIndex));
@@ -75,8 +79,54 @@ function renderRegion(container, planet, region) {
     addRow(container, 'Tectonic activity', formatIndex(environment.tectonicActivity));
     addRow(container, 'Volcanic activity', formatIndex(environment.volcanicActivity));
     addRow(container, 'Sedimentary basin', formatIndex(environment.sedimentaryBasinFactor));
+    addRow(container, 'Plate', environment.plateId);
+    addRow(container, 'Boundary setting', environment.boundaryType);
     sectionTitle(container, 'Natural Features');
     addRow(container, 'Known deposits', String(region.resourceNodeIds.length));
+}
+function renderGeographicParent(container, planet, parent) {
+    typeLabel(container, parent.kind.toUpperCase());
+    addRow(container, 'Name', parent.name);
+    addRow(container, 'Planet', planet.name);
+    sectionTitle(container, 'Geography');
+    addRow(container, 'Approx. area', `${parent.approximateAreaSquareKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km²`);
+    addRow(container, 'Regions', parent.regionIds.length.toLocaleString());
+    addRow(container, parent.kind === 'continent' ? 'Mean elevation' : 'Mean depth', `≈ ${Math.abs(parent.meanSurfaceElevationMeters).toLocaleString()} m`);
+}
+function selectionKey(selection) {
+    if (selection.type === 'planet')
+        return 'planet';
+    if (selection.type === 'continent')
+        return `continent:${selection.continentId}`;
+    if (selection.type === 'ocean')
+        return `ocean:${selection.oceanId}`;
+    if (selection.type === 'region')
+        return `region:${selection.regionId}`;
+    if (selection.type === 'resource')
+        return `resource:${selection.resourceNodeId}`;
+    return `mechanical:${selection.mechanicalNodeId}`;
+}
+function renderLocation(container, planet, point) {
+    const context = geographicLocationAt(planet, point);
+    if (!context) {
+        container.textContent = 'Camera location is outside generated geography.';
+        return;
+    }
+    typeLabel(container, 'LOCATION');
+    addRow(container, 'Planet', planet.name);
+    addRow(container, context.parent.kind === 'continent' ? 'Continent' : 'Ocean', context.parent.name);
+    addRow(container, 'Region', context.region.name);
+    addRow(container, 'Coordinates', `${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
+    sectionTitle(container, 'Surface');
+    addRow(container, 'Type', context.environment.surfaceType);
+    addRow(container, context.environment.surfaceElevationMeters >= 0 ? 'Elevation' : 'Depth', `${Math.abs(context.environment.surfaceElevationMeters).toLocaleString()} m`);
+    addRow(container, 'Latitude', formatLatitude(context.environment.latitudeDeg));
+    addRow(container, 'Plate', context.environment.plateId);
+    addRow(container, 'Boundary', context.environment.boundaryType);
+    sectionTitle(container, 'Environment');
+    addRow(container, 'Thermal', formatIndex(context.environment.thermalIndex));
+    addRow(container, 'Moisture', formatIndex(context.environment.moistureIndex));
+    addRow(container, 'Tectonic activity', formatIndex(context.environment.tectonicActivity));
 }
 function renderResource(container, planet, resource) {
     const definition = resourceDefinitionById(resource.resourceId);
@@ -341,16 +391,38 @@ export function installInspectorPanel(root, store) {
     const container = root.querySelector('#ws-map-inspector-body');
     if (!container)
         return;
+    const locationContainer = document.createElement('div');
+    locationContainer.className = 'ws-inspector-body';
+    locationContainer.hidden = true;
+    const tabs = document.createElement('div');
+    tabs.className = 'ws-inspector-tabs';
+    const selectedTab = document.createElement('button');
+    selectedTab.type = 'button';
+    selectedTab.textContent = 'Selected';
+    selectedTab.className = 'ws-inspector-tab ws-inspector-tab--active';
+    selectedTab.setAttribute('aria-pressed', 'true');
+    const locationTab = document.createElement('button');
+    locationTab.type = 'button';
+    locationTab.textContent = 'Location';
+    locationTab.className = 'ws-inspector-tab';
+    locationTab.setAttribute('aria-pressed', 'false');
+    tabs.append(selectedTab, locationTab);
+    container.before(tabs);
+    container.after(locationContainer);
+    const activate = (tab) => { const selected = tab === 'selected'; container.hidden = !selected; locationContainer.hidden = selected; selectedTab.classList.toggle('ws-inspector-tab--active', selected); locationTab.classList.toggle('ws-inspector-tab--active', !selected); selectedTab.setAttribute('aria-pressed', String(selected)); locationTab.setAttribute('aria-pressed', String(!selected)); };
+    selectedTab.addEventListener('click', () => activate('selected'));
+    locationTab.addEventListener('click', () => activate('location'));
     let lastWorld = store.getState().world;
     let lastGraph = store.getState().graph;
     let lastSelectionKey = '';
-    store.subscribeDomains(['world', 'graph', 'selection', 'runtime'], state => {
-        const selectionKey = state.selection.type === 'planet' ? 'planet' : state.selection.type === 'region' ? `region:${state.selection.regionId}` : state.selection.type === 'resource' ? `resource:${state.selection.resourceNodeId}` : `mechanical:${state.selection.mechanicalNodeId}`;
-        const mustRebuild = state.world !== lastWorld || state.graph !== lastGraph || selectionKey !== lastSelectionKey;
+    let lastLocationKey = '';
+    store.subscribeDomains(['world', 'graph', 'selection', 'camera', 'runtime'], state => {
+        const nextSelectionKey = selectionKey(state.selection);
+        const mustRebuild = state.world !== lastWorld || state.graph !== lastGraph || nextSelectionKey !== lastSelectionKey;
         if (mustRebuild) {
             lastWorld = state.world;
             lastGraph = state.graph;
-            lastSelectionKey = selectionKey;
+            lastSelectionKey = nextSelectionKey;
             container.replaceChildren();
             const planet = state.world?.planet;
             if (!planet) {
@@ -360,6 +432,14 @@ export function installInspectorPanel(root, store) {
             const selection = state.selection;
             if (selection.type === 'planet')
                 renderPlanet(container, planet);
+            else if (selection.type === 'continent') {
+                const continent = planet.continents.find(candidate => candidate.id === selection.continentId);
+                continent ? renderGeographicParent(container, planet, continent) : container.append('Selected continent is unavailable.');
+            }
+            else if (selection.type === 'ocean') {
+                const ocean = planet.oceans.find(candidate => candidate.id === selection.oceanId);
+                ocean ? renderGeographicParent(container, planet, ocean) : container.append('Selected ocean is unavailable.');
+            }
             else if (selection.type === 'region') {
                 const region = planet.regions.find(candidate => candidate.id === selection.regionId);
                 region ? renderRegion(container, planet, region) : container.append('Selected region is unavailable.');
@@ -371,6 +451,15 @@ export function installInspectorPanel(root, store) {
             else {
                 const node = mechanicalNodeById(state.graph, selection.mechanicalNodeId);
                 node ? renderMechanical(container, node, store) : container.append('Selected mechanical node is unavailable.');
+            }
+        }
+        const planet = state.world?.planet;
+        if (planet) {
+            const nextLocationKey = geographicLocationKey(planet, { x: state.camera.centerX, y: state.camera.centerY });
+            if (nextLocationKey !== lastLocationKey || state.world !== lastWorld) {
+                lastLocationKey = nextLocationKey;
+                locationContainer.replaceChildren();
+                renderLocation(locationContainer, planet, { x: state.camera.centerX, y: state.camera.centerY });
             }
         }
         updateRuntimeProjection(container, state);

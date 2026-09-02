@@ -38,13 +38,13 @@ The active browser world is a continuous Earth-scale map rather than a recursive
 
 ```text
 Planet
-├── ocean
-├── Landmasses
-└── thousands of geographic Regions
+├── Continents
+├── Oceans
+└── thousands of land and ocean Regions
     └── natural resource FEATURE nodes
 ```
 
-World generation is deterministic by generator version plus seed. Generator v2 creates seeded continent/coastline polygons, meaningful ocean area, a shared jittered geographic lattice containing roughly thousands of land Regions, Region environmental/geologic tendencies, and geography-weighted resource FEATURE placement. Region count emerges from generated land area rather than a fixed constant. Natural sources currently include:
+World generation is deterministic by generator version plus seed. Generator v3 creates 12–24 deterministic tectonic plates, derives one continuous elevation/geology field and sea level, classifies every surface point as land or ocean, and derives Continents, Ocean basins, and roughly 8,000 Regions from that same truth. Coastlines therefore remain identical when the map changes level of detail. Resource FEATURE candidates sample resource-specific local geology and cluster into deterministic provinces rather than using Region averages alone. Natural sources currently include:
 
 - Iron Ore
 - Copper Ore
@@ -56,9 +56,9 @@ World generation is deterministic by generator version plus seed. Generator v2 c
 
 A resource FEATURE exposes a `resource-access` relationship. That relationship authorizes/selects a source but carries no matter; physical material flow begins at an Extractor material output.
 
-The map remains one continuous SVG coordinate space from whole-planet geography through engineering zoom. A fixed technical chunk index supplies visible/nearby Region and Feature queries, so world record count is independent from SVG/DOM count. Whole-planet zoom renders ocean and coarse Landmasses; continental and regional zooms render only viewport Regions with a bounded label budget; deep zoom renders only nearby Features and engineering nodes.
+The map remains one continuous SVG coordinate space from whole-planet geography through engineering zoom. A shared technical chunk index supplies candidate-only visible/nearby Region and Feature queries, so world record count is independent from SVG/DOM count. Whole-planet zoom renders clickable Continents and Oceans; regional zoom renders only viewport Regions with camera-centered label budgets; a lightweight Feature-marker level bridges geography to deep engineering cards and nodes.
 
-NAV is camera-aware, contextual, and searchable rather than a complete Planet → every Region → every Feature tree. Its normal view shows current geographic context, nearby Regions, relevant Features, and a separate selected entity. Global search is bounded to 60 rendered results.
+NAV is camera-aware, contextual, and searchable rather than a complete Planet → every Continent/Ocean → every Region → every Feature tree. Its normal view follows camera location while the Inspector keeps deliberate selection and camera Location in separate tabs. Global search supports all geographic and engineering entity types while remaining bounded to 60 rendered results.
 
 The older Site/child-workspace hierarchy is not part of the active browser model.
 

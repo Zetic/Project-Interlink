@@ -18,13 +18,18 @@ function renderBreadcrumbs(state) {
         return;
     const labels = [planet.name];
     const selection = state.selection;
-    if (selection.type === 'region')
-        labels.push(planet.regions.find(region => region.id === selection.regionId)?.name ?? selection.regionId);
+    const appendRegion = (region) => { if (!region)
+        return; const parent = region.parentKind === 'continent' ? planet.continents.find(candidate => candidate.id === region.parentId) : planet.oceans.find(candidate => candidate.id === region.parentId); if (parent)
+        labels.push(parent.name); labels.push(region.name); };
+    if (selection.type === 'continent')
+        labels.push(planet.continents.find(continent => continent.id === selection.continentId)?.name ?? selection.continentId);
+    else if (selection.type === 'ocean')
+        labels.push(planet.oceans.find(ocean => ocean.id === selection.oceanId)?.name ?? selection.oceanId);
+    else if (selection.type === 'region')
+        appendRegion(planet.regions.find(region => region.id === selection.regionId));
     else if (selection.type === 'resource') {
         const resource = planet.resourceNodes.find(node => node.id === selection.resourceNodeId);
-        const region = resource ? planet.regions.find(candidate => candidate.id === resource.regionId) : null;
-        if (region)
-            labels.push(region.name);
+        appendRegion(resource ? planet.regions.find(candidate => candidate.id === resource.regionId) : undefined);
         labels.push(resource?.name ?? selection.resourceNodeId);
     }
     else if (selection.type === 'mechanical')

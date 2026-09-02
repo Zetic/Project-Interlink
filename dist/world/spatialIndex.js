@@ -10,6 +10,8 @@ export class WorldSpatialIndex {
     chunkSize;
     regionsById;
     featuresById;
+    continentsById;
+    oceansById;
     regionIdsByChunk = new Map();
     featureIdsByChunk = new Map();
     constructor(planet, chunkSize = WORLD_SPATIAL_CHUNK_SIZE) {
@@ -17,6 +19,8 @@ export class WorldSpatialIndex {
         this.chunkSize = chunkSize;
         this.regionsById = new Map(planet.regions.map(region => [region.id, region]));
         this.featuresById = new Map(planet.resourceNodes.map(feature => [feature.id, feature]));
+        this.continentsById = new Map(planet.continents.map(continent => [continent.id, continent]));
+        this.oceansById = new Map(planet.oceans.map(ocean => [ocean.id, ocean]));
         for (const region of planet.regions)
             this.indexBounds(this.regionIdsByChunk, region.id, region.bounds);
         for (const feature of planet.resourceNodes)
@@ -31,12 +35,16 @@ export class WorldSpatialIndex {
     }
     regionsIntersecting(bounds) {
         const candidates = this.idsInBounds(this.regionIdsByChunk, bounds);
-        return this.planet.regions.filter(region => candidates.has(region.id) && boundsIntersect(region.bounds, bounds));
+        return [...candidates].map(id => this.regionsById.get(id)).filter((region) => Boolean(region && boundsIntersect(region.bounds, bounds)));
     }
     resourceNodesIntersecting(bounds) {
         const candidates = this.idsInBounds(this.featureIdsByChunk, bounds);
-        return this.planet.resourceNodes.filter(feature => candidates.has(feature.id) && pointInBounds(feature.position, bounds));
+        return [...candidates].map(id => this.featuresById.get(id)).filter((feature) => Boolean(feature && pointInBounds(feature.position, bounds)));
     }
+    regionById(id) { return this.regionsById.get(id) ?? null; }
+    featureById(id) { return this.featuresById.get(id) ?? null; }
+    continentById(id) { return this.continentsById.get(id) ?? null; }
+    oceanById(id) { return this.oceansById.get(id) ?? null; }
     nearbyRegions(point, limit) {
         const candidates = this.nearbyIds(this.regionIdsByChunk, point, limit);
         return [...candidates]
@@ -118,4 +126,13 @@ export class WorldSpatialIndex {
 }
 export function createWorldSpatialIndex(planet) {
     return new WorldSpatialIndex(planet);
+}
+const SHARED_WORLD_INDEXES = new WeakMap();
+export function worldSpatialIndexFor(planet) {
+    const existing = SHARED_WORLD_INDEXES.get(planet);
+    if (existing)
+        return existing;
+    const created = new WorldSpatialIndex(planet);
+    SHARED_WORLD_INDEXES.set(planet, created);
+    return created;
 }

@@ -378,9 +378,9 @@ The canonical natural access hierarchy is:
 ```text
 Planet
     ↓
-Region
+Continent / Ocean
     ↓
-Site
+Region
     ↓
 Feature
     ↓
@@ -391,7 +391,7 @@ Generated species/material composition
 
 A Region provides geographic and environmental context; it does **not** own a second resource inventory.
 
-Broad or widespread resources should still become exploitable through physical access representations such as Sites and Features. This allows a widespread atmosphere, regolith field, forest, clay field, ice sheet, or crustal rock source to be accessed without creating Region-owned matter that bypasses the natural hierarchy.
+Broad or widespread resources should still become exploitable through physical access representations such as Features. This allows a widespread atmosphere, regolith field, forest, clay field, ice sheet, or crustal rock source to be accessed without creating Region-owned matter that bypasses the natural hierarchy.
 
 Example:
 
@@ -429,7 +429,7 @@ Planet
     ↓
 Region
     ↓
-Sites / Features / ResourceOccurrences
+Features / ResourceOccurrences
     ↓
 Survey / Extraction / Processing / Industry
 ```
@@ -501,6 +501,8 @@ The target is causally plausible and gameplay-useful, not academically exhaustiv
 
 A Region is a bundle of local physical and environmental properties, not merely a biome label.
 
+Continents and Oceans classify the continuous surface above Regions. This nesting is geographic only: it must not create recursive engineering workspaces, separate runtime graphs, or duplicate coordinate systems.
+
 Useful regional properties include:
 
 - area
@@ -515,9 +517,9 @@ Useful regional properties include:
 - surface cover
 - heterogeneity
 
-These regional conditions can cause broad resources to exist, influence accessibility, and determine what kinds of Sites/Features are likely.
+These regional conditions can cause broad resources to exist, influence accessibility, and determine what kinds of Features are likely.
 
-However, the canonical world model should not treat the Region itself as a resource inventory owner. Widespread exploitable matter is represented through one or more physical access Sites/Features whose availability may be effectively enormous at ordinary gameplay scales.
+However, the canonical world model should not treat the Region itself as a resource inventory owner. Widespread exploitable matter is represented through one or more physical access Features whose availability may be effectively enormous at ordinary gameplay scales.
 
 This keeps physical ownership explicit while still allowing abundant resources to feel geographically widespread.
 

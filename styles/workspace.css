@@ -430,6 +430,8 @@
 
 /* Navigation/category visual grammar for the flat TypeScript map. */
 .ws-navigation-category--planet { background: #4d456f; }
+.ws-navigation-category--continent { background: #4d6b42; }
+.ws-navigation-category--ocean { background: #245477; }
 .ws-navigation-category--region { background: #294d73; }
 .ws-navigation-category--feature { background: #315a34; }
 .ws-navigation-category--apparatus { background: #6c4d24; }
@@ -439,3 +441,8 @@
 .ws-ins-connection-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ws-ins-connection-row button, .ws-ins-actions button { padding: 2px 5px; font-size: 9px; }
 .ws-ins-actions { margin-top: 12px; padding-top: 8px; border-top: 1px solid #243443; }
+
+.ws-inspector-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #243443; }
+.ws-inspector-tab { padding: 6px 8px; border: 0; border-bottom: 2px solid transparent; background: #101b27; color: #7890a6; font: inherit; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.ws-inspector-tab:hover { color: #c8d8e8; background: #142334; }
+.ws-inspector-tab--active { border-bottom-color: #6699cc; color: #d4e2f0; }

@@ -30,6 +30,9 @@ test('global NAV search finds world entities while enforcing its DOM result budg
   const target = planet.regions[Math.floor(planet.regions.length / 2)];
   const exact = searchWorldNavigation(planet, graph, target.name, new Set(['region']));
   assert.ok(exact.results.some(result => result.selection.type === 'region' && result.selection.regionId === target.id));
+  const continent = planet.continents[0]; const ocean = planet.oceans[0];
+  assert.ok(searchWorldNavigation(planet, graph, continent.name, new Set(['continent'])).results.some(result => result.selection.type === 'continent' && result.selection.continentId === continent.id));
+  assert.ok(searchWorldNavigation(planet, graph, ocean.name, new Set(['ocean'])).results.some(result => result.selection.type === 'ocean' && result.selection.oceanId === ocean.id));
   const broad = searchWorldNavigation(planet, graph, 'a', new Set(['region', 'feature']));
   assert.ok(broad.totalMatches >= broad.results.length);
   assert.ok(broad.results.length <= NAV_SEARCH_RESULT_LIMIT);
@@ -42,7 +45,7 @@ test('map and NAV source architecture query subsets instead of building the full
   const shell = fs.readFileSync('src/ui/workspaceShell.ts', 'utf8');
   assert.match(renderer, /regionsIntersecting\(bounds\)/);
   assert.match(renderer, /resourceNodesIntersecting/);
-  assert.match(renderer, /MAX_VISIBLE_REGION_LABELS/);
+  assert.match(renderer, /regionLabelBudgetForZoom/);
   assert.doesNotMatch(renderer, /planet\.regions\.forEach/);
   assert.match(navigation, /NAV_SEARCH_RESULT_LIMIT = 60/);
   assert.match(navigation, /subscribeDomains\(\['world', 'graph', 'selection', 'camera'\]/);
