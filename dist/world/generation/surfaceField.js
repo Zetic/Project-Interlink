@@ -1,7 +1,7 @@
 import { deterministicUnit } from '../random.js';
 import { PLANET_MAP_HEIGHT, PLANET_MAP_WIDTH } from '../scale.js';
 import { wrappedValueNoise } from './generationNoise.js';
-import { sampleGeologicalHistory } from './geologicalHistory.js';
+import { geologicalHistoryFromPlateSample } from './geologicalHistory.js';
 import { samplePlateModel } from './tectonics.js';
 export const CANONICAL_SURFACE_COLUMNS = 176;
 export const CANONICAL_SURFACE_ROWS = 88;
@@ -21,7 +21,7 @@ function clamp01(value) { return Math.max(0, Math.min(1, value)); }
 function round(value, digits = 6) { return Number(value.toFixed(digits)); }
 export function rawSurfaceElevation(seed, plates, point) {
     const plate = samplePlateModel(plates, point);
-    const history = sampleGeologicalHistory(seed, plates, point);
+    const history = geologicalHistoryFromPlateSample(seed, point, plate);
     const macro = (wrappedValueNoise(seed, 'surface:macro', point, 1024) - 0.5) * 0.78;
     const meso = (wrappedValueNoise(seed, 'surface:meso', point, 512) - 0.5) * 0.36;
     const detail = (wrappedValueNoise(seed, 'surface:detail', point, 256) - 0.5) * 0.12;
@@ -92,7 +92,7 @@ export function samplePlanetEnvironment(context, point) {
     const y = Math.max(0, Math.min(PLANET_MAP_HEIGHT, point.y));
     const normalizedPoint = { x, y };
     const plate = samplePlateModel(context.plates, normalizedPoint);
-    const history = sampleGeologicalHistory(context.seed, context.plates, normalizedPoint);
+    const history = geologicalHistoryFromPlateSample(context.seed, normalizedPoint, plate);
     const rawElevation = context.surfaceField
         ? sampleSurfaceFieldRaw(context.surfaceField, normalizedPoint)
         : rawSurfaceElevation(context.seed, context.plates, normalizedPoint);
