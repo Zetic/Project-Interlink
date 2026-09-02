@@ -100,6 +100,7 @@ function buildSeedSpatialIndex(seeds) {
     const binColumns = Math.ceil(PLANET_MAP_WIDTH / REGION_SEED_BIN_SIZE);
     const binRows = Math.ceil(PLANET_MAP_HEIGHT / REGION_SEED_BIN_SIZE);
     const bins = new Map();
+    const byParent = new Map();
     for (const seed of seeds) {
         const column = Math.min(binColumns - 1, Math.max(0, Math.floor(seed.point.x / REGION_SEED_BIN_SIZE)));
         const row = Math.min(binRows - 1, Math.max(0, Math.floor(seed.point.y / REGION_SEED_BIN_SIZE)));
@@ -107,8 +108,13 @@ function buildSeedSpatialIndex(seeds) {
         const values = bins.get(key) ?? [];
         values.push(seed);
         bins.set(key, values);
+        const parentValues = byParent.get(seed.parentId) ?? [];
+        parentValues.push(seed);
+        byParent.set(seed.parentId, parentValues);
     }
-    return { binColumns, binRows, bins };
+    for (const values of byParent.values())
+        values.sort((left, right) => left.id.localeCompare(right.id));
+    return { binColumns, binRows, bins, byParent };
 }
 function localSeedCandidates(seed, index) {
     const centerColumn = Math.min(index.binColumns - 1, Math.max(0, Math.floor(seed.point.x / REGION_SEED_BIN_SIZE)));
@@ -159,6 +165,11 @@ function clipPolygonByHalfPlane(polygon, plane) {
         return [];
     return removeCollinearVertices(output.map(roundPoint));
 }
+function halfPlaneContainsBounds(plane, bounds) {
+    const maximum = (plane.a >= 0 ? plane.a * (bounds.x + bounds.width) : plane.a * bounds.x)
+        + (plane.b >= 0 ? plane.b * (bounds.y + bounds.height) : plane.b * bounds.y);
+    return maximum <= plane.c + GEOMETRY_EPSILON;
+}
 function powerCellForSeed(seed, index) {
     let cell = [
         { x: 0, y: 0 },
@@ -166,12 +177,26 @@ function powerCellForSeed(seed, index) {
         { x: PLANET_MAP_WIDTH, y: PLANET_MAP_HEIGHT },
         { x: 0, y: PLANET_MAP_HEIGHT },
     ];
+    const applied = new Set([seed.id]);
     for (const competitor of localSeedCandidates(seed, index)) {
         if (competitor.id === seed.id)
             continue;
         cell = clipPolygonByHalfPlane(cell, halfPlaneForSeeds(seed, competitor));
+        applied.add(competitor.id);
         if (cell.length < 3)
             return [];
+    }
+    let bounds = polygonBounds(cell);
+    for (const competitor of index.byParent.get(seed.parentId) ?? []) {
+        if (applied.has(competitor.id))
+            continue;
+        const plane = halfPlaneForSeeds(seed, competitor);
+        if (halfPlaneContainsBounds(plane, bounds))
+            continue;
+        cell = clipPolygonByHalfPlane(cell, plane);
+        if (cell.length < 3)
+            return [];
+        bounds = polygonBounds(cell);
     }
     return removeCollinearVertices(cell.map(roundPoint));
 }
