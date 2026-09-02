@@ -206,11 +206,11 @@ function install(): void {
   function identity(): string { return `${seed.value}\u0000${level.value}\u0000${plates.value}`; }
   function redraw(): void { if (current) renderGeology(canvas, current, currentTectonics, projection.value, visualization.value, yaw, pitch); }
   async function ensureMotionData(): Promise<void> {
-    if (!current || visualization.value !== 'motion') return;
-    if (currentTectonics && currentIdentity === identity()) { redraw(); return; }
+    if (!current || visualization.value !== 'motion' || currentIdentity !== identity()) return;
+    if (currentTectonics) { redraw(); return; }
     const requestedIdentity = identity();
     currentTectonics = await client.generateTectonics({ seed: seed.value, level: Number(level.value), plateCount: Number(plates.value) });
-    if (requestedIdentity === identity()) { currentIdentity = requestedIdentity; redraw(); }
+    if (requestedIdentity === identity() && currentIdentity === requestedIdentity) { redraw(); }
   }
   async function run(): Promise<void> {
     generate.disabled = true;

@@ -1,12 +1,29 @@
-export const WORLDGEN_PROTOCOL_VERSION = 3;
+export const WORLDGEN_PROTOCOL_VERSION = 4;
 export const WORLDGEN_SYNTHETIC_MAX_SAMPLES = 4_194_304;
 export const WORLDGEN_TOPOLOGY_MAX_LEVEL = 7;
 export const WORLDGEN_TECTONICS_MAX_LEVEL = 6;
+export const WORLDGEN_GEOLOGY_MAX_LEVEL = 6;
 export const WORLDGEN_TECTONICS_MIN_PLATES = 4;
 export const WORLDGEN_TECTONICS_MAX_PLATES = 48;
 export const WORLDGEN_BOUNDARY_CONVERGENT = 1;
 export const WORLDGEN_BOUNDARY_DIVERGENT = 2;
 export const WORLDGEN_BOUNDARY_TRANSFORM = 3;
+export const WORLDGEN_CRUST_OCEANIC = 1;
+export const WORLDGEN_CRUST_TRANSITIONAL = 2;
+export const WORLDGEN_CRUST_CONTINENTAL = 3;
+export const WORLDGEN_PLATE_MAJOR = 1;
+export const WORLDGEN_PLATE_INTERMEDIATE = 2;
+export const WORLDGEN_PLATE_MINOR = 3;
+export const WORLDGEN_GEOLOGY_OCEANIC_SUBDUCTION = 1;
+export const WORLDGEN_GEOLOGY_OCEAN_CONTINENT_SUBDUCTION = 2;
+export const WORLDGEN_GEOLOGY_CONTINENTAL_COLLISION = 3;
+export const WORLDGEN_GEOLOGY_OCEANIC_RIDGE = 4;
+export const WORLDGEN_GEOLOGY_CONTINENTAL_RIFT = 5;
+export const WORLDGEN_GEOLOGY_TRANSITIONAL_DIVERGENCE = 6;
+export const WORLDGEN_GEOLOGY_TRANSFORM = 7;
+export const WORLDGEN_SUBDUCTION_NONE = 0;
+export const WORLDGEN_SUBDUCTION_PLATE_A = 1;
+export const WORLDGEN_SUBDUCTION_PLATE_B = 2;
 export function validateSyntheticRequest(request) {
     if (!request.seed.trim())
         throw new Error('Worldgen seed must not be empty.');
@@ -32,6 +49,18 @@ export function validateTectonicsRequest(request) {
     if (request.plateCount > samples)
         throw new Error('WG-2 plate count cannot exceed topology sample count.');
 }
+export function validateGeologyRequest(request) {
+    if (!request.seed.trim())
+        throw new Error('WG-3 geology seed must not be empty.');
+    if (!Number.isInteger(request.level) || request.level < 0 || request.level > WORLDGEN_GEOLOGY_MAX_LEVEL)
+        throw new Error(`WG-3 browser geology level must be an integer from 0 through ${WORLDGEN_GEOLOGY_MAX_LEVEL}.`);
+    if (!Number.isInteger(request.plateCount) || request.plateCount < WORLDGEN_TECTONICS_MIN_PLATES || request.plateCount > WORLDGEN_TECTONICS_MAX_PLATES)
+        throw new Error(`WG-3 plate count must be an integer from ${WORLDGEN_TECTONICS_MIN_PLATES} through ${WORLDGEN_TECTONICS_MAX_PLATES}.`);
+    const samples = 10 * (4 ** request.level) + 2;
+    if (request.plateCount > samples)
+        throw new Error('WG-3 plate count cannot exceed topology sample count.');
+}
 export function worldgenSyntheticCommand(requestId, payload) { validateSyntheticRequest(payload); return { protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId, type: 'generate-synthetic', payload }; }
 export function worldgenTopologyCommand(requestId, payload) { validateTopologyRequest(payload); return { protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId, type: 'generate-topology', payload }; }
 export function worldgenTectonicsCommand(requestId, payload) { validateTectonicsRequest(payload); return { protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId, type: 'generate-tectonics', payload }; }
+export function worldgenGeologyCommand(requestId, payload) { validateGeologyRequest(payload); return { protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId, type: 'generate-geology', payload }; }

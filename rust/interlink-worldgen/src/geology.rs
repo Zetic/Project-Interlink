@@ -246,7 +246,7 @@ fn crust_kind(value: u8) -> CrustKind {
 }
 
 fn build_crust_partition<T: PlanetTopology>(topology: &T, tectonics: &TectonicModel, province_seed: u64) -> (Vec<u8>, Vec<u16>, Vec<u32>, Vec<f64>, Vec<f64>) {
-    let craton_count = ((tectonics.plates.len() as f64 * 0.48).round() as usize).clamp(4, MAX_CONTINENTAL_PROVINCES.min(tectonics.plates.len().max(4)));
+    let craton_count = (6 + (random::mix64(province_seed ^ 0x3c6e_f372_fe94_f82b) % 9) as usize).min(MAX_CONTINENTAL_PROVINCES).min(topology.sample_count() as usize).max(1);
     let cratons = select_craton_seeds(topology, craton_count, province_seed);
     let fabric = smooth_random_field(topology, province_seed ^ 0x97c2_9b3a_5f61_13d7, 7);
     let mut radii = Vec::with_capacity(cratons.len());
