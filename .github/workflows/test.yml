@@ -27,6 +27,21 @@ jobs:
       - name: Build TypeScript browser modules
         run: npm run build
 
+      - name: Export generated browser modules for PR sync
+        run: |
+          for file in \
+            dist/world/generateWorld.js \
+            dist/world/generation/geographicProvinces.js \
+            dist/world/generation/regions.js \
+            dist/world/generation/resourceFeatures.js \
+            dist/ui/inspectorPanel.js
+          do
+            echo "DIST_BASE64_BEGIN $file"
+            base64 -w 0 "$file"
+            echo
+            echo "DIST_BASE64_END $file"
+          done
+
       - name: Run TypeScript regression tests
         run: npm run test:ts
 
