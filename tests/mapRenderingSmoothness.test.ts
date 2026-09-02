@@ -111,7 +111,7 @@ test('runtime-only store updates cannot interrupt an in-progress local camera ge
 
 test('region hover interaction stops at 10x and camera panning is middle-mouse only', () => {
   const renderer = fs.readFileSync('src/map/mapRenderer.ts', 'utf8');
-  const css = fs.readFileSync('map.css', 'utf8');
+  const css = fs.readFileSync('styles/map.css', 'utf8');
   assert.match(renderer, /REGION_INTERACTION_MAX_ZOOM = 10/);
   assert.match(renderer, /regions\.style\.pointerEvents = zoom >= REGION_INTERACTION_MAX_ZOOM \? 'none' : 'auto'/);
   assert.match(renderer, /if \(event\.button === 1\)/);
