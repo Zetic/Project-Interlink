@@ -182,7 +182,7 @@ fn random_unit_vector(seed: u64, stream: u64) -> [f64; 3] {
 fn select_plate_seeds<T: PlanetTopology>(topology: &T, plate_count: u16, stage_seed: u64) -> Vec<u32> {
     let sample_count = topology.sample_count() as usize;
     let expected_spacing_rad = (4.0 * PI / f64::from(plate_count)).sqrt();
-    let minimum_separation_rad = (expected_spacing_rad * 0.40).clamp(0.10, 0.55);
+    let minimum_separation_rad = (expected_spacing_rad * 0.20).clamp(0.07, 0.32);
     let candidate_attempts = sample_count.clamp(256, 4_096);
     let first = (random::mix64(stage_seed ^ 0xd1b5_4a32_d192_ed03) % sample_count as u64) as u32;
     let mut seeds = Vec::with_capacity(plate_count as usize);
