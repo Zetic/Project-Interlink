@@ -54,6 +54,7 @@ jobs:
         run: |
           cargo run -p interlink-worldgen-cli -- generate --seed ci-wg0 --width 64 --height 32
           cargo run -p interlink-worldgen-cli -- topology --level 4
+          cargo run -p interlink-worldgen-cli -- tectonics --seed ci-wg2 --level 5 --plates 18
 
       - name: Compile browser WASM targets
         run: |
