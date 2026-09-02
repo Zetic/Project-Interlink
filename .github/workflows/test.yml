@@ -50,8 +50,10 @@ jobs:
       - name: Run Rust core tests
         run: cargo test --workspace
 
-      - name: Smoke-test native Planet Engine CLI
-        run: cargo run -p interlink-worldgen-cli -- generate --seed ci-wg0 --width 64 --height 32
+      - name: Smoke-test native Planet Engine diagnostics
+        run: |
+          cargo run -p interlink-worldgen-cli -- generate --seed ci-wg0 --width 64 --height 32
+          cargo run -p interlink-worldgen-cli -- topology --level 4
 
       - name: Compile browser WASM targets
         run: |
@@ -74,8 +76,11 @@ jobs:
           cmp target/wasm-package/interlink_wasm.d.ts src/wasm/interlink_wasm.d.ts
           cmp target/wasm-package/interlink_wasm_bg.wasm src/wasm/interlink_wasm_bg.wasm
 
-      - name: Verify independent Planet Engine WASM package
+      - name: Verify committed Planet Engine WASM assets
         run: |
-          test -s target/worldgen-wasm-package/interlink_worldgen_wasm.js
-          test -s target/worldgen-wasm-package/interlink_worldgen_wasm.d.ts
-          test -s target/worldgen-wasm-package/interlink_worldgen_wasm_bg.wasm
+          test -s src/wasm-worldgen/interlink_worldgen_wasm.js
+          test -s src/wasm-worldgen/interlink_worldgen_wasm.d.ts
+          test -s src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm
+          cmp target/worldgen-wasm-package/interlink_worldgen_wasm.js src/wasm-worldgen/interlink_worldgen_wasm.js
+          cmp target/worldgen-wasm-package/interlink_worldgen_wasm.d.ts src/wasm-worldgen/interlink_worldgen_wasm.d.ts
+          cmp target/worldgen-wasm-package/interlink_worldgen_wasm_bg.wasm src/wasm-worldgen/interlink_worldgen_wasm_bg.wasm
