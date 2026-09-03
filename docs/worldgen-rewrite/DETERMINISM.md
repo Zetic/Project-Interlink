@@ -35,6 +35,12 @@ WG-3.5 adds four isolated streams. `mechanics` controls lithospheric mechanical 
 
 A WG-3.5 algorithm change must not silently alter the WG-2 tectonic hash or WG-3 geology hash. Macro plate IDs remain upstream identity even when derived microplates/terranes are introduced as finer kinematic domains.
 
+WG-3.75 adds deterministic resolution-change identity without introducing a new random world. The refinement provenance hash covers coarse/fine levels, stable inherited sample prefix, and the ordered nearest-coarse-source mapping. Existing coarse sample IDs remain exact at finer topology levels. Continuous midpoint interpolation is deterministic from accepted parent values; categorical provenance is resolved by deterministic graph-geodesic distance with stable source-ID tie breaking; domain-constrained interpolation uses accepted categorical domains to prevent averaging across physical discontinuities.
+
+Fine tectonic interfaces have a separate ordered boundary-refinement hash. Every fine inter-plate edge resolves to a deterministic accepted coarse boundary source using plate-pair compatibility and stable spherical proximity rules. Tectonic kind, geological regime, subduction polarity, normal rate, shear rate, and coarse-boundary provenance therefore remain reproducible when WG-4 consumes a finer topology.
+
+The WG-3.75 inherited physical-state hash combines the refinement stage identity, provenance identity, explicit planetary-parameter identity, and accepted WG-2/WG-3/WG-3.5 hashes. Changing the selected physical planet profile must change that inherited-state identity even when seed and coarse geology remain the same. The Earth-like reference profile remains a stable explicit default rather than an implicit collection of constants.
+
 ## Regression expectations
 
 - same seed + engine/stage version → identical field or stage hash;
@@ -48,6 +54,13 @@ A WG-3.5 algorithm change must not silently alter the WG-2 tectonic hash or WG-3
 - deterministic stochastic sampling must be derived from stable integer streams, not runtime RNG state;
 - WG-3 namespace isolation prevents downstream geological-memory changes from perturbing upstream crust-province identity;
 - WG-3.5 namespace isolation prevents later terrain changes from perturbing accepted mechanical/refinement identity;
-- derived fragment IDs are deterministic and never replace their parent WG-2 plate IDs.
+- derived fragment IDs are deterministic and never replace their parent WG-2 plate IDs;
+- WG-3.75 exact descendants retain accepted coarse values bit-for-bit at inherited sample IDs;
+- direct coarse→fine scalar refinement is identical to equivalent staged refinement through intermediate hierarchy levels;
+- categorical provenance uses deterministic distance and source-ID tie breaking;
+- domain-constrained continuous refinement never averages across an incompatible accepted categorical boundary;
+- fine boundary interfaces deterministically preserve an accepted coarse boundary source and its physical semantics;
+- planetary parameter hashes are stable and form part of inherited physical-state identity;
+- changing water inventory or another explicit physical profile parameter does not silently mutate WG-2/WG-3/WG-3.5 hashes.
 
-Floating-point determinism requirements are documented per physical stage as those stages are introduced. WG-0's synthetic proof uses integer field generation specifically so infrastructure determinism can be tested independently from numerical-model choices; WG-1 topology, WG-2 kinematics, WG-3 geology, and WG-3.5 lithosphere regression-test deterministic floating-point output identities on the supported toolchain.
+Floating-point determinism requirements are documented per physical stage as those stages are introduced. WG-0's synthetic proof uses integer field generation specifically so infrastructure determinism can be tested independently from numerical-model choices; WG-1 topology, WG-2 kinematics, WG-3 geology, WG-3.5 lithosphere, and WG-3.75 inheritance regression-test deterministic floating-point output identities on the supported toolchain.
