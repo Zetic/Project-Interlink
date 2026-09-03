@@ -1,3 +1,5 @@
+mod inheritance_bridge;
+pub use inheritance_bridge::WasmWorldgenInheritance;
 mod lithosphere_bridge;
 pub use lithosphere_bridge::WasmWorldgenLithosphere;
 
@@ -8,7 +10,7 @@ use interlink_worldgen::{
 };
 use wasm_bindgen::prelude::*;
 
-pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 5;
+pub const WORLDGEN_WASM_PROTOCOL_VERSION: u32 = 6;
 #[wasm_bindgen] pub fn worldgen_protocol_version() -> u32 { WORLDGEN_WASM_PROTOCOL_VERSION }
 #[wasm_bindgen] pub fn worldgen_engine_version() -> u32 { WORLDGEN_ENGINE_VERSION }
 
@@ -162,7 +164,7 @@ impl WasmWorldgenGeology {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn wasm_protocol_and_engine_versions_are_explicit() { assert_eq!(worldgen_protocol_version(), 5); assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION); }
+    #[test] fn wasm_protocol_and_engine_versions_are_explicit() { assert_eq!(worldgen_protocol_version(), 6); assert_eq!(worldgen_engine_version(), WORLDGEN_ENGINE_VERSION); }
     #[test] fn topology_bridge_exposes_canonical_counts_and_flux_geometry() { let topology = WasmWorldgenTopology::new(2).unwrap(); assert_eq!(topology.sample_count(), 162); assert_eq!(topology.five_neighbor_count(), 12); assert_eq!(topology.faces().len(), 320 * 3); assert_eq!(topology.neighbors().len(), topology.neighbor_arc_lengths_rad().len()); assert_eq!(topology.neighbors().len(), topology.neighbor_interface_arc_lengths_rad().len()); }
     #[test] fn tectonics_bridge_exposes_complete_partition_and_boundaries() { let tectonics = WasmWorldgenTectonics::new("wasm-wg2".to_owned(), 3, 12).unwrap(); assert_eq!(tectonics.plate_ids().len(), tectonics.sample_count() as usize); assert_eq!(tectonics.plate_seed_samples().len(), 12); assert_eq!(tectonics.boundary_samples().len(), tectonics.boundary_edge_count() as usize * 2); assert_eq!(tectonics.boundary_kinds().len(), tectonics.boundary_edge_count() as usize); }
     #[test] fn geology_bridge_exposes_complete_sample_fields_and_boundary_interpretation() {
@@ -185,5 +187,19 @@ mod tests {
         assert_eq!(lithosphere.fragment_ids().len(), samples);
         assert_eq!(lithosphere.kinematic_domain_ids().len(), samples);
         assert_eq!(lithosphere.fragment_kinds().len(), lithosphere.tectonic_fragment_count() as usize);
+    }
+    #[test] fn inheritance_bridge_exposes_fine_physics_and_boundaries() {
+        let inherited = WasmWorldgenInheritance::new("wasm-wg3-75".to_owned(), 2, 3, 10).unwrap();
+        let samples = inherited.fine_sample_count() as usize;
+        assert_eq!(inherited.plate_ids().len(), samples);
+        assert_eq!(inherited.crust_kind().len(), samples);
+        assert_eq!(inherited.strength_index().len(), samples);
+        assert_eq!(inherited.nearest_coarse_source().len(), samples);
+        assert_eq!(inherited.inherited_sample_mask().len(), samples);
+        assert_eq!(inherited.boundary_samples().len(), inherited.fine_boundary_edge_count() as usize * 2);
+        assert_eq!(inherited.boundary_kinds().len(), inherited.fine_boundary_edge_count() as usize);
+        assert_eq!(inherited.geological_boundary_regimes().len(), inherited.fine_boundary_edge_count() as usize);
+        assert_eq!(inherited.boundary_coarse_source_indices().len(), inherited.fine_boundary_edge_count() as usize);
+        assert!(inherited.equivalent_global_water_depth_m() > 0.0);
     }
 }

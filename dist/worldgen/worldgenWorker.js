@@ -1,4 +1,4 @@
-import { WORLDGEN_PROTOCOL_VERSION, validateGeologyRequest, validateLithosphereRequest, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest } from './protocol.js';
+import { WORLDGEN_PROTOCOL_VERSION, validateGeologyRequest, validateInheritanceRequest, validateLithosphereRequest, validateSyntheticRequest, validateTectonicsRequest, validateTopologyRequest, } from './protocol.js';
 const workerScope = self;
 let wasmModulePromise = null;
 function nowMs() { return globalThis.performance?.now?.() ?? Date.now(); }
@@ -179,6 +179,66 @@ async function generateLithosphere(command) {
         output.free();
     }
 }
+async function generateInheritance(command) {
+    validateInheritanceRequest(command.payload);
+    const module = await loadWorldgenWasm();
+    const startedAt = nowMs();
+    const output = new module.WasmWorldgenInheritance(command.payload.seed, command.payload.coarseLevel, command.payload.fineLevel, command.payload.plateCount);
+    try {
+        const positions = output.positions();
+        const faces = output.faces();
+        const neighborOffsets = output.neighbor_offsets();
+        const neighbors = output.neighbors();
+        const nearestCoarseSource = output.nearest_coarse_source();
+        const inheritedSampleMask = output.inherited_sample_mask();
+        const plateIds = output.plate_ids();
+        const crustKind = output.crust_kind();
+        const crustProvinceId = output.crust_province_id();
+        const crustAgeMyr = output.crust_age_myr();
+        const crustThicknessKm = output.crust_thickness_km();
+        const crustDensityKgPerM3 = output.crust_density_kg_per_m3();
+        const buoyancyIndex = output.buoyancy_index();
+        const orogenicHistory = output.orogenic_history();
+        const riftHistory = output.rift_history();
+        const ridgeHistory = output.ridge_history();
+        const subductionHistory = output.subduction_history();
+        const trenchHistory = output.trench_history();
+        const volcanicArcHistory = output.volcanic_arc_history();
+        const transformHistory = output.transform_history();
+        const subsidenceHistory = output.subsidence_history();
+        const basinPotential = output.basin_potential();
+        const crustalStrain = output.crustal_strain();
+        const strengthIndex = output.strength_index();
+        const weaknessIndex = output.weakness_index();
+        const effectiveElasticThicknessKm = output.effective_elastic_thickness_km();
+        const thermalAnomalyIndex = output.thermal_anomaly_index();
+        const mantleUpwellingIndex = output.mantle_upwelling_index();
+        const mantleDynamicSupportIndex = output.mantle_dynamic_support_index();
+        const compensatedBuoyancyIndex = output.compensated_buoyancy_index();
+        const structuralFabricStrength = output.structural_fabric_strength();
+        const structuralZoneKind = output.structural_zone_kind();
+        const fragmentationPropensity = output.fragmentation_propensity();
+        const fragmentIds = output.fragment_ids();
+        const kinematicDomainIds = output.kinematic_domain_ids();
+        const boundarySamples = output.boundary_samples();
+        const boundaryKinds = output.boundary_kinds();
+        const geologicalBoundaryRegimes = output.geological_boundary_regimes();
+        const subductionPolarities = output.subduction_polarities();
+        const boundaryNormalRatesMPerYear = output.boundary_normal_rates_m_per_year();
+        const boundaryShearRatesMPerYear = output.boundary_shear_rates_m_per_year();
+        const boundaryCoarseSourceIndices = output.boundary_coarse_source_indices();
+        return {
+            engineVersion: output.generator_version(), coarseLevel: output.coarse_level(), fineLevel: output.fine_level(),
+            stage: { id: output.stage_id(), version: output.stage_version(), durationMs: Math.max(0, nowMs() - startedAt) },
+            metrics: { coarseSampleCount: output.coarse_sample_count(), fineSampleCount: output.fine_sample_count(), addedSampleCount: output.added_sample_count(), plateCount: output.plate_count(), fineBoundaryEdgeCount: output.fine_boundary_edge_count(), coarseTopologyHash: output.coarse_topology_hash_hex(), fineTopologyHash: output.fine_topology_hash_hex(), tectonicHash: output.tectonic_hash_hex(), geologyHash: output.geology_hash_hex(), lithosphereHash: output.lithosphere_hash_hex(), provenanceHash: output.provenance_hash_hex(), parameterHash: output.parameter_hash_hex(), inheritanceHash: output.inheritance_hash_hex(), boundaryHash: output.boundary_hash_hex() },
+            parameters: { radiusM: output.radius_m(), surfaceGravityMS2: output.surface_gravity_m_s2(), surfaceWaterMassKg: output.surface_water_mass_kg(), equivalentGlobalWaterDepthM: output.equivalent_global_water_depth_m(), oceanWaterDensityKgPerM3: output.ocean_water_density_kg_per_m3(), isostaticMantleDensityKgPerM3: output.isostatic_mantle_density_kg_per_m3(), internalHeatFluxWPerM2: output.internal_heat_flux_w_per_m2(), mantleThermalExpansivityPerK: output.mantle_thermal_expansivity_per_k() },
+            positions, faces, neighborOffsets, neighbors, nearestCoarseSource, inheritedSampleMask, plateIds, crustKind, crustProvinceId, crustAgeMyr, crustThicknessKm, crustDensityKgPerM3, buoyancyIndex, orogenicHistory, riftHistory, ridgeHistory, subductionHistory, trenchHistory, volcanicArcHistory, transformHistory, subsidenceHistory, basinPotential, crustalStrain, strengthIndex, weaknessIndex, effectiveElasticThicknessKm, thermalAnomalyIndex, mantleUpwellingIndex, mantleDynamicSupportIndex, compensatedBuoyancyIndex, structuralFabricStrength, structuralZoneKind, fragmentationPropensity, fragmentIds, kinematicDomainIds, boundarySamples, boundaryKinds, geologicalBoundaryRegimes, subductionPolarities, boundaryNormalRatesMPerYear, boundaryShearRatesMPerYear, boundaryCoarseSourceIndices,
+        };
+    }
+    finally {
+        output.free();
+    }
+}
 workerScope.addEventListener('message', async (messageEvent) => {
     const command = messageEvent.data;
     try {
@@ -207,6 +267,11 @@ workerScope.addEventListener('message', async (messageEvent) => {
         if (command.type === 'generate-lithosphere') {
             const result = await generateLithosphere(command);
             workerScope.postMessage({ protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId: command.requestId, type: 'generated-lithosphere', payload: result }, [result.positions.buffer, result.faces.buffer, result.neighborOffsets.buffer, result.neighbors.buffer, result.plateIds.buffer, result.boundarySamples.buffer, result.boundaryKinds.buffer, result.crustKind.buffer, result.geologicalBoundaryRegimes.buffer, result.orogenicHistory.buffer, result.riftHistory.buffer, result.ridgeHistory.buffer, result.subductionHistory.buffer, result.transformHistory.buffer, result.crustalStrain.buffer, result.strengthIndex.buffer, result.weaknessIndex.buffer, result.effectiveElasticThicknessKm.buffer, result.thermalAnomalyIndex.buffer, result.mantleUpwellingIndex.buffer, result.mantleDynamicSupportIndex.buffer, result.compensatedBuoyancyIndex.buffer, result.structuralFabricStrength.buffer, result.structuralZoneKind.buffer, result.fragmentationPropensity.buffer, result.fragmentIds.buffer, result.kinematicDomainIds.buffer, result.fragmentParentPlateIds.buffer, result.fragmentKinds.buffer, result.fragmentSeedSamples.buffer, result.fragmentAreaSteradians.buffer, result.fragmentAreaFractionsOfParent.buffer, result.fragmentMeanWeakness.buffer, result.fragmentMeanPropensity.buffer, result.fragmentAngularVelocitiesRadPerMyr.buffer]);
+            return;
+        }
+        if (command.type === 'generate-inheritance') {
+            const result = await generateInheritance(command);
+            workerScope.postMessage({ protocolVersion: WORLDGEN_PROTOCOL_VERSION, requestId: command.requestId, type: 'generated-inheritance', payload: result }, [result.positions.buffer, result.faces.buffer, result.neighborOffsets.buffer, result.neighbors.buffer, result.nearestCoarseSource.buffer, result.inheritedSampleMask.buffer, result.plateIds.buffer, result.crustKind.buffer, result.crustProvinceId.buffer, result.crustAgeMyr.buffer, result.crustThicknessKm.buffer, result.crustDensityKgPerM3.buffer, result.buoyancyIndex.buffer, result.orogenicHistory.buffer, result.riftHistory.buffer, result.ridgeHistory.buffer, result.subductionHistory.buffer, result.trenchHistory.buffer, result.volcanicArcHistory.buffer, result.transformHistory.buffer, result.subsidenceHistory.buffer, result.basinPotential.buffer, result.crustalStrain.buffer, result.strengthIndex.buffer, result.weaknessIndex.buffer, result.effectiveElasticThicknessKm.buffer, result.thermalAnomalyIndex.buffer, result.mantleUpwellingIndex.buffer, result.mantleDynamicSupportIndex.buffer, result.compensatedBuoyancyIndex.buffer, result.structuralFabricStrength.buffer, result.structuralZoneKind.buffer, result.fragmentationPropensity.buffer, result.fragmentIds.buffer, result.kinematicDomainIds.buffer, result.boundarySamples.buffer, result.boundaryKinds.buffer, result.geologicalBoundaryRegimes.buffer, result.subductionPolarities.buffer, result.boundaryNormalRatesMPerYear.buffer, result.boundaryShearRatesMPerYear.buffer, result.boundaryCoarseSourceIndices.buffer]);
             return;
         }
         throw new Error(`Unsupported worldgen command '${String(command.type)}'.`);
