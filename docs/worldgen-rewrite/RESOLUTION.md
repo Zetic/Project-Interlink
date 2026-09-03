@@ -58,3 +58,7 @@ terrane / microplate domains
 This distinction prevents the number of tectonic domains from being confused with physical sampling density. Future higher-resolution structural passes can refine fragment boundaries using WG-1 ancestry while preserving their parent macro-plate and fragment provenance.
 
 Before increasing canonical process levels, profiling must report generation time, memory, transfer size, and numerical quality. A finer grid is not useful if it only samples the same broad fields more densely; later terrain/lithology stages must introduce process-appropriate structural detail constrained by accepted coarse truth.
+
+## WG-3.75 physical inheritance contract
+
+WG-3.75 implements the previously documented coarse-to-fine checkpoint. Accepted upstream truth can now be inherited onto a finer canonical topology without rerunning or rerandomizing the coarse stages. This permits WG-4 terrain to begin at a finer process level while macro tectonic/crust/lithosphere identity remains anchored to its accepted coarse samples.

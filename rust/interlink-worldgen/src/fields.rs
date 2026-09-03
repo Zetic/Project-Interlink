@@ -13,14 +13,26 @@ impl DenseU16Field {
     pub fn from_values(width: u32, height: u32, values: Vec<u16>) -> Result<Self, WorldgenError> {
         let expected = checked_sample_count(width, height)?;
         if values.len() != expected {
-            return Err(WorldgenError::InvalidDimensions("field value count does not match width × height"));
+            return Err(WorldgenError::InvalidDimensions(
+                "field value count does not match width × height",
+            ));
         }
-        Ok(Self { width, height, values })
+        Ok(Self {
+            width,
+            height,
+            values,
+        })
     }
 
-    pub fn width(&self) -> u32 { self.width }
-    pub fn height(&self) -> u32 { self.height }
-    pub fn values(&self) -> &[u16] { &self.values }
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+    pub fn values(&self) -> &[u16] {
+        &self.values
+    }
 
     pub fn statistics(&self) -> FieldStatistics {
         let mut minimum = u16::MAX;
@@ -32,7 +44,11 @@ impl DenseU16Field {
             sum += u128::from(*value);
         }
         let sample_count = self.values.len() as u64;
-        let mean = if sample_count == 0 { 0.0 } else { sum as f64 / sample_count as f64 };
+        let mean = if sample_count == 0 {
+            0.0
+        } else {
+            sum as f64 / sample_count as f64
+        };
         FieldStatistics {
             sample_count,
             minimum,
@@ -45,13 +61,20 @@ impl DenseU16Field {
 
 pub fn checked_sample_count(width: u32, height: u32) -> Result<usize, WorldgenError> {
     if width == 0 || height == 0 {
-        return Err(WorldgenError::InvalidDimensions("field dimensions must be non-zero"));
+        return Err(WorldgenError::InvalidDimensions(
+            "field dimensions must be non-zero",
+        ));
     }
-    let count = (width as usize)
-        .checked_mul(height as usize)
-        .ok_or(WorldgenError::InvalidDimensions("field dimensions overflow addressable memory"))?;
+    let count =
+        (width as usize)
+            .checked_mul(height as usize)
+            .ok_or(WorldgenError::InvalidDimensions(
+                "field dimensions overflow addressable memory",
+            ))?;
     if count > MAX_SYNTHETIC_SAMPLES {
-        return Err(WorldgenError::InvalidDimensions("WG-0 synthetic diagnostic is limited to 4,194,304 samples"));
+        return Err(WorldgenError::InvalidDimensions(
+            "WG-0 synthetic diagnostic is limited to 4,194,304 samples",
+        ));
     }
     Ok(count)
 }
