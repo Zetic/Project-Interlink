@@ -1,16 +1,6 @@
 from pathlib import Path
 
 
-def replace_once(path: str, old: str, new: str) -> None:
-    target = Path(path)
-    text = target.read_text()
-    if old not in text:
-        if new in text:
-            return
-        raise SystemExit(f"expected text not found in {path}: {old[:120]!r}")
-    target.write_text(text.replace(old, new, 1))
-
-
 wasm_lib = Path("rust/interlink-worldgen-wasm/src/lib.rs")
 text = wasm_lib.read_text()
 if "mod inheritance_bridge;" not in text:
@@ -39,9 +29,3 @@ if "inheritance_bridge_exposes_fine_physics_and_boundaries" not in text:
 """
     text = text[:end + len("    }\n")] + insertion + text[end + len("    }\n"):]
 wasm_lib.write_text(text)
-
-replace_once(
-    ".github/workflows/test.yml",
-    "          cargo run -p interlink-worldgen-cli -- lithosphere --seed ci-wg3-5 --level 5 --plates 18\n",
-    "          cargo run -p interlink-worldgen-cli -- lithosphere --seed ci-wg3-5 --level 5 --plates 18\n          cargo run -p interlink-worldgen-cli -- inheritance --seed ci-wg3-75 --coarse-level 4 --level 6 --plates 18\n          cargo run -p interlink-worldgen-cli -- profile\n",
-)
