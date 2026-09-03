@@ -7,6 +7,9 @@ This directory defines the greenfield Planet Engine rewrite that runs in paralle
 - [`TOPOLOGY.md`](TOPOLOGY.md) — canonical hierarchical geodesic sphere and finite-volume geometry.
 - [`TECTONICS.md`](TECTONICS.md) — deterministic spherical plate partitioning and rigid plate kinematics.
 - [`GEOLOGY.md`](GEOLOGY.md) — dense crustal state, geological boundary regimes, and inferred geological memory.
+- [`LITHOSPHERE.md`](LITHOSPHERE.md) — mechanical lithosphere, structural fabric, mantle support, terranes, and microplates.
+- [`MULTIRESOLUTION.md`](MULTIRESOLUTION.md) — deterministic coarse-to-fine physical inheritance and boundary provenance.
+- [`PLANET_PARAMETERS.md`](PLANET_PARAMETERS.md) — Earth-like default physical profile and future rocky-planet parameter contract.
 - [`RESOLUTION.md`](RESOLUTION.md) — process-specific multiresolution policy.
 - [`DETERMINISM.md`](DETERMINISM.md) — generator/stage identity and random-stream isolation.
 - [`VALIDATION.md`](VALIDATION.md) — numerical, topology, and physical acceptance gates.
@@ -63,3 +66,31 @@ WG-3 introduces dense geological state on the same canonical topology:
 - native, WASM, Worker, and browser crust/history diagnostics.
 
 WG-3 still generates no elevation or bathymetry. Its physical crust/history output is intended to constrain WG-4 initial terrain through isostasy and tectonic structure rather than direct terrain noise.
+
+## WG-3.5 — lithospheric mechanics and selective tectonic refinement
+
+WG-3.5 derives the mechanical substrate that WG-4 will use for terrain response:
+
+- strength, weakness, and effective elastic thickness;
+- thermal anomaly, mantle upwelling, and mantle dynamic support;
+- compensated buoyancy and inherited structural fabric;
+- structural-zone classification from accepted geological history;
+- selective mechanically plausible terranes and microplates;
+- refined kinematic-domain identities while WG-2 macro plates remain authoritative upstream truth.
+
+WG-3.5 does not globally increase macro-plate count and still does not generate terrain.
+
+## WG-3.75 — multiresolution physical inheritance
+
+WG-3.75 breaks the temporary same-resolution coupling before terrain generation:
+
+- WG-2/WG-3/WG-3.5 run on an accepted coarse topology;
+- stable WG-1 sample ancestry preserves every inherited coarse sample exactly;
+- continuous fields interpolate hierarchically, with categorical-domain constraints where discontinuities matter;
+- categorical fields use deterministic geodesic nearest-source provenance;
+- fine plate-boundary interfaces retain tectonic kind, geological regime, subduction polarity, normal/shear rates, and coarse-source identity;
+- provenance, physical parameters, upstream stage hashes, inherited fields, and reconstructed boundaries have explicit deterministic identities;
+- WASM protocol v6 transports the finer physical substrate to the standalone Planet Engine Lab;
+- an Earth-like physical profile remains the default while water inventory and interior/isostatic parameters are explicit for future rocky planets.
+
+WG-3.75 is still foundation work. It generates no elevation, bathymetry, sea-level solution, climate, hydrology, erosion, resources, Regions, Features, or gameplay cutover. WG-4 consumes this accepted finer substrate instead of rerunning tectonics/geology at terrain resolution.
