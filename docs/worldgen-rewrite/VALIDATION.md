@@ -117,6 +117,32 @@ WG-3.5 is accepted only if it adds mechanically useful downstream state without 
 
 The native `lithosphere` CLI reports mean strength/weakness, effective elastic thickness, mantle upwelling/support, structural-zone populations, terrane/microplate counts, fragmented area, representative fragment properties, all upstream hashes, lithosphere hash, and elapsed generation time.
 
+## WG-3.75 multiresolution inheritance and physical-profile gates
+
+WG-3.75 is accepted only if finer global substrates refine accepted physical truth instead of silently regenerating a different planet.
+
+- coarse level must not exceed fine level;
+- WG-1's stable inherited sample prefix is required and validated before refinement;
+- every fine sample has exactly one deterministic nearest coarse provenance source;
+- every coarse sample remains present at the same sample ID and retains its accepted categorical and physical values exactly;
+- direct scalar refinement from a coarse level to a fine level is identical to staged refinement through intermediate hierarchy levels;
+- categorical refinement is deterministic, complete, and seed-independent once accepted coarse truth/topology are fixed;
+- geodesic provenance tie breaking is stable by source ID rather than runtime iteration order;
+- continuous interpolation remains finite and within the physical bounds of the source stage where those bounds apply;
+- domain-constrained interpolation does not average crust/mechanical state across incompatible accepted categorical domains;
+- the assembled inherited WG-2/WG-3/WG-3.5 bundle preserves accepted tectonic, geology, and lithosphere hashes;
+- the inherited physical-state hash explicitly includes refinement provenance, planetary-parameter identity, and accepted upstream stage hashes;
+- every fine inter-plate edge receives a compatible accepted coarse-boundary provenance source;
+- inherited fine boundary interfaces preserve tectonic kind, geological regime, subduction polarity, normal rate, and shear rate from their accepted coarse source;
+- fine boundary reconstruction is deterministic and carries a separate ordered boundary hash;
+- protocol/WASM version 6 exposes exactly one value per fine sample for transported inherited fields and index-aligned arrays for fine interfaces/provenance;
+- alternate rocky physical profiles can vary water inventory and other explicit physical parameters without changing the Earth-like default or upstream tectonic/geological identities;
+- the Earth-like reference profile remains physically valid and reports finite derived mass, bulk density, surface area, water volume, and equivalent global-water depth;
+- the native inheritance smoke path supports a representative L4→L6 refinement and reports upstream/provenance/parameter/inheritance hashes;
+- WG-3.75 adds no elevation, bathymetry, sea-level solution, climate, hydrology, erosion, detailed lithology, resources, Regions, or gameplay state.
+
+The native `inheritance` CLI reports coarse/fine levels and sample counts, deterministic provenance/parameter/inheritance hashes, accepted WG-2/WG-3/WG-3.5 hashes, Earth-like equivalent global-water depth, and elapsed time. The `profile` CLI reports the active physical planet profile and its derived physical quantities. Browser regressions require protocol v6 and the WG-3.75 lab to expose inherited sample masks, coarse-source provenance, fine boundary provenance, inherited physical fields, and the explicit no-terrain contract.
+
 ## Later physical gates
 
 Later stages add validation for hypsometry and isostatic response, lithologic distributions, climate zonation, drainage acyclicity, water routing, erosion/sediment conservation, and glacial/coastal morphology.
