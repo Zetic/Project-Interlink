@@ -42,7 +42,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm scripts/wg375_finish.py .github/workflows/wg375-finish.yml
           git add -A
           if git diff --cached --quiet; then
             exit 0
